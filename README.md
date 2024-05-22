@@ -1,1 +1,1 @@
-# external_staging for WIP optimizations. 
+# External staging area for WIP optimizations. 
