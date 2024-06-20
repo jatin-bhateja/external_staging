@@ -56,7 +56,7 @@ int main (int argc, char* argv[]) {
       // replace result lanes corresponding to opposite sign inputs where sign flipped w.r.t first input sign with Integer.MIN_VALUE for +ve numbers else Integer.MAX_VALUE.
       "vmovdqu %3, %%ymm7 \n\t"
       "vmovdqu %4, %%ymm8 \n\t"
-      // if value at replacment result lane is +ve then replacit it by MIN_VALUE else with MAX_VALUE
+      // if value at replacment result lane is +ve then replace it by MIN_VALUE else with MAX_VALUE
       // replacment mask for +ve OOB.
       "vpandn %%ymm4, %%ymm5, %%ymm6  \n\t"
       "vpblendvb %%ymm5, %%ymm7, %%ymm3, %%ymm3 \n\t"

@@ -1,7 +1,7 @@
 #include <stdio.h>
 //
 //  using sign bit test.
-//  res = do_signed_add
+//  res = do_signed_sub
 //  if (same_sign) {
 //     if (sign_flip) {
 //        if (neg_num) {
