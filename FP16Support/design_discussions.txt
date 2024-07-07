@@ -1,0 +1,225 @@
+Hi Jatin,
+
+Thanks a lot for the clarification.
+
+I get your point now, so you are suggesting to used new basic type "T_HALF_FLOAT" as lane type for FP16 vector operations inferred by auto-vectorization to save creating new Vector IR, but still create different FP15 scalar IR with existing ideal type "Type::FLOAT".
+•	Yes that's what I meant.
+
+
+Thanks for your suggestion. I will go ahead with creating separate vector nodes for Min/Max operations for half float (unless someone else in the cc list suggest otherwise).
+
+
+Regards,
+Bhavana
+________________________________________
+From: Bhateja, Jatin <jatin.bhateja@intel.com>
+Sent: 13 June 2024 12:30
+To: Bhavana Kilambi <Bhavana.Kilambi@arm.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com <vladimir.x.ivanov@oracle.com>; Nick Gasson <Nick.Gasson@arm.com>; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Kamath, Smita <smita.kamath@intel.com>; John Rose <john.r.rose@oracle.com>; joe.darcy@oracle.com <joe.darcy@oracle.com>; Bhateja, Jatin <jatin.bhateja@intel.com>
+Subject: Re: FP16 support status and plan 
+ 
+Hi Bhavana,
+
+As mentioned in point #4 in my below mail, ideal type is composed of basic type and the ideal register [1]
+
+> For point #9 - By "new ideal type" did you mean a new type for half float like T_HALF_FLOAT?
+
+I get your point now, so you are suggesting to used new basic type "T_HALF_FLOAT" as lane type for FP16 vector operations inferred by auto-vectorization to save creating new Vector IR, but still create different FP15 scalar IR with existing ideal type "Type::FLOAT".  
+
+For sake of uniformity, it's safe to create a different vector IR in applicable scenarios which fits in existing infrastructure. But, I am open to feedback and suggestions.
+
+Best Regards,
+Jatin   
+
+[1] https://github.com/openjdk/valhalla/blob/lworld%2Bfp16/src/hotspot/share/opto/type.cpp#L156
+
+________________________________________
+From: Bhavana Kilambi <Bhavana.Kilambi@arm.com>
+Sent: Thursday, June 13, 2024 4:07 PM
+To: Bhateja, Jatin <jatin.bhateja@intel.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com <vladimir.x.ivanov@oracle.com>; Nick Gasson <Nick.Gasson@arm.com>; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Kamath, Smita <smita.kamath@intel.com>; John Rose <john.r.rose@oracle.com>; joe.darcy@oracle.com <joe.darcy@oracle.com>
+Subject: Re: FP16 support status and plan 
+ 
+Hi Jatin,
+
+Thank you for the detailed response.
+
+Regarding point #6 - I totally agree with you about the FP16 value fitting well with "TypeF" in C2. What I meant when I spoke about introducing a new type for half float (something like T_HALF_FLOAT) mimicking T_SHORT is when we re-interpret the container type for half float methods here - [1] to T_SHORT, we return T_HALF_FLOAT instead so that we can easily match it to relevant floating point instructions in the backend (without having to write additional backend match rules for FP16). Until the Half float IR node gets vectorized, it will have T_FLOAT as the basic_type and all floating point related optimizations can happen on the Half float scalar IR node as well. Apologize for not being explicit enough in my previous email.
+
+For point #9 - By "new ideal type" did you mean a new type for half float like T_HALF_FLOAT?
+
+As for the list of shared ideal nodes - Currently apart from MinV and Max, I could only find these - MinReductionV, MaxReductionV, ReplicateV nodes which could have potential conflicts in the backend with T_SHORT type.
+
+I will wait for Vladimir/John to comment on this as well.
+
+[1] https://github.com/openjdk/valhalla/blob/56d1a83f0a3919f2ef2674173c2b8e0a91bcac00/src/hotspot/share/opto/superword.cpp#L3354
+
+
+Thanks,
+Bhavana
+________________________________________
+From: Bhateja, Jatin <jatin.bhateja@intel.com>
+Sent: 13 June 2024 05:25
+To: Bhavana Kilambi <Bhavana.Kilambi@arm.com>; Nick Gasson <Nick.Gasson@arm.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com <vladimir.x.ivanov@oracle.com>; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Kamath, Smita <smita.kamath@intel.com>; John Rose <john.r.rose@oracle.com>; joe.darcy@oracle.com <joe.darcy@oracle.com>; Bhateja, Jatin <jatin.bhateja@intel.com>
+Subject: Re: FP16 support status and plan 
+ 
+Hi Bhavana,
+ 
+Thanks for bringing this up, to answer let’s break the problem into pieces.
+ 
+1.	Float16 is a value type and in future HalfFloat*Vector will become value type too once its migrated from vectorIntrinsics into lworld+fp16/vector.
+2.	In current context, Float16 value class has a single ‘short’ typed field which holds IEEE 754 binary16 encoded value since from language side we have fixed set of primitive types to select from and a 16 bit short seemed most appropriate type.
+3.	C2 compiler’s Valhalla infrastructure creates a magic IR (InlineTypeNode) for value oops which by construction view a value as a bundle of field components and is thus individually ties the IR corresponding to sperate fields to a value IR node to promote scalarization. InlineTypeNode corresponding to Float16 oop will have a single TypeInt::SHORT typed input which gets loaded into an integral register.
+4.	An ideal type captures both basic type and ideal register information, basic type determines the operand size while ideal register is bound to specific register class which guides the register allocation to pick the register from appropriate allocation class (int/float/vector),
+5.	Since a floating-point ISA expects its operands to be present in float point registers, hence existing PoC implementation injects re-interpretation IR to translate FP16 value in short fields to a floating-point register.
+6.	Unlike integral type (TypeInt/TypeLong) which maintains explicit value range bounds (_lo, _hi) to constrain the value ranges based on the flow functions  (Node::Value) associated with IR nodes,  floating point IR always represent an unconstrained real number value range and C2 does not perform any value range constraining optimizations over float IR nodes because of precision related considerations. There are special ideal types for floating point constants (TypeF/TypeD) since its guaranteed to lie within representable value range. Thus, a reduced precision type like (FP16) can fit well with existing Type::FLOAT type without introducing a new type and FP16 constants can be folded using runtime helper routines.
+7.	From IR standpoint, most of the scalar operations have type specific IR, while we do promote some sharing for vector operations.  With aggressive sharing at IR level, we need a distinguishing type to enable the instruction selector or backend macro assembler to emit appropriately typed instructions. Intending to use existing IR with a new type may require changes in predication conditions for existing matcher patterns. Alternatively, ideal opcode can be used to guide the selection logic for discrete IR nodes.
+8.	C2 compiler has a very flexible infrastructure and both the approaches i.e. shared IR with type disaggregation OR sperate type specific IR node can co-exist based on the need, value and scalability of the solution and there is no one size fits all solution.
+9.	If there are handful of cases where IR sharing poses problems, then creating a separate IR for them is reasonable option. But if we have a compelling case where a new ideal type will simplify the infrastructure for future enhancements then creating a new ideal type is recommended option.
+ 
+It will be helpful to receive Vladimir’s and John’s feedback on this, may I also request you to share the comprehensive list of shared Ideal nodes which may need additional differentiation for FP16 use case.
+ 
+Best Regards,
+Jatin       
+ 
+________________________________________
+From: Bhavana Kilambi <Bhavana.Kilambi@arm.com>
+Sent: Wednesday, June 12, 2024 8:38 PM
+To: Bhateja, Jatin <jatin.bhateja@intel.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com <vladimir.x.ivanov@oracle.com>; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Nick Gasson <Nick.Gasson@arm.com>; Kamath, Smita <smita.kamath@intel.com>
+Subject: Re: FP16 support status and plan
+ 
+Hi Jatin,
+I am writing to seek some suggestions/advice from you on the FP16 work.
+From our previous email trail, I had expressed interest in adding support for more FP16 scalar operations to be on par with Float type.
+I have been working on adding mid-end and aarch64 backend support for a few other FP16 binary operations like – subtract, multiply, divide, min and max. I am adding both scalar and vector support for these operations. Adding vector support for min and max is not as straight forward as the other operations because all the scalar nodes for different types (MinI, MinF, MinD, minHF etc) when vectorized generate the MinV/MaxV vector nodes and this can introduce confusion at the time of instruction selection in the backend. For aarch64, we have separate integral and floating point min/max instructions and the backend could get confused as to which ones to generate (as half float is also T_SHORT type). The easiest and brute force way of doing it is to add separate min and max vector nodes for FP16 – MinVHF/MaxVHF but this might not be a desirable and optimal design. Another way I have tried is to add a bool field in MinV/MaxV nodes which distinguishes between FP16 short and integral Short values. This can be checked in the backend at the time of instruction selection to generate appropriate instructions. But this would still mean adding additional backend match rules (atleast for aarch64) but still we can avoid generating separate MinV/MaxV nodes for Half float at least. I have the code for this here for your perusal -  https://github.com/Bhavana-Kilambi/valhalla/commit/9521bd0758428fce2d6fc291f9555e57ed7ddfd4
+I was wondering if you think this would be a good option to go with? Another option could be to add a separate type for half float values, something like – “T_HALF_FLOAT” which will be more like a duplicate of T_SHORT but we can use this in the backend to distinguish between integral short values and half float values and may not need separate match rules for half float either. From this message in the mailing list -https://mail.openjdk.org/pipermail/panama-dev/2020-April/008484.html, if the idea is to eventually club type specific nodes for the same operation with a single generic node, then having a separate type for half float might help in the long run.
+Please do let me know what you think of these options.
+Also, I wanted to ask if there is any plan to add support for half float in VectorAPI in the lworld+fp16 branch (like HalfFloat*Vector.java)?
+ 
+Thanks and regards,
+Bhavana
+________________________________________
+From: Bhateja, Jatin <jatin.bhateja@intel.com>
+Sent: 27 February 2024 05:42
+To: Bhavana Kilambi <Bhavana.Kilambi@arm.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com <vladimir.x.ivanov@oracle.com>; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Nick Gasson <Nick.Gasson@arm.com>; Kamath, Smita <smita.kamath@intel.com>
+Subject: RE: FP16 support status and plan
+ 
+Hi Bhavana,
+ 
+> We would like to contribute for #3 and add more scalar operations for Float16 to be at par with Float type.
+ 
+Thanks for helping on this.
+ 
+On #1, I did a merge recently from lworld to lworld+fp16.
+ 
+Best Regards,
+Jatin
+ 
+From: Bhavana Kilambi <Bhavana.Kilambi@arm.com>
+Sent: Monday, February 26, 2024 5:38 PM
+To: Bhateja, Jatin <jatin.bhateja@intel.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Nick Gasson <Nick.Gasson@arm.com>; Kamath, Smita <smita.kamath@intel.com>
+Subject: Re: FP16 support status and plan
+ 
+Hello Jatin,
+ 
+Thank you!
+We would like to contribute for #3 and add more scalar operations for Float16 to be at par with Float type. If we would like to work on any other items mentioned in your list, we will get back to you.
+Also, could you please clarify why the #1 is highlighted in green? Is it something that needs immediate attention or something that you're already working on?
+ 
+ 
+Thanks,
+Bhavana
+________________________________________
+From: Bhateja, Jatin <jatin.bhateja@intel.com>
+Sent: 21 February 2024 13:24
+To: Bhavana Kilambi <Bhavana.Kilambi@arm.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com <vladimir.x.ivanov@oracle.com>; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Nick Gasson <Nick.Gasson@arm.com>; Bhateja, Jatin <jatin.bhateja@intel.com>; Kamath, Smita <smita.kamath@intel.com>
+Subject: RE: FP16 support status and plan
+ 
+Hi Bhavana,
+ 
+I was on vacation last week and could not respond back.
+ 
+It will be helpful if you can pick up items from following activities and share your evaluations.
+ 
+•	lworld+fp16 :
+o	Merge with lworld.
+o	Align Float16 with latest Valhalla JEP-401, making Float16 a Loosely Consistent and Implicitly Constructible value class.
+              We may need some tweaking to enable flat layout support. lworld already has support flat layout for primitive value class arrays.
+o	Add other floating point scalar operations to Float16 to be at par with Float type.
+o	Intensification and Compiler side changes for new operations.
+o	Performance and functional validation.
+ 
+Best Regards,
+Jatin
+ 
+From: Bhavana Kilambi <Bhavana.Kilambi@arm.com>
+Sent: Monday, February 12, 2024 10:02 PM
+To: Bhateja, Jatin <jatin.bhateja@intel.com>; Kamath, Smita <smita.kamath@intel.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Nick Gasson <Nick.Gasson@arm.com>
+Subject: Re: FP16 support status and plan
+ 
+Hello Jatin,
+ 
+Thank you for sharing the detailed plan for FP16 support and integration with Valhalla.
+ 
+Would it be possible to also share a rough timeline for the line items that you proposed in your plan please?
+Also, is there anything that we can help/contribute with in your FP16 enablement efforts?
+ 
+ 
+Thanks,
+Bhavana
+ 
+________________________________________
+From: Bhateja, Jatin <jatin.bhateja@intel.com>
+Sent: 17 January 2024 16:51
+To: Bhavana Kilambi <Bhavana.Kilambi@arm.com>; Kamath, Smita <smita.kamath@intel.com>
+Cc: Paul Sandoz <paul.sandoz@oracle.com>; vladimir.x.ivanov@oracle.com <vladimir.x.ivanov@oracle.com>; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>; Nick Gasson <Nick.Gasson@arm.com>; Bhateja, Jatin <jatin.bhateja@intel.com>
+Subject: RE: FP16 support status and plan
+ 
+Hi Bhawana,
+ 
+Congratulations and Welcome back!
+ 
+Most of our effort in past 6 months have been directed towards Vector API-Valhalla integration where we are trying to support vector as value objects,
+Thanks to Xiaohong Gong (ARM) for her significant contributions.
+ 
+We added initial scalar FP16 support for one operation in Java and compiler side including auto-vectorization on lworld+fp16 branch.
+https://github.com/openjdk/valhalla/compare/lworld...lworld%2Bfp16
+ 
+With above patch a new primitive value class java.lang.Float16 is added which encapsulates a short variable to store IEEE 754 binary16 encoded value.
+Being a primitive value class, an array of Float16 has flat layout which allows seamless loading into vectors.
+ 
+As per latest Valhalla spec JEP 401, we are not planning to add full support for null-restricted value classes in first version.
+Since both Auto-vectorizer and Vector API shares the target specific backend implementation, so at some point we will need to do a 3-way merge b/w vectorIntrinsics+fp16, lworld+fp16 and support to lworld+vector.
+ 
+I think for the time being we can continue adding missing intrinsic layer support to enable vectorIntrinsics+fp16 backed functional and performance validation.
+ 
+In short, we have following activities lined up.
+ 
+•	lworld+vector :
+o	Merge with lworld (In progress)
+o	Java side changes to make existing vector payload as null-restricted classes to align with JEP-401.
+o	Function and performance Validation.
+•	lworld+fp16 :
+o	Merge with lworld.
+o	Align Float16 with latest Valhalla JEP-401, making Float16 a Loosely Consistent and Implicitly Constructible value class.
+•	              We may need some tweaking to enable flat layout support. lworld already has support flat layout for primitive value class arrays.
+o	Add other floating point scalar operations to Float16 to be at par with Float type.
+o	Intensification and Compiler side changes for new operations.
+o	Performance and functional validation.
+•	vectorIntrinsics+fp16
+o	Missing intrinsic layer support to enable backend validation.
+o	Missing backend support [X86/AARCH64].
+o	Performance validation.
+ 
+ 
+Hi Paul and Sandhya, please let us know your views on task scheduling.
+ 
+Best Regards,
+Jatin
+ 
