@@ -43,7 +43,7 @@ public class SaturatedOps_Perf1 {
 
     public static int unsignedSaturatingAdd2(int a, int b) {
         int res = a + b;
-        boolean overflow = ((POLARITY_MASK_INT & (a | b)) == POLARITY_MASK_INT) && ((POLARITY_MASK_INT & res) == 0);
+        boolean overflow = Integer.compareUnsigned(res, a | b) < 0;
         if (overflow) {
            return UNSIGNED_MAX;
         } else {
