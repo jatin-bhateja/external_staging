@@ -2,11 +2,11 @@ import jdk.incubator.vector.*;
 import java.util.stream.IntStream;
 import java.util.Arrays;
 
-public class vectorized_scan {
-   public static final VectorSpecies<Float> FSP = FloatVector.SPECIES_512;
+public class vectorized_scan_integer {
+   public static final VectorSpecies<Integer> ISP = IntVector.SPECIES_512;
 
-   public static void scan_serial(float [] res, float [] src) {
-       float running_sum  = 0;
+   public static void scan_serial(int [] res, int [] src) {
+       int running_sum  = 0;
        for (int i = 0; i < res.length; i++) {
           // Every iteration adds one element to memoized sum.
           running_sum += src[i];
@@ -19,8 +19,8 @@ public class vectorized_scan {
        // 16 elements = 16 Loads + 16 Stores + 16 Additions.
    }
 
-   public static void simd_scan_algo1(float [] res, float [] src) {
-       // For purpose of illustration assuming 256 bit FloatVector input
+   public static void simd_scan_algo1(int [] res, int [] src) {
+       // For purpose of illustration assuming 256 bit IntVector input
        // with eight vector lanes.
        //
        // Iter[0:VECLEN)   Input Vector      Expand mask      Output
@@ -48,30 +48,27 @@ public class vectorized_scan {
        //          |___|     |___|     |___|
        //
 
-       FloatVector vres = FloatVector.broadcast(FSP, 0.0f);
-       for (int i = 0; i < FSP.loopBound(res.length); i += FSP.length()) {
-           long mask = (1L << FSP.length()) -1;
-           FloatVector vec1 = FloatVector.fromArray(FSP, src, i);
-           for (int j = 0 ; j < FSP.length() ; j++) {
-              vres = vec1.expand(VectorMask.fromLong(FSP, mask))
+       IntVector vres = IntVector.broadcast(ISP, 0);
+       for (int i = 0; i < ISP.loopBound(res.length); i += ISP.length()) {
+           long mask = (1L << ISP.length()) -1;
+           IntVector vec1 = IntVector.fromArray(ISP, src, i);
+           for (int j = 0 ; j < ISP.length() ; j++) {
+              vres = vec1.expand(VectorMask.fromLong(ISP, mask))
                          .lanewise(VectorOperators.ADD, vres);
               mask <<= 1;
            }
            vres.intoArray(res, i);
-           vres = FloatVector.broadcast(FSP, res[i + FSP.length() -1]);
+           vres = IntVector.broadcast(ISP, res[i + ISP.length() -1]);
        }
    }
 
-   // TBD: https://www.intel.com/content/www/us/en/developer/articles/technical/optimize-scan-operations-explicit-vectorization.html
-   //public static void simd_scan_algo2(float [] res, float [] src) {
-
-   //}
-
    public static void main(String [] args) {
        int algo = Integer.parseInt(args[0]);
-       float [] res = new float[4096];
-       float [] src = new float[4096];
-       IntStream.range(0, 4096).forEach(i -> {src[i] = (float)i;});
+
+       int [] res = new int[4096];
+       int [] src = new int[4096];
+       IntStream.range(0, 4096).forEach(i -> {src[i] = (int)i;});
+
 
        if (algo == 1 || algo == -1) {
            for (int i = 0; i < 100000; i++) {
@@ -84,8 +81,7 @@ public class vectorized_scan {
            long t2 = System.currentTimeMillis();
            System.out.println("[vector time] " + (t2-t1) + " ms  [res] " + Arrays.toString(Arrays.copyOfRange(res, 0, 16)));
        }
-
-       Arrays.fill(res, 0.0f);
+       Arrays.fill(res, 0);
 
        if (algo == 0 || algo == -1) {
            for (int i = 0; i < 100000; i++) {
