@@ -3,10 +3,10 @@ import java.util.stream.IntStream;
 import java.util.Arrays;
 
 public class vectorized_scan {
-   public static final VectorSpecies<Float> FSP = FloatVector.SPECIES_512;
+   public static final VectorSpecies<Double> DSP = DoubleVector.SPECIES_512;
 
-   public static void scan_serial(float [] res, float [] src) {
-       float running_sum  = 0;
+   public static void scan_serial(double [] res, double [] src) {
+       double running_sum  = 0.0;
        for (int i = 0; i < res.length; i++) {
           // Every iteration adds one element to memoized sum.
           running_sum += src[i];
@@ -19,59 +19,50 @@ public class vectorized_scan {
        // 16 elements = 16 Loads + 16 Stores + 16 Additions.
    }
 
-   public static void simd_scan_algo1(float [] res, float [] src) {
-       // For purpose of illustration assuming 256 bit FloatVector input
-       // with eight vector lanes.
-       //
-       // Iter[0:VECLEN)   Input Vector      Expand mask      Output
-       // ------------------------------------------------------------------
-       //         0      A B C D E F G H    0x11111111     A B C D E F G H
-       //         1      A B C D E F G H    0x11111110       A B C D E F G
-       //         2      A B C D E F G H    0x11111100         A B C D E F
-       //         3      A B C D E F G H    0x11111000           A B C D E
-       //         4      A B C D E F G H    0x11110000             A B C D
-       //         5      A B C D E F G H    0x11100000               A B C
-       //         6      A B C D E F G H    0x11000000                 A B
-       //         7      A B C D E F G H    0x10000000                   A
-       //===================================================================
-       //  Add the expanded input vector produced after every iteration
-       //  to get final vector scan result.
-       //===================================================================                    
-       //
-       // In order to perform the scan over arrays whose length is greater
-       // than the vector length, broadcast last lane of resultant vector of
-       // previous scan operation and add it to input vector of current scan
-       // operation before commencing scan iterations.
-       // 
-       //   [ SCAN1 ] [ SCAN2 ] [ SCAN3 ] [ SCAN4 ]
-       //          V   A     V   A     V   A
-       //          |___|     |___|     |___|
-       //
+   /* Algorithm Description:-
+      Input                     :  A      B     C   D      E    F     G    H
+      Shuf1                     :  0      0     2   2      4    4     6    6
+      Mask1                     :  0      1     0   1      0    1     0    1
+      TMP1 = Shuf1(Input).Mask1 :  A    (A+B)   C  (C+D)   E  (F+E)   G   (G+H)
+      
+      Shuf2                     :  0      0     1          1      4    4      5          5
+      Mask2                     :  0      0     1          1      0    0      1          1
+      TMP2 = Shuf2(TMP1).Mask2  :  A    (A+B)  (A+B+C) (A+B+C+D)  E    (E+F) (E+F+G)  (E+F+G+H)
+      
+      Shuf3                     :  0      0     1          1         3           3            3                3
+      Mask3                     :  0      0     0          0         1           1            1                1
+      TMP3 = Shuf3(TMP2).Mask3  :  A    (A+B)  (A+B+C) (A+B+C+D)  (A+B+C+D+E)  (A+B+C+DE+F) (A+B+C+D+E+F+G)  (A+B+C+D+E+F+G+H)
+   */
 
-       FloatVector vres = FloatVector.broadcast(FSP, 0.0f);
-       for (int i = 0; i < FSP.loopBound(res.length); i += FSP.length()) {
-           long mask = (1L << FSP.length()) -1;
-           FloatVector vec1 = FloatVector.fromArray(FSP, src, i);
-           for (int j = 0 ; j < FSP.length() ; j++) {
-              vres = vec1.expand(VectorMask.fromLong(FSP, mask))
-                         .lanewise(VectorOperators.ADD, vres);
-              mask <<= 1;
-           }
-           vres.intoArray(res, i);
-           vres = FloatVector.broadcast(FSP, res[i + FSP.length() -1]);
+   public static final VectorShuffle<Double> SHUF1 = VectorShuffle.fromValues(DSP, 0, 0, 2, 2, 4, 4, 6, 6);
+   public static final VectorShuffle<Double> SHUF2 = VectorShuffle.fromValues(DSP, 0, 0, 1, 1, 4, 4, 5, 5);
+   public static final VectorShuffle<Double> SHUF3 = VectorShuffle.fromValues(DSP, 0, 0, 0, 0, 3, 3, 3, 3);
+   public static final VectorMask<Double> MASK1 = VectorMask.fromLong(DSP, 0xAA);
+   public static final VectorMask<Double> MASK2 = VectorMask.fromLong(DSP, 0xCC);
+   public static final VectorMask<Double> MASK3 = VectorMask.fromLong(DSP, 0xF0);
+
+   // Ref: https://www.intel.com/content/www/us/en/developer/articles/technical/optimize-scan-operations-explicit-vectorization.html
+   public static void simd_scan_algo1(double [] res, double [] src) {
+       DoubleVector init = DoubleVector.broadcast(DSP, 0.0);
+       for (int i = 0; i < DSP.loopBound(src.length); i += DSP.length()) {
+           DoubleVector vec0 = DoubleVector.fromArray(DSP, src, i);
+           var vec1 = vec0.rearrange(SHUF1, MASK1); 
+           var vec2 = vec1.lanewise(VectorOperators.ADD, vec0); 
+           var vec3 = vec2.rearrange(SHUF2, MASK2); 
+           vec2 = vec3.lanewise(VectorOperators.ADD, vec2); 
+           vec3 = vec2.rearrange(SHUF3, MASK3); 
+           vec2 = vec3.lanewise(VectorOperators.ADD, vec2); 
+           vec2 = vec2.lanewise(VectorOperators.ADD, init);
+           init = DoubleVector.broadcast(DSP, res[i + DSP.length() - 1]);
+           vec2.intoArray(res, i);
        }
    }
 
-   // TBD: https://www.intel.com/content/www/us/en/developer/articles/technical/optimize-scan-operations-explicit-vectorization.html
-   //public static void simd_scan_algo2(float [] res, float [] src) {
-
-   //}
-
    public static void main(String [] args) {
        int algo = Integer.parseInt(args[0]);
-       float [] res = new float[4096];
-       float [] src = new float[4096];
-       IntStream.range(0, 4096).forEach(i -> {src[i] = (float)i;});
+       double [] res = new double[4096];
+       double [] src = new double[4096];
+       IntStream.range(0, 4096).forEach(i -> {src[i] = (double)i;});
 
        if (algo == 1 || algo == -1) {
            for (int i = 0; i < 100000; i++) {
@@ -98,6 +89,5 @@ public class vectorized_scan {
            long t2 = System.currentTimeMillis();
            System.out.println("[scalar time] " + (t2-t1) + " ms  [res] " + Arrays.toString(Arrays.copyOfRange(res, 0, 16)));
        }
-       
    }
 }
