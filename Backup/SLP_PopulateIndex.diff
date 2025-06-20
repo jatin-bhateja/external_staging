@@ -1,0 +1,152 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index cb11789523a..e5d2ee84aad 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -2437,7 +2437,7 @@ void C2_MacroAssembler::vectortest(BasicType bt, XMMRegister src1, XMMRegister s
+ }
+ 
+ void C2_MacroAssembler::vpadd(BasicType elem_bt, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc) {
+-  assert(UseAVX >= 2, "required");
++  assert(UseAVX >= 1, "required");
+ #ifdef ASSERT
+   bool is_bw = ((elem_bt == T_BYTE) || (elem_bt == T_SHORT));
+   bool is_bw_supported = VM_Version::supports_avx512bw();
+@@ -2460,7 +2460,7 @@ void C2_MacroAssembler::vpadd(BasicType elem_bt, XMMRegister dst, XMMRegister sr
+ 
+ #ifdef _LP64
+ void C2_MacroAssembler::vpbroadcast(BasicType elem_bt, XMMRegister dst, Register src, int vlen_enc) {
+-  assert(UseAVX >= 2, "required");
++  assert(UseAVX >= 1, "required");
+   bool is_bw = ((elem_bt == T_BYTE) || (elem_bt == T_SHORT));
+   bool is_vl = vlen_enc != Assembler::AVX_512bit;
+   if ((UseAVX > 2) &&
+@@ -2473,7 +2473,7 @@ void C2_MacroAssembler::vpbroadcast(BasicType elem_bt, XMMRegister dst, Register
+       case T_DOUBLE: case T_LONG: evpbroadcastq(dst, src, vlen_enc); return;
+       default: fatal("Unsupported type %s", type2name(elem_bt)); return;
+     }
+-  } else {
++  } else if (UseAVX == 2) {
+     assert(vlen_enc != Assembler::AVX_512bit, "required");
+     assert((dst->encoding() < 16),"XMM register should be 0-15");
+     switch (elem_bt) {
+@@ -2485,6 +2485,33 @@ void C2_MacroAssembler::vpbroadcast(BasicType elem_bt, XMMRegister dst, Register
+       case T_DOUBLE: movdq(dst, src); vbroadcastsd(dst, dst, vlen_enc); return;
+       default: fatal("Unsupported type %s", type2name(elem_bt)); return;
+     }
++  } else {
++    assert(vlen_enc != Assembler::AVX_512bit, "required");
++    assert((dst->encoding() < 16),"XMM register should be 0-15");
++    switch (elem_bt) {
++      case T_BYTE:
++        movdl(dst, src);
++        punpcklbw(dst, dst);
++        pshuflw(dst, dst, 0x00);
++        punpcklqdq(dst, dst);
++        break;
++      case T_SHORT:
++        movdl(dst, src);
++        pshuflw(dst, dst, 0x00);
++        punpcklqdq(dst, dst);
++        break;
++      case T_INT:
++      case T_FLOAT:
++        movdl(dst, src);
++        pshufd(dst, dst, 0x00);
++        break;
++      case T_LONG:
++      case T_DOUBLE:
++        movdq(dst, src);
++        punpcklqdq(dst, dst);
++        break;
++      default: fatal("Unsupported type %s", type2name(elem_bt)); return;
++    }
+   }
+ }
+ #endif
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 80f0c0f4b49..9060d620652 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1485,11 +1485,6 @@ const bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
+-    case Op_PopulateIndex:
+-      if (!is_LP64 || (UseAVX < 2)) {
+-        return false;
+-      }
+-      break;
+     case Op_RoundVF:
+       if (UseAVX < 2) { // enabled for AVX2 only
+         return false;
+@@ -1872,13 +1867,20 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+       }
+       break;
+     case Op_PopulateIndex:
+-      if (size_in_bits > 256 && !VM_Version::supports_avx512bw()) {
++      if (!is_LP64 || UseAVX < 1) {
++        return false;
++      }
++      if (size_in_bits > 256 && is_subword_type(bt) && !VM_Version::supports_avx512bw()) {
++        return false;
++      }
++      break;
++    case Op_VectorCastI2X:
++      if (!is_floating_point_type(bt) && size_in_bits == 256 && UseAVX < 2) {
+         return false;
+       }
+       break;
+     case Op_VectorCastB2X:
+     case Op_VectorCastS2X:
+-    case Op_VectorCastI2X:
+       if (bt != T_DOUBLE && size_in_bits == 256 && UseAVX < 2) {
+         return false;
+       }
+diff --git a/src/hotspot/share/opto/superword.cpp b/src/hotspot/share/opto/superword.cpp
+index 82b57a3492d..a73d23cf1ed 100644
+--- a/src/hotspot/share/opto/superword.cpp
++++ b/src/hotspot/share/opto/superword.cpp
+@@ -3527,6 +3527,14 @@ int SuperWord::max_vector_size_in_def_use_chain(Node* n) {
+   }
+ 
+   int max = max_vector_size(vt);
++  // constrain the max vector to match the size supported for populate
++  // index. This shall prevent vectoriztion bailout due to vector size
++  // mismatch in downstream flow.
++  if (n->in(1) == iv()) {
++    BasicType iv_type = iv()->bottom_type()->basic_type();
++    max = max_vector_size(iv_type);
++  }
++
+   // If now there is no vectors for the longest type, the nodes with the longest
+   // type in the def-use chain are not packed in SuperWord::stmts_can_pack.
+   return max < 2 ? max_vector_size(bt) : max;
+diff --git a/src/hotspot/share/runtime/sharedRuntime.cpp b/src/hotspot/share/runtime/sharedRuntime.cpp
+index c563376084b..4b32acb547f 100644
+--- a/src/hotspot/share/runtime/sharedRuntime.cpp
++++ b/src/hotspot/share/runtime/sharedRuntime.cpp
+@@ -452,7 +452,7 @@ JRT_LEAF(jshort, SharedRuntime::f2hf(jfloat  x))
+   jint doppel = bits.i;
+   jshort sign_bit = (jshort) ((doppel & 0x80000000) >> 16);
+   if (g_isnan(x))
+-    return (jshort)(sign_bit | 0x7c00 | (doppel & 0x007fe000) >> 13 | (doppel & 0x00001ff0) >> 4 | (doppel & 0x0000000f));
++    return (jshort)(sign_bit | 0x7e00 | (doppel & 0x007fe000) >> 13 | (doppel & 0x00001ff0) >> 4 | (doppel & 0x0000000f));
+ 
+   jfloat abs_f = (x >= 0.0f) ? x : (x * -1.0f);
+ 
+diff --git a/src/java.base/share/classes/java/lang/Float.java b/src/java.base/share/classes/java/lang/Float.java
+index b4e212434ae..88c8b1470ca 100644
+--- a/src/java.base/share/classes/java/lang/Float.java
++++ b/src/java.base/share/classes/java/lang/Float.java
+@@ -1096,7 +1096,7 @@ public final class Float extends Number
+         if (Float.isNaN(f)) {
+             // Preserve sign and attempt to preserve significand bits
+             return (short)(sign_bit
+-                    | 0x7c00 // max exponent + 1
++                    | 0x7e00 // max exponent + 1
+                     // Preserve high order bit of float NaN in the
+                     // binary16 result NaN (tenth bit); OR in remaining
+                     // bits into lower 9 bits of binary 16 significand.

@@ -1,0 +1,279 @@
+diff --git a/src/hotspot/share/opto/vector.cpp b/src/hotspot/share/opto/vector.cpp
+index 7000372c0e7..c08dca84e9c 100644
+--- a/src/hotspot/share/opto/vector.cpp
++++ b/src/hotspot/share/opto/vector.cpp
+@@ -23,7 +23,6 @@
+  */
+ 
+ #include "precompiled.hpp"
+-#include "ci/ciSymbols.hpp"
+ #include "gc/shared/barrierSet.hpp"
+ #include "opto/castnode.hpp"
+ #include "opto/graphKit.hpp"
+@@ -40,6 +39,9 @@ static bool is_vector_shuffle(ciKlass* klass) {
+   return klass->is_subclass_of(ciEnv::current()->vector_VectorShuffle_klass());
+ }
+ 
++static bool is_vector(ciKlass* klass) {
++  return klass->is_subclass_of(ciEnv::current()->vector_Vector_klass());
++}
+ 
+ void PhaseVector::optimize_vector_boxes() {
+   Compile::TracePhase tp("vector_elimination", &timers[_t_vector_elimination]);
+@@ -351,6 +353,32 @@ Node* PhaseVector::expand_vbox_node_helper(Node* vbox,
+   }
+ }
+ 
++ciSymbol* PhaseVector::get_payload_signature(BasicType bt, int num_elem) {
++  int vec_size = type2aelembytes(bt) * 8 * num_elem;
++  ciInstanceKlass* inline_klass = NULL;
++  switch(vec_size) {
++    case 64:   return ciSymbols::vector_VectorPayloadMF64_signature();
++    case 128:  return ciSymbols::vector_VectorPayloadMF64_signature();
++    case 256:  return ciSymbols::vector_VectorPayloadMF64_signature();
++    case 512:  return ciSymbols::vector_VectorPayloadMF64_signature();
++    default:   ShouldNotReachHere(); return NULL;
++  }
++}
++
++const TypeKlassPtr* PhaseVector::make_inline_klass(BasicType bt, int num_elem) {
++  int vec_size = type2aelembytes(bt) * 8 * num_elem;
++  ciInstanceKlass* inline_klass = NULL;
++  switch(vec_size) {
++    case 64:  inline_klass = ciEnv::current()->vector_VectorPayloadMF64_klass();
++    case 128: inline_klass = ciEnv::current()->vector_VectorPayloadMF128_klass();
++    case 256: inline_klass = ciEnv::current()->vector_VectorPayloadMF256_klass();
++    case 512: inline_klass = ciEnv::current()->vector_VectorPayloadMF512_klass();
++    default:  ShouldNotReachHere();
++  }
++  assert(inline_klass->can_be_inline_klass(), "");
++  return TypeKlassPtr::make(inline_klass);
++}
++
+ Node* PhaseVector::expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
+                                           Node* value,
+                                           const TypeInstPtr* box_type,
+@@ -375,50 +403,114 @@ Node* PhaseVector::expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
+            "must be consistent with mask representation");
+   }
+ 
+-  // Generate array allocation for the field which holds the values.
+-  const TypeKlassPtr* array_klass = TypeKlassPtr::make(ciTypeArrayKlass::make(bt));
+-  Node* arr = kit.new_array(kit.makecon(array_klass), kit.intcon(num_elem), 1);
+-
+-  // Store the vector value into the array.
+-  // (The store should be captured by InitializeNode and turned into initialized store later.)
+-  Node* arr_adr = kit.array_element_address(arr, kit.intcon(0), bt);
+-  const TypePtr* arr_adr_type = arr_adr->bottom_type()->is_ptr();
+-  Node* arr_mem = kit.memory(arr_adr);
+-  Node* vstore = gvn.transform(StoreVectorNode::make(0,
+-                                                     kit.control(),
+-                                                     arr_mem,
+-                                                     arr_adr,
+-                                                     arr_adr_type,
+-                                                     value,
+-                                                     num_elem));
+-  kit.set_memory(vstore, arr_adr_type);
+-
+-  C->set_max_vector_size(MAX2(C->max_vector_size(), vect_type->length_in_bytes()));
+-
+-  // Generate the allocate for the Vector object.
+-  const TypeKlassPtr* klass_type = box_type->as_klass_type();
+-  Node* klass_node = kit.makecon(klass_type);
+-  Node* vec_obj = kit.new_instance(klass_node);
+-
+-  // Store the allocated array into object.
+-  ciField* field = ciEnv::current()->vector_VectorPayload_klass()->get_field_by_name(ciSymbols::payload_name(),
+-                                                                                     ciSymbols::object_signature(),
+-                                                                                     false);
+-  assert(field != NULL, "");
+-  Node* vec_field = kit.basic_plus_adr(vec_obj, field->offset_in_bytes());
+-  const TypePtr* vec_adr_type = vec_field->bottom_type()->is_ptr();
+-
+-  // The store should be captured by InitializeNode and turned into initialized store later.
+-  Node* field_store = gvn.transform(kit.access_store_at(vec_obj,
+-                                                        vec_field,
+-                                                        vec_adr_type,
+-                                                        arr,
+-                                                        TypeOopPtr::make_from_klass(field->type()->as_klass()),
+-                                                        T_OBJECT,
+-                                                        IN_HEAP));
+-  kit.set_memory(field_store, vec_adr_type);
+-
+-  kit.replace_call(vbox_alloc, vec_obj, true);
++  Node* vec_obj = NULL;
++  if (is_vector(box_klass)) {
++    // Generate payload allocation for the multi-field which holds the values.
++    const TypeKlassPtr* payload_klass = make_inline_klass(bt, num_elem);
++    Node* payload_obj = kit.new_instance(kit.makecon(payload_klass), NULL, NULL, true);
++    AllocateNode* alloc = AllocateNode::Ideal_allocation(payload_obj, &gvn);
++
++    // Setting larval attribute will generate IR during allocation expansion
++    // to set the larval bit of mark work.
++    alloc->_larval = true;
++
++    // Store the vector value into the array.
++    // (The store should be captured by InitializeNode and turned into initialized store later.)
++    Node* payload_adr = kit.basic_plus_adr(payload_obj, instanceOopDesc::base_offset_in_bytes());
++    const TypePtr* payload_adr_type = payload_adr->bottom_type()->is_ptr();
++    Node* payload_mem = kit.memory(payload_adr_type);
++
++    Node* vstore = gvn.transform(StoreVectorNode::make(0,
++                                                       kit.control(),
++                                                       payload_mem,
++                                                       payload_adr,
++                                                       payload_adr_type,
++                                                       value,
++                                                       num_elem));
++    kit.set_memory(vstore, payload_adr_type);
++
++    // Finish larval state of newly allocated multi-field inistance after initialization.
++    Node* mark_addr = kit.basic_plus_adr(payload_obj, oopDesc::mark_offset_in_bytes());
++    Node* mark = kit.make_load(NULL, mark_addr, TypeX_X, TypeX_X->basic_type(), MemNode::unordered);
++    mark = gvn.transform(new AndXNode(mark, kit.MakeConX(~markWord::larval_bit_in_place)));
++    kit.store_to_memory(kit.control(), mark_addr, mark, TypeX_X->basic_type(), gvn.type(mark_addr)->is_ptr(), MemNode::unordered);
++
++    // Do not let stores that initialize this buffer be reordered with a subsequent
++    // store that would make this buffer accessible by other threads.
++    alloc = AllocateNode::Ideal_allocation(payload_obj, &gvn);
++    assert(payload_obj != NULL, "must have an allocation node");
++    kit.insert_mem_bar(Op_MemBarStoreStore, alloc->proj_out_or_null(AllocateNode::RawAddress));
++
++    C->set_max_vector_size(MAX2(C->max_vector_size(), vect_type->length_in_bytes()));
++
++    // Generate the allocate for the Vector object.
++    const TypeKlassPtr* klass_type = box_type->as_klass_type();
++    Node* klass_node = kit.makecon(klass_type);
++    vec_obj = kit.new_instance(klass_node);
++
++    // Store the allocated array into object.
++    ciField* field = box_klass->get_field_by_name(ciSymbols::payload_name(),
++                                                  get_payload_signature(bt, num_elem),
++                                                  false);
++    assert(field != NULL, "");
++    Node* vec_field = kit.basic_plus_adr(vec_obj, field->offset_in_bytes());
++    const TypePtr* vec_adr_type = vec_field->bottom_type()->is_ptr();
++
++    // The store should be captured by InitializeNode and turned into initialized store later.
++    Node* field_store = gvn.transform(kit.access_store_at(vec_obj,
++                                                          vec_field,
++                                                          vec_adr_type,
++                                                          payload_obj,
++                                                          TypeOopPtr::make_from_klass(field->type()->as_klass()),
++                                                          T_OBJECT,
++                                                          IN_HEAP));
++     kit.set_memory(field_store, vec_adr_type);
++     kit.replace_call(vbox_alloc, vec_obj, true);
++  } else {
++    // Generate array allocation for the field which holds the values.
++    const TypeKlassPtr* array_klass = TypeKlassPtr::make(ciTypeArrayKlass::make(bt));
++    Node* arr = kit.new_array(kit.makecon(array_klass), kit.intcon(num_elem), 1);
++
++    // Store the vector value into the array.
++    // (The store should be captured by InitializeNode and turned into initialized store later.)
++    Node* arr_adr = kit.array_element_address(arr, kit.intcon(0), bt);
++    const TypePtr* arr_adr_type = arr_adr->bottom_type()->is_ptr();
++    Node* arr_mem = kit.memory(arr_adr);
++    Node* vstore = gvn.transform(StoreVectorNode::make(0,
++                                                       kit.control(),
++                                                       arr_mem,
++                                                       arr_adr,
++                                                       arr_adr_type,
++                                                       value,
++                                                       num_elem));
++    kit.set_memory(vstore, arr_adr_type);
++
++    C->set_max_vector_size(MAX2(C->max_vector_size(), vect_type->length_in_bytes()));
++
++    // Generate the allocate for the Vector object.
++    const TypeKlassPtr* klass_type = box_type->as_klass_type();
++    Node* klass_node = kit.makecon(klass_type);
++    vec_obj = kit.new_instance(klass_node);
++
++    // Store the allocated array into object.
++    ciField* field = ciEnv::current()->vector_VectorPayload_klass()->get_field_by_name(ciSymbols::payload_name(),
++                                                                                       ciSymbols::object_signature(),
++                                                                                       false);
++    assert(field != NULL, "");
++    Node* vec_field = kit.basic_plus_adr(vec_obj, field->offset_in_bytes());
++    const TypePtr* vec_adr_type = vec_field->bottom_type()->is_ptr();
++
++    // The store should be captured by InitializeNode and turned into initialized store later.
++    Node* field_store = gvn.transform(kit.access_store_at(vec_obj,
++                                                          vec_field,
++                                                          vec_adr_type,
++                                                          arr,
++                                                          TypeOopPtr::make_from_klass(field->type()->as_klass()),
++                                                          T_OBJECT,
++                                                          IN_HEAP));
++    kit.set_memory(field_store, vec_adr_type);
++    kit.replace_call(vbox_alloc, vec_obj, true);
++  }
+   C->remove_macro_node(vbox_alloc);
+ 
+   return vec_obj;
+diff --git a/src/hotspot/share/opto/vector.hpp b/src/hotspot/share/opto/vector.hpp
+index 067a2280d30..59a63a414c4 100644
+--- a/src/hotspot/share/opto/vector.hpp
++++ b/src/hotspot/share/opto/vector.hpp
+@@ -29,6 +29,7 @@
+ #include "opto/phaseX.hpp"
+ #include "opto/type.hpp"
+ #include "opto/vectornode.hpp"
++#include "ci/ciSymbols.hpp"
+ 
+ class PhaseVector : public Phase {
+  private:
+@@ -54,6 +55,9 @@ class PhaseVector : public Phase {
+   void scalarize_vector_boxes();
+   void expand_vector_boxes();
+ 
++  const TypeKlassPtr* make_inline_klass(BasicType bt, int num_elem);
++  ciSymbol* get_payload_signature(BasicType bt, int num_elem);
++
+  public:
+   PhaseVector(PhaseIterGVN& igvn) : Phase(Vector), _igvn(igvn) {}
+   void optimize_vector_boxes();
+diff --git a/src/hotspot/share/prims/vectorSupport.cpp b/src/hotspot/share/prims/vectorSupport.cpp
+index 004108217ce..f1035130b14 100644
+--- a/src/hotspot/share/prims/vectorSupport.cpp
++++ b/src/hotspot/share/prims/vectorSupport.cpp
+@@ -133,6 +133,18 @@ void VectorSupport::init_payload_element(typeArrayOop arr, BasicType elem_bt, in
+   }
+ }
+ 
++void VectorSupport::init_multifield_payload_element(instanceOop payload, BasicType elem_bt, int offset, address addr) {
++  switch (elem_bt) {
++    case T_BOOLEAN: payload->bool_field_put(offset, *(jboolean*)addr); break;
++    case T_BYTE:    payload->byte_field_put(offset, *(jbyte*)addr); break;
++    case T_SHORT:   payload->short_field_put(offset, *(jshort*)addr); break;
++    case T_INT:     payload->int_field_put(offset, *(jint*)addr); break;
++    case T_FLOAT:   payload->float_field_put(offset, *(jfloat*)addr); break;
++    case T_DOUBLE:  payload->double_field_put(offset, *(jdouble*)addr); break;
++    default: fatal("unsupported: %s", type2name(elem_bt));
++  }
++}
++
+ Handle VectorSupport::allocate_vector_payload_helper(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, Location location, TRAPS) {
+   int num_elem = klass2length(ik);
+   BasicType elem_bt = klass2bt(ik);
+diff --git a/src/hotspot/share/prims/vectorSupport.hpp b/src/hotspot/share/prims/vectorSupport.hpp
+index 46dde49bd7f..3c95bdd0576 100644
+--- a/src/hotspot/share/prims/vectorSupport.hpp
++++ b/src/hotspot/share/prims/vectorSupport.hpp
+@@ -29,6 +29,7 @@
+ #include "code/debugInfo.hpp"
+ #include "memory/allStatic.hpp"
+ #include "oops/typeArrayOop.hpp"
++#include "oops/oopsHierarchy.hpp"
+ #include "runtime/registerMap.hpp"
+ #include "utilities/exceptions.hpp"
+ 
+@@ -42,6 +43,7 @@ class VectorSupport : AllStatic {
+   static Handle allocate_vector_payload_helper(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, Location location, TRAPS);
+ 
+   static void init_payload_element(typeArrayOop arr, BasicType elem_bt, int index, address addr);
++  static void init_multifield_payload_element(instanceOop payload, BasicType elem_bt, int offset, address addr);
+ 
+   static BasicType klass2bt(InstanceKlass* ik);
+   static jint klass2length(InstanceKlass* ik);

@@ -1,0 +1,68 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index 41d939ad0a0..9c435ebb5f2 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -952,11 +952,11 @@ void VM_Version::get_processor_features() {
+     FLAG_SET_DEFAULT(UseAVX, use_avx_limit);
+   }
+ 
+-  if (FLAG_IS_DEFAULT(UseAPX) && (UseAVX > 2)) {
+-    FLAG_SET_DEFAULT(UseAPX, supports_apx_f() ? 1 : 0);
+-  } else if (UseAPX > 0) {
++  if (UseAPX > 0 && !supports_apx_f()) {
+     warning("UseAPX=%d is not supported on this CPU, setting it to 0", UseAPX);
+     FLAG_SET_DEFAULT(UseAPX, 0);
++  } else if (FLAG_IS_DEFAULT(UseAPX)) {
++    FLAG_SET_DEFAULT(UseAPX, supports_apx_f() ? 1 : 0);
+   }
+ 
+   if (UseAVX < 3) {
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index afcd792ec2e..748ff99b353 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -187,20 +187,6 @@ reg_def R31_H(SOC, SOC, Op_RegI, 31, r31->as_VMReg()->next());
+ // Registers which are used as pairs must fall on an even boundary.
+ 
+ alloc_class chunk0(R10,         R10_H,
+-                   R11,         R11_H,
+-                   R8,          R8_H,
+-                   R9,          R9_H,
+-                   R12,         R12_H,
+-                   RCX,         RCX_H,
+-                   RBX,         RBX_H,
+-                   RDI,         RDI_H,
+-                   RDX,         RDX_H,
+-                   RSI,         RSI_H,
+-                   RAX,         RAX_H,
+-                   RBP,         RBP_H,
+-                   R13,         R13_H,
+-                   R14,         R14_H,
+-                   R15,         R15_H,
+                    R16,         R16_H,
+                    R17,         R17_H,
+                    R18,         R18_H,
+@@ -217,6 +203,20 @@ alloc_class chunk0(R10,         R10_H,
+                    R29,         R29_H,
+                    R30,         R30_H,
+                    R31,         R31_H,
++                   R11,         R11_H,
++                   R8,          R8_H,
++                   R9,          R9_H,
++                   R12,         R12_H,
++                   RCX,         RCX_H,
++                   RBX,         RBX_H,
++                   RDI,         RDI_H,
++                   RDX,         RDX_H,
++                   RSI,         RSI_H,
++                   RAX,         RAX_H,
++                   RBP,         RBP_H,
++                   R13,         R13_H,
++                   R14,         R14_H,
++                   R15,         R15_H,
+                    RSP,         RSP_H);
+ 
+ 

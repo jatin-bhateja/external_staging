@@ -1,0 +1,234 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 207d3fbb61e..91768ae8f57 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -14727,6 +14727,19 @@ void Assembler::xorq(Address dst, Register src) {
+   emit_operand(src, dst, 0);
+ }
+ 
++void Assembler::esetzuCC(Condition cc, Register dst) {
++  assert(VM_Version::supports_apx_f(), "");
++  assert(0 <= cc && cc < 16, "illegal cc");
++
++  InstructionAttr attributes(AVX_128bit, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  attributes.set_extended_context();
++
++  // Encoding Format : eevex_prefix | opcode_cc | modrm
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, 0, VEX_SIMD_F2, /* MAP4 */VEX_OPCODE_0F_3C, &attributes);
++  emit_opcode_prefix_and_encoding(0x40 | cc, 0xC0, encode);
++}
++
+ #endif // !LP64
+ 
+ void InstructionAttr::set_address_attributes(int tuple_type, int input_size_in_bits) {
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 28457b7005b..52dad54393b 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1020,7 +1020,7 @@ class Assembler : public AbstractAssembler  {
+   void pusha_uncached();
+   void popa_uncached();
+ 
+-  // APX ISA extensions for register save/restore optimizations.
++  // APX ISA Extensions for register save/restore optimizations.
+   void push2(Register src1, Register src2, bool with_ppx = false);
+   void pop2(Register src1, Register src2, bool with_ppx = false);
+   void push2p(Register src1, Register src2);
+@@ -1028,6 +1028,9 @@ class Assembler : public AbstractAssembler  {
+   void pushp(Register src);
+   void popp(Register src);
+ 
++  // New Zero Upper setcc instruction.
++  void esetzuCC(Condition cc, Register dst);
++
+ #endif
+   void vzeroupper_uncached();
+   void decq(Register dst);
+diff --git a/src/hotspot/cpu/x86/gc/x/x_x86_64.ad b/src/hotspot/cpu/x86/gc/x/x_x86_64.ad
+index 116fb3cbc6d..41942629792 100644
+--- a/src/hotspot/cpu/x86/gc/x/x_x86_64.ad
++++ b/src/hotspot/cpu/x86/gc/x/x_x86_64.ad
+@@ -135,8 +135,7 @@ instruct xCompareAndSwapP(rRegI res, indirect mem, rRegP newval, rRegP tmp, rFla
+     if (barrier_data() != XLoadBarrierElided) {
+       __ cmpptr($tmp$$Register, rax);
+     }
+-    __ setb(Assembler::equal, $res$$Register);
+-    __ movzbl($res$$Register, $res$$Register);
++    __ setCC(Assembler::equal, $res$$Register);
+   %}
+ 
+   ins_pipe(pipe_cmpxchg);
+diff --git a/src/hotspot/cpu/x86/gc/z/z_x86_64.ad b/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
+index 1a4499c3d44..c86d6599de0 100644
+--- a/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
++++ b/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
+@@ -222,8 +222,7 @@ instruct zCompareAndSwapP(rRegI res, indirect mem, rRegP newval, rRegP tmp, rax_
+     z_color(masm, this, $oldval$$Register);
+     __ lock();
+     __ cmpxchgptr($tmp$$Register, mem_addr);
+-    __ setb(Assembler::equal, $res$$Register);
+-    __ movzbl($res$$Register, $res$$Register);
++    __ setCC(Assembler::equal, $res$$Register);
+   %}
+ 
+   ins_pipe(pipe_cmpxchg);
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.cpp b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+index ba337751d19..dd4f9736757 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+@@ -10421,4 +10421,13 @@ void MacroAssembler::restore_legacy_gprs() {
+   movq(rax, Address(rsp, 15 * wordSize));
+   addq(rsp, 16 * wordSize);
+ }
++
++void MacroAssembler::setCC(Assembler::Condition comparison, Register dst) {
++  if (VM_Version::supports_apx_f()) {
++    esetzuCC(comparison, dst);
++  } else {
++    setb(comparison, dst);
++    movzbl(dst, dst);
++  }
++}
+ #endif
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.hpp b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+index 594f0b95ca3..921089c02d7 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+@@ -2154,6 +2154,7 @@ class MacroAssembler: public Assembler {
+ #ifdef _LP64
+   void save_legacy_gprs();
+   void restore_legacy_gprs();
++  void setCC(Assembler::Condition comparison, Register dst);
+ #endif
+ };
+ 
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index 6216cf44b88..2549feb8a40 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -1045,6 +1045,10 @@ void VM_Version::get_processor_features() {
+     FLAG_SET_DEFAULT(UseAPX, apx_supported ? true : false);
+   }
+ 
++  if (!UseAPX) {
++    _features &= ~CPU_APX_F;
++  }
++
+   if (UseAVX < 2) {
+     _features &= ~CPU_AVX2;
+     _features &= ~CPU_AVX_IFMA;
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index e0740ad7f31..2336919a029 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -657,8 +657,7 @@ static void emit_cmpfp3(MacroAssembler* masm, Register dst) {
+   __ movl(dst, -1);
+   __ jcc(Assembler::parity, done);
+   __ jcc(Assembler::below, done);
+-  __ setb(Assembler::notEqual, dst);
+-  __ movzbl(dst, dst);
++  __ setCC(Assembler::notEqual, dst);
+   __ bind(done);
+ }
+ 
+@@ -7075,8 +7074,7 @@ instruct compareAndSwapP(rRegI res,
+   ins_encode %{
+     __ lock();
+     __ cmpxchgq($newval$$Register, $mem_ptr$$Address);
+-    __ setb(Assembler::equal, $res$$Register);
+-    __ movzbl($res$$Register, $res$$Register);
++    __ setCC(Assembler::equal, $res$$Register);
+   %}
+   ins_pipe( pipe_cmpxchg );
+ %}
+@@ -7097,8 +7095,7 @@ instruct compareAndSwapL(rRegI res,
+   ins_encode %{
+     __ lock();
+     __ cmpxchgq($newval$$Register, $mem_ptr$$Address);
+-    __ setb(Assembler::equal, $res$$Register);
+-    __ movzbl($res$$Register, $res$$Register);
++    __ setCC(Assembler::equal, $res$$Register);
+   %}
+   ins_pipe( pipe_cmpxchg );
+ %}
+@@ -7119,8 +7116,7 @@ instruct compareAndSwapI(rRegI res,
+   ins_encode %{
+     __ lock();
+     __ cmpxchgl($newval$$Register, $mem_ptr$$Address);
+-    __ setb(Assembler::equal, $res$$Register);
+-    __ movzbl($res$$Register, $res$$Register);
++    __ setCC(Assembler::equal, $res$$Register);
+   %}
+   ins_pipe( pipe_cmpxchg );
+ %}
+@@ -7141,8 +7137,7 @@ instruct compareAndSwapB(rRegI res,
+   ins_encode %{
+     __ lock();
+     __ cmpxchgb($newval$$Register, $mem_ptr$$Address);
+-    __ setb(Assembler::equal, $res$$Register);
+-    __ movzbl($res$$Register, $res$$Register);
++    __ setCC(Assembler::equal, $res$$Register);
+   %}
+   ins_pipe( pipe_cmpxchg );
+ %}
+@@ -7163,8 +7158,7 @@ instruct compareAndSwapS(rRegI res,
+   ins_encode %{
+     __ lock();
+     __ cmpxchgw($newval$$Register, $mem_ptr$$Address);
+-    __ setb(Assembler::equal, $res$$Register);
+-    __ movzbl($res$$Register, $res$$Register);
++    __ setCC(Assembler::equal, $res$$Register);
+   %}
+   ins_pipe( pipe_cmpxchg );
+ %}
+@@ -7184,8 +7178,7 @@ instruct compareAndSwapN(rRegI res,
+   ins_encode %{
+     __ lock();
+     __ cmpxchgl($newval$$Register, $mem_ptr$$Address);
+-    __ setb(Assembler::equal, $res$$Register);
+-    __ movzbl($res$$Register, $res$$Register);
++    __ setCC(Assembler::equal, $res$$Register);
+   %}
+   ins_pipe( pipe_cmpxchg );
+ %}
+@@ -9734,8 +9727,7 @@ instruct cmpLTMask(rRegI dst, rRegI p, rRegI q, rFlagsReg cr)
+             "negl    $dst" %}
+   ins_encode %{
+     __ cmpl($p$$Register, $q$$Register);
+-    __ setb(Assembler::less, $dst$$Register);
+-    __ movzbl($dst$$Register, $dst$$Register);
++    __ setCC(Assembler::less, $dst$$Register);
+     __ negl($dst$$Register);
+   %}
+   ins_pipe(pipe_slow);
+@@ -11868,8 +11860,7 @@ instruct cmpU3_reg_reg(rRegI dst, rRegI src1, rRegI src2, rFlagsReg flags)
+     __ cmpl($src1$$Register, $src2$$Register);
+     __ movl($dst$$Register, -1);
+     __ jccb(Assembler::below, done);
+-    __ setb(Assembler::notZero, $dst$$Register);
+-    __ movzbl($dst$$Register, $dst$$Register);
++    __ setCC(Assembler::notZero, $dst$$Register);
+     __ bind(done);
+   %}
+   ins_pipe(pipe_slow);
+@@ -11894,8 +11885,7 @@ instruct cmpL3_reg_reg(rRegI dst, rRegL src1, rRegL src2, rFlagsReg flags)
+     __ cmpq($src1$$Register, $src2$$Register);
+     __ movl($dst$$Register, -1);
+     __ jccb(Assembler::less, done);
+-    __ setb(Assembler::notZero, $dst$$Register);
+-    __ movzbl($dst$$Register, $dst$$Register);
++    __ setCC(Assembler::notZero, $dst$$Register);
+     __ bind(done);
+   %}
+   ins_pipe(pipe_slow);
+@@ -11920,8 +11910,7 @@ instruct cmpUL3_reg_reg(rRegI dst, rRegL src1, rRegL src2, rFlagsReg flags)
+     __ cmpq($src1$$Register, $src2$$Register);
+     __ movl($dst$$Register, -1);
+     __ jccb(Assembler::below, done);
+-    __ setb(Assembler::notZero, $dst$$Register);
+-    __ movzbl($dst$$Register, $dst$$Register);
++    __ setCC(Assembler::notZero, $dst$$Register);
+     __ bind(done);
+   %}
+   ins_pipe(pipe_slow);

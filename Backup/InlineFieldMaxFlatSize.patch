@@ -1,0 +1,33 @@
+commit e38335afead1cf7a6291d5ddfdf94dfbcc00e3be
+Merge: 6d74481c82b c310394e18a
+Author: Jatin Bhateja <jbhateja@openjdk.org>
+Date:   Thu Dec 7 08:20:50 2023 +0530
+
+    Merge commit 'refs/pull/958/head' of http://github.com/openjdk/valhalla into lworld+vector
+
+PLUS FOLLOWING
+=====================================
+
+
+
+diff --git a/src/hotspot/share/opto/memnode.cpp b/src/hotspot/share/opto/memnode.cpp
+index d88ff398e6a..3ecf780a7eb 100644
+--- a/src/hotspot/share/opto/memnode.cpp
++++ b/src/hotspot/share/opto/memnode.cpp
+@@ -1251,12 +1251,13 @@ Node* LoadNode::Identity(PhaseGVN* phase) {
+       offset > oopDesc::klass_offset_in_bytes()) {
+     Node* value = base->as_InlineType()->field_value_by_offset((int)offset, true);
+     if (value != nullptr) {
+-      if (Opcode() == Op_LoadN && !base->is_VectorBox()) {
++      if (Opcode() != Op_LoadN) {
++        return value;
++      } else if (!base->is_VectorBox()) {
+         // Encode oop value if we are loading a narrow oop
+         assert(!phase->type(value)->isa_narrowoop(), "should already be decoded");
+-        value = phase->transform(new EncodePNode(value, bottom_type()));
++        return phase->transform(new EncodePNode(value, bottom_type()));
+       }
+-      return value;
+     }
+   }
+ 

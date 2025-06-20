@@ -1,0 +1,166 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/code/debugInfo.cpp b/src/hotspot/share/code/debugInfo.cpp
+index 1a04f291eec..f67140cad63 100644
+--- a/src/hotspot/share/code/debugInfo.cpp
++++ b/src/hotspot/share/code/debugInfo.cpp
+@@ -169,6 +169,7 @@ void ObjectValue::read_object(DebugInfoReadStream* stream) {
+   _is_root = stream->read_bool();
+   _klass = read_from(stream);
+   _is_init = read_from(stream);
++  _is_larval = read_from(stream);
+   assert(_klass->is_constant_oop(), "should be constant java mirror oop");
+   int length = stream->read_int();
+   for (int i = 0; i < length; i++) {
+@@ -192,6 +193,10 @@ void ObjectValue::write_on(DebugInfoWriteStream* stream) {
+       _is_init = new MarkerValue();
+     }
+     _is_init->write_on(stream);
++    if (_is_larval == nullptr) {
++      _is_larval = new MarkerValue();
++    }
++    _is_larval->write_on(stream);
+     int length = _field_values.length();
+     stream->write_int(length);
+     for (int i = 0; i < length; i++) {
+diff --git a/src/hotspot/share/code/debugInfo.hpp b/src/hotspot/share/code/debugInfo.hpp
+index cf436ab6165..490ab180228 100644
+--- a/src/hotspot/share/code/debugInfo.hpp
++++ b/src/hotspot/share/code/debugInfo.hpp
+@@ -129,6 +129,7 @@ class MarkerValue: public ScopeValue {
+ class ObjectValue: public ScopeValue {
+  protected:
+   int                        _id;
++  ScopeValue*                _is_larval;
+   ScopeValue*                _klass;
+   ScopeValue*                _is_init;
+   GrowableArray<ScopeValue*> _field_values;
+@@ -139,8 +140,9 @@ class ObjectValue: public ScopeValue {
+                                          // Otherwise false, meaning it's just a candidate
+                                          // in an object allocation merge.
+  public:
+-  ObjectValue(int id, ScopeValue* klass, ScopeValue* is_init = nullptr)
++  ObjectValue(int id, ScopeValue* klass, ScopeValue* is_init = nullptr, ScopeValue* is_larval = nullptr)
+      : _id(id)
++     , _is_larval(is_larval)
+      , _klass(klass)
+      , _is_init(is_init)
+      , _field_values()
+@@ -152,6 +154,7 @@ class ObjectValue: public ScopeValue {
+ 
+   ObjectValue(int id)
+      : _id(id)
++     , _is_larval(nullptr)
+      , _klass(nullptr)
+      , _is_init(new MarkerValue())
+      , _field_values()
+@@ -164,6 +167,7 @@ class ObjectValue: public ScopeValue {
+   int                         id() const                  { return _id; }
+   virtual ScopeValue*         klass() const               { return _klass; }
+   virtual ScopeValue*         is_init() const             { return _is_init; }
++  virtual ScopeValue*         is_larval() const           { return _is_larval; }
+   virtual GrowableArray<ScopeValue*>* field_values()      { return &_field_values; }
+   virtual ScopeValue*         field_at(int i) const       { return _field_values.at(i); }
+   virtual int                 field_size()                { return _field_values.length(); }
+diff --git a/src/hotspot/share/opto/graphKit.cpp b/src/hotspot/share/opto/graphKit.cpp
+index 6db45e40f3b..25395513920 100644
+--- a/src/hotspot/share/opto/graphKit.cpp
++++ b/src/hotspot/share/opto/graphKit.cpp
+@@ -1862,7 +1862,13 @@ void GraphKit::set_arguments_for_java_call(CallJavaNode* call, bool is_late_inli
+     if (t->is_inlinetypeptr() && !call->method()->get_Method()->mismatch() && call->method()->is_scalarized_arg(arg_num)) {
+       // We don't pass inline type arguments by reference but instead pass each field of the inline type
+       if (!arg->is_InlineType()) {
+-        assert(_gvn.type(arg)->is_zero_type() && !t->inline_klass()->is_null_free(), "Unexpected argument type");
++        // Skip over scalarizing value objects in larval state.
++        AllocateNode* alloc = AllocateNode::Ideal_allocation(arg);
++        if (alloc && alloc->_larval) {
++          arg_num++;
++          call->init_req(idx++, arg);
++          continue;
++        }
+         arg = InlineTypeNode::make_from_oop(this, arg, t->inline_klass(), t->inline_klass()->is_null_free());
+       }
+       InlineTypeNode* vt = arg->as_InlineType();
+diff --git a/src/hotspot/share/opto/inlinetypenode.cpp b/src/hotspot/share/opto/inlinetypenode.cpp
+index 2f0a47431e0..58b732f1e77 100644
+--- a/src/hotspot/share/opto/inlinetypenode.cpp
++++ b/src/hotspot/share/opto/inlinetypenode.cpp
+@@ -273,6 +273,10 @@ void InlineTypeNode::make_scalar_in_safepoint(PhaseIterGVN* igvn, Unique_Node_Li
+   } else {
+     sfpt->add_req(igvn->C->top());
+   }
++
++  AllocateNode* alloc = AllocateNode::Ideal_allocation(get_oop());
++  sfpt->add_req(igvn->intcon(alloc && alloc->_larval ? 1 : 0));
++
+   // Iterate over the inline type fields in order of increasing
+   // offset and add the field values to the safepoint.
+   for (uint j = 0; j < nfields; ++j) {
+diff --git a/src/hotspot/share/opto/macro.cpp b/src/hotspot/share/opto/macro.cpp
+index 25bdbb6fa6b..56078c5577a 100644
+--- a/src/hotspot/share/opto/macro.cpp
++++ b/src/hotspot/share/opto/macro.cpp
+@@ -853,6 +853,14 @@ SafePointScalarObjectNode* PhaseMacroExpand::create_scalarized_object_descriptio
+   sobj->init_req(0, C->root());
+   transform_later(sobj);
+ 
++  // Value object has two additional inputs before the non-static fields
++  // These are mainly allocation node for non-flat field which may become
++  // dangling when scalarized fields are forwarded to its users.
++  if (iklass && iklass->is_inlinetype()) {
++    sfpt->add_req(_igvn.intcon(1));
++    sfpt->add_req(_igvn.intcon(alloc->_larval ? 1 : 0));
++  }
++
+   // Scan object's fields adding an input to the safepoint for each field.
+   for (int j = 0; j < nfields; j++) {
+     intptr_t offset;
+diff --git a/src/hotspot/share/opto/output.cpp b/src/hotspot/share/opto/output.cpp
+index 114123c1e72..75560e52a54 100644
+--- a/src/hotspot/share/opto/output.cpp
++++ b/src/hotspot/share/opto/output.cpp
+@@ -804,6 +804,7 @@ void PhaseOutput::FillLocArray( int idx, MachSafePointNode* sfpt, Node *local,
+       // Nullable, scalarized inline types have an is_init input
+       // that needs to be checked before using the field values.
+       ScopeValue* is_init = nullptr;
++      ScopeValue* is_larval = nullptr;
+       if (cik->is_inlinetype()) {
+         Node* init_node = sfpt->in(first_ind++);
+         assert(init_node != nullptr, "is_init node not found");
+@@ -816,9 +817,15 @@ void PhaseOutput::FillLocArray( int idx, MachSafePointNode* sfpt, Node *local,
+             is_init = new_loc_value(C->regalloc(), init_reg, Location::normal);
+           }
+         }
++
++        Node* larval_node = sfpt->in(first_ind++);
++        assert(larval_node != nullptr && larval_node->is_Con(), "is_larval node not found");
++
++        const TypeInt* larval_type = larval_node->bottom_type()->is_int();
++        is_larval = new ConstantIntValue(larval_type->get_con());
+       }
+       sv = new ObjectValue(spobj->_idx,
+-                           new ConstantOopWriteValue(cik->java_mirror()->constant_encoding()), is_init);
++                           new ConstantOopWriteValue(cik->java_mirror()->constant_encoding()), is_init, is_larval);
+       set_sv_for_object_node(objs, sv);
+ 
+       for (uint i = 0; i < spobj->n_fields(); i++) {
+diff --git a/src/hotspot/share/runtime/deoptimization.cpp b/src/hotspot/share/runtime/deoptimization.cpp
+index 90ab937e33f..fb269508b27 100644
+--- a/src/hotspot/share/runtime/deoptimization.cpp
++++ b/src/hotspot/share/runtime/deoptimization.cpp
+@@ -1303,6 +1303,14 @@ bool Deoptimization::realloc_objects(JavaThread* thread, frame* fr, RegisterMap*
+       failures = true;
+     }
+ 
++    if (k->is_inline_klass()) {
++      intptr_t is_larval = StackValue::create_stack_value(fr, reg_map, sv->is_larval())->get_jint();
++      jint larval = (jint)*((jint*)&is_larval);
++      if (larval == 1) {
++        obj->set_mark(obj->mark().enter_larval_state());
++      }
++    }
++
+     assert(sv->value().is_null(), "redundant reallocation");
+     assert(obj != nullptr || HAS_PENDING_EXCEPTION || cache_init_error, "allocation should succeed or we should get an exception");
+     CLEAR_PENDING_EXCEPTION;

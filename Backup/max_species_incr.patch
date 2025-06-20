@@ -1,0 +1,1391 @@
+diff --git a/src/hotspot/cpu/aarch64/vm_version_aarch64.cpp b/src/hotspot/cpu/aarch64/vm_version_aarch64.cpp
+index ebc214cf83b..6556abf6261 100644
+--- a/src/hotspot/cpu/aarch64/vm_version_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/vm_version_aarch64.cpp
+@@ -657,3 +657,7 @@ void VM_Version::initialize_cpu_information(void) {
+ 
+   _initialized = true;
+ }
++
++int VM_Version::max_vector_size(BasicType bt) {
++  return MaxVectorSize / type2aelembytes(bt);
++}
+diff --git a/src/hotspot/cpu/aarch64/vm_version_aarch64.hpp b/src/hotspot/cpu/aarch64/vm_version_aarch64.hpp
+index 8b67a207cf9..d3ba35747e5 100644
+--- a/src/hotspot/cpu/aarch64/vm_version_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/vm_version_aarch64.hpp
+@@ -190,6 +190,9 @@ enum Ampere_CPU_Model {
+   static bool use_neon_for_vector(int vector_length_in_bytes) {
+     return vector_length_in_bytes <= 16;
+   }
++
++  // Max supported vector lane count for a particular lane type.
++  static int max_vector_size(BasicType bt);
+ };
+ 
+ #endif // CPU_AARCH64_VM_VERSION_AARCH64_HPP
+diff --git a/src/hotspot/cpu/arm/vm_version_arm.hpp b/src/hotspot/cpu/arm/vm_version_arm.hpp
+index bdc3df12eb9..9602562669a 100644
+--- a/src/hotspot/cpu/arm/vm_version_arm.hpp
++++ b/src/hotspot/cpu/arm/vm_version_arm.hpp
+@@ -107,6 +107,10 @@ class VM_Version: public Abstract_VM_Version {
+   friend class VM_Version_StubGenerator;
+ 
+   static void initialize_cpu_information(void);
++
++  // Max supported vector lane count for a particular lane type.
++  static int max_vector_size(BasicType bt);
++
+ };
+ 
+ #endif // CPU_ARM_VM_VERSION_ARM_HPP
+diff --git a/src/hotspot/cpu/arm/vm_version_arm_32.cpp b/src/hotspot/cpu/arm/vm_version_arm_32.cpp
+index 44f2179db98..fe75f7433c4 100644
+--- a/src/hotspot/cpu/arm/vm_version_arm_32.cpp
++++ b/src/hotspot/cpu/arm/vm_version_arm_32.cpp
+@@ -361,3 +361,7 @@ void VM_Version::initialize_cpu_information(void) {
+   snprintf(_cpu_desc, CPU_DETAILED_DESC_BUF_SIZE, "%s", _features_string);
+   _initialized = true;
+ }
++
++int VM_Version::max_vector_size(BasicType bt) {
++  return MaxVectorSize / type2aelembytes(bt);
++}
+diff --git a/src/hotspot/cpu/ppc/vm_version_ppc.cpp b/src/hotspot/cpu/ppc/vm_version_ppc.cpp
+index 0eb5d74bfd9..788144ba6e6 100644
+--- a/src/hotspot/cpu/ppc/vm_version_ppc.cpp
++++ b/src/hotspot/cpu/ppc/vm_version_ppc.cpp
+@@ -702,3 +702,7 @@ void VM_Version::initialize_cpu_information(void) {
+   snprintf(_cpu_desc, CPU_DETAILED_DESC_BUF_SIZE, "PPC %s", features_string());
+   _initialized = true;
+ }
++
++int VM_Version::max_vector_size(BasicType bt) {
++  return MaxVectorSize / type2aelembytes(bt);
++}
+diff --git a/src/hotspot/cpu/ppc/vm_version_ppc.hpp b/src/hotspot/cpu/ppc/vm_version_ppc.hpp
+index b1168ded456..99ea3b4b621 100644
+--- a/src/hotspot/cpu/ppc/vm_version_ppc.hpp
++++ b/src/hotspot/cpu/ppc/vm_version_ppc.hpp
+@@ -127,6 +127,10 @@ public:
+   static uint64_t _dscr_val;
+ 
+   static void initialize_cpu_information(void);
++
++  // Max supported vector lane count for a particular lane type.
++  static int max_vector_size(BasicType bt);
++
+ };
+ 
+ #endif // CPU_PPC_VM_VERSION_PPC_HPP
+diff --git a/src/hotspot/cpu/riscv/vm_version_riscv.cpp b/src/hotspot/cpu/riscv/vm_version_riscv.cpp
+index d9b46131d66..6e248de5c9e 100644
+--- a/src/hotspot/cpu/riscv/vm_version_riscv.cpp
++++ b/src/hotspot/cpu/riscv/vm_version_riscv.cpp
+@@ -349,3 +349,7 @@ void VM_Version::initialize_cpu_information(void) {
+   snprintf(_cpu_desc, CPU_DETAILED_DESC_BUF_SIZE, "RISCV64 %s", features_string());
+   _initialized = true;
+ }
++
++int VM_Version::max_vector_size(BasicType bt) {
++  return MaxVectorSize / type2aelembytes(bt);
++}
+diff --git a/src/hotspot/cpu/riscv/vm_version_riscv.hpp b/src/hotspot/cpu/riscv/vm_version_riscv.hpp
+index 39c4150cea8..6db0d857555 100644
+--- a/src/hotspot/cpu/riscv/vm_version_riscv.hpp
++++ b/src/hotspot/cpu/riscv/vm_version_riscv.hpp
+@@ -201,6 +201,9 @@ class VM_Version : public Abstract_VM_Version {
+   constexpr static bool supports_stack_watermark_barrier() { return true; }
+ 
+   static bool supports_on_spin_wait() { return UseZihintpause; }
++
++  // Max supported vector lane count for a particular lane type.
++  static int max_vector_size(BasicType bt);
+ };
+ 
+ #endif // CPU_RISCV_VM_VERSION_RISCV_HPP
+diff --git a/src/hotspot/cpu/s390/vm_version_s390.cpp b/src/hotspot/cpu/s390/vm_version_s390.cpp
+index 60f726edacc..0bb62eaff25 100644
+--- a/src/hotspot/cpu/s390/vm_version_s390.cpp
++++ b/src/hotspot/cpu/s390/vm_version_s390.cpp
+@@ -1514,3 +1514,7 @@ void VM_Version::initialize_cpu_information(void) {
+   snprintf(_cpu_desc, CPU_DETAILED_DESC_BUF_SIZE, "s390 %s", features_string());
+   _initialized = true;
+ }
++
++int VM_Version::max_vector_size(BasicType bt) {
++  return MaxVectorSize / type2aelembytes(bt);
++}
+diff --git a/src/hotspot/cpu/s390/vm_version_s390.hpp b/src/hotspot/cpu/s390/vm_version_s390.hpp
+index 28f12a0de1e..9721574b524 100644
+--- a/src/hotspot/cpu/s390/vm_version_s390.hpp
++++ b/src/hotspot/cpu/s390/vm_version_s390.hpp
+@@ -567,6 +567,9 @@ class VM_Version: public Abstract_VM_Version {
+   static unsigned long z_SIGSEGV();
+ 
+   static void initialize_cpu_information(void);
++
++  // Max supported vector lane count for a particular lane type.
++  static int max_vector_size(BasicType bt);
+ };
+ 
+ #endif // CPU_S390_VM_VERSION_S390_HPP
+diff --git a/src/hotspot/cpu/zero/vm_version_zero.hpp b/src/hotspot/cpu/zero/vm_version_zero.hpp
+index 1cfe57b11c2..1ad7a0d947f 100644
+--- a/src/hotspot/cpu/zero/vm_version_zero.hpp
++++ b/src/hotspot/cpu/zero/vm_version_zero.hpp
+@@ -36,6 +36,8 @@ class VM_Version : public Abstract_VM_Version {
+   constexpr static bool supports_stack_watermark_barrier() { return true; }
+ 
+   static void initialize_cpu_information(void);
++
++  static int max_vector_size(BasicType bt) { return -1;}
+ };
+ 
+ #endif // CPU_ZERO_VM_VERSION_ZERO_HPP
+diff --git a/src/hotspot/share/classfile/vmSymbols.cpp b/src/hotspot/share/classfile/vmSymbols.cpp
+index cbe1a983612..2e7fea37434 100644
+--- a/src/hotspot/share/classfile/vmSymbols.cpp
++++ b/src/hotspot/share/classfile/vmSymbols.cpp
+@@ -185,6 +185,7 @@ const char* vmSymbols::name_for(vmSymbolID sid) {
+ }
+ #endif
+ 
++
+ void vmSymbols::symbols_do(SymbolClosure* f) {
+   for (auto index : EnumRange<vmSymbolID>{}) {
+     f->do_symbol(&Symbol::_vm_symbols[as_int(index)]);
+diff --git a/src/hotspot/share/oops/inlineKlass.cpp b/src/hotspot/share/oops/inlineKlass.cpp
+index 48a716a907e..8769955ecee 100644
+--- a/src/hotspot/share/oops/inlineKlass.cpp
++++ b/src/hotspot/share/oops/inlineKlass.cpp
+@@ -153,6 +153,9 @@ bool InlineKlass::flat_array() {
+   if (!UseFlatArray) {
+     return false;
+   }
++  if (VectorSupport::is_vector_payload_mf(this) || VectorSupport::is_vector(this)) {
++    return false;
++  }
+   // Too big
+   int elem_bytes = get_exact_size_in_bytes();
+   if ((FlatArrayElementMaxSize >= 0) && (elem_bytes > FlatArrayElementMaxSize)) {
+diff --git a/src/hotspot/share/prims/vectorSupport.hpp b/src/hotspot/share/prims/vectorSupport.hpp
+index 27357937441..8cd203bcbca 100644
+--- a/src/hotspot/share/prims/vectorSupport.hpp
++++ b/src/hotspot/share/prims/vectorSupport.hpp
+@@ -140,6 +140,5 @@ class VectorSupport : AllStatic {
+   static bool skip_value_scalarization(Klass* klass);
+   static int  max_vector_size(BasicType bt);
+   static int  get_max_multifield_count(const Symbol* payload_name);
+-  static bool is_vector_payload(const Symbol* metadata);
+ };
+ #endif // SHARE_PRIMS_VECTORSUPPORT_HPP
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index bcb39ab2fba..467a97515a9 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -167,7 +167,7 @@ public class VectorSupport {
+ 
+         @ForceInline
+         public static VectorPayloadMF newMaskInstanceFactory(Class<?> elemType, int length, boolean max_payload) {
+-            if (false == max_payload) {
++            if (!max_payload) {
+                 switch(length) {
+                     case  1: return new VectorPayloadMF8Z();
+                     case  2: return new VectorPayloadMF16Z();
+@@ -183,15 +183,12 @@ public class VectorSupport {
+                    return new VectorPayloadMFMaxBZ();
+                 } else if (elemType == short.class) {
+                    return new VectorPayloadMFMaxSZ();
+-                } else if (elemType == int.class) {
++                } else if (elemType == int.class || elemType == float.class) {
+                    return new VectorPayloadMFMaxIZ();
+-                } else if (elemType == long.class) {
++                } else if (elemType == long.class || elemType == double.class) {
+                    return new VectorPayloadMFMaxLZ();
+-                } else if (elemType == float.class) {
+-                   return new VectorPayloadMFMaxIZ();
+                 } else {
+-                   assert elemType == double.class;
+-                   return new VectorPayloadMFMaxLZ();
++                   assert false : "Unexpected lane type";
+                 }
+             }
+             return null;
+@@ -199,7 +196,7 @@ public class VectorSupport {
+ 
+         @ForceInline
+         public static VectorPayloadMF newShuffleInstanceFactory(Class<?> elemType, int length, boolean max_payload) {
+-            if (false == max_payload) {
++            if (!max_payload) {
+                 switch(length) {
+                     case  1: return new VectorPayloadMF8B();
+                     case  2: return new VectorPayloadMF16B();
+@@ -215,15 +212,12 @@ public class VectorSupport {
+                    return new VectorPayloadMFMaxBB();
+                 } else if (elemType == short.class) {
+                    return new VectorPayloadMFMaxSB();
+-                } else if (elemType == int.class) {
++                } else if (elemType == int.class || elemType == float.class) {
+                    return new VectorPayloadMFMaxIB();
+-                } else if (elemType == long.class) {
++                } else if (elemType == long.class || elemType == double.class) {
+                    return new VectorPayloadMFMaxLB();
+-                } else if (elemType == float.class) {
+-                   return new VectorPayloadMFMaxIB();
+                 } else {
+-                   assert elemType == double.class;
+-                   return new VectorPayloadMFMaxLB();
++                   assert false : "Unexpected lane type";
+                 }
+             }
+             return null;
+@@ -302,7 +296,7 @@ public class VectorSupport {
+         }
+ 
+         @ForceInline
+-        public static VectorPayloadMF createVectPayloadInstanceB(int length, byte [] init, boolean max_payload) {
++        public static VectorPayloadMF createVectPayloadInstanceB(int length, byte[] init, boolean max_payload) {
+             VectorPayloadMF obj = newVectorInstanceFactory(byte.class, length, max_payload);
+             obj = Unsafe.getUnsafe().makePrivateBuffer(obj);
+             long start_offset = obj.multiFieldOffset();
+@@ -314,7 +308,7 @@ public class VectorSupport {
+         }
+ 
+         @ForceInline
+-        public static VectorPayloadMF createVectPayloadInstanceS(int length, short [] init, boolean max_payload) {
++        public static VectorPayloadMF createVectPayloadInstanceS(int length, short[] init, boolean max_payload) {
+             VectorPayloadMF obj = newVectorInstanceFactory(short.class, length, max_payload);
+             obj = Unsafe.getUnsafe().makePrivateBuffer(obj);
+             long start_offset = obj.multiFieldOffset();
+@@ -326,7 +320,7 @@ public class VectorSupport {
+         }
+ 
+         @ForceInline
+-        public static VectorPayloadMF createVectPayloadInstanceI(int length, int [] init, boolean max_payload) {
++        public static VectorPayloadMF createVectPayloadInstanceI(int length, int[] init, boolean max_payload) {
+             VectorPayloadMF obj = newVectorInstanceFactory(int.class, length, max_payload);
+             obj = Unsafe.getUnsafe().makePrivateBuffer(obj);
+             long start_offset = obj.multiFieldOffset();
+@@ -338,7 +332,7 @@ public class VectorSupport {
+         }
+ 
+         @ForceInline
+-        public static VectorPayloadMF createVectPayloadInstanceL(int length, long [] init, boolean max_payload) {
++        public static VectorPayloadMF createVectPayloadInstanceL(int length, long[] init, boolean max_payload) {
+             VectorPayloadMF obj = newVectorInstanceFactory(long.class, length, max_payload);
+             obj = Unsafe.getUnsafe().makePrivateBuffer(obj);
+             long start_offset = obj.multiFieldOffset();
+@@ -350,7 +344,7 @@ public class VectorSupport {
+         }
+ 
+         @ForceInline
+-        public static VectorPayloadMF createVectPayloadInstanceF(int length, float [] init, boolean max_payload) {
++        public static VectorPayloadMF createVectPayloadInstanceF(int length, float[] init, boolean max_payload) {
+             VectorPayloadMF obj = newVectorInstanceFactory(float.class, length, max_payload);
+             obj = Unsafe.getUnsafe().makePrivateBuffer(obj);
+             long start_offset = obj.multiFieldOffset();
+@@ -362,7 +356,7 @@ public class VectorSupport {
+         }
+ 
+         @ForceInline
+-        public static VectorPayloadMF createVectPayloadInstanceD(int length, double [] init, boolean max_payload) {
++        public static VectorPayloadMF createVectPayloadInstanceD(int length, double[] init, boolean max_payload) {
+             VectorPayloadMF obj = newVectorInstanceFactory(double.class, length, max_payload);
+             obj = Unsafe.getUnsafe().makePrivateBuffer(obj);
+             long start_offset = obj.multiFieldOffset();
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
+index 7d065bc371c..1097feeb19d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
+@@ -41,11 +41,12 @@ abstract class AbstractMask<E> extends VectorMask<E> {
+     /*package-private*/
+     abstract VectorPayloadMF getBits();
+ 
+-    static VectorPayloadMF prepare(VectorPayloadMF payload, int offset, Class<?> elementType, int length, boolean is_max_species) {
+-        VectorPayloadMF res = VectorPayloadMF.newMaskInstanceFactory(elementType, length, is_max_species);
++    static <F> VectorPayloadMF prepare(VectorPayloadMF payload, int offset, VectorSpecies<F> species) {
++        boolean isMaxShape  = species.vectorShape() == VectorShape.S_Max_BIT;
++        VectorPayloadMF res = VectorPayloadMF.newMaskInstanceFactory(species.elementType(), species.length(), isMaxShape);
+         res = Unsafe.getUnsafe().makePrivateBuffer(res);
+         long mOffset = res.multiFieldOffset();
+-        for (int i = 0; i < length; i++) {
++        for (int i = 0; i < species.length(); i++) {
+             boolean b = Unsafe.getUnsafe().getBoolean(payload, mOffset + i + offset);
+             Unsafe.getUnsafe().putBoolean(res, mOffset + i, b);
+         }
+@@ -53,11 +54,12 @@ abstract class AbstractMask<E> extends VectorMask<E> {
+         return res;
+     }
+ 
+-    static VectorPayloadMF prepare(boolean val, Class<?> elementType, int length, boolean is_max_species) {
+-        VectorPayloadMF res = VectorPayloadMF.newMaskInstanceFactory(elementType, length, is_max_species);
++    static <F> VectorPayloadMF prepare(boolean val, VectorSpecies<F> species) {
++        boolean isMaxShape  = species.vectorShape() == VectorShape.S_Max_BIT;
++        VectorPayloadMF res = VectorPayloadMF.newMaskInstanceFactory(species.elementType(), species.length(), isMaxShape);
+         res = Unsafe.getUnsafe().makePrivateBuffer(res);
+         long mOffset = res.multiFieldOffset();
+-        for (int i = 0; i < length; i++) {
++        for (int i = 0; i < species.length(); i++) {
+             Unsafe.getUnsafe().putBoolean(res, mOffset + i, val);
+         }
+         res = Unsafe.getUnsafe().finishPrivateBuffer(res);
+@@ -138,7 +140,7 @@ abstract class AbstractMask<E> extends VectorMask<E> {
+                 this.getClass(), vspecies().elementType(), vspecies().laneCount,
+                 species.maskType(), species.elementType(), vspecies().laneCount,
+                 this, species,
+-                (m, s) -> s.maskFactory(m.getBits()).check(s));
++                (m, s) -> VectorMask.fromLong(s, m.toLong()).check(s));
+     }
+ 
+     @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractShuffle.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractShuffle.java
+index 7e0b8758281..8604d49851a 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractShuffle.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractShuffle.java
+@@ -39,8 +39,10 @@ abstract class AbstractShuffle<E> extends VectorShuffle<E> {
+     /*package-private*/
+     abstract VectorPayloadMF indices();
+ 
+-    static VectorPayloadMF prepare(Class<?> elemType, int length, int[] indices, int offset, boolean is_max_species) {
+-        VectorPayloadMF payload = VectorPayloadMF.newShuffleInstanceFactory(elemType, length, is_max_species);
++    static <F> VectorPayloadMF prepare(int[] indices, int offset, VectorSpecies<F> species) {
++        int length = species.length();
++        boolean isMaxShape  = species.vectorShape() == VectorShape.S_Max_BIT;
++        VectorPayloadMF payload = VectorPayloadMF.newShuffleInstanceFactory(species.elementType(), length, isMaxShape);
+         payload = Unsafe.getUnsafe().makePrivateBuffer(payload);
+         long mf_offset = payload.multiFieldOffset();
+         for (int i = 0; i < length; i++) {
+@@ -52,8 +54,10 @@ abstract class AbstractShuffle<E> extends VectorShuffle<E> {
+         return payload;
+     }
+ 
+-    static VectorPayloadMF prepare(Class<?> elemType, int length, IntUnaryOperator f, boolean is_max_species) {
+-        VectorPayloadMF payload = VectorPayloadMF.newShuffleInstanceFactory(elemType, length, is_max_species);
++    static <F> VectorPayloadMF prepare(IntUnaryOperator f, VectorSpecies<F> species) {
++        int length = species.length();
++        boolean isMaxShape  = species.vectorShape() == VectorShape.S_Max_BIT;
++        VectorPayloadMF payload = VectorPayloadMF.newShuffleInstanceFactory(species.elementType(), length, isMaxShape);
+         payload = Unsafe.getUnsafe().makePrivateBuffer(payload);
+         long offset = payload.multiFieldOffset();
+         for (int i = 0; i < length; i++) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+index 7e44e6f0f2e..0372f1accf7 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+@@ -593,11 +593,11 @@ value class Byte128Vector extends ByteVector {
+         private final VectorPayloadMF128Z payload;
+ 
+         Byte128Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Byte128Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -769,11 +769,11 @@ value class Byte128Vector extends ByteVector {
+         }
+ 
+         public Byte128Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Byte128Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Byte128Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+index 2f275fa4db1..469dccbc067 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+@@ -625,11 +625,11 @@ value class Byte256Vector extends ByteVector {
+         private final VectorPayloadMF256Z payload;
+ 
+         Byte256Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Byte256Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -801,11 +801,11 @@ value class Byte256Vector extends ByteVector {
+         }
+ 
+         public Byte256Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Byte256Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Byte256Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+index f965fe315aa..a64b44739cc 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+@@ -689,11 +689,11 @@ value class Byte512Vector extends ByteVector {
+         private final VectorPayloadMF512Z payload;
+ 
+         Byte512Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Byte512Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -865,11 +865,11 @@ value class Byte512Vector extends ByteVector {
+         }
+ 
+         public Byte512Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Byte512Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Byte512Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+index 2c974a7121c..1da598fff7a 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+@@ -577,11 +577,11 @@ value class Byte64Vector extends ByteVector {
+         private final VectorPayloadMF64Z payload;
+ 
+         Byte64Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Byte64Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -753,11 +753,11 @@ value class Byte64Vector extends ByteVector {
+         }
+ 
+         public Byte64Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Byte64Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Byte64Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+index 7ef5e36eead..4601681033f 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+@@ -563,11 +563,11 @@ value class ByteMaxVector extends ByteVector {
+         private final VectorPayloadMFMaxBZ payload;
+ 
+         ByteMaxMask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, true));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         ByteMaxMask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, true));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -739,11 +739,11 @@ value class ByteMaxVector extends ByteVector {
+         }
+ 
+         public ByteMaxShuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, true));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public ByteMaxShuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, true));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public ByteMaxShuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+index 769eef8d24b..58c5c33512c 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+@@ -554,11 +554,11 @@ value class Double128Vector extends DoubleVector {
+         private final VectorPayloadMF16Z payload;
+ 
+         Double128Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Double128Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -730,11 +730,11 @@ value class Double128Vector extends DoubleVector {
+         }
+ 
+         public Double128Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Double128Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Double128Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+index 128dbfc4b77..63557da7af7 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+@@ -558,11 +558,11 @@ value class Double256Vector extends DoubleVector {
+         private final VectorPayloadMF32Z payload;
+ 
+         Double256Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Double256Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -734,11 +734,11 @@ value class Double256Vector extends DoubleVector {
+         }
+ 
+         public Double256Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Double256Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Double256Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+index aa5ad52278f..f583d21cc83 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+@@ -566,11 +566,11 @@ value class Double512Vector extends DoubleVector {
+         private final VectorPayloadMF64Z payload;
+ 
+         Double512Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Double512Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -742,11 +742,11 @@ value class Double512Vector extends DoubleVector {
+         }
+ 
+         public Double512Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Double512Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Double512Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+index 04603b04567..fbdc1c2d37d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+@@ -552,11 +552,11 @@ value class Double64Vector extends DoubleVector {
+         private final VectorPayloadMF8Z payload;
+ 
+         Double64Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Double64Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -728,11 +728,11 @@ value class Double64Vector extends DoubleVector {
+         }
+ 
+         public Double64Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Double64Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Double64Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+index 9f845692e42..05c4567adfb 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+@@ -551,11 +551,11 @@ value class DoubleMaxVector extends DoubleVector {
+         private final VectorPayloadMFMaxLZ payload;
+ 
+         DoubleMaxMask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, true));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         DoubleMaxMask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, true));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -727,11 +727,11 @@ value class DoubleMaxVector extends DoubleVector {
+         }
+ 
+         public DoubleMaxShuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, true));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public DoubleMaxShuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, true));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public DoubleMaxShuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+index fa7e9222ccf..59416972854 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+@@ -558,11 +558,11 @@ value class Float128Vector extends FloatVector {
+         private final VectorPayloadMF32Z payload;
+ 
+         Float128Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Float128Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -734,11 +734,11 @@ value class Float128Vector extends FloatVector {
+         }
+ 
+         public Float128Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Float128Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Float128Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+index 43d9f5c002b..db0ae86b84c 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+@@ -566,11 +566,11 @@ value class Float256Vector extends FloatVector {
+         private final VectorPayloadMF64Z payload;
+ 
+         Float256Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Float256Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -742,11 +742,11 @@ value class Float256Vector extends FloatVector {
+         }
+ 
+         public Float256Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Float256Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Float256Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+index fbcce443669..91d4f15cb6b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+@@ -582,11 +582,11 @@ value class Float512Vector extends FloatVector {
+         private final VectorPayloadMF128Z payload;
+ 
+         Float512Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Float512Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -758,11 +758,11 @@ value class Float512Vector extends FloatVector {
+         }
+ 
+         public Float512Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Float512Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Float512Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+index 54fb4068fc2..ea1c26fd9a2 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+@@ -554,11 +554,11 @@ value class Float64Vector extends FloatVector {
+         private final VectorPayloadMF16Z payload;
+ 
+         Float64Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Float64Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -730,11 +730,11 @@ value class Float64Vector extends FloatVector {
+         }
+ 
+         public Float64Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Float64Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Float64Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+index 29490c99081..092b53df132 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+@@ -551,11 +551,11 @@ value class FloatMaxVector extends FloatVector {
+         private final VectorPayloadMFMaxIZ payload;
+ 
+         FloatMaxMask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, true));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         FloatMaxMask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, true));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -727,11 +727,11 @@ value class FloatMaxVector extends FloatVector {
+         }
+ 
+         public FloatMaxShuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, true));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public FloatMaxShuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, true));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public FloatMaxShuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+index fa853b3e9cb..f68774c75e3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+@@ -569,11 +569,11 @@ value class Int128Vector extends IntVector {
+         private final VectorPayloadMF32Z payload;
+ 
+         Int128Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Int128Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -745,11 +745,11 @@ value class Int128Vector extends IntVector {
+         }
+ 
+         public Int128Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Int128Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Int128Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+index e169b59ea50..8e9fea22dfa 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+@@ -577,11 +577,11 @@ value class Int256Vector extends IntVector {
+         private final VectorPayloadMF64Z payload;
+ 
+         Int256Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Int256Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -753,11 +753,11 @@ value class Int256Vector extends IntVector {
+         }
+ 
+         public Int256Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Int256Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Int256Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+index 943157aee8f..80a63ad7dec 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+@@ -593,11 +593,11 @@ value class Int512Vector extends IntVector {
+         private final VectorPayloadMF128Z payload;
+ 
+         Int512Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Int512Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -769,11 +769,11 @@ value class Int512Vector extends IntVector {
+         }
+ 
+         public Int512Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Int512Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Int512Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+index 5d8fb46f611..5b98830bf92 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+@@ -565,11 +565,11 @@ value class Int64Vector extends IntVector {
+         private final VectorPayloadMF16Z payload;
+ 
+         Int64Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Int64Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -741,11 +741,11 @@ value class Int64Vector extends IntVector {
+         }
+ 
+         public Int64Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Int64Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Int64Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+index 492a9fb8838..0df45ebe307 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+@@ -563,11 +563,11 @@ value class IntMaxVector extends IntVector {
+         private final VectorPayloadMFMaxIZ payload;
+ 
+         IntMaxMask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, true));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         IntMaxMask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, true));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -753,11 +753,11 @@ value class IntMaxVector extends IntVector {
+         }
+ 
+         public IntMaxShuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, true));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public IntMaxShuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, true));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public IntMaxShuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+index 69b99800fd4..85d8558e782 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+@@ -555,11 +555,11 @@ value class Long128Vector extends LongVector {
+         private final VectorPayloadMF16Z payload;
+ 
+         Long128Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Long128Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -731,11 +731,11 @@ value class Long128Vector extends LongVector {
+         }
+ 
+         public Long128Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Long128Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Long128Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+index d92903a25ed..b5c0c40e189 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+@@ -559,11 +559,11 @@ value class Long256Vector extends LongVector {
+         private final VectorPayloadMF32Z payload;
+ 
+         Long256Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Long256Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -735,11 +735,11 @@ value class Long256Vector extends LongVector {
+         }
+ 
+         public Long256Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Long256Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Long256Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+index ed5697d4f94..95a9ac9fb31 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+@@ -567,11 +567,11 @@ value class Long512Vector extends LongVector {
+         private final VectorPayloadMF64Z payload;
+ 
+         Long512Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Long512Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -743,11 +743,11 @@ value class Long512Vector extends LongVector {
+         }
+ 
+         public Long512Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Long512Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Long512Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+index 209dfa2eaa7..6a2fe4276d1 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+@@ -553,11 +553,11 @@ value class Long64Vector extends LongVector {
+         private final VectorPayloadMF8Z payload;
+ 
+         Long64Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Long64Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -729,11 +729,11 @@ value class Long64Vector extends LongVector {
+         }
+ 
+         public Long64Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Long64Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Long64Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+index e8dbf5893b6..188af377191 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+@@ -553,11 +553,11 @@ value class LongMaxVector extends LongVector {
+         private final VectorPayloadMFMaxLZ payload;
+ 
+         LongMaxMask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, true));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         LongMaxMask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, true));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -729,11 +729,11 @@ value class LongMaxVector extends LongVector {
+         }
+ 
+         public LongMaxShuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, true));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public LongMaxShuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, true));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public LongMaxShuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+index 4915939b5b8..eb5a6111a25 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+@@ -577,11 +577,11 @@ value class Short128Vector extends ShortVector {
+         private final VectorPayloadMF64Z payload;
+ 
+         Short128Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Short128Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -753,11 +753,11 @@ value class Short128Vector extends ShortVector {
+         }
+ 
+         public Short128Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Short128Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Short128Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+index fa7a525c796..cdfcb5ee918 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+@@ -593,11 +593,11 @@ value class Short256Vector extends ShortVector {
+         private final VectorPayloadMF128Z payload;
+ 
+         Short256Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Short256Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -769,11 +769,11 @@ value class Short256Vector extends ShortVector {
+         }
+ 
+         public Short256Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Short256Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Short256Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+index d72ab762d00..bcd6ec56ed5 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+@@ -625,11 +625,11 @@ value class Short512Vector extends ShortVector {
+         private final VectorPayloadMF256Z payload;
+ 
+         Short512Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Short512Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -801,11 +801,11 @@ value class Short512Vector extends ShortVector {
+         }
+ 
+         public Short512Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Short512Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Short512Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+index a94964288cd..59adb0c6144 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+@@ -569,11 +569,11 @@ value class Short64Vector extends ShortVector {
+         private final VectorPayloadMF32Z payload;
+ 
+         Short64Mask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         Short64Mask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -745,11 +745,11 @@ value class Short64Vector extends ShortVector {
+         }
+ 
+         public Short64Shuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public Short64Shuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public Short64Shuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+index dfd8ce50af7..9fadd23b9a3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+@@ -563,11 +563,11 @@ value class ShortMaxVector extends ShortVector {
+         private final VectorPayloadMFMaxSZ payload;
+ 
+         ShortMaxMask(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, true));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         ShortMaxMask(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, true));
++            this(prepare(val, VSPECIES));
+         }
+ 
+ 
+@@ -739,11 +739,11 @@ value class ShortMaxVector extends ShortVector {
+         }
+ 
+         public ShortMaxShuffle(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, true));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public ShortMaxShuffle(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, true));
++            this(prepare(fn, VSPECIES));
+         }
+ 
+         public ShortMaxShuffle(int[] indexes) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+index ebb9ed48291..d114334f53e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+@@ -846,11 +846,11 @@ value class $vectortype$ extends $abstractvectortype$ {
+         private final VectorPayloadMF$vectorsizeinbytes$$Boxbitsinitials$Z payload;
+ 
+         $masktype$(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, true));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         $masktype$(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, true));
++            this(prepare(val, VSPECIES));
+         }
+ #else[Max]
+         $masktype$(VectorPayloadMF payload) {
+@@ -860,11 +860,11 @@ value class $vectortype$ extends $abstractvectortype$ {
+         private final VectorPayloadMF$vectorsizeinbytes$Z payload;
+ 
+         $masktype$(VectorPayloadMF payload, int offset) {
+-            this(prepare(payload, offset, ETYPE, VLENGTH, false));
++            this(prepare(payload, offset, VSPECIES));
+         }
+ 
+         $masktype$(boolean val) {
+-            this(prepare(val, ETYPE, VLENGTH, false));
++            this(prepare(val, VSPECIES));
+         }
+ #end[Max]
+ 
+@@ -1060,11 +1060,11 @@ value class $vectortype$ extends $abstractvectortype$ {
+         }
+ 
+         public $shuffletype$(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, true));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public $shuffletype$(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, true));
++            this(prepare(fn, VSPECIES));
+         }
+ #else[Max]
+         private final VectorPayloadMF$vectorsizeinbytes$B payload;
+@@ -1076,11 +1076,11 @@ value class $vectortype$ extends $abstractvectortype$ {
+         }
+ 
+         public $shuffletype$(int[] indexes, int i) {
+-            this(prepare(ETYPE, VLENGTH, indexes, i, false));
++            this(prepare(indexes, i, VSPECIES));
+         }
+ 
+         public $shuffletype$(IntUnaryOperator fn) {
+-            this(prepare(ETYPE, VLENGTH, fn, false));
++            this(prepare(fn, VSPECIES));
+         }
+ #end[Max]
+ 

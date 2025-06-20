@@ -1,0 +1,47 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/compiler/oopMap.cpp b/src/hotspot/share/compiler/oopMap.cpp
+index 06d7b44dd9..b5b4b73f2e 100644
+--- a/src/hotspot/share/compiler/oopMap.cpp
++++ b/src/hotspot/share/compiler/oopMap.cpp
+@@ -349,6 +349,17 @@ void OopMapSet::all_do(const frame *fr, const RegisterMap *reg_map,
+       // register mentioned as contained an oop of some kind.  Maybe
+       // this was allowed previously because value_value items might
+       // be missing?
++      if (omv.reg()->is_reg()) {
++         tty->print("=========================================\n");
++         tty->print("CURRENT OOPMAP:\n");
++         map->print();
++         tty->print("\n");
++         reg_map->print();
++         maps->print();
++         tty->print("\n");
++         cb->as_nmethod_or_null()->print();
++         tty->print("\n");
++      }
+       guarantee(loc != NULL, "missing saved register");
+       if ( omv.type() == OopMapValue::oop_value ) {
+         oop val = *loc;
+diff --git a/src/hotspot/share/gc/shared/c2/barrierSetC2.hpp b/src/hotspot/share/gc/shared/c2/barrierSetC2.hpp
+index 920a326cf5..bf1c6bba30 100644
+--- a/src/hotspot/share/gc/shared/c2/barrierSetC2.hpp
++++ b/src/hotspot/share/gc/shared/c2/barrierSetC2.hpp
+@@ -86,7 +86,7 @@ public:
+   int alias_idx() const       { return _alias_idx; }
+ };
+ 
+-// This class wraps a bunch of context parameters thare are passed around in the
++// This class wraps a bunch of context parameters that are passed around in the
+ // BarrierSetC2 backend hierarchy, for loads and stores, to reduce boiler plate.
+ class C2Access: public StackObj {
+ protected:
+@@ -134,7 +134,7 @@ public:
+   }
+ };
+ 
+-// This class wraps a bunch of context parameters thare are passed around in the
++// This class wraps a bunch of context parameters that are passed around in the
+ // BarrierSetC2 backend hierarchy, for atomic accesses, to reduce boiler plate.
+ class C2AtomicAccess: public C2Access {
+   Node* _memory;

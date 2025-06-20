@@ -1,0 +1,40 @@
+diff --git a/src/hotspot/share/opto/intrinsicnode.cpp b/src/hotspot/share/opto/intrinsicnode.cpp
+index e67352d85bd..59f6dc62f9d 100644
+--- a/src/hotspot/share/opto/intrinsicnode.cpp
++++ b/src/hotspot/share/opto/intrinsicnode.cpp
+@@ -192,14 +192,15 @@ Node* CompressBitsNode::Identity(PhaseGVN* phase) {
+ Node* ExpandBitsNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   Node* src = in(1);
+   Node* mask = in(2);
++  const Type* inputType = phase->type(mask->in(1));
+   if (bottom_type()->isa_int()) {
+-    if (mask->Opcode() == Op_LShiftI && phase->type(mask->in(1))->is_int()->is_con()) {
++    if (mask->Opcode() == Op_LShiftI && inputType->isa_int() && inputType->is_int()->is_con()) {
+       // expand(x, 1 << n) == (x & 1) << n
+-      if (phase->type(mask->in(1))->higher_equal(TypeInt::ONE)) {
++      if (inputType->is_int()->higher_equal(TypeInt::ONE)) {
+         Node* andnode = phase->transform(new AndINode(in(1), phase->makecon(TypeInt::ONE)));
+         return new LShiftINode(andnode, mask->in(2));
+       // expand(x, -1 << n) == x << n
+-      } else if (phase->type(mask->in(1))->higher_equal(TypeInt::MINUS_1)) {
++      } else if (inputType->is_int()->higher_equal(TypeInt::MINUS_1)) {
+         return new LShiftINode(in(1), mask->in(2));
+       }
+     }
+@@ -210,13 +211,13 @@ Node* ExpandBitsNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+     }
+   } else {
+     assert(bottom_type()->isa_long(), "");
+-    if (mask->Opcode() == Op_LShiftL && phase->type(mask->in(1))->is_long()->is_con()) {
++    if (mask->Opcode() == Op_LShiftL && inputType->isa_long() && inputType->is_long()->is_con()) {
+       // expand(x, 1 << n) == (x & 1) << n
+-      if (phase->type(mask->in(1))->higher_equal(TypeLong::ONE)) {
++      if (inputType->is_long()->higher_equal(TypeLong::ONE)) {
+         Node* andnode = phase->transform(new AndLNode(in(1), phase->makecon(TypeLong::ONE)));
+         return new LShiftLNode(andnode, mask->in(2));
+       // expand(x, -1 << n) == x << n
+-      } else if (phase->type(mask->in(1))->higher_equal(TypeLong::MINUS_1)) {
++      } else if (inputType->is_long()->higher_equal(TypeLong::MINUS_1)) {
+         return new LShiftLNode(in(1), mask->in(2));
+       }
+     }

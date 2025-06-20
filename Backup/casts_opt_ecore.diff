@@ -1,0 +1,172 @@
+diff --git a/src/hotspot/cpu/x86/c2_lowering_x86.cpp b/src/hotspot/cpu/x86/c2_lowering_x86.cpp
+index cf4c014ffda..cb31028d86b 100644
+--- a/src/hotspot/cpu/x86/c2_lowering_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_lowering_x86.cpp
+@@ -25,13 +25,142 @@
+ #include "precompiled.hpp"
+ #ifdef COMPILER2
+ #include "opto/node.hpp"
++#include "opto/convertnode.hpp"
++#include "opto/vectornode.hpp"
+ #include "opto/phaseX.hpp"
+ 
++static Node* LowerVectorCastFloatingPointToLong(PhaseIterGVN* phase, Node* n) {
++  if (VM_Version::supports_avx512dq()) {
++    return nullptr;
++  }
++
++  Node* invec = n->in(1);
++  const TypeVect* invecTy = invec->bottom_type()->is_vect();
++  const TypeVect* outvecTy = n->bottom_type()->is_vect();
++
++  auto extract_lane = [&](Node* in, int cnt) -> Node* {
++    Node* lcnt = phase->intcon(cnt);
++    BasicType bt = in->bottom_type()->is_vect()->element_basic_type();
++    if (bt == T_FLOAT) {
++      return new ExtractFNode(in, lcnt);
++    } else {
++      assert(bt == T_DOUBLE, "");
++      return new ExtractDNode(in, lcnt);
++    }
++  };
++
++  auto scalar_conv = [&](Node* in) -> Node* {
++    BasicType bt = in->bottom_type()->basic_type();
++    if (bt == T_FLOAT) {
++      return new ConvF2LNode(in);
++    } else {
++      assert(bt == T_DOUBLE, "");
++      return new ConvD2LNode(in);
++    }
++  };
++
++  Node* res = phase->transform(new ReplicateNode(phase->longcon(0), outvecTy));
++  for (uint i = 0; i < invecTy->length(); i++) {
++    Node* elem = phase->transform(extract_lane(invec, i));
++    Node* conv_elem =  phase->transform(scalar_conv(elem));
++    res = phase->transform(new VectorInsertNode(res, conv_elem, phase->intcon(i), outvecTy));
++  }
++  return res;
++}
++
++static Node* LowerVectorCastIntegralToFloatingPoint(PhaseIterGVN* phase, Node* n) {
++  if (VM_Version::supports_avx512dq()) {
++    return nullptr;
++  }
++
++  Node* invec = n->in(1);
++  const TypeVect* invecTy = invec->bottom_type()->is_vect();
++  const TypeVect* outvecTy = n->bottom_type()->is_vect();
++  BasicType ibt = invecTy->element_basic_type();
++  BasicType obt = outvecTy->element_basic_type();
++
++  auto extract_lane = [&](Node* in, int cnt) -> Node* {
++    Node* lcnt = phase->intcon(cnt);
++    BasicType bt = in->bottom_type()->is_vect()->element_basic_type();
++    if (bt == T_BYTE) {
++      return new ExtractBNode(in, lcnt);
++    } else if (bt == T_SHORT) {
++      return new ExtractSNode(in, lcnt);
++    } else if (bt == T_INT) {
++      return new ExtractINode(in, lcnt);
++    } else {
++      assert(bt == T_LONG, "");
++      return new ExtractLNode(in, lcnt);
++    }
++  };
++
++  auto scalar_conv = [&](Node* in) -> Node* {
++    if (obt == T_FLOAT) {
++      switch(ibt) {
++        case T_BYTE:
++        case T_SHORT:
++        case T_INT:
++          return new ConvI2FNode(in);
++        case T_LONG:
++          return new ConvL2FNode(in);
++        default:
++          ShouldNotReachHere();
++      }
++    } else {
++      assert(obt == T_DOUBLE, "");
++      switch(ibt) {
++        case T_BYTE:
++        case T_SHORT:
++        case T_INT:
++          return new ConvI2DNode(in);
++        case T_LONG:
++          return new ConvL2DNode(in);
++        default:
++          ShouldNotReachHere();
++      }
++    }
++  };
++
++  Node* con = phase->transform(phase->makecon(obt == T_FLOAT ?
++                 static_cast<const Type*>(TypeF::make(0.0f)) :
++                 static_cast<const Type*>(TypeD::make(0.0))));
++  Node* res = phase->transform(new ReplicateNode(con, outvecTy));
++  for (uint i = 0; i < invecTy->length(); i++) {
++    Node* elem = phase->transform(extract_lane(invec, i));
++    Node* conv_elem =  phase->transform(scalar_conv(elem));
++    res = phase->transform(new VectorInsertNode(res, conv_elem, phase->intcon(i), outvecTy));
++  }
++  return res;
++}
++
++
+ Node* PhaseLowering::lower_node_platform(Node* n) {
++  switch(n->Opcode()) {
++     case Op_VectorCastF2X:
++     case Op_VectorCastD2X:
++       if (n->bottom_type()->is_vect()->element_basic_type() == T_LONG) {
++         return LowerVectorCastFloatingPointToLong(this, n);
++       }
++       break;
++     case Op_VectorCastL2X:
++       if (is_floating_point_type(n->bottom_type()->is_vect()->element_basic_type())) {
++         return LowerVectorCastIntegralToFloatingPoint(this, n);
++       }
++       break;
++     case Op_VectorCastI2X:
++     case Op_VectorCastB2X:
++     case Op_VectorCastS2X:
++       if (n->bottom_type()->is_vect()->element_basic_type() != T_DOUBLE) {
++         return LowerVectorCastIntegralToFloatingPoint(this, n);
++       }
++       break;
++     default:
++       break;
++  }
+   return nullptr;
+ }
+ 
+ bool PhaseLowering::should_lower() {
+-  return false;
++  return true;
+ }
+ #endif // COMPILER2
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 95b761ad44e..c4795eab4bb 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1876,8 +1876,6 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+     case Op_VectorCastL2X:
+       if (is_integral_type(bt) && size_in_bits == 256 && UseAVX < 2) {
+         return false;
+-      } else if (!is_integral_type(bt) && !VM_Version::supports_avx512dq()) {
+-        return false;
+       }
+       break;
+     case Op_VectorCastF2X: {
+@@ -1890,10 +1888,6 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+         }
+       }
+       // fallthrough
+-    case Op_VectorCastD2X:
+-      if (bt == T_LONG && !VM_Version::supports_avx512dq()) {
+-        return false;
+-      }
+       break;
+     case Op_VectorCastF2HF:
+     case Op_VectorCastHF2F:

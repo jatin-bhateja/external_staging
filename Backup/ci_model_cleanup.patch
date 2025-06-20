@@ -1,0 +1,357 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/ci/ciEnv.cpp b/src/hotspot/share/ci/ciEnv.cpp
+index ab14024d6b4..d8527b313e3 100644
+--- a/src/hotspot/share/ci/ciEnv.cpp
++++ b/src/hotspot/share/ci/ciEnv.cpp
+@@ -83,6 +83,7 @@
+ #endif
+ #ifdef COMPILER2
+ #include "opto/runtime.hpp"
++#include "opto/inlinetypenode.hpp"
+ #endif
+ 
+ // ciEnv
+@@ -1773,3 +1774,11 @@ void ciEnv::dump_inline_data(int compile_id) {
+     }
+   }
+ }
++
++bool ciEnv::is_multifield_scalarized(BasicType bt, int vec_length) {
++#if COMPILER2
++  return InlineTypeNode::is_multifield_scalarized(bt, vec_length);
++#else
++  return false;
++#endif
++}
+diff --git a/src/hotspot/share/ci/ciEnv.hpp b/src/hotspot/share/ci/ciEnv.hpp
+index ae5775dbe2a..82b37244a63 100644
+--- a/src/hotspot/share/ci/ciEnv.hpp
++++ b/src/hotspot/share/ci/ciEnv.hpp
+@@ -519,6 +519,7 @@ public:
+   void process_invokedynamic(const constantPoolHandle &cp, int index, JavaThread* thread);
+   void process_invokehandle(const constantPoolHandle &cp, int index, JavaThread* thread);
+   void find_dynamic_call_sites();
++  static bool is_multifield_scalarized(BasicType type, int vec_len);
+ };
+ 
+ #endif // SHARE_CI_CIENV_HPP
+diff --git a/src/hotspot/share/ci/ciInlineKlass.cpp b/src/hotspot/share/ci/ciInlineKlass.cpp
+index 0f0572ff24a..df02f4c687a 100644
+--- a/src/hotspot/share/ci/ciInlineKlass.cpp
++++ b/src/hotspot/share/ci/ciInlineKlass.cpp
+@@ -31,13 +31,13 @@
+ 
+ int ciInlineKlass::compute_nonstatic_fields() {
+   int result = ciInstanceKlass::compute_nonstatic_fields();
+-  assert(super() == NULL || !super()->has_nonstatic_fields(), "an inline type must not inherit fields from its superclass");
++  assert(super() == nullptr || !super()->has_nonstatic_fields(), "an inline type must not inherit fields from its superclass");
+ 
+   // Compute declared non-static fields (without flattening of inline type fields)
+-  GrowableArray<ciField*>* fields = NULL;
+-  GUARDED_VM_ENTRY(fields = compute_nonstatic_fields_impl(NULL, false /* no flattening */);)
++  GrowableArray<ciField*>* fields = nullptr;
++  GUARDED_VM_ENTRY(fields = compute_nonstatic_fields_impl(nullptr, false /* no flattening */);)
+   Arena* arena = CURRENT_ENV->arena();
+-  _declared_nonstatic_fields = (fields != NULL) ? fields : new (arena) GrowableArray<ciField*>(arena, 0, 0, 0);
++  _declared_nonstatic_fields = (fields != nullptr) ? fields : new (arena) GrowableArray<ciField*>(arena, 0, 0, 0);
+   return result;
+ }
+ 
+@@ -55,23 +55,10 @@ int ciInlineKlass::field_index_by_offset(int offset) {
+   int best_index = -1;
+   // Search the field with the given offset
+   for (int i = 0; i < nof_declared_nonstatic_fields(); ++i) {
+-    ciField* field = _declared_nonstatic_fields->at(i);
+-    int field_offset = field->offset_in_bytes();
++    int field_offset = _declared_nonstatic_fields->at(i)->offset_in_bytes();
+     if (field_offset == offset) {
+       // Exact match
+       return i;
+-    } else if (field->is_multifield_base()) {
+-      for (int j = 0; j < field->secondary_fields_count(); j++) {
+-        ciField* sec_field = static_cast<ciMultiField*>(field)->secondary_field_at(j);
+-        assert(sec_field != NULL, "");
+-        int sec_field_offset = sec_field->offset_in_bytes();
+-        if (sec_field_offset == offset) {
+-          return i + j + 1;
+-        } else if (sec_field_offset < offset && sec_field_offset > best_offset) {
+-          best_offset = sec_field_offset;
+-          best_index = i + j + 1;
+-        }
+-      }
+     } else if (field_offset < offset && field_offset > best_offset) {
+       // No exact match. Save the index of the field with the closest offset that
+       // is smaller than the given field offset. This index corresponds to the
+diff --git a/src/hotspot/share/ci/ciInlineKlass.hpp b/src/hotspot/share/ci/ciInlineKlass.hpp
+index d9773e8f04e..90c52bcea02 100644
+--- a/src/hotspot/share/ci/ciInlineKlass.hpp
++++ b/src/hotspot/share/ci/ciInlineKlass.hpp
+@@ -62,7 +62,7 @@ public:
+   bool is_inlinetype() const { return true; }
+ 
+   int nof_declared_nonstatic_fields() {
+-    if (_declared_nonstatic_fields == NULL) {
++    if (_declared_nonstatic_fields == nullptr) {
+       compute_nonstatic_fields();
+     }
+     return _declared_nonstatic_fields->length();
+@@ -70,23 +70,8 @@ public:
+ 
+   // ith non-static declared field (presented by ascending address)
+   ciField* declared_nonstatic_field_at(int i) {
+-    assert(_declared_nonstatic_fields != NULL, "should be initialized");
+-    // Look for field in preceding multi-field bundle;
+-    for (int j = 0; j <= i; j++) {
+-      int bundle_size = _declared_nonstatic_fields->at(j)->secondary_fields_count();
+-      if (bundle_size > 1 && ((j + bundle_size) > i)) {
+-        if (j == i) {
+-          // Multifield base.
+-          return _declared_nonstatic_fields->at(i);
+-        } else {
+-          // Secondary multifield.
+-          return static_cast<ciMultiField*>(_declared_nonstatic_fields->at(j))->secondary_fields()->at(i - (j + 1));
+-        }
+-      } else if (j == i) {
+-        return _declared_nonstatic_fields->at(i);
+-      }
+-    }
+-    return NULL;
++    assert(_declared_nonstatic_fields != nullptr, "should be initialized");
++    return _declared_nonstatic_fields->at(i);
+   }
+ 
+   // Inline type fields
+diff --git a/src/hotspot/share/ci/ciInstanceKlass.cpp b/src/hotspot/share/ci/ciInstanceKlass.cpp
+index 7ed4626a816..cc981b3422c 100644
+--- a/src/hotspot/share/ci/ciInstanceKlass.cpp
++++ b/src/hotspot/share/ci/ciInstanceKlass.cpp
+@@ -420,22 +420,12 @@ ciField* ciInstanceKlass::get_field_by_offset(int field_offset, bool is_static)
+   if (!is_static) {
+     for (int i = 0, len = nof_nonstatic_fields(); i < len; i++) {
+       ciField* field = _nonstatic_fields->at(i);
+-      int curr_field_offset = field->offset_in_bytes();
+-      if (curr_field_offset == field_offset)
++      int  field_off = field->offset_in_bytes();
++      if (field_off == field_offset)
+         return field;
+-      if (curr_field_offset > field_offset)
++      if (field_off > field_offset)
+         break;
+       // could do binary search or check bins, but probably not worth it
+-      if (field->secondary_fields_count() > 1) {
+-        for (int j = 0; j < field->secondary_fields_count(); j++) {
+-          ciField* sec_field = static_cast<ciMultiField*>(field)->secondary_fields()->at(j);
+-          int sec_field_offset = sec_field->offset_in_bytes();
+-          if (sec_field_offset == field_offset)
+-            return sec_field;
+-          if (sec_field_offset > field_offset)
+-            return NULL;
+-        }
+-      }
+     }
+     return nullptr;
+   }
+@@ -554,7 +544,7 @@ ciField* ciInstanceKlass::populate_synthetic_multifields(ciField* field) {
+       assert(fd.is_multifield_base(), "");
+       mfield = new (arena) ciMultiField(&fd);
+       sec_fields_count = fd.secondary_fields_count(fd.index()) - 1;
+-      mfield->add_secondary_fields(new (arena) GrowableArray<ciField*>(arena, sec_fields_count, 0, NULL));
++      mfield->add_secondary_fields(new (arena) GrowableArray<ciField*>(arena, sec_fields_count, 0, nullptr));
+       if (sec_fields_count == 0) {
+         break;
+       }
+@@ -573,13 +563,12 @@ ciField* ciInstanceKlass::populate_synthetic_multifields(ciField* field) {
+ 
+ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(GrowableArray<ciField*>* super_fields, bool flatten) {
+   ASSERT_IN_VM;
+-  Arena* arena = CURRENT_ENV->arena();
+   int flen = 0;
++  Arena* arena = CURRENT_ENV->arena();
+   GrowableArray<ciField*>* fields = nullptr;
+   InstanceKlass* k = get_instanceKlass();
+   for (JavaFieldStream fs(k); !fs.done(); fs.next()) {
+     if (fs.access_flags().is_static())  continue;
+-    if (fs.is_multifield()) continue;
+     flen += 1;
+   }
+ 
+@@ -598,9 +587,10 @@ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(Growable
+   int sec_fields_count = 0;
+   for (JavaFieldStream fs(k); !fs.done(); fs.next()) {
+     if (fs.access_flags().is_static())  continue;
+-    if (fs.is_multifield()) {
+-      assert(sec_fields_count && fields->last()->is_multifield_base(), "");
++    if (fs.is_multifield() && sec_fields_count) {
++      assert(fields->last()->is_multifield_base(), "");
+       sec_fields_count--;
++      flen--;
+       ciMultiField* multifield_base = static_cast<ciMultiField*>(fields->last());
+       fieldDescriptor& fd = fs.field_descriptor();
+       multifield_base->secondary_fields()->append(new (arena) ciField(&fd));
+@@ -623,8 +613,13 @@ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(Growable
+         // A flattened field can be treated as final if the non-flattened
+         // field is declared final or the holder klass is an inline type itself.
+         bool is_final = fd.is_final() || is_inlinetype();
+-        ciField* field = NULL;
+-        if (flattened_field->is_multifield_base()) {
++        ciField* field = nullptr;
++        ciType* ftype = flattened_field->type();
++        assert(ftype, "");
++        BasicType bt = ftype->basic_type();
++        int sec_fields_count = ftype->bundle_size();
++        bool scalarize_multifield = ciEnv::is_multifield_scalarized(bt, sec_fields_count);
++        if (flattened_field->is_multifield_base() && !scalarize_multifield) {
+           field = new (arena) ciMultiField(flattened_field, this, offset, is_final);
+           static_cast<ciMultiField*>(field)->set_secondary_fields(static_cast<ciMultiField*>(flattened_field)->secondary_fields());
+         } else {
+@@ -633,15 +628,18 @@ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(Growable
+         fields->append(field);
+       }
+     } else {
+-      ciField* field = NULL;
+-      if (fs.is_multifield_base()) {
++      ciField* field = nullptr;
++      BasicType bt = fd.field_type();
++      sec_fields_count = fd.secondary_fields_count(fd.index());
++      bool scalarize_multifield = ciEnv::is_multifield_scalarized(bt, sec_fields_count);
++      if (fs.is_multifield_base() && !scalarize_multifield) {
+         field = new (arena) ciMultiField(&fd);
+-        sec_fields_count = fd.secondary_fields_count(fd.index());
+-        GrowableArray<ciField*>* sec_fields = new (arena) GrowableArray<ciField*>(arena, sec_fields_count, 0, NULL);
++        GrowableArray<ciField*>* sec_fields = new (arena) GrowableArray<ciField*>(arena, sec_fields_count, 0, nullptr);
+         static_cast<ciMultiField*>(field)->add_secondary_fields(sec_fields);
+         sec_fields_count--;
+       } else {
+         field = new (arena) ciField(&fd);
++        sec_fields_count = 0;
+       }
+       fields->append(field);
+     }
+diff --git a/src/hotspot/share/opto/inlinetypenode.cpp b/src/hotspot/share/opto/inlinetypenode.cpp
+index 3659383c1c9..7ac772c4c65 100644
+--- a/src/hotspot/share/opto/inlinetypenode.cpp
++++ b/src/hotspot/share/opto/inlinetypenode.cpp
+@@ -40,34 +40,23 @@ int  InlineTypeNode::stack_size_for_field(ciField* field) {
+              : field->type()->size();
+ }
+ 
+-bool InlineTypeNode::is_multifield_scalarized(ciField* field) {
+-  if (!field->is_multifield_base()) {
+-    return true;
+-  }
+-  int field_count = field->secondary_fields_count();
+-  BasicType bt = field->type()->basic_type();
+-  if (!Matcher::match_rule_supported_vector(Op_LoadVector, field_count, bt)  ||
+-      !Matcher::match_rule_supported_vector(Op_StoreVector, field_count, bt) ||
+-      !Matcher::match_rule_supported_vector(VectorNode::replicate_opcode(bt), field_count, bt)) {
++bool InlineTypeNode::is_multifield_scalarized(BasicType bt, int vec_len) {
++  if (!is_java_primitive(bt) ||
++      !Matcher::match_rule_supported_vector(Op_LoadVector, vec_len, bt)  ||
++      !Matcher::match_rule_supported_vector(Op_StoreVector, vec_len, bt) ||
++      !Matcher::match_rule_supported_vector(VectorNode::replicate_opcode(bt), vec_len, bt)) {
+     return true;
+   }
+   return false;
+ }
+ 
+-void InlineTypeNode::expand_input_edges(ciInlineKlass* vk) {
+-  // We generally perform three operations on multi-field bundle, load its contents into vector,
+-  // store the contents of vector to multi-field bundle or broadcast a value into a vector equivalent
+-  // in size to a multi-field bundle. If any of these operations are not supported by target platform
+-  // scalarize the multi-fields into individual fields.
+-  for (int i = 0; i < vk->nof_declared_nonstatic_fields(); i++) {
+-    ciField* field = vk->declared_nonstatic_field_at(i);
+-    if (is_multifield_scalarized(field)) {
+-      int field_count = field->secondary_fields_count();
+-      while(--field_count) {
+-        add_req(NULL);
+-      }
+-    }
++bool InlineTypeNode::is_multifield_scalarized(ciField* field) {
++  if (!field->is_multifield_base()) {
++    return true;
+   }
++  int field_count = field->secondary_fields_count();
++  BasicType bt = field->type()->basic_type();
++  return is_multifield_scalarized(bt, field_count);
+ }
+ 
+ // Clones the inline type to handle control flow merges involving multiple inline types.
+@@ -320,22 +309,18 @@ static bool is_vector_payload_mf(ciKlass* klass) {
+ void InlineTypeNode::make_scalar_in_safepoint(PhaseIterGVN* igvn, Unique_Node_List& worklist, SafePointNode* sfpt) {
+   ciInlineKlass* vk = inline_klass();
+   uint nfields = vk->nof_nonstatic_fields();
+-  // Number of fields for VectorPayload* class which a safepoint node tracks
+-  // should depend on actual field_count of InlineTypeNode, this is because
+-  // we may scalarize multifield bundle if corresponding vector size is not
+-  // supported by target.
+   if (is_vector_payload_mf(vk)) {
+-     nfields = field_count();
++     assert(field_count() == nfields, "");
+   } else if (is_vector_payload(vk)) {
+-     nfields = field_value(0)->as_InlineType()->field_count();
++     assert(field_value(0)->as_InlineType()->field_count() == nfields, "");
+   }
+   JVMState* jvms = sfpt->jvms();
+   // Replace safepoint edge by SafePointScalarObjectNode and add field values
+-  assert(jvms != NULL, "missing JVMS");
++  assert(jvms != nullptr, "missing JVMS");
+   uint first_ind = (sfpt->req() - jvms->scloff());
+   SafePointScalarObjectNode* sobj = new SafePointScalarObjectNode(type()->isa_instptr(),
+ #ifdef ASSERT
+-                                                                  NULL,
++                                                                  nullptr,
+ #endif
+                                                                   first_ind, nfields);
+   sobj->init_req(0, igvn->C->root());
+@@ -352,18 +337,8 @@ void InlineTypeNode::make_scalar_in_safepoint(PhaseIterGVN* igvn, Unique_Node_Li
+ 
+   // Iterate over the inline type fields in order of increasing
+   // offset and add the field values to the safepoint.
+-  int cnt = 0;
+-  ciMultiField* mfield = nullptr;
+   for (uint j = 0; j < nfields; ++j) {
+-    ciField* field = mfield != nullptr ? mfield->secondary_field_at(cnt++) : vk->nonstatic_field_at(j);
+-    if (field->is_multifield_base()) {
+-      mfield = static_cast<ciMultiField*>(field);
+-    }
+-    if (mfield && ((mfield->secondary_fields_count() - 1) == cnt)) {
+-      mfield = nullptr;
+-      cnt = 0;
+-    }
+-    int offset = field->offset_in_bytes();
++    int offset = vk->nonstatic_field_at(j)->offset_in_bytes();
+     Node* value = field_value_by_offset(offset, true /* include flattened inline type fields */);
+     if (value->is_InlineType()) {
+       // Add inline type field to the worklist to process later
+@@ -376,7 +351,7 @@ void InlineTypeNode::make_scalar_in_safepoint(PhaseIterGVN* igvn, Unique_Node_Li
+   igvn->rehash_node_delayed(sfpt);
+   for (uint i = jvms->debug_start(); i < jvms->debug_end(); i++) {
+     Node* debug = sfpt->in(i);
+-    if (debug != NULL && debug->uncast() == this) {
++    if (debug != nullptr && debug->uncast() == this) {
+       sfpt->set_req(i, sobj);
+     }
+   }
+diff --git a/src/hotspot/share/opto/inlinetypenode.hpp b/src/hotspot/share/opto/inlinetypenode.hpp
+index 527d1c1f9d8..618bf48ee14 100644
+--- a/src/hotspot/share/opto/inlinetypenode.hpp
++++ b/src/hotspot/share/opto/inlinetypenode.hpp
+@@ -39,7 +39,6 @@ protected:
+   InlineTypeNode(ciInlineKlass* vk, Node* oop, bool null_free)
+       : TypeNode(TypeInstPtr::make(null_free ? TypePtr::NotNull : TypePtr::BotPTR, vk), Values + vk->nof_declared_nonstatic_fields()) {
+     init_class_id(Class_InlineType);
+-    expand_input_edges(vk);
+     init_req(Oop, oop);
+     Compile::current()->add_inline_type(this);
+   }
+@@ -95,6 +94,7 @@ public:
+   static InlineTypeNode* make_null(PhaseGVN& gvn, ciInlineKlass* vk);
+ 
+   static bool is_multifield_scalarized(ciField* field);
++  static bool is_multifield_scalarized(BasicType bt, int vec_len);
+ 
+   static int stack_size_for_field(ciField* field);
+ 

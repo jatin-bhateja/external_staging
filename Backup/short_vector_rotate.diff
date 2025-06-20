@@ -1,0 +1,568 @@
+diff --git a/src/hotspot/cpu/aarch64/matcher_aarch64.hpp b/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
+index 4d28e5ade66..3282a8ac1a6 100644
+--- a/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
+@@ -138,6 +138,11 @@
+     return false;
+   }
+ 
++  // Does the CPU supports vector rotates with scalar shift instructions?
++  static bool supports_vector_variable_rotates_with_scalar_shift(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Does the CPU supports vector variable rotate instructions?
+   static constexpr bool supports_vector_variable_rotates(void) {
+     return false;
+diff --git a/src/hotspot/cpu/arm/matcher_arm.hpp b/src/hotspot/cpu/arm/matcher_arm.hpp
+index 716a997a72b..7af8f99c855 100644
+--- a/src/hotspot/cpu/arm/matcher_arm.hpp
++++ b/src/hotspot/cpu/arm/matcher_arm.hpp
+@@ -131,6 +131,11 @@
+     return false;
+   }
+ 
++  // Does the CPU supports vector rotates with scalar shifts instructions?
++  static bool supports_vector_variable_rotates_with_scalar_shift(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Does the CPU supports vector variable rotate instructions?
+   static constexpr bool supports_vector_variable_rotates(void) {
+     return false; // not supported
+diff --git a/src/hotspot/cpu/ppc/matcher_ppc.hpp b/src/hotspot/cpu/ppc/matcher_ppc.hpp
+index 0ee4245f274..2860d5c6d87 100644
+--- a/src/hotspot/cpu/ppc/matcher_ppc.hpp
++++ b/src/hotspot/cpu/ppc/matcher_ppc.hpp
+@@ -138,6 +138,11 @@
+     return false;
+   }
+ 
++  // Does the CPU supports vector rotates with scalar shifts instructions?
++  static bool supports_vector_variable_rotates_with_scalar_shift(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Does the CPU supports vector variable rotate instructions?
+   static constexpr bool supports_vector_variable_rotates(void) {
+     return false;
+diff --git a/src/hotspot/cpu/riscv/matcher_riscv.hpp b/src/hotspot/cpu/riscv/matcher_riscv.hpp
+index 6e2b97b8202..ddd9eef0423 100644
+--- a/src/hotspot/cpu/riscv/matcher_riscv.hpp
++++ b/src/hotspot/cpu/riscv/matcher_riscv.hpp
+@@ -137,6 +137,11 @@
+     return false;
+   }
+ 
++  // Does the CPU supports vector rotates with scalar shifts instructions?
++  static bool supports_vector_variable_rotates_with_scalar_shift(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Does the CPU supports vector variable rotate instructions?
+   static bool supports_vector_variable_rotates(void) {
+     return UseZvbb;
+diff --git a/src/hotspot/cpu/s390/matcher_s390.hpp b/src/hotspot/cpu/s390/matcher_s390.hpp
+index 6c6cae3c58f..1932ac558d2 100644
+--- a/src/hotspot/cpu/s390/matcher_s390.hpp
++++ b/src/hotspot/cpu/s390/matcher_s390.hpp
+@@ -129,6 +129,11 @@
+     return false;
+   }
+ 
++  // Does the CPU supports vector rotates with scalar shifts instructions?
++  static bool supports_vector_variable_rotates_with_scalar_shift(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Does the CPU supports vector variable rotate instructions?
+   static constexpr bool supports_vector_variable_rotates(void) {
+     return false;
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 839745f76ec..41761b60fd5 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -6475,3 +6475,94 @@ void C2_MacroAssembler::vector_rearrange_int_float(BasicType bt, XMMRegister dst
+     vpermps(dst, shuffle, src, vlen_enc);
+   }
+ }
++
++void C2_MacroAssembler::vector_rotate_short_imm_avx2(int opcode, XMMRegister dst, XMMRegister src,
++                                                     int shift, XMMRegister xtmp, int vlen_enc) {
++  assert(opcode == Op_RotateRightV || opcode == Op_RotateLeftV, "");
++  int lshift = opcode == Op_RotateRightV ? 16 - shift : shift;
++  int rshift = opcode == Op_RotateRightV ? shift : 16 - shift;
++  vpsllw(xtmp, src, lshift, vlen_enc);
++  vpsrlw(dst, src, rshift, vlen_enc);
++  vpor(dst, dst, xtmp, vlen_enc);
++}
++
++void C2_MacroAssembler::vector_rotate_short_avx2(int opcode, XMMRegister dst, XMMRegister src, Register shift,
++                                                 Register rtmp, XMMRegister xtmp, int vlen_enc) {
++  assert(opcode == Op_RotateRightV || opcode == Op_RotateLeftV, "");
++  movq(dst, shift);
++  movl(rtmp, 16);
++  subl(rtmp, shift);
++  movq(xtmp, rtmp);
++  if (opcode == Op_RotateLeftV) {
++    vpsllw(dst, src, dst, vlen_enc);
++    vpsrlw(xtmp, src, xtmp, vlen_enc);
++    vpor(dst, dst, xtmp, vlen_enc);
++  } else {
++    vpsllw(xtmp, src, xtmp, vlen_enc);
++    vpsrlw(dst, src, dst, vlen_enc);
++    vpor(dst, dst, xtmp, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::vector_rotate_short_var_kernel(XMMRegister dst, XMMRegister src, XMMRegister lshift, XMMRegister rshift,
++                                                       XMMRegister i2wmask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3,
++                                                       int vlen_enc) {
++  // Expand leftshift, rightshift and source vector lanes from word to
++  // doubleword.
++  vextendwd(false, xtmp1, src, vlen_enc);
++  vextendwd(false, xtmp2, lshift, vlen_enc);
++  vextendwd(false, xtmp3, rshift, vlen_enc);
++
++  // Perform left and right shift on expanded source vector.
++  vpsllvd(xtmp2, xtmp1, xtmp2, vlen_enc);
++  vpsrlvd(xtmp3, xtmp1, xtmp3, vlen_enc);
++
++  // Clear upper 32 bits of left and right shifted result.
++  vpand(xtmp2, xtmp2, i2wmask, vlen_enc);
++  vpand(xtmp3, xtmp3, i2wmask, vlen_enc);
++  vpor(dst, xtmp2, xtmp3, vlen_enc);
++}
++
++void C2_MacroAssembler::vector_rotate_short_var_avx2(int opcode, XMMRegister dst, XMMRegister src, XMMRegister shift,
++                                                     XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
++                                                     XMMRegister xtmp5, XMMRegister xtmp6, int vlen_enc) {
++  assert(opcode == Op_RotateRightV || opcode == Op_RotateLeftV, "");
++  assert(VM_Version::supports_avx2(), "");
++  // Compute allone mask
++  // xtmp1 = 0xFFFF
++  vpcmpeqw(xtmp1, xtmp1, xtmp1, Assembler::AVX_256bit);
++  // Compute int to short mask
++  // xtmp2 = 15
++  vpsrld(xtmp2, xtmp1, 16, Assembler::AVX_256bit);
++  // Compute short size in bits.
++  // xtmp2 = 16 (Short.SIZE)
++  vpsrlw(xtmp1, xtmp1, 15, Assembler::AVX_256bit);
++  vpsllw(xtmp1, xtmp1, 4, Assembler::AVX_256bit);
++  // Compute right shift count
++  // xtmp1 = xtmp1 - shift
++  vpsubw(xtmp1, xtmp1, shift, Assembler::AVX_256bit);
++
++  XMMRegister lshift = opcode == Op_RotateRightV ? xtmp1 : shift;
++  XMMRegister rshift = opcode == Op_RotateRightV ? shift : xtmp1;
++
++  // Perform word to double word expansion of elements in lower 128 bit lanes of
++  // source, right and left shift vector.
++  vector_rotate_short_var_kernel(xtmp6, src, lshift, rshift, xtmp2, xtmp3, xtmp4, xtmp5, Assembler::AVX_256bit);
++  if (vlen_enc == Assembler::AVX_128bit) {
++    // Pack double word lanes into word lanes.
++    vpackusdw(dst, xtmp6, xtmp6, Assembler::AVX_256bit);
++    vpermq(dst, dst, 0xD8, Assembler::AVX_256bit);
++    return;
++  }
++  // Extract upper 128 bits of source, right shift count and left
++  // shift count vector.
++  vextracti128_high(xtmp3, src);
++  vextracti128_high(xtmp4, lshift);
++  vextracti128_high(xtmp5, rshift);
++
++  // Perform word to double word expansion of elements in upper 128 bit lanes of
++  // source, right and left shift vector.
++  vector_rotate_short_var_kernel(dst, xtmp3, xtmp4, xtmp5, xtmp2, xtmp3, xtmp4, xtmp5, vlen_enc);
++  vpackusdw(dst, xtmp6, dst, vlen_enc);
++  vpermq(dst, dst, 0xD8, vlen_enc);
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index af57546b3d1..ab4a430ca8c 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -498,6 +498,20 @@
+                        Register mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3, Register rtmp,
+                        Register midx, Register length, int vector_len, int vlen_enc);
+ 
++
++  void vector_rotate_short_imm_avx2(int opcode, XMMRegister dst, XMMRegister src, int shift,
++                                    XMMRegister xtmp, int vlen_enc);
++
++  void vector_rotate_short_avx2(int opcode, XMMRegister dst, XMMRegister src, Register shift,
++                                Register rtmp, XMMRegister xtmp, int vlen_enc);
++
++  void vector_rotate_short_var_kernel(XMMRegister dst, XMMRegister src, XMMRegister lshift, XMMRegister rshift,
++                                      XMMRegister i2wmask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3,
++                                      int vlen_enc);
++
++  void vector_rotate_short_var_avx2(int opcode, XMMRegister dst, XMMRegister src, XMMRegister shift,
++                                    XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
++                                    XMMRegister xtmp5, XMMRegister xtmp6, int vlen_enc);
+ #ifdef _LP64
+   void vgather8b_masked_offset(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
+                                Register offset, Register mask, Register midx, Register rtmp, int vlen_enc);
+diff --git a/src/hotspot/cpu/x86/matcher_x86.hpp b/src/hotspot/cpu/x86/matcher_x86.hpp
+index 192e959451f..16ba2a7ec7f 100644
+--- a/src/hotspot/cpu/x86/matcher_x86.hpp
++++ b/src/hotspot/cpu/x86/matcher_x86.hpp
+@@ -164,6 +164,11 @@
+     }
+   }
+ 
++  // Does the CPU supports vector rotates with scalar shifts instructions?
++  static bool supports_vector_variable_rotates_with_scalar_shift(int vlen, BasicType bt) {
++    return is_subword_type(bt);
++  }
++
+   // Does the CPU supports vector variable rotate instructions?
+   static constexpr bool supports_vector_variable_rotates(void) {
+     return true;
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 2b29dd14e4b..47cf44666bc 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1740,9 +1740,19 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+       break;
+     case Op_RotateRightV:
+     case Op_RotateLeftV:
+-      if (bt != T_INT && bt != T_LONG) {
++      if (UseAVX < 2) {
++        return false;
++      }
++      if (bt == T_INT || bt == T_LONG) {
++        return VM_Version::supports_evex() && ((size_in_bits == 512) || VM_Version::supports_avx512vl());
++      } else if (bt == T_SHORT && VM_Version::supports_avx512bw() && (size_in_bits == 512 || VM_Version::supports_avx512vl())) {
++        // AVX512BW targets supports direct short vector shift instructions, thus do not incur redundant
++        // unpacking penalties on dismantling rotate into shifts and logical OR operations.
+         return false;
+-      } // fallthrough
++      } else if (bt == T_BYTE) {
++        return false;
++      }
++      break;
+     case Op_MacroLogicV:
+       if (!VM_Version::supports_evex() ||
+           ((size_in_bits != 512) && !VM_Version::supports_avx512vl())) {
+@@ -9246,28 +9256,76 @@ instruct vpternlog_mem(vec dst, vec src2, memory src3, immU8 func) %{
+ %}
+ 
+ // --------------------------------- Rotation Operations ----------------------------------
+-instruct vprotate_immI8(vec dst, vec src, immI8 shift) %{
++instruct vector_rotate_dq_immI8(vec dst, vec src, immI8 shift) %{
++  predicate(!is_subword_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (RotateLeftV src shift));
+   match(Set dst (RotateRightV src shift));
+   format %{ "vprotate_imm8 $dst,$src,$shift\t! vector rotate" %}
+   ins_encode %{
+     int opcode      = this->ideal_Opcode();
+-    int vector_len  = vector_length_encoding(this);
++    int vlen_enc    = vector_length_encoding(this);
+     BasicType etype = this->bottom_type()->is_vect()->element_basic_type();
+-    __ vprotate_imm(opcode, etype, $dst$$XMMRegister, $src$$XMMRegister, $shift$$constant, vector_len);
++    __ vprotate_imm(opcode, etype, $dst$$XMMRegister, $src$$XMMRegister, $shift$$constant, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vprorate(vec dst, vec src, vec shift) %{
++instruct vector_rotate_dq_var(vec dst, vec src, vec shift) %{
++  predicate(!n->as_RotateV()->is_scalar_shift() && !is_subword_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (RotateLeftV src shift));
+   match(Set dst (RotateRightV src shift));
+   format %{ "vprotate $dst,$src,$shift\t! vector rotate" %}
+   ins_encode %{
+     int opcode      = this->ideal_Opcode();
+-    int vector_len  = vector_length_encoding(this);
++    int vlen_enc    = vector_length_encoding(this);
+     BasicType etype = this->bottom_type()->is_vect()->element_basic_type();
+-    __ vprotate_var(opcode, etype, $dst$$XMMRegister, $src$$XMMRegister, $shift$$XMMRegister, vector_len);
++    __ vprotate_var(opcode, etype, $dst$$XMMRegister, $src$$XMMRegister, $shift$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vector_rotate_short_immI8_avx2(vec dst, vec src, immI8 shift, vec xtmp) %{
++  predicate(Matcher::vector_element_basic_type(n) == T_SHORT);
++  match(Set dst (RotateLeftV src shift));
++  match(Set dst (RotateRightV src shift));
++  effect(TEMP dst, TEMP xtmp);
++  format %{ "vprotate_short_imm8 $dst,$src,$shift\t! using $xtmp as TEMP" %}
++  ins_encode %{
++    int opcode    = this->ideal_Opcode();
++    int vlen_enc  = vector_length_encoding(this);
++    __ vector_rotate_short_imm_avx2(opcode, $dst$$XMMRegister, $src$$XMMRegister, $shift$$constant,
++                                    $xtmp$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vector_rotate_short_avx2(vec dst, vec src, rRegI shift, rRegI rtmp, vec xtmp, rFlagsReg cc) %{
++  predicate(n->as_RotateV()->is_scalar_shift() && Matcher::vector_element_basic_type(n) == T_SHORT);
++  match(Set dst (RotateLeftV src shift));
++  match(Set dst (RotateRightV src shift));
++  effect(TEMP dst, TEMP rtmp, TEMP xtmp, KILL cc);
++  format %{ "vprotate_short $dst,$src,$shift\t! using $rtmp and $xtmp as TEMP" %}
++  ins_encode %{
++    int opcode    = this->ideal_Opcode();
++    int vlen_enc  = vector_length_encoding(this);
++    __ vector_rotate_short_avx2(opcode, $dst$$XMMRegister, $src$$XMMRegister, $shift$$Register,
++                                $rtmp$$Register, $xtmp$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vector_rotate_short_var_avx2(vec dst, vec src, vec shift, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, vec xtmp5, vec xtmp6) %{
++  predicate(!n->as_RotateV()->is_scalar_shift() && Matcher::vector_element_basic_type(n) == T_SHORT);
++  match(Set dst (RotateLeftV src shift));
++  match(Set dst (RotateRightV src shift));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP xtmp5, TEMP xtmp6);
++  format %{ "vprotate_var_short $dst,$src,$shift\t! using $xtmp1, $xtmp2, $xtmp3, $xtmp4, $xtmp5 and $xtmp6 as TEMP" %}
++  ins_encode %{
++    int opcode    = this->ideal_Opcode();
++    int vlen_enc  = vector_length_encoding(this);
++    __ vector_rotate_short_var_avx2(opcode, $dst$$XMMRegister, $src$$XMMRegister, $shift$$XMMRegister,
++                                    $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $xtmp4$$XMMRegister,
++                                    $xtmp5$$XMMRegister, $xtmp6$$XMMRegister, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -9963,7 +10021,7 @@ instruct vdiv_mem_masked(vec dst, memory src2, kReg mask) %{
+ %}
+ 
+ 
+-instruct vrol_imm_masked(vec dst, immI8 shift, kReg mask) %{
++instruct vector_rotate_imm_masked(vec dst, immI8 shift, kReg mask) %{
+   match(Set dst (RotateLeftV (Binary dst shift) mask));
+   match(Set dst (RotateRightV (Binary dst shift) mask));
+   format %{ "vprotate_imm_masked $dst, $dst, $shift, $mask\t! rotate masked operation" %}
+@@ -9977,7 +10035,7 @@ instruct vrol_imm_masked(vec dst, immI8 shift, kReg mask) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vrol_reg_masked(vec dst, vec src2, kReg mask) %{
++instruct vector_rotate_reg_masked(vec dst, vec src2, kReg mask) %{
+   match(Set dst (RotateLeftV (Binary dst src2) mask));
+   match(Set dst (RotateRightV (Binary dst src2) mask));
+   format %{ "vrotate_masked $dst, $dst, $src2, $mask\t! rotate masked operation" %}
+diff --git a/src/hotspot/share/opto/addnode.cpp b/src/hotspot/share/opto/addnode.cpp
+index 9a7d93dc469..e027e38c946 100644
+--- a/src/hotspot/share/opto/addnode.cpp
++++ b/src/hotspot/share/opto/addnode.cpp
+@@ -764,7 +764,10 @@ Node* OrINode::Identity(PhaseGVN* phase) {
+ }
+ 
+ // Find shift value for Integer or Long OR.
+-static Node* rotate_shift(PhaseGVN* phase, Node* lshift, Node* rshift, int mask) {
++static Node* rotate_shift(PhaseGVN* phase, Node* val, Node* lshift, Node* rshift, int mask) {
++  if (is_subword_type(val->bottom_type()->array_element_basic_type())) {
++    return nullptr;
++  }
+   // val << norm_con_shift | val >> ({32|64} - norm_con_shift) => rotate_left val, norm_con_shift
+   const TypeInt* lshift_t = phase->type(lshift)->isa_int();
+   const TypeInt* rshift_t = phase->type(rshift)->isa_int();
+@@ -791,7 +794,7 @@ Node* OrINode::Ideal(PhaseGVN* phase, bool can_reshape) {
+       lopcode == Op_LShiftI && ropcode == Op_URShiftI && in(1)->in(1) == in(2)->in(1)) {
+     Node* lshift = in(1)->in(2);
+     Node* rshift = in(2)->in(2);
+-    Node* shift = rotate_shift(phase, lshift, rshift, 0x1F);
++    Node* shift = rotate_shift(phase, in(1)->in(1), lshift, rshift, 0x1F);
+     if (shift != nullptr) {
+       return new RotateLeftNode(in(1)->in(1), shift, TypeInt::INT);
+     }
+@@ -801,7 +804,7 @@ Node* OrINode::Ideal(PhaseGVN* phase, bool can_reshape) {
+       lopcode == Op_URShiftI && ropcode == Op_LShiftI && in(1)->in(1) == in(2)->in(1)) {
+     Node* rshift = in(1)->in(2);
+     Node* lshift = in(2)->in(2);
+-    Node* shift = rotate_shift(phase, rshift, lshift, 0x1F);
++    Node* shift = rotate_shift(phase, in(1)->in(1), rshift, lshift, 0x1F);
+     if (shift != nullptr) {
+       return new RotateRightNode(in(1)->in(1), shift, TypeInt::INT);
+     }
+@@ -864,7 +867,7 @@ Node* OrLNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+       lopcode == Op_LShiftL && ropcode == Op_URShiftL && in(1)->in(1) == in(2)->in(1)) {
+     Node* lshift = in(1)->in(2);
+     Node* rshift = in(2)->in(2);
+-    Node* shift = rotate_shift(phase, lshift, rshift, 0x3F);
++    Node* shift = rotate_shift(phase, in(1)->in(1), lshift, rshift, 0x3F);
+     if (shift != nullptr) {
+       return new RotateLeftNode(in(1)->in(1), shift, TypeLong::LONG);
+     }
+@@ -874,7 +877,7 @@ Node* OrLNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+       lopcode == Op_URShiftL && ropcode == Op_LShiftL && in(1)->in(1) == in(2)->in(1)) {
+     Node* rshift = in(1)->in(2);
+     Node* lshift = in(2)->in(2);
+-    Node* shift = rotate_shift(phase, rshift, lshift, 0x3F);
++    Node* shift = rotate_shift(phase, in(1)->in(1), rshift, lshift, 0x3F);
+     if (shift != nullptr) {
+       return new RotateRightNode(in(1)->in(1), shift, TypeLong::LONG);
+     }
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index 07a623e2f93..5f8c96d98a2 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -191,6 +191,7 @@ class VectorUnboxNode;
+ class VectorSet;
+ class VectorReinterpretNode;
+ class ShiftVNode;
++class RotateVNode;
+ class ExpandVNode;
+ class CompressVNode;
+ class CompressMNode;
+@@ -740,6 +741,7 @@ class Node {
+         DEFINE_CLASS_ID(CompressM, Vector, 6)
+         DEFINE_CLASS_ID(Reduction, Vector, 7)
+         DEFINE_CLASS_ID(NegV, Vector, 8)
++        DEFINE_CLASS_ID(RotateV, Vector, 9)
+       DEFINE_CLASS_ID(Con, Type, 8)
+           DEFINE_CLASS_ID(ConI, Con, 0)
+       DEFINE_CLASS_ID(SafePointScalarMerge, Type, 9)
+@@ -1008,6 +1010,7 @@ class Node {
+   DEFINE_CLASS_QUERY(StoreVectorMasked)
+   DEFINE_CLASS_QUERY(StoreVectorScatterMasked)
+   DEFINE_CLASS_QUERY(ShiftV)
++  DEFINE_CLASS_QUERY(RotateV)
+   DEFINE_CLASS_QUERY(Unlock)
+ 
+   #undef DEFINE_CLASS_QUERY
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index cfcd903e79d..375d331ab7b 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -2171,14 +2171,20 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+ 
+   Node* opd1 = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
+   Node* opd2 = nullptr;
++  bool is_scalar_shift = false;
+   if (is_shift) {
+     opd2 = vector_shift_count(cnt, opc, elem_bt, num_elem);
+   } else {
+     assert(is_rotate, "unexpected operation");
+     if (!is_const_rotate) {
+-      const Type * type_bt = Type::get_const_basic_type(elem_bt);
+-      cnt = elem_bt == T_LONG ? gvn().transform(new ConvI2LNode(cnt)) : cnt;
+-      opd2 = gvn().transform(VectorNode::scalar2vector(cnt, num_elem, type_bt));
++      if (Matcher::supports_vector_variable_rotates_with_scalar_shift(num_elem, elem_bt)) {
++        opd2 = cnt;
++        is_scalar_shift = true;
++      } else {
++        const Type * type_bt = Type::get_const_basic_type(elem_bt);
++        cnt = elem_bt == T_LONG ? gvn().transform(new ConvI2LNode(cnt)) : cnt;
++        opd2 = gvn().transform(VectorNode::scalar2vector(cnt, num_elem, type_bt));
++      }
+     } else {
+       // Constant shift value.
+       opd2 = cnt;
+@@ -2200,7 +2206,7 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+     }
+   }
+ 
+-  Node* operation = VectorNode::make(opc, opd1, opd2, num_elem, elem_bt);
++  Node* operation = VectorNode::make(opc, opd1, opd2, num_elem, elem_bt, is_scalar_shift);
+   if (is_masked_op && mask != nullptr) {
+     if (use_predicate) {
+       operation->add_req(mask);
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 72b49c043b6..f98e09dbbab 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -726,8 +726,8 @@ VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, b
+ 
+   case Op_PopCountVI: return new PopCountVINode(n1, vt);
+   case Op_PopCountVL: return new PopCountVLNode(n1, vt);
+-  case Op_RotateLeftV: return new RotateLeftVNode(n1, n2, vt);
+-  case Op_RotateRightV: return new RotateRightVNode(n1, n2, vt);
++  case Op_RotateLeftV: return new RotateLeftVNode(n1, n2, vt, is_var_shift);
++  case Op_RotateRightV: return new RotateRightVNode(n1, n2, vt, is_var_shift);
+ 
+   case Op_LShiftVB: return new LShiftVBNode(n1, n2, vt, is_var_shift);
+   case Op_LShiftVS: return new LShiftVSNode(n1, n2, vt, is_var_shift);
+@@ -817,6 +817,7 @@ VectorNode* VectorNode::shift_count(int opc, Node* cnt, uint vlen, BasicType bt)
+   switch (opc) {
+   case Op_LShiftI:
+   case Op_LShiftL:
++  case Op_RotateLeft:
+     return new LShiftCntVNode(cnt, vt);
+   case Op_RShiftI:
+   case Op_RShiftL:
+@@ -824,6 +825,7 @@ VectorNode* VectorNode::shift_count(int opc, Node* cnt, uint vlen, BasicType bt)
+   case Op_URShiftS:
+   case Op_URShiftI:
+   case Op_URShiftL:
++  case Op_RotateRight:
+     return new RShiftCntVNode(cnt, vt);
+   default:
+     fatal("Missed vector creation for '%s'", NodeClassNames[opc]);
+@@ -1597,12 +1599,12 @@ Node* VectorNode::degenerate_vector_rotate(Node* src, Node* cnt, bool is_rotate_
+   const TypeInt* cnt_type = cnt->bottom_type()->isa_int();
+   bool is_binary_vector_op = false;
+   if (cnt_type && cnt_type->is_con()) {
+-    // Constant shift.
++    // Vector rotate pattern with constant shift count.
+     int shift = cnt_type->get_con() & shift_mask;
+     shiftRCnt = phase->intcon(shift);
+     shiftLCnt = phase->intcon(shift_mask + 1 - shift);
+   } else if (cnt->Opcode() == Op_Replicate) {
+-    // Scalar variable shift, handle replicates generated by auto vectorizer.
++    // Vector rotate pattern with replicated scalar shift count, generated by auto vectorizer.
+     cnt = cnt->in(1);
+     if (bt == T_LONG) {
+       // Shift count vector for Rotate vector has long elements too.
+@@ -1616,8 +1618,13 @@ Node* VectorNode::degenerate_vector_rotate(Node* src, Node* cnt, bool is_rotate_
+     }
+     shiftRCnt = phase->transform(new AndINode(cnt, phase->intcon(shift_mask)));
+     shiftLCnt = phase->transform(new SubINode(phase->intcon(shift_mask + 1), shiftRCnt));
++  } else if (cnt_type) {
++    // Vector rotate pattern with scalar shift count, generated through vector inline expanders.
++    cnt = cnt->in(1);
++    shiftRCnt = phase->transform(new AndINode(cnt, phase->intcon(shift_mask)));
++    shiftLCnt = phase->transform(new SubINode(phase->intcon(shift_mask + 1), shiftRCnt));
+   } else {
+-    // Variable vector rotate count.
++    // Vector rotate pattern with vector shift count.
+     assert(Matcher::supports_vector_variable_shifts(), "");
+ 
+     int subVopc = 0;
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 23ddebaf338..342f9c0390a 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -1879,19 +1879,32 @@ class VectorUnboxNode : public VectorNode {
+   bool is_shuffle_to_vector() { return _shuffle_to_vector; }
+ };
+ 
+-class RotateRightVNode : public VectorNode {
++class RotateVNode : public VectorNode {
++private:
++  bool _is_scalar_shift;
++protected:
++  virtual uint size_of() const { return sizeof(*this); }
++public:
++  RotateVNode(Node* in1, Node* in2, const TypeVect* vt, bool is_scalar_shift)
++  : VectorNode(in1, in2, vt), _is_scalar_shift(is_scalar_shift) {
++    init_class_id(Class_RotateV);
++  }
++  bool is_scalar_shift() { return _is_scalar_shift;}
++};
++
++class RotateRightVNode : public RotateVNode {
+ public:
+-  RotateRightVNode(Node* in1, Node* in2, const TypeVect* vt)
+-  : VectorNode(in1, in2, vt) {}
++  RotateRightVNode(Node* in1, Node* in2, const TypeVect* vt, bool is_scalar_shift = false)
++  : RotateVNode(in1, in2, vt, is_scalar_shift) {}
+ 
+   virtual int Opcode() const;
+   Node* Ideal(PhaseGVN* phase, bool can_reshape);
+ };
+ 
+-class RotateLeftVNode : public VectorNode {
++class RotateLeftVNode : public RotateVNode {
+ public:
+-  RotateLeftVNode(Node* in1, Node* in2, const TypeVect* vt)
+-  : VectorNode(in1, in2, vt) {}
++  RotateLeftVNode(Node* in1, Node* in2, const TypeVect* vt, bool is_scalar_shift = false)
++  : RotateVNode(in1, in2, vt, is_scalar_shift) {}
+ 
+   virtual int Opcode() const;
+   Node* Ideal(PhaseGVN* phase, bool can_reshape);

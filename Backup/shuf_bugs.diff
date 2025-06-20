@@ -1,0 +1,176 @@
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index 1111c795114..aad82ffcce0 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -350,6 +350,7 @@ class LibraryCallKit : public GraphKit {
+   bool inline_vector_frombits_coerced();
+   bool inline_vector_shuffle_to_vector();
+   bool inline_vector_shuffle_iota();
++  Node* normalize_indexes(Node* index_vec, int num_elem, BasicType type_bt);
+   bool inline_vector_mask_operation();
+   bool inline_vector_mem_operation(bool is_store);
+   bool inline_vector_mem_masked_operation(bool is_store);
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 807912327e6..9d2352b5b5b 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -511,6 +511,26 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   return true;
+ }
+ 
++Node* LibraryCallKit::normalize_indexes(Node* index_vec, int num_elem, BasicType elem_bt) {
++  const TypeVect * vt  = TypeVect::make(elem_bt, num_elem);
++  const Type * type_bt = Type::get_const_basic_type(elem_bt);
++
++  Node* mod_val = gvn().makecon(TypeInt::make(num_elem-1));
++  Node* bcast_mod  = gvn().transform(VectorNode::scalar2vector(mod_val, num_elem, type_bt));
++
++  BoolTest::mask pred = BoolTest::ugt;
++  ConINode* pred_node = (ConINode*)gvn().makecon(TypeInt::make(pred));
++  Node* lane_cnt  = gvn().makecon(TypeInt::make(num_elem));
++  Node* bcast_lane_cnt = gvn().transform(VectorNode::scalar2vector(lane_cnt, num_elem, type_bt));
++  const TypeVect* vmask_type = TypeVect::makemask(type_bt, num_elem);
++  Node*  mask = gvn().transform(new VectorMaskCmpNode(pred, bcast_lane_cnt, index_vec, pred_node, vmask_type));
++
++  // Make the indices greater than lane count as -ve values to match the java side implementation.
++  index_vec = gvn().transform(VectorNode::make(Op_AndV, index_vec, bcast_mod, vt));
++  Node* biased_val = gvn().transform(VectorNode::make(Op_SubVB, index_vec, bcast_lane_cnt, vt));
++  return gvn().transform(new VectorBlendNode(biased_val, index_vec, mask));
++}
++
+ // <Sh extends VectorShuffle<E>,  E>
+ //  Sh ShuffleIota(Class<?> E, Class<?> shuffleClass, Vector.Species<E> s, int length,
+ //                  int start, int step, int wrap, ShuffleIotaOperation<Sh, E> defaultImpl)
+@@ -598,16 +618,7 @@ bool LibraryCallKit::inline_vector_shuffle_iota() {
+     // Wrap the indices greater than lane count.
+      res = gvn().transform(VectorNode::make(Op_AndV, res, bcast_mod, vt));
+   } else {
+-    ConINode* pred_node = (ConINode*)gvn().makecon(TypeInt::make(BoolTest::ugt));
+-    Node * lane_cnt  = gvn().makecon(TypeInt::make(num_elem));
+-    Node * bcast_lane_cnt = gvn().transform(VectorNode::scalar2vector(lane_cnt, num_elem, type_bt));
+-    const TypeVect* vmask_type = TypeVect::makemask(elem_bt, num_elem);
+-    Node* mask = gvn().transform(new VectorMaskCmpNode(BoolTest::ugt, bcast_lane_cnt, res, pred_node, vmask_type));
+-
+-    // Make the indices greater than lane count as -ve values to match the java side implementation.
+-    res = gvn().transform(VectorNode::make(Op_AndV, res, bcast_mod, vt));
+-    Node * biased_val = gvn().transform(VectorNode::make(Op_SubVB, res, bcast_lane_cnt, vt));
+-    res = gvn().transform(new VectorBlendNode(biased_val, res, mask));
++     res = normalize_indexes(res, num_elem, elem_bt);
+   }
+ 
+   ciKlass* sbox_klass = shuffle_klass->const_oop()->as_instance()->java_lang_Class_klass();
+@@ -2383,6 +2394,10 @@ bool LibraryCallKit::inline_vector_convert() {
+     op = gvn().transform(new VectorReinterpretNode(op, src_type, dst_type));
+   }
+ 
++  if (is_vector_shuffle(vbox_klass_to)) {
++     op = normalize_indexes(op, num_elem_to, elem_bt_to);
++  }
++
+   const TypeInstPtr* vbox_type_to = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass_to);
+   Node* vbox = box_vector(op, vbox_type_to, elem_bt_to, num_elem_to);
+   set_result(vbox);
+diff --git a/test/hotspot/jtreg/compiler/vectorapi/TestTwoVectorPermute.java b/test/hotspot/jtreg/compiler/vectorapi/TestTwoVectorPermute.java
+new file mode 100644
+index 00000000000..5318ea5ecce
+--- /dev/null
++++ b/test/hotspot/jtreg/compiler/vectorapi/TestTwoVectorPermute.java
+@@ -0,0 +1,98 @@
++/*
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/**
++* @test
++* @bug 8332119
++* @summary Incorrect IllegalArgumentException for C2 compiled permute kernel
++* @modules jdk.incubator.vector
++* @requires vm.compiler2.enabled
++* @library /test/lib /
++* @run main/othervm -XX:+UnlockDiagnosticVMOptions -Xbatch -XX:-TieredCompilation -XX:CompileOnly=TestTwoVectorPermute::micro compiler.vectorapi.TestTwoVectorPermute
++* @run main/othervm -XX:+UnlockDiagnosticVMOptions -Xbatch -XX:-TieredCompilation compiler.vectorapi.TestTwoVectorPermute
++*/
++package compiler.vectorapi;
++
++
++import jdk.incubator.vector.*;
++import java.util.Arrays;
++import java.util.Random;
++
++public class TestTwoVectorPermute {
++   public static final VectorSpecies<Float> FSP = FloatVector.SPECIES_256;
++
++   public static void validate(float [] res, float [] shuf, float [] src1, float [] src2) {
++       for (int i = 0; i < res.length; i++) {
++           // Exceptional index.
++           float expected = Float.NaN;
++           if (shuf[i] < 0 || shuf[i] >= FSP.length()) {
++               int wrapped_index = (int)Math.copySign((int)Math.abs(shuf[i]) & (FSP.length() - 1), shuf[i]);
++               wrapped_index = wrapped_index < 0 ? wrapped_index + FSP.length() : wrapped_index;
++               expected = src2[wrapped_index];       
++           } else {
++               expected = src1[(int)shuf[i]]; 
++           }
++           if (res[i] != expected) { 
++              throw new AssertionError("Result mismatch at " + i + " index, (actual = " + res[i] + ") != ( expected " +   expected + " )");
++           } 
++       }
++   }
++
++   public static void micro(float [] res, float [] shuf, float [] src1, float [] src2) {
++       VectorShuffle<Float> vshuf = FloatVector.fromArray(FSP, shuf, 0).toShuffle();
++       VectorShuffle<Float> vshuf_wrapped = vshuf.wrapIndexes();
++       FloatVector.fromArray(FSP, src1, 0)
++         .rearrange(vshuf_wrapped)
++         .blend(FloatVector.fromArray(FSP, src2, 0)
++                           .rearrange(vshuf_wrapped),
++                           vshuf.laneIsValid().not())
++         .intoArray(res, 0);
++   }
++
++   public static void main(String [] args) {
++       float [] res  = new float[FSP.length()];
++       float [] shuf = new float[FSP.length()];
++       float [] src1 = new float[FSP.length()];
++       float [] src2 = new float[FSP.length()];
++
++       for (int i = 0; i < FSP.length(); i++) {
++           shuf[i] = i * 2;
++       }
++       for (int i = 0; i < FSP.length(); i++) {
++           src1[i] = i;
++           src2[i] = i + FSP.length(); 
++       }
++       for (int i = 0; i < 10000; i++) {
++           micro(res, shuf, src1, src2);
++       }
++       validate(res, shuf, src1, src2);
++       for (int i = 0; i < FSP.length(); i++) {
++           shuf[i] = -i * 2;
++       }
++       for (int i = 0; i < 10000; i++) {
++           micro(res, shuf, src1, src2);
++       }
++       validate(res, shuf, src1, src2);
++       System.out.println("PASSED");
++   }
++}

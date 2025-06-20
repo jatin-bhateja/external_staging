@@ -1,0 +1,71 @@
+diff --git a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
+index f7b1e25cf3b..bb840356984 100644
+--- a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
+@@ -78,15 +78,21 @@ class ZRuntimeCallSpill {
+ 
+   void save() {
+     MacroAssembler* masm = _masm;
+-    __ push(rax);
+-    __ push(rcx);
+-    __ push(rdx);
+-    __ push(rdi);
+-    __ push(rsi);
+-    __ push(r8);
+-    __ push(r9);
+-    __ push(r10);
+-    __ push(r11);
++    if (VM_Version::supports_apx_f()) {
++      // FIXME [APX]
++      // Save all caller safe GPRs along with EGPRs using push2p, needs 16 byte stack alignment first
++      // Refer Assembler::pusha_uncached
++    } else {
++      __ push(rax);
++      __ push(rcx);
++      __ push(rdx);
++      __ push(rdi);
++      __ push(rsi);
++      __ push(r8);
++      __ push(r9);
++      __ push(r10);
++      __ push(r11);
++    }
+ 
+     if (_xmm_spill_size != 0) {
+       __ subptr(rsp, _xmm_spill_size);
+@@ -139,14 +145,19 @@ class ZRuntimeCallSpill {
+       __ addptr(rsp, _xmm_spill_size);
+     }
+ 
+-    __ pop(r11);
+-    __ pop(r10);
+-    __ pop(r9);
+-    __ pop(r8);
+-    __ pop(rsi);
+-    __ pop(rdi);
+-    __ pop(rdx);
+-    __ pop(rcx);
++    if (VM_Version::supports_apx_f()) {
++      //FIXME [APX]
++      // Restore caller saved GPRs and EGPRs using pop2p.
++    } else {
++      __ pop(r11);
++      __ pop(r10);
++      __ pop(r9);
++      __ pop(r8);
++      __ pop(rsi);
++      __ pop(rdi);
++      __ pop(rdx);
++      __ pop(rcx);
++    }
+     if (_result == noreg) {
+       __ pop(rax);
+     } else if (_result == rax) {
+@@ -472,6 +484,7 @@ void ZBarrierSetAssembler::store_barrier_medium(MacroAssembler* masm,
+     __ cmpptr(ref_addr, 0);
+     __ jcc(Assembler::notEqual, slow_path);
+ 
++    // FIXME [APX] Use pushp and popp.
+     // If we get this far, we know there is a young raw null value in the field.
+     // Try to self-heal null values for atomic accesses
+     __ push(rax);

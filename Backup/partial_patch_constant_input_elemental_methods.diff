@@ -1,0 +1,140 @@
+diff --git a/src/hotspot/cpu/aarch64/matcher_aarch64.hpp b/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
+index 0fbc2ef141e..3f01a960761 100644
+--- a/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
+@@ -204,4 +204,8 @@
+   static bool is_feat_fp16_supported() {
+     return (VM_Version::supports_fphp() && VM_Version::supports_asimdhp());
+   }
++
++  static bool disable_const_input_math_intrinsic(vmIntrinsicID id) {
++    return false;
++  }
+ #endif // CPU_AARCH64_MATCHER_AARCH64_HPP
+diff --git a/src/hotspot/cpu/arm/matcher_arm.hpp b/src/hotspot/cpu/arm/matcher_arm.hpp
+index 66fe8ac330e..1d63228da30 100644
+--- a/src/hotspot/cpu/arm/matcher_arm.hpp
++++ b/src/hotspot/cpu/arm/matcher_arm.hpp
+@@ -193,4 +193,8 @@
+     return false;
+   }
+ 
++  static bool disable_const_input_math_intrinsic(vmIntrinsicID id) {
++    return false;
++  }
++
+ #endif // CPU_ARM_MATCHER_ARM_HPP
+diff --git a/src/hotspot/cpu/ppc/matcher_ppc.hpp b/src/hotspot/cpu/ppc/matcher_ppc.hpp
+index 666bec9e0c8..fa8bc878c83 100644
+--- a/src/hotspot/cpu/ppc/matcher_ppc.hpp
++++ b/src/hotspot/cpu/ppc/matcher_ppc.hpp
+@@ -204,4 +204,7 @@
+     return false;
+   }
+ 
++  static bool disable_const_input_math_intrinsic(vmIntrinsicID id) {
++    return false;
++  }
+ #endif // CPU_PPC_MATCHER_PPC_HPP
+diff --git a/src/hotspot/cpu/riscv/matcher_riscv.hpp b/src/hotspot/cpu/riscv/matcher_riscv.hpp
+index 1b490a07f92..2b6625ffe88 100644
+--- a/src/hotspot/cpu/riscv/matcher_riscv.hpp
++++ b/src/hotspot/cpu/riscv/matcher_riscv.hpp
+@@ -199,4 +199,7 @@
+     return false;
+   }
+ 
++  static bool disable_const_input_math_intrinsic(vmIntrinsicID id) {
++    return false;
++  }
+ #endif // CPU_RISCV_MATCHER_RISCV_HPP
+diff --git a/src/hotspot/cpu/s390/matcher_s390.hpp b/src/hotspot/cpu/s390/matcher_s390.hpp
+index e4c277c63a8..3de0f3a8695 100644
+--- a/src/hotspot/cpu/s390/matcher_s390.hpp
++++ b/src/hotspot/cpu/s390/matcher_s390.hpp
+@@ -196,4 +196,7 @@
+     return false;
+   }
+ 
++  static bool disable_const_input_math_intrinsic(vmIntrinsicID id) {
++    return false;
++  }
+ #endif // CPU_S390_MATCHER_S390_HPP
+diff --git a/src/hotspot/cpu/x86/matcher_x86.hpp b/src/hotspot/cpu/x86/matcher_x86.hpp
+index 41486c244b2..92eb8092ed1 100644
+--- a/src/hotspot/cpu/x86/matcher_x86.hpp
++++ b/src/hotspot/cpu/x86/matcher_x86.hpp
+@@ -236,4 +236,14 @@
+     }
+   }
+ 
++
++  static bool disable_const_input_math_intrinsic(vmIntrinsicID id) {
++    switch(id) {
++      case vmIntrinsics::_dcbrt:
++      case vmIntrinsics::_dtanh:
++        return true;
++      default:
++        return false;
++    }
++  }
+ #endif // CPU_X86_MATCHER_X86_HPP
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index 38b7fc50200..68f2d1b0c08 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -1788,7 +1788,7 @@ bool LibraryCallKit::inline_math(vmIntrinsics::ID id) {
+ }
+ 
+ //------------------------------runtime_math-----------------------------
+-bool LibraryCallKit::runtime_math(const TypeFunc* call_type, address funcAddr, const char* funcName) {
++bool LibraryCallKit::runtime_math(const TypeFunc* call_type, address funcAddr, const char* funcName, bool skipConstInputs) {
+   assert(call_type == OptoRuntime::Math_DD_D_Type() || call_type == OptoRuntime::Math_D_D_Type(),
+          "must be (DD)D or (D)D type");
+ 
+@@ -1796,6 +1796,10 @@ bool LibraryCallKit::runtime_math(const TypeFunc* call_type, address funcAddr, c
+   Node* a = argument(0);
+   Node* b = (call_type == OptoRuntime::Math_DD_D_Type()) ? argument(2) : nullptr;
+ 
++  if (skipConstInputs && a->is_Con() && (!b || b->is_Con())) {
++    return false;
++  }
++
+   const TypePtr* no_memory_effects = nullptr;
+   Node* trig = make_runtime_call(RC_LEAF, call_type, funcAddr, funcName,
+                                  no_memory_effects,
+@@ -1889,7 +1893,8 @@ bool LibraryCallKit::inline_math_native(vmIntrinsics::ID id) {
+       runtime_math(OptoRuntime::Math_D_D_Type(), StubRoutines::dtanh(), "dtanh") : false;
+   case vmIntrinsics::_dcbrt:
+     return StubRoutines::dcbrt() != nullptr ?
+-      runtime_math(OptoRuntime::Math_D_D_Type(), StubRoutines::dcbrt(), "dcbrt") : false;
++      runtime_math(OptoRuntime::Math_D_D_Type(), StubRoutines::dcbrt(), "dcbrt",
++                   Matcher::disable_const_input_math_intrinsic(vmIntrinsics::_dcbrt)) : false;
+   case vmIntrinsics::_dexp:
+     return StubRoutines::dexp() != nullptr ?
+       runtime_math(OptoRuntime::Math_D_D_Type(), StubRoutines::dexp(),  "dexp") :
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index 1be08df32ae..8b778d798d2 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -202,7 +202,7 @@ class LibraryCallKit : public GraphKit {
+   bool inline_string_getCharsU();
+   bool inline_string_copy(bool compress);
+   bool inline_string_char_access(bool is_store);
+-  bool runtime_math(const TypeFunc* call_type, address funcAddr, const char* funcName);
++  bool runtime_math(const TypeFunc* call_type, address funcAddr, const char* funcName, bool skipConstInputs = false);
+   bool inline_math_native(vmIntrinsics::ID id);
+   bool inline_math(vmIntrinsics::ID id);
+   bool inline_double_math(vmIntrinsics::ID id);
+diff --git a/src/hotspot/share/opto/matcher.hpp b/src/hotspot/share/opto/matcher.hpp
+index baf43b0d538..88c9afe857e 100644
+--- a/src/hotspot/share/opto/matcher.hpp
++++ b/src/hotspot/share/opto/matcher.hpp
+@@ -34,6 +34,7 @@
+ #include "opto/regmask.hpp"
+ #include "opto/subnode.hpp"
+ #include "runtime/vm_version.hpp"
++#include "classfile/vmIntrinsics.hpp"
+ 
+ class Compile;
+ class Node;

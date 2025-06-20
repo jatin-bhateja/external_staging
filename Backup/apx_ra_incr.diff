@@ -1,0 +1,230 @@
+diff --cc src/hotspot/cpu/x86/globals_x86.hpp
+index d0353ae6fb9,03fd26195c0..00000000000
+--- a/src/hotspot/cpu/x86/globals_x86.hpp
++++ b/src/hotspot/cpu/x86/globals_x86.hpp
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 74cecb86f05..e28c8b8f57e 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -5896,8 +5896,7 @@ void Assembler::evpunpckhqdq(XMMRegister dst, KRegister mask, XMMRegister src1,
+ 
+ #ifdef _LP64
+ void Assembler::push2(Register src1, Register src2, bool with_ppx) {
+-  //FIXME: Uncomment assertion after JDK-8329031
+-  //assert(VM_Version::supports_apx_f(), "requires APX");
++  assert(VM_Version::supports_apx_f(), "requires APX");
+   InstructionAttr attributes(0, /* rex_w */ with_ppx, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+   /* EVEX.BASE */
+   int src_enc = src1->encoding();
+@@ -5918,8 +5917,7 @@ void Assembler::push2(Register src1, Register src2, bool with_ppx) {
+ }
+ 
+ void Assembler::pop2(Register src1, Register src2, bool with_ppx) {
+-  //FIXME: Uncomment assertion after JDK-8329031
+-  //assert(VM_Version::supports_apx_f(), "requires APX");
++  assert(VM_Version::supports_apx_f(), "requires APX");
+   InstructionAttr attributes(0, /* rex_w */ with_ppx, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+   /* EVEX.BASE */
+   int src_enc = src1->encoding();
+@@ -5948,15 +5946,13 @@ void Assembler::pop2p(Register src1, Register src2) {
+ }
+ 
+ void Assembler::pushp(Register src) {
+-  //FIXME: Uncomment assertion after JDK-8329031
+-  //assert(VM_Version::supports_apx_f(), "requires APX");
++  assert(VM_Version::supports_apx_f(), "requires APX");
+   int encode = prefixq_and_encode_rex2(src->encoding());
+   emit_int8(0x50 | encode);
+ }
+ 
+ void Assembler::popp(Register dst) {
+-  //FIXME: Uncomment assertion after JDK-8329031
+-  //assert(VM_Version::supports_apx_f(), "requires APX");
++  assert(VM_Version::supports_apx_f(), "requires APX");
+   int encode = prefixq_and_encode_rex2(dst->encoding());
+   emit_int8((unsigned char)0x58 | encode);
+ }
+@@ -14292,7 +14288,8 @@ void Assembler::pusha() { // 64bit
+ // The slot for rsp just contains an arbitrary value.
+ void Assembler::pusha_uncached() { // 64bit
+   if (UseAPX) {
+-    // Data being pushed by PUSH2 must be 16B-aligned on the stack.
++    // Data being pushed by PUSH2 must be 16B-aligned on the stack, for this push rax upfront
++    // and use it as a temporary register for stack alignment.
+     pushp(rax);
+     // Move original stack pointer to RAX and align stack pointer to 16B boundary.
+     movq(rax, rsp);
+@@ -14314,6 +14311,8 @@ void Assembler::pusha_uncached() { // 64bit
+     push2p(r8, rdi);
+     push2p(rsi, rbp);
+     push2p(rbx, rdx);
++    // To maintain 16 byte alignment after rcx is pushed.
++    subq(rsp, 8);
+     pushp(rcx);
+   } else {
+     subq(rsp, 16 * wordSize);
+@@ -14347,6 +14346,7 @@ void Assembler::popa() { // 64bit
+ void Assembler::popa_uncached() { // 64bit
+   if (UseAPX) {
+     popp(rcx);
++    addq(rsp, 8);
+     // Data being popped by POP2 must be 16B-aligned on the stack.
+     pop2p(rdx, rbx);
+     pop2p(rbp, rsi);
+diff --git a/src/hotspot/cpu/x86/c1_Runtime1_x86.cpp b/src/hotspot/cpu/x86/c1_Runtime1_x86.cpp
+index 17731d183a6..2bb77398e78 100644
+--- a/src/hotspot/cpu/x86/c1_Runtime1_x86.cpp
++++ b/src/hotspot/cpu/x86/c1_Runtime1_x86.cpp
+@@ -421,7 +421,7 @@ void C1_MacroAssembler::save_live_registers_no_oop_map(bool save_fpu_registers)
+   __ block_comment("save_live_registers");
+ 
+   // Push CPU state in multiple of 16 bytes
+-#ifdef LP64
++#ifdef _LP64
+   __ subq(rsp, 16 * wordSize);
+   __ movq(Address(rsp, 15 * wordSize), rax);
+   __ movq(Address(rsp, 14 * wordSize), rcx);
+diff --git a/src/hotspot/cpu/x86/register_x86.hpp b/src/hotspot/cpu/x86/register_x86.hpp
+index 97355cdce84..6844fdc248d 100644
+--- a/src/hotspot/cpu/x86/register_x86.hpp
++++ b/src/hotspot/cpu/x86/register_x86.hpp
+@@ -80,7 +80,7 @@ class Register {
+   // Actually available GP registers for use, depending on actual CPU capabilities and flags.
+   static int available_gp_registers() {
+ #ifdef _LP64
+-    if (UseAPX) {
++    if (!UseAPX) {
+       return number_of_registers / 2;
+     }
+ #endif // _LP64
+diff --git a/src/hotspot/cpu/x86/sharedRuntime_x86_64.cpp b/src/hotspot/cpu/x86/sharedRuntime_x86_64.cpp
+index 7df94b74b5c..88e7f47b90f 100644
+--- a/src/hotspot/cpu/x86/sharedRuntime_x86_64.cpp
++++ b/src/hotspot/cpu/x86/sharedRuntime_x86_64.cpp
+@@ -520,13 +520,13 @@ void RegisterSaver::restore_live_registers(MacroAssembler* masm, bool restore_wi
+   }
+ 
+ #if COMPILER2_OR_JVMCI
+-   if (UseAPX) {
+-     int base_addr = XSAVE_AREA_EGPRS;
+-     int off = 0;
+-     for (int n = 16; n < Register::number_of_registers; n++) {
+-        __ movq(as_Register(n), Address(rsp, base_addr+(off++*8)));
+-     }
+-   }
++  if (UseAPX) {
++    int base_addr = XSAVE_AREA_EGPRS;
++    int off = 0;
++    for (int n = 16; n < Register::number_of_registers; n++) {
++      __ movq(as_Register(n), Address(rsp, base_addr+(off++*8)));
++    }
++  }
+ #endif
+ 
+   // Recover CPU state
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index 103a7726276..40a35b6e8da 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -115,7 +115,6 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     // handling guarantees that preserved register values post signal handling were
+     // re-instantiated by operating system and not because they were not modified externally.
+ 
+-    /* FIXME Uncomment following code after OS enablement of
+     bool save_apx = UseAPX;
+     VM_Version::set_apx_cpuFeatures();
+     UseAPX = true;
+@@ -124,7 +123,6 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     __ mov64(r31, 0L);
+     UseAPX = save_apx;
+     VM_Version::clean_cpuFeatures();
+-    */
+     __ ret(0);
+     return start;
+   }
+@@ -437,26 +435,22 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     __ cmpl(rax, 0x80000);
+     __ jcc(Assembler::notEqual, vector_save_restore);
+ 
+-    /* FIXME: Uncomment while integrating JDK-8329032
+     bool save_apx = UseAPX;
+     VM_Version::set_apx_cpuFeatures();
+     UseAPX = true;
+     __ mov64(r16, VM_Version::egpr_test_value());
+     __ mov64(r31, VM_Version::egpr_test_value());
+-    */
+     __ xorl(rsi, rsi);
+     VM_Version::set_cpuinfo_segv_addr_apx(__ pc());
+     // Generate SEGV
+     __ movl(rax, Address(rsi, 0));
+ 
+     VM_Version::set_cpuinfo_cont_addr_apx(__ pc());
+-    /* FIXME: Uncomment after integration of JDK-8329032
+     __ lea(rsi, Address(rbp, in_bytes(VM_Version::apx_save_offset())));
+     __ movq(Address(rsi, 0), r16);
+     __ movq(Address(rsi, 8), r31);
+ 
+     UseAPX = save_apx;
+-    */
+ #endif
+     __ bind(vector_save_restore);
+     //
+@@ -3183,10 +3177,10 @@ bool VM_Version::os_supports_apx_egprs() {
+   if (!supports_apx_f()) {
+     return false;
+   }
+-  if (_cpuid_info.apx_save[0] != egpr_test_value() ||
++  /*if (_cpuid_info.apx_save[0] != egpr_test_value() ||
+       _cpuid_info.apx_save[1] != egpr_test_value()) {
+     return false;
+-  }
++  }*/
+   return true;
+ }
+ 
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index 1490cfa60b3..7e5058771f3 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -187,20 +187,6 @@ reg_def R31_H(SOC, SOC, Op_RegI, 31, r31->as_VMReg()->next());
+ // Registers which are used as pairs must fall on an even boundary.
+ 
+ alloc_class chunk0(R10,         R10_H,
+-                   R11,         R11_H,
+-                   R8,          R8_H,
+-                   R9,          R9_H,
+-                   R12,         R12_H,
+-                   RCX,         RCX_H,
+-                   RBX,         RBX_H,
+-                   RDI,         RDI_H,
+-                   RDX,         RDX_H,
+-                   RSI,         RSI_H,
+-                   RAX,         RAX_H,
+-                   RBP,         RBP_H,
+-                   R13,         R13_H,
+-                   R14,         R14_H,
+-                   R15,         R15_H,
+                    R16,         R16_H,
+                    R17,         R17_H,
+                    R18,         R18_H,
+@@ -217,6 +203,20 @@ alloc_class chunk0(R10,         R10_H,
+                    R29,         R29_H,
+                    R30,         R30_H,
+                    R31,         R31_H,
++                   R11,         R11_H,
++                   R8,          R8_H,
++                   R9,          R9_H,
++                   R12,         R12_H,
++                   RCX,         RCX_H,
++                   RBX,         RBX_H,
++                   RDI,         RDI_H,
++                   RDX,         RDX_H,
++                   RSI,         RSI_H,
++                   RAX,         RAX_H,
++                   RBP,         RBP_H,
++                   R13,         R13_H,
++                   R14,         R14_H,
++                   R15,         R15_H,
+                    RSP,         RSP_H);
+ 
+ 

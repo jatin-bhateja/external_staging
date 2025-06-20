@@ -1,0 +1,1430 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 6c56b01983a..df413093eea 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -830,7 +830,7 @@ address Assembler::locate_operand(address inst, WhichOperand which) {
+ 
+   case REX2:
+     NOT_LP64(assert(false, "64bit prefixes"));
+-    if ((0xFF & *ip++) & REXBIT_W) {
++    if ((0xFF & *ip++) & REX2BIT_W) {
+       is_64bit = true;
+     }
+     goto again_after_prefix;
+@@ -887,7 +887,7 @@ address Assembler::locate_operand(address inst, WhichOperand which) {
+ 
+     case REX2:
+       NOT_LP64(assert(false, "64bit prefix found"));
+-      if ((0xFF & *ip++) & REXBIT_W) {
++      if ((0xFF & *ip++) & REX2BIT_W) {
+         is_64bit = true;
+       }
+       goto again_after_size_prefix2;
+@@ -12900,14 +12900,14 @@ void Assembler::emit_data64(jlong data,
+ int Assembler::get_base_prefix_bits(int enc) {
+   int bits = 0;
+   if (enc & 16) bits |= REX2BIT_B4;
+-  if (enc & 8) bits |= REXBIT_B;
++  if (enc & 8) bits |= REX2BIT_B;
+   return bits;
+ }
+ 
+ int Assembler::get_index_prefix_bits(int enc) {
+   int bits = 0;
+   if (enc & 16) bits |= REX2BIT_X4;
+-  if (enc & 8) bits |= REXBIT_X;
++  if (enc & 8) bits |= REX2BIT_X;
+   return bits;
+ }
+ 
+@@ -12922,7 +12922,7 @@ int Assembler::get_index_prefix_bits(Register index) {
+ int Assembler::get_reg_prefix_bits(int enc) {
+   int bits = 0;
+   if (enc & 16) bits |= REX2BIT_R4;
+-  if (enc & 8) bits |= REXBIT_R;
++  if (enc & 8) bits |= REX2BIT_R;
+   return bits;
+ }
+ 
+@@ -13171,7 +13171,7 @@ int Assembler::get_prefixq(Address adr, bool is_map1) {
+ 
+ int Assembler::get_prefixq_rex2(Address adr, bool is_map1) {
+   assert(UseAPX, "APX features not enabled");
+-  int bits = REXBIT_W;
++  int bits = REX2BIT_W;
+   if (is_map1) bits |= REX2BIT_M0;
+   bits |= get_base_prefix_bits(adr.base());
+   bits |= get_index_prefix_bits(adr.index());
+@@ -13222,7 +13222,7 @@ int Assembler::get_prefixq(Address adr, Register src, bool is_map1) {
+ 
+ int Assembler::get_prefixq_rex2(Address adr, Register src, bool is_map1) {
+   assert(UseAPX, "APX features not enabled");
+-  int bits = REXBIT_W;
++  int bits = REX2BIT_W;
+   if (is_map1) bits |= REX2BIT_M0;
+   bits |= get_base_prefix_bits(adr.base());
+   bits |= get_index_prefix_bits(adr.index());
+@@ -13285,7 +13285,7 @@ void Assembler::prefixq(Address adr, XMMRegister src) {
+ }
+ 
+ void Assembler::prefixq_rex2(Address adr, XMMRegister src) {
+-  int bits = REXBIT_W;
++  int bits = REX2BIT_W;
+   bits |= get_base_prefix_bits(adr.base());
+   bits |= get_index_prefix_bits(adr.index());
+   bits |= get_reg_prefix_bits(src->encoding());
+@@ -13308,7 +13308,7 @@ int Assembler::prefixq_and_encode(int reg_enc, bool is_map1) {
+ 
+ 
+ int Assembler::prefixq_and_encode_rex2(int reg_enc, bool is_map1) {
+-  prefix16(WREX2 | REXBIT_W | (is_map1 ? REX2BIT_M0: 0) | get_base_prefix_bits(reg_enc));
++  prefix16(WREX2 | REX2BIT_W | (is_map1 ? REX2BIT_M0: 0) | get_base_prefix_bits(reg_enc));
+   return reg_enc & 0x7;
+ }
+ 
+@@ -13337,7 +13337,7 @@ int Assembler::prefixq_and_encode(int dst_enc, int src_enc, bool is_map1) {
+ }
+ 
+ int Assembler::prefixq_and_encode_rex2(int dst_enc, int src_enc, bool is_map1) {
+-  int init_bits = REXBIT_W | (is_map1 ? REX2BIT_M0 : 0);
++  int init_bits = REX2BIT_W | (is_map1 ? REX2BIT_M0 : 0);
+   return prefix_and_encode_rex2(dst_enc, src_enc, init_bits);
+ }
+ 
+@@ -14148,7 +14148,7 @@ void Assembler::precompute_instructions() {
+   ResourceMark rm;
+ 
+   // Make a temporary buffer big enough for the routines we're capturing
+-  int size = 256;
++  int size = UseAPX ? 512 : 256;
+   char* tmp_code = NEW_RESOURCE_ARRAY(char, size);
+   CodeBuffer buffer((address)tmp_code, size);
+   MacroAssembler masm(&buffer);
+@@ -14197,25 +14197,63 @@ void Assembler::popa() { // 64bit
+ }
+ 
+ void Assembler::popa_uncached() { // 64bit
+-  movq(r15, Address(rsp, 0));
+-  movq(r14, Address(rsp, wordSize));
+-  movq(r13, Address(rsp, 2 * wordSize));
+-  movq(r12, Address(rsp, 3 * wordSize));
+-  movq(r11, Address(rsp, 4 * wordSize));
+-  movq(r10, Address(rsp, 5 * wordSize));
+-  movq(r9,  Address(rsp, 6 * wordSize));
+-  movq(r8,  Address(rsp, 7 * wordSize));
+-  movq(rdi, Address(rsp, 8 * wordSize));
+-  movq(rsi, Address(rsp, 9 * wordSize));
+-  movq(rbp, Address(rsp, 10 * wordSize));
+-  // Skip rsp as it is restored automatically to the value
+-  // before the corresponding pusha when popa is done.
+-  movq(rbx, Address(rsp, 12 * wordSize));
+-  movq(rdx, Address(rsp, 13 * wordSize));
+-  movq(rcx, Address(rsp, 14 * wordSize));
+-  movq(rax, Address(rsp, 15 * wordSize));
+-
+-  addq(rsp, 16 * wordSize);
++  if (UseAPX) {
++    movq(r31, Address(rsp, 0));
++    movq(r30, Address(rsp, wordSize));
++    movq(r29, Address(rsp, 2 * wordSize));
++    movq(r28, Address(rsp, 3 * wordSize));
++    movq(r27, Address(rsp, 4 * wordSize));
++    movq(r26, Address(rsp, 5 * wordSize));
++    movq(r25, Address(rsp, 6 * wordSize));
++    movq(r24, Address(rsp, 7 * wordSize));
++    movq(r23, Address(rsp, 8 * wordSize));
++    movq(r22, Address(rsp, 9 * wordSize));
++    movq(r21, Address(rsp, 10 * wordSize));
++    movq(r20, Address(rsp, 11 * wordSize));
++    movq(r19, Address(rsp, 12 * wordSize));
++    movq(r18, Address(rsp, 13 * wordSize));
++    movq(r17, Address(rsp, 14 * wordSize));
++    movq(r16, Address(rsp, 15 * wordSize));
++    movq(r15, Address(rsp, 16 * wordSize));
++    movq(r14, Address(rsp, 17 * wordSize));
++    movq(r13, Address(rsp, 18 * wordSize));
++    movq(r12, Address(rsp, 19 * wordSize));
++    movq(r11, Address(rsp, 20 * wordSize));
++    movq(r10, Address(rsp, 21 * wordSize));
++    movq(r9,  Address(rsp, 22 * wordSize));
++    movq(r8,  Address(rsp, 23 * wordSize));
++    movq(rdi, Address(rsp, 24 * wordSize));
++    movq(rsi, Address(rsp, 25 * wordSize));
++    movq(rbp, Address(rsp, 26 * wordSize));
++    // Skip rsp as it is restored automatically to the value
++    // before the corresponding pusha when popa is done.
++    movq(rbx, Address(rsp, 28 * wordSize));
++    movq(rdx, Address(rsp, 29 * wordSize));
++    movq(rcx, Address(rsp, 30 * wordSize));
++    movq(rax, Address(rsp, 31 * wordSize));
++
++    addq(rsp, 32 * wordSize);
++  } else {
++    movq(r15, Address(rsp, 0));
++    movq(r14, Address(rsp, wordSize));
++    movq(r13, Address(rsp, 2 * wordSize));
++    movq(r12, Address(rsp, 3 * wordSize));
++    movq(r11, Address(rsp, 4 * wordSize));
++    movq(r10, Address(rsp, 5 * wordSize));
++    movq(r9,  Address(rsp, 6 * wordSize));
++    movq(r8,  Address(rsp, 7 * wordSize));
++    movq(rdi, Address(rsp, 8 * wordSize));
++    movq(rsi, Address(rsp, 9 * wordSize));
++    movq(rbp, Address(rsp, 10 * wordSize));
++    // Skip rsp as it is restored automatically to the value
++    // before the corresponding pusha when popa is done.
++    movq(rbx, Address(rsp, 12 * wordSize));
++    movq(rdx, Address(rsp, 13 * wordSize));
++    movq(rcx, Address(rsp, 14 * wordSize));
++    movq(rax, Address(rsp, 15 * wordSize));
++
++    addq(rsp, 16 * wordSize);
++  }
+ }
+ 
+ // Does not actually store the value of rsp on the stack.
+@@ -14227,26 +14265,63 @@ void Assembler::pusha() { // 64bit
+ // Does not actually store the value of rsp on the stack.
+ // The slot for rsp just contains an arbitrary value.
+ void Assembler::pusha_uncached() { // 64bit
+-  subq(rsp, 16 * wordSize);
+-
+-  movq(Address(rsp, 15 * wordSize), rax);
+-  movq(Address(rsp, 14 * wordSize), rcx);
+-  movq(Address(rsp, 13 * wordSize), rdx);
+-  movq(Address(rsp, 12 * wordSize), rbx);
+-  // Skip rsp as the value is normally not used. There are a few places where
+-  // the original value of rsp needs to be known but that can be computed
+-  // from the value of rsp immediately after pusha (rsp + 16 * wordSize).
+-  movq(Address(rsp, 10 * wordSize), rbp);
+-  movq(Address(rsp, 9 * wordSize), rsi);
+-  movq(Address(rsp, 8 * wordSize), rdi);
+-  movq(Address(rsp, 7 * wordSize), r8);
+-  movq(Address(rsp, 6 * wordSize), r9);
+-  movq(Address(rsp, 5 * wordSize), r10);
+-  movq(Address(rsp, 4 * wordSize), r11);
+-  movq(Address(rsp, 3 * wordSize), r12);
+-  movq(Address(rsp, 2 * wordSize), r13);
+-  movq(Address(rsp, wordSize), r14);
+-  movq(Address(rsp, 0), r15);
++  if (UseAPX) {
++    subq(rsp, 32 * wordSize);
++    movq(Address(rsp, 31 * wordSize), rax);
++    movq(Address(rsp, 30 * wordSize), rcx);
++    movq(Address(rsp, 29 * wordSize), rdx);
++    movq(Address(rsp, 28 * wordSize), rbx);
++    // Skip rsp as the value is normally not used. There are a few places where
++    // the original value of rsp needs to be known but that can be computed
++    // from the value of rsp immediately after pusha (rsp + 16 * wordSize).
++    movq(Address(rsp, 26 * wordSize), rbp);
++    movq(Address(rsp, 25 * wordSize), rsi);
++    movq(Address(rsp, 24 * wordSize), rdi);
++    movq(Address(rsp, 23 * wordSize), r8);
++    movq(Address(rsp, 22 * wordSize), r9);
++    movq(Address(rsp, 21 * wordSize), r10);
++    movq(Address(rsp, 20 * wordSize), r11);
++    movq(Address(rsp, 19 * wordSize), r12);
++    movq(Address(rsp, 18 * wordSize), r13);
++    movq(Address(rsp, 17 * wordSize), r14);
++    movq(Address(rsp, 16 * wordSize), r15);
++    movq(Address(rsp, 15 * wordSize), r16);
++    movq(Address(rsp, 14 * wordSize), r17);
++    movq(Address(rsp, 13 * wordSize), r18);
++    movq(Address(rsp, 12 * wordSize), r19);
++    movq(Address(rsp, 11 * wordSize), r20);
++    movq(Address(rsp, 10 * wordSize), r21);
++    movq(Address(rsp, 9 * wordSize), r22);
++    movq(Address(rsp, 8 * wordSize), r23);
++    movq(Address(rsp, 7 * wordSize), r24);
++    movq(Address(rsp, 6 * wordSize), r25);
++    movq(Address(rsp, 5 * wordSize), r26);
++    movq(Address(rsp, 4 * wordSize), r27);
++    movq(Address(rsp, 3 * wordSize), r28);
++    movq(Address(rsp, 2 * wordSize), r29);
++    movq(Address(rsp, wordSize), r30);
++    movq(Address(rsp, 0), r31);
++  } else {
++    subq(rsp, 16 * wordSize);
++    movq(Address(rsp, 15 * wordSize), rax);
++    movq(Address(rsp, 14 * wordSize), rcx);
++    movq(Address(rsp, 13 * wordSize), rdx);
++    movq(Address(rsp, 12 * wordSize), rbx);
++    // Skip rsp as the value is normally not used. There are a few places where
++    // the original value of rsp needs to be known but that can be computed
++    // from the value of rsp immediately after pusha (rsp + 16 * wordSize).
++    movq(Address(rsp, 10 * wordSize), rbp);
++    movq(Address(rsp, 9 * wordSize), rsi);
++    movq(Address(rsp, 8 * wordSize), rdi);
++    movq(Address(rsp, 7 * wordSize), r8);
++    movq(Address(rsp, 6 * wordSize), r9);
++    movq(Address(rsp, 5 * wordSize), r10);
++    movq(Address(rsp, 4 * wordSize), r11);
++    movq(Address(rsp, 3 * wordSize), r12);
++    movq(Address(rsp, 2 * wordSize), r13);
++    movq(Address(rsp, wordSize), r14);
++    movq(Address(rsp, 0), r15);
++  }
+ }
+ 
+ void Assembler::vzeroupper() {
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 13d73a41a66..0159be5b70e 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -530,14 +530,16 @@ class Assembler : public AbstractAssembler  {
+   };
+ 
+   enum PrefixBits {
+-    REXBIT_B  = 0x01,
+-    REXBIT_X  = 0x02,
+-    REXBIT_R  = 0x04,
+-    REXBIT_W  = 0x08,
++    REX2BIT_B  = 0x01,
++    REX2BIT_X  = 0x02,
++    REX2BIT_R  = 0x04,
++    REX2BIT_W  = 0x08,
+     REX2BIT_B4 = 0x10,
+     REX2BIT_X4 = 0x20,
+     REX2BIT_R4 = 0x40,
+-    REX2BIT_M0 = 0x80
++    REX2BIT_M0 = 0x80,
++    REX2BIT_WB = 0x09,
++    REX2BIT_WB4 = 0x18,
+   };
+ 
+   enum VexPrefix {
+diff --git a/src/hotspot/cpu/x86/c1_Defs_x86.hpp b/src/hotspot/cpu/x86/c1_Defs_x86.hpp
+index 28da99cdf27..e7ec63f83a7 100644
+--- a/src/hotspot/cpu/x86/c1_Defs_x86.hpp
++++ b/src/hotspot/cpu/x86/c1_Defs_x86.hpp
+@@ -39,7 +39,7 @@ enum {
+ 
+ // registers
+ enum {
+-  pd_nof_cpu_regs_frame_map = Register::number_of_registers,       // number of registers used during code emission
++  pd_nof_cpu_regs_frame_map = NOT_LP64(8) LP64_ONLY(16),           // number of registers used during code emission
+   pd_nof_fpu_regs_frame_map = FloatRegister::number_of_registers,  // number of registers used during code emission
+   pd_nof_xmm_regs_frame_map = XMMRegister::number_of_registers,    // number of registers used during code emission
+ 
+diff --git a/src/hotspot/cpu/x86/c1_LIRAssembler_x86.cpp b/src/hotspot/cpu/x86/c1_LIRAssembler_x86.cpp
+index c279e3073af..20f4f11e08f 100644
+--- a/src/hotspot/cpu/x86/c1_LIRAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c1_LIRAssembler_x86.cpp
+@@ -2835,7 +2835,7 @@ void LIR_Assembler::align_call(LIR_Code code) {
+     offset += NativeCall::displacement_offset;
+     break;
+   case lir_icvirtual_call:
+-    offset += NativeCall::displacement_offset + NativeMovConstReg::instruction_size;
++    offset += NativeCall::displacement_offset + NativeMovConstReg::instruction_size_rex;
+     break;
+   default: ShouldNotReachHere();
+   }
+@@ -2872,7 +2872,7 @@ void LIR_Assembler::emit_static_call_stub() {
+   int start = __ offset();
+ 
+   // make sure that the displacement word of the call ends up word aligned
+-  __ align(BytesPerWord, __ offset() + NativeMovConstReg::instruction_size + NativeCall::displacement_offset);
++  __ align(BytesPerWord, __ offset() + NativeMovConstReg::instruction_size_rex + NativeCall::displacement_offset);
+   __ relocate(static_stub_Relocation::spec(call_pc));
+   __ mov_metadata(rbx, (Metadata*)nullptr);
+   // must be set to -1 at code generation time
+diff --git a/src/hotspot/cpu/x86/c1_Runtime1_x86.cpp b/src/hotspot/cpu/x86/c1_Runtime1_x86.cpp
+index 2c24c0c2cfb..847ae187ef5 100644
+--- a/src/hotspot/cpu/x86/c1_Runtime1_x86.cpp
++++ b/src/hotspot/cpu/x86/c1_Runtime1_x86.cpp
+@@ -420,7 +420,27 @@ static OopMap* generate_oop_map(StubAssembler* sasm, int num_rt_args,
+ void C1_MacroAssembler::save_live_registers_no_oop_map(bool save_fpu_registers) {
+   __ block_comment("save_live_registers");
+ 
+-  __ pusha();         // integer registers
++  // Push CPU state in multiple of 16 bytes
++  __ subq(rsp, 16 * wordSize);
++
++  __ movq(Address(rsp, 15 * wordSize), rax);
++  __ movq(Address(rsp, 14 * wordSize), rcx);
++  __ movq(Address(rsp, 13 * wordSize), rdx);
++  __ movq(Address(rsp, 12 * wordSize), rbx);
++  // Skip rsp as the value is normally not used. There are a few places where
++  // the original value of rsp needs to be known but that can be computed
++  // from the value of rsp immediately after pusha (rsp + 16 * wordSize).
++  __ movq(Address(rsp, 10 * wordSize), rbp);
++  __ movq(Address(rsp, 9 * wordSize), rsi);
++  __ movq(Address(rsp, 8 * wordSize), rdi);
++  __ movq(Address(rsp, 7 * wordSize), r8);
++  __ movq(Address(rsp, 6 * wordSize), r9);
++  __ movq(Address(rsp, 5 * wordSize), r10);
++  __ movq(Address(rsp, 4 * wordSize), r11);
++  __ movq(Address(rsp, 3 * wordSize), r12);
++  __ movq(Address(rsp, 2 * wordSize), r13);
++  __ movq(Address(rsp, wordSize), r14);
++  __ movq(Address(rsp, 0), r15);
+ 
+   // assert(float_regs_as_doubles_off % 2 == 0, "misaligned offset");
+   // assert(xmm_regs_as_doubles_off % 2 == 0, "misaligned offset");
+@@ -560,7 +580,25 @@ void C1_MacroAssembler::restore_live_registers(bool restore_fpu_registers) {
+   __ block_comment("restore_live_registers");
+ 
+   restore_fpu(this, restore_fpu_registers);
+-  __ popa();
++  __ movq(r15, Address(rsp, 0));
++  __ movq(r14, Address(rsp, wordSize));
++  __ movq(r13, Address(rsp, 2 * wordSize));
++  __ movq(r12, Address(rsp, 3 * wordSize));
++  __ movq(r11, Address(rsp, 4 * wordSize));
++  __ movq(r10, Address(rsp, 5 * wordSize));
++  __ movq(r9,  Address(rsp, 6 * wordSize));
++  __ movq(r8,  Address(rsp, 7 * wordSize));
++  __ movq(rdi, Address(rsp, 8 * wordSize));
++  __ movq(rsi, Address(rsp, 9 * wordSize));
++  __ movq(rbp, Address(rsp, 10 * wordSize));
++  // Skip rsp as it is restored automatically to the value
++  // before the corresponding pusha when popa is done.
++  __ movq(rbx, Address(rsp, 12 * wordSize));
++  __ movq(rdx, Address(rsp, 13 * wordSize));
++  __ movq(rcx, Address(rsp, 14 * wordSize));
++  __ movq(rax, Address(rsp, 15 * wordSize));
++  __ addq(rsp, 16 * wordSize);
++
+ }
+ 
+ 
+diff --git a/src/hotspot/cpu/x86/gc/shared/barrierSetAssembler_x86.cpp b/src/hotspot/cpu/x86/gc/shared/barrierSetAssembler_x86.cpp
+index a06fde061f8..49be92aead7 100644
+--- a/src/hotspot/cpu/x86/gc/shared/barrierSetAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/gc/shared/barrierSetAssembler_x86.cpp
+@@ -613,6 +613,25 @@ void SaveLiveRegisters::initialize(BarrierStubC2* stub) {
+   caller_saved.Insert(OptoReg::as_OptoReg(r10->as_VMReg()));
+   caller_saved.Insert(OptoReg::as_OptoReg(r11->as_VMReg()));
+ 
++  if (UseAPX) {
++    caller_saved.Insert(OptoReg::as_OptoReg(r16->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r17->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r18->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r19->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r20->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r21->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r22->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r23->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r24->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r25->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r26->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r27->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r28->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r29->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r30->as_VMReg()));
++    caller_saved.Insert(OptoReg::as_OptoReg(r31->as_VMReg()));
++  }
++
+   if (stub->result() != noreg) {
+     caller_saved.Remove(OptoReg::as_OptoReg(stub->result()->as_VMReg()));
+   }
+diff --git a/src/hotspot/cpu/x86/gc/x/xBarrierSetAssembler_x86.cpp b/src/hotspot/cpu/x86/gc/x/xBarrierSetAssembler_x86.cpp
+index 4805b213084..a7dc34b17b1 100644
+--- a/src/hotspot/cpu/x86/gc/x/xBarrierSetAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/gc/x/xBarrierSetAssembler_x86.cpp
+@@ -484,6 +484,25 @@ class XSaveLiveRegisters {
+     caller_saved.Insert(OptoReg::as_OptoReg(r11->as_VMReg()));
+     caller_saved.Remove(OptoReg::as_OptoReg(stub->ref()->as_VMReg()));
+ 
++    if (UseAPX) {
++      caller_saved.Insert(OptoReg::as_OptoReg(r16->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r17->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r18->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r19->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r20->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r21->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r22->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r23->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r24->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r25->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r26->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r27->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r28->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r29->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r30->as_VMReg()));
++      caller_saved.Insert(OptoReg::as_OptoReg(r31->as_VMReg()));
++    }
++
+     // Create mask of live registers
+     RegMask live = stub->live();
+     if (stub->tmp() != noreg) {
+diff --git a/src/hotspot/cpu/x86/globals_x86.hpp b/src/hotspot/cpu/x86/globals_x86.hpp
+index c62e644d586..bacbb87fe16 100644
+--- a/src/hotspot/cpu/x86/globals_x86.hpp
++++ b/src/hotspot/cpu/x86/globals_x86.hpp
+@@ -115,9 +115,8 @@ define_pd_global(intx, InitArrayShortSize, 8*BytesPerLong);
+           "Highest supported AVX instructions set on x86/x64")              \
+           range(0, 3)                                                       \
+                                                                             \
+-  product(int, UseAPX, 0,                                                   \
+-          "Use Intel Advanced Performance Extensions.")                     \
+-          range(0, 1)                                                       \
++  product(bool, UseAPX, false,                                              \
++          "Use Intel Advanced Performance Extensions")                      \
+                                                                             \
+   product(bool, UseKNLSetting, false, DIAGNOSTIC,                           \
+           "Control whether Knights platform setting should be used")        \
+@@ -237,9 +236,6 @@ define_pd_global(intx, InitArrayShortSize, 8*BytesPerLong);
+   product(bool, IntelJccErratumMitigation, true, DIAGNOSTIC,                \
+              "Turn off JVM mitigations related to Intel micro code "        \
+              "mitigations for the Intel JCC erratum")                       \
+-                                                                            \
+-  product(bool, UseAPX, false, EXPERIMENTAL,                                \
+-          "Use Advanced Performance Extensions on x86")                     \
+ // end of ARCH_FLAGS
+ 
+ #endif // CPU_X86_GLOBALS_X86_HPP
+diff --git a/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp b/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
+index 09056b374ad..b23b733b24f 100644
+--- a/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
++++ b/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
+@@ -46,12 +46,17 @@ jint CodeInstaller::pd_next_offset(NativeInstruction* inst, jint pc_offset, JVMC
+     return (pc_offset + NativeCall::instruction_size);
+   } else if (inst->is_mov_literal64()) {
+     // mov+call instruction pair
+-    jint offset = pc_offset + NativeMovConstReg::instruction_size;
++    jint offset = pc_offset + ((NativeMovConstReg*)inst)->instruction_size();
+     u_char* call = (u_char*) (_instructions->start() + offset);
+     if (call[0] == Assembler::REX_B) {
+       offset += 1; /* prefix byte for extended register R8-R15 */
+       call++;
+     }
++    if (call[0] == Assembler::REX2) {
++      offset += 2; /* prefix byte for APX extended GPR register R16-R31 */
++      call+=2;
++    }
++    // Register indirect call.
+     assert(call[0] == 0xFF, "expected call");
+     offset += 2; /* opcode byte + modrm byte */
+     return (offset);
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.cpp b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+index d20f34e27b8..b60cfdb1a13 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+@@ -4087,6 +4087,11 @@ RegSet MacroAssembler::call_clobbered_gp_registers() {
+   regs += RegSet::range(r8, r11);
+ #else
+   regs += RegSet::of(rax, rcx, rdx);
++#endif
++#ifdef _LP64
++  if (UseAPX) {
++    regs += RegSet::range(r16, as_Register(Register::number_of_registers - 1));
++  }
+ #endif
+   return regs;
+ }
+diff --git a/src/hotspot/cpu/x86/methodHandles_x86.cpp b/src/hotspot/cpu/x86/methodHandles_x86.cpp
+index 16973816f7b..de897d71fac 100644
+--- a/src/hotspot/cpu/x86/methodHandles_x86.cpp
++++ b/src/hotspot/cpu/x86/methodHandles_x86.cpp
+@@ -536,10 +536,11 @@ void trace_method_handle_stub(const char* adaptername,
+       Register r = as_Register(i);
+       // The registers are stored in reverse order on the stack (by pusha).
+ #ifdef AMD64
+-      assert(Register::number_of_registers == 16, "sanity");
++      int num_regs = UseAPX ? 32 : 16;
++      assert(Register::available_gp_registers() == num_regs, "sanity");
+       if (r == rsp) {
+         // rsp is actually not stored by pusha(), compute the old rsp from saved_regs (rsp after pusha): saved_regs + 16 = old rsp
+-        ls.print("%3s=" PTR_FORMAT, r->name(), (intptr_t)(&saved_regs[16]));
++        ls.print("%3s=" PTR_FORMAT, r->name(), (intptr_t)(&saved_regs[num_regs]));
+       } else {
+         ls.print("%3s=" PTR_FORMAT, r->name(), saved_regs[((saved_regs_count - 1) - i)]);
+       }
+diff --git a/src/hotspot/cpu/x86/nativeInst_x86.cpp b/src/hotspot/cpu/x86/nativeInst_x86.cpp
+index b59f4246256..f8a320a7428 100644
+--- a/src/hotspot/cpu/x86/nativeInst_x86.cpp
++++ b/src/hotspot/cpu/x86/nativeInst_x86.cpp
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 1997, 2023, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 1997, 2024, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -297,8 +297,13 @@ void NativeCall::set_destination_mt_safe(address dest) {
+ void NativeMovConstReg::verify() {
+ #ifdef AMD64
+   // make sure code pattern is actually a mov reg64, imm64 instruction
+-  if ((ubyte_at(0) != Assembler::REX_W && ubyte_at(0) != Assembler::REX_WB) ||
+-      (ubyte_at(1) & (0xff ^ register_mask)) != 0xB8) {
++  bool valid_rex_prefix  = ubyte_at(0) == Assembler::REX_W || ubyte_at(0) == Assembler::REX_WB;
++  bool valid_rex2_prefix = ubyte_at(0) == Assembler::REX2  &&
++       (ubyte_at(1) == Assembler::REX2BIT_W  ||
++        ubyte_at(1) == Assembler::REX2BIT_WB ||
++        ubyte_at(1) == Assembler::REX2BIT_WB4);
++  int opcode = has_rex2_prefix() ? ubyte_at(2) : ubyte_at(1);
++  if ((!valid_rex_prefix || !valid_rex2_prefix) && (opcode & (0xff ^ register_mask)) != 0xB8) {
+     print();
+     fatal("not a REX.W[B] mov reg64, imm64");
+   }
+@@ -345,6 +350,11 @@ int NativeMovRegMem::instruction_start() const {
+     instr_0 = ubyte_at(off);
+   }
+ 
++  if (instr_0 == instruction_REX2_prefix) {
++    off+=2;
++    instr_0 = ubyte_at(off);
++  }
++
+   if (instr_0 == instruction_code_xor) {
+     off += 2;
+     instr_0 = ubyte_at(off);
+@@ -363,29 +373,39 @@ int NativeMovRegMem::instruction_start() const {
+     instr_0 = ubyte_at(off);
+   }
+ 
++  if (instr_0 == instruction_REX2_prefix) {
++    off+=2;
++    instr_0 = ubyte_at(off);
++  }
++
+   if ( instr_0 >= instruction_prefix_wide_lo && // 0x40
+        instr_0 <= instruction_prefix_wide_hi) { // 0x4f
+     off++;
+     instr_0 = ubyte_at(off);
+   }
+ 
+-
++  // Extended prefixes can only follow REX prefixes,
++  // REX2 is directly followed by main opcode.
+   if (instr_0 == instruction_extended_prefix ) {  // 0x0f
+     off++;
+   }
+ 
++  // Offset of instruction opcode.
+   return off;
+ }
+ 
++// Format [REX/REX2] [OPCODE] [ModRM] [SIB] [IMM/DISP32]
+ int NativeMovRegMem::patch_offset() const {
+   int off = data_offset + instruction_start();
+   u_char mod_rm = *(u_char*)(instruction_address() + 1);
+   // nnnn(r12|rsp) isn't coded as simple mod/rm since that is
+   // the encoding to use an SIB byte. Which will have the nnnn
+   // field off by one byte
++  // ModRM Byte Format = Mod[2] REG[3] RM[3]
+   if ((mod_rm & 7) == 0x4) {
+     off++;
+   }
++  // Displacement offset.
+   return off;
+ }
+ 
+@@ -431,12 +451,6 @@ void NativeMovRegMem::print() {
+ void NativeLoadAddress::verify() {
+   // make sure code pattern is actually a mov [reg+offset], reg instruction
+   u_char test_byte = *(u_char*)instruction_address();
+-#ifdef _LP64
+-  if ( (test_byte == instruction_prefix_wide ||
+-        test_byte == instruction_prefix_wide_extended) ) {
+-    test_byte = *(u_char*)(instruction_address() + 1);
+-  }
+-#endif // _LP64
+   if ( ! ((test_byte == lea_instruction_code)
+           LP64_ONLY(|| (test_byte == mov64_instruction_code) ))) {
+     fatal ("not a lea reg, [reg+offs] instruction");
+diff --git a/src/hotspot/cpu/x86/nativeInst_x86.hpp b/src/hotspot/cpu/x86/nativeInst_x86.hpp
+index f8cbf70f189..6be6a64e604 100644
+--- a/src/hotspot/cpu/x86/nativeInst_x86.hpp
++++ b/src/hotspot/cpu/x86/nativeInst_x86.hpp
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 1997, 2023, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 1997, 2024, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -92,6 +92,7 @@ class NativeInstruction {
+   void wrote(int offset);
+ 
+  public:
++  bool has_rex2_prefix() const { return ubyte_at(0) == Assembler::REX2; }
+ 
+   inline friend NativeInstruction* nativeInstruction_at(address address);
+ };
+@@ -104,6 +105,7 @@ inline NativeInstruction* nativeInstruction_at(address address) {
+   return inst;
+ }
+ 
++// PLT(procedure linkage table) call with relative displacement.
+ class NativePltCall: public NativeInstruction {
+ public:
+   enum Intel_specific_constants {
+@@ -220,19 +222,28 @@ inline NativeCall* nativeCall_before(address return_address) {
+   return call;
+ }
+ 
++// Call with target address in a general purpose register(indirect absolute addressing).
++// Encoding : FF /2  CALL r/m32
++// Primary Opcode: FF
++// Opcode Extension(part of ModRM.REG): /2
++// Operand ModRM.RM  = r/m32
+ class NativeCallReg: public NativeInstruction {
+  public:
+   enum Intel_specific_constants {
+     instruction_code            = 0xFF,
+     instruction_offset          =    0,
+     return_address_offset_norex =    2,
+-    return_address_offset_rex   =    3
++    return_address_offset_rex   =    3,
++    return_address_offset_rex2  =    4
+   };
+ 
+   int next_instruction_offset() const  {
+     if (ubyte_at(0) == NativeCallReg::instruction_code) {
+       return return_address_offset_norex;
++    } else if (has_rex2_prefix()) {
++      return return_address_offset_rex2;
+     } else {
++      assert((ubyte_at(0) & 0xF0) ==  Assembler::REX, "");
+       return return_address_offset_rex;
+     }
+   }
+@@ -240,28 +251,38 @@ class NativeCallReg: public NativeInstruction {
+ 
+ // An interface for accessing/manipulating native mov reg, imm32 instructions.
+ // (used to manipulate inlined 32bit data dll calls, etc.)
++// Instruction format for implied addressing mode immediate operand move to register instruction:
++//  [REX/REX2] [OPCODE] [IMM32]
+ class NativeMovConstReg: public NativeInstruction {
+ #ifdef AMD64
+-  static const bool has_rex = true;
+-  static const int rex_size = 1;
++  static const bool has_rex  = true;
++  static const int rex_size  = 1;
++  static const int rex2_size = 2;
+ #else
+-  static const bool has_rex = false;
+-  static const int rex_size = 0;
++  static const bool has_rex  = false;
++  static const int rex_size  = 0;
++  static const int rex2_size = 0;
+ #endif // AMD64
+  public:
+   enum Intel_specific_constants {
+-    instruction_code            = 0xB8,
+-    instruction_size            =    1 + rex_size + wordSize,
+-    instruction_offset          =    0,
+-    data_offset                 =    1 + rex_size,
+-    next_instruction_offset     =    instruction_size,
+-    register_mask               = 0x07
++    instruction_code             = 0xB8,
++    instruction_offset           =    0,
++    instruction_size_rex         =    1 + rex_size + wordSize,
++    instruction_size_rex2        =    1 + rex2_size + wordSize,
++    data_offset_rex              =    1 + rex_size,
++    data_offset_rex2             =    1 + rex2_size,
++    next_instruction_offset_rex  =    instruction_size_rex,
++    next_instruction_offset_rex2 =    instruction_size_rex2,
++    register_mask                = 0x07
+   };
+ 
++  int instruction_size() const              { return has_rex2_prefix() ? instruction_size_rex2 : instruction_size_rex; }
++  int next_inst_offset() const              { return has_rex2_prefix() ? next_instruction_offset_rex2 : next_instruction_offset_rex; }
++  int data_byte_offset() const              { return has_rex2_prefix() ? data_offset_rex2 : data_offset_rex;}
+   address instruction_address() const       { return addr_at(instruction_offset); }
+-  address next_instruction_address() const  { return addr_at(next_instruction_offset); }
+-  intptr_t data() const                     { return ptr_at(data_offset); }
+-  void  set_data(intptr_t x)                { set_ptr_at(data_offset, x); }
++  address next_instruction_address() const  { return addr_at(next_inst_offset()); }
++  intptr_t data() const                     { return ptr_at(data_byte_offset()); }
++  void  set_data(intptr_t x)                { set_ptr_at(data_byte_offset(), x); }
+ 
+   void  verify();
+   void  print();
+@@ -280,7 +301,10 @@ inline NativeMovConstReg* nativeMovConstReg_at(address address) {
+ }
+ 
+ inline NativeMovConstReg* nativeMovConstReg_before(address address) {
+-  NativeMovConstReg* test = (NativeMovConstReg*)(address - NativeMovConstReg::instruction_size - NativeMovConstReg::instruction_offset);
++  int instruction_size = ((NativeInstruction*)(address))->has_rex2_prefix() ?
++                                  NativeMovConstReg::instruction_size_rex2 :
++                                  NativeMovConstReg::instruction_size_rex;
++  NativeMovConstReg* test = (NativeMovConstReg*)(address - instruction_size - NativeMovConstReg::instruction_offset);
+ #ifdef ASSERT
+   test->verify();
+ #endif
+@@ -313,7 +337,7 @@ class NativeMovConstRegPatching: public NativeMovConstReg {
+ // macros.  For example: The load_unsigned_byte instruction generates
+ // an xor reg,reg inst prior to generating the movb instruction.  This
+ // class must skip the xor instruction.
+-
++//
+ class NativeMovRegMem: public NativeInstruction {
+  public:
+   enum Intel_specific_constants {
+@@ -321,35 +345,48 @@ class NativeMovRegMem: public NativeInstruction {
+     instruction_prefix_wide_hi          = Assembler::REX_WRXB,
+     instruction_code_xor                = 0x33,
+     instruction_extended_prefix         = 0x0F,
++
++    // Legacy encoding MAP1 instructions promotable to REX2 encoding.
+     instruction_code_mem2reg_movslq     = 0x63,
+     instruction_code_mem2reg_movzxb     = 0xB6,
+     instruction_code_mem2reg_movsxb     = 0xBE,
+     instruction_code_mem2reg_movzxw     = 0xB7,
+     instruction_code_mem2reg_movsxw     = 0xBF,
++
+     instruction_operandsize_prefix      = 0x66,
++
++    // Legacy encoding MAP0 instructions promotable to REX2 encoding.
+     instruction_code_reg2mem            = 0x89,
+     instruction_code_mem2reg            = 0x8b,
+     instruction_code_reg2memb           = 0x88,
+     instruction_code_mem2regb           = 0x8a,
++    instruction_code_lea                = 0x8d,
++
+     instruction_code_float_s            = 0xd9,
+     instruction_code_float_d            = 0xdd,
+     instruction_code_long_volatile      = 0xdf,
++
++    // VEX/EVEX/Legacy encodeded MAP1 instructions promotable to REX2 encoding.
+     instruction_code_xmm_ss_prefix      = 0xf3,
+     instruction_code_xmm_sd_prefix      = 0xf2,
++
+     instruction_code_xmm_code           = 0x0f,
++
++    // Address operand load/store/ldp are promotable to REX2 to accomodate
++    // extended SIB encoding.
+     instruction_code_xmm_load           = 0x10,
+     instruction_code_xmm_store          = 0x11,
+     instruction_code_xmm_lpd            = 0x12,
+ 
+-    instruction_code_lea                = 0x8d,
+-
+     instruction_VEX_prefix_2bytes       = Assembler::VEX_2bytes,
+     instruction_VEX_prefix_3bytes       = Assembler::VEX_3bytes,
+     instruction_EVEX_prefix_4bytes      = Assembler::EVEX_4bytes,
++    instruction_REX2_prefix             = Assembler::REX2,
+ 
+     instruction_offset                  = 0,
+     data_offset                         = 2,
+-    next_instruction_offset             = 4
++    next_instruction_offset_rex         = 4,
++    next_instruction_offset_rex2        = 5
+   };
+ 
+   // helper
+@@ -427,6 +464,7 @@ class NativeLoadAddress: public NativeMovRegMem {
+ 
+ // destination is rbx or rax
+ // mov rbx, [rip + offset]
++//FIXME: Currently not being used in hotspot code base, extend it to support REX2 prefix.
+ class NativeLoadGot: public NativeInstruction {
+ #ifdef AMD64
+   static const bool has_rex = true;
+@@ -532,6 +570,7 @@ inline NativeJump* nativeJump_at(address address) {
+ }
+ 
+ // far jump reg
++//FIXME: Currently not being used in hotspot code base, extend it to support REX2 prefix.
+ class NativeFarJump: public NativeInstruction {
+  public:
+   address jump_destination() const;
+@@ -551,7 +590,8 @@ inline NativeFarJump* nativeFarJump_at(address address) {
+   return jump;
+ }
+ 
+-// Handles all kinds of jump on Intel. Long/far, conditional/unconditional
++// Handles all kinds of jump on Intel. Long/far, conditional/unconditional with relative offsets
++// barring register indirect jumps.
+ class NativeGeneralJump: public NativeInstruction {
+  public:
+   enum Intel_specific_constants {
+@@ -584,6 +624,8 @@ inline NativeGeneralJump* nativeGeneralJump_at(address address) {
+   return jump;
+ }
+ 
++//FIXME: Register indirect jump interface, currently not being used in hotspot code base,
++// extend it to support REX2 prefix if needed.
+ class NativeGotJump: public NativeInstruction {
+   enum Intel_specific_constants {
+     rex_prefix = 0x41,
+@@ -624,6 +666,7 @@ inline NativeGotJump* nativeGotJump_at(address addr) {
+   return jump;
+ }
+ 
++//FIXME: Currently not being used in hotspot code base, extend it to support REX2 prefix.
+ class NativePopReg : public NativeInstruction {
+  public:
+   enum Intel_specific_constants {
+@@ -707,19 +750,25 @@ inline bool NativeInstruction::is_cond_jump()    { return (int_at(0) & 0xF0FF) =
+ inline bool NativeInstruction::is_safepoint_poll() {
+ #ifdef AMD64
+   const bool has_rex_prefix = ubyte_at(0) == NativeTstRegMem::instruction_rex_b_prefix;
+-  const int test_offset = has_rex_prefix ? 1 : 0;
++  const int prefix_size = has_rex2_prefix() ? 2 : (has_rex_prefix ? 1 : 0);
+ #else
+   const int test_offset = 0;
+ #endif
+-  const bool is_test_opcode = ubyte_at(test_offset) == NativeTstRegMem::instruction_code_memXregl;
+-  const bool is_rax_target = (ubyte_at(test_offset + 1) & NativeTstRegMem::modrm_mask) == NativeTstRegMem::modrm_reg;
++  const bool is_test_opcode = ubyte_at(prefix_size) == NativeTstRegMem::instruction_code_memXregl;
++  const bool is_rax_target = (ubyte_at(prefix_size + 1) & NativeTstRegMem::modrm_mask) == NativeTstRegMem::modrm_reg;
+   return is_test_opcode && is_rax_target;
+ }
+ 
+ inline bool NativeInstruction::is_mov_literal64() {
+ #ifdef AMD64
+-  return ((ubyte_at(0) == Assembler::REX_W || ubyte_at(0) == Assembler::REX_WB) &&
+-          (ubyte_at(1) & (0xff ^ NativeMovConstReg::register_mask)) == 0xB8);
++  bool valid_rex_prefix  = ubyte_at(0) == Assembler::REX_W || ubyte_at(0) == Assembler::REX_WB;
++  bool valid_rex2_prefix = ubyte_at(0) == Assembler::REX2  &&
++       (ubyte_at(1) == Assembler::REX2BIT_W  ||
++        ubyte_at(1) == Assembler::REX2BIT_WB ||
++        ubyte_at(1) == Assembler::REX2BIT_WB4);
++
++  int opcode = has_rex2_prefix() ? ubyte_at(2) : ubyte_at(1);
++  return ((valid_rex_prefix || valid_rex2_prefix) &&  (opcode & (0xff ^ NativeMovConstReg::register_mask)) == 0xB8);
+ #else
+   return false;
+ #endif // AMD64
+diff --git a/src/hotspot/cpu/x86/register_x86.cpp b/src/hotspot/cpu/x86/register_x86.cpp
+index 2aae4a795e3..bb26ab66051 100644
+--- a/src/hotspot/cpu/x86/register_x86.cpp
++++ b/src/hotspot/cpu/x86/register_x86.cpp
+@@ -35,7 +35,9 @@ const char * Register::RegisterImpl::name() const {
+   static const char *const names[number_of_registers] = {
+ #ifdef _LP64
+     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
+-    "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15"
++    "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15",
++    "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",
++    "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31"
+ #else
+     "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi"
+ #endif // _LP64
+diff --git a/src/hotspot/cpu/x86/register_x86.hpp b/src/hotspot/cpu/x86/register_x86.hpp
+index 2cfc3ec58ed..d8d14f4d9ff 100644
+--- a/src/hotspot/cpu/x86/register_x86.hpp
++++ b/src/hotspot/cpu/x86/register_x86.hpp
+@@ -45,8 +45,8 @@ class Register {
+   inline friend constexpr Register as_Register(int encoding);
+ 
+   enum {
+-    number_of_registers      = LP64_ONLY( 16 ) NOT_LP64( 8 ),
+-    number_of_byte_registers = LP64_ONLY( 16 ) NOT_LP64( 4 ),
++    number_of_registers      = LP64_ONLY( 32 ) NOT_LP64( 8 ),
++    number_of_byte_registers = LP64_ONLY( 32 ) NOT_LP64( 4 ),
+     max_slots_per_register   = LP64_ONLY(  2 ) NOT_LP64( 1 )
+   };
+ 
+@@ -76,6 +76,16 @@ class Register {
+   int operator!=(const Register r) const { return _encoding != r._encoding; }
+ 
+   constexpr const RegisterImpl* operator->() const { return RegisterImpl::first() + _encoding; }
++
++  // Actually available GP registers for use, depending on actual CPU capabilities and flags.
++  static int available_gp_registers() {
++#ifdef _LP64
++    if (UseAPX) {
++      return number_of_registers / 2;
++    }
++#endif // _LP64
++    return number_of_registers;
++  }
+ };
+ 
+ extern const Register::RegisterImpl all_RegisterImpls[Register::number_of_registers + 1] INTERNAL_VISIBILITY;
+@@ -115,6 +125,22 @@ constexpr Register r12 = as_Register(12);
+ constexpr Register r13 = as_Register(13);
+ constexpr Register r14 = as_Register(14);
+ constexpr Register r15 = as_Register(15);
++constexpr Register r16 = as_Register(16);
++constexpr Register r17 = as_Register(17);
++constexpr Register r18 = as_Register(18);
++constexpr Register r19 = as_Register(19);
++constexpr Register r20 = as_Register(20);
++constexpr Register r21 = as_Register(21);
++constexpr Register r22 = as_Register(22);
++constexpr Register r23 = as_Register(23);
++constexpr Register r24 = as_Register(24);
++constexpr Register r25 = as_Register(25);
++constexpr Register r26 = as_Register(26);
++constexpr Register r27 = as_Register(27);
++constexpr Register r28 = as_Register(28);
++constexpr Register r29 = as_Register(29);
++constexpr Register r30 = as_Register(30);
++constexpr Register r31 = as_Register(31);
+ #endif // _LP64
+ 
+ 
+diff --git a/src/hotspot/cpu/x86/sharedRuntime_x86_64.cpp b/src/hotspot/cpu/x86/sharedRuntime_x86_64.cpp
+index 31bbfb747f8..df2066ab1d0 100644
+--- a/src/hotspot/cpu/x86/sharedRuntime_x86_64.cpp
++++ b/src/hotspot/cpu/x86/sharedRuntime_x86_64.cpp
+@@ -95,6 +95,7 @@ class RegisterSaver {
+   // units because compiler frame slots are jints.
+ #define XSAVE_AREA_BEGIN 160
+ #define XSAVE_AREA_YMM_BEGIN 576
++#define XSAVE_AREA_EGPRS 960
+ #define XSAVE_AREA_OPMASK_BEGIN 1088
+ #define XSAVE_AREA_ZMM_BEGIN 1152
+ #define XSAVE_AREA_UPPERBANK 1664
+@@ -104,8 +105,8 @@ class RegisterSaver {
+ #define DEF_OPMASK_OFFS(regnum)    opmask ## regnum ## _off = opmask_off + (regnum)*8/BytesPerInt,     opmask ## regnum ## H_off
+ #define DEF_ZMM_UPPER_OFFS(regnum) zmm ## regnum ## _off = zmm_upper_off + (regnum-16)*64/BytesPerInt, zmm ## regnum ## H_off
+   enum layout {
+-    fpu_state_off = frame::arg_reg_save_area_bytes/BytesPerInt, // fxsave save area
+-    xmm_off       = fpu_state_off + XSAVE_AREA_BEGIN/BytesPerInt,            // offset in fxsave save area
++    fpu_state_off = frame::arg_reg_save_area_bytes/BytesPerInt,    // fxsave save area
++    xmm_off       = fpu_state_off + XSAVE_AREA_BEGIN/BytesPerInt,  // offset in fxsave save area
+     DEF_XMM_OFFS(0),
+     DEF_XMM_OFFS(1),
+     // 2..15 are implied in range usage
+@@ -113,7 +114,24 @@ class RegisterSaver {
+     DEF_YMM_OFFS(0),
+     DEF_YMM_OFFS(1),
+     // 2..15 are implied in range usage
+-    opmask_off         = xmm_off + (XSAVE_AREA_OPMASK_BEGIN - XSAVE_AREA_BEGIN)/BytesPerInt,
++    r31_off = xmm_off + (XSAVE_AREA_EGPRS - XSAVE_AREA_BEGIN)/BytesPerInt,
++    r31H_off,
++    r30_off, r30H_off,
++    r29_off, r29H_off,
++    r28_off, r28H_off,
++    r27_off, r27H_off,
++    r26_off, r26H_off,
++    r25_off, r25H_off,
++    r24_off, r24H_off,
++    r23_off, r23H_off,
++    r22_off, r22H_off,
++    r21_off, r21H_off,
++    r20_off, r20H_off,
++    r19_off, r19H_off,
++    r18_off, r18H_off,
++    r17_off, r17H_off,
++    r16_off, r16H_off,
++    opmask_off   = xmm_off + (XSAVE_AREA_OPMASK_BEGIN - XSAVE_AREA_BEGIN)/BytesPerInt,
+     DEF_OPMASK_OFFS(0),
+     DEF_OPMASK_OFFS(1),
+     // 2..7 are implied in range usage
+@@ -199,7 +217,32 @@ OopMap* RegisterSaver::save_live_registers(MacroAssembler* masm, int additional_
+   // to be under the return like a normal enter.
+ 
+   __ enter();          // rsp becomes 16-byte aligned here
+-  __ push_CPU_state(); // Push a multiple of 16 bytes
++  __ pushf();
++  // Make sure rsp stays 16-byte aligned
++  __ subq(rsp, 8);
++  // Push CPU state in multiple of 16 bytes
++  __ subq(rsp, 16 * wordSize);
++
++  __ movq(Address(rsp, 15 * wordSize), rax);
++  __ movq(Address(rsp, 14 * wordSize), rcx);
++  __ movq(Address(rsp, 13 * wordSize), rdx);
++  __ movq(Address(rsp, 12 * wordSize), rbx);
++  // Skip rsp as the value is normally not used. There are a few places where
++  // the original value of rsp needs to be known but that can be computed
++  // from the value of rsp immediately after pusha (rsp + 16 * wordSize).
++  __ movq(Address(rsp, 10 * wordSize), rbp);
++  __ movq(Address(rsp, 9 * wordSize), rsi);
++  __ movq(Address(rsp, 8 * wordSize), rdi);
++  __ movq(Address(rsp, 7 * wordSize), r8);
++  __ movq(Address(rsp, 6 * wordSize), r9);
++  __ movq(Address(rsp, 5 * wordSize), r10);
++  __ movq(Address(rsp, 4 * wordSize), r11);
++  __ movq(Address(rsp, 3 * wordSize), r12);
++  __ movq(Address(rsp, 2 * wordSize), r13);
++  __ movq(Address(rsp, wordSize), r14);
++  __ movq(Address(rsp, 0), r15);
++  __ push_FPU_state();
++
+ 
+   // push cpu state handles this on EVEX enabled targets
+   if (save_wide_vectors) {
+@@ -247,6 +290,17 @@ OopMap* RegisterSaver::save_live_registers(MacroAssembler* masm, int additional_
+ #endif
+     }
+   }
++
++#if COMPILER2_OR_JVMCI
++  if (UseAPX) {
++      int base_addr = XSAVE_AREA_EGPRS;
++      off = 0;
++      for(int n = 16; n < Register::number_of_registers; n++) {
++        __ movq(Address(rsp, base_addr+(off++*8)), as_Register(n));
++      }
++  }
++#endif
++
+   __ vzeroupper();
+   if (frame::arg_reg_save_area_bytes != 0) {
+     // Allocate argument register save area
+@@ -279,6 +333,25 @@ OopMap* RegisterSaver::save_live_registers(MacroAssembler* masm, int additional_
+   map->set_callee_saved(STACK_OFFSET( r13_off ), r13->as_VMReg());
+   map->set_callee_saved(STACK_OFFSET( r14_off ), r14->as_VMReg());
+   map->set_callee_saved(STACK_OFFSET( r15_off ), r15->as_VMReg());
++
++  if (UseAPX) {
++    map->set_callee_saved(STACK_OFFSET( r16_off ), r16->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r17_off ), r17->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r18_off ), r18->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r19_off ), r19->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r20_off ), r20->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r21_off ), r21->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r22_off ), r22->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r23_off ), r23->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r24_off ), r24->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r25_off ), r25->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r26_off ), r26->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r27_off ), r27->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r28_off ), r28->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r29_off ), r29->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r30_off ), r30->as_VMReg());
++    map->set_callee_saved(STACK_OFFSET( r31_off ), r31->as_VMReg());
++  }
+   // For both AVX and EVEX we will use the legacy FXSAVE area for xmm0..xmm15,
+   // on EVEX enabled targets, we get it included in the xsave area
+   off = xmm0_off;
+@@ -339,6 +412,24 @@ OopMap* RegisterSaver::save_live_registers(MacroAssembler* masm, int additional_
+     map->set_callee_saved(STACK_OFFSET( r13H_off ), r13->as_VMReg()->next());
+     map->set_callee_saved(STACK_OFFSET( r14H_off ), r14->as_VMReg()->next());
+     map->set_callee_saved(STACK_OFFSET( r15H_off ), r15->as_VMReg()->next());
++    if (UseAPX) {
++      map->set_callee_saved(STACK_OFFSET( r16H_off ), r16->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r17H_off ), r17->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r18H_off ), r18->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r19H_off ), r19->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r20H_off ), r20->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r21H_off ), r21->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r22H_off ), r22->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r23H_off ), r23->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r24H_off ), r24->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r25H_off ), r25->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r26H_off ), r26->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r27H_off ), r27->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r28H_off ), r28->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r29H_off ), r29->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r30H_off ), r30->as_VMReg()->next());
++      map->set_callee_saved(STACK_OFFSET( r31H_off ), r31->as_VMReg()->next());
++    }
+     // For both AVX and EVEX we will use the legacy FXSAVE area for xmm0..xmm15,
+     // on EVEX enabled targets, we get it included in the xsave area
+     off = xmm0H_off;
+@@ -428,8 +519,39 @@ void RegisterSaver::restore_live_registers(MacroAssembler* masm, bool restore_wi
+     }
+   }
+ 
++#if COMPILER2_OR_JVMCI
++   if (UseAPX) {
++     int base_addr = XSAVE_AREA_EGPRS;
++     int off = 0;
++     for (int n = 16; n < Register::number_of_registers; n++) {
++        __ movq(as_Register(n), Address(rsp, base_addr+(off++*8)));
++     }
++   }
++#endif
++
+   // Recover CPU state
+-  __ pop_CPU_state();
++  __ pop_FPU_state();
++
++  __ movq(r15, Address(rsp, 0));
++  __ movq(r14, Address(rsp, wordSize));
++  __ movq(r13, Address(rsp, 2 * wordSize));
++  __ movq(r12, Address(rsp, 3 * wordSize));
++  __ movq(r11, Address(rsp, 4 * wordSize));
++  __ movq(r10, Address(rsp, 5 * wordSize));
++  __ movq(r9,  Address(rsp, 6 * wordSize));
++  __ movq(r8,  Address(rsp, 7 * wordSize));
++  __ movq(rdi, Address(rsp, 8 * wordSize));
++  __ movq(rsi, Address(rsp, 9 * wordSize));
++  __ movq(rbp, Address(rsp, 10 * wordSize));
++  // Skip rsp as it is restored automatically to the value
++  // before the corresponding pusha when popa is done.
++  __ movq(rbx, Address(rsp, 12 * wordSize));
++  __ movq(rdx, Address(rsp, 13 * wordSize));
++  __ movq(rcx, Address(rsp, 14 * wordSize));
++  __ movq(rax, Address(rsp, 15 * wordSize));
++  __ addq(rsp, 16 * wordSize);
++  __ addq(rsp, 8);
++  __ popf();
+   // Get the rbp described implicitly by the calling convention (no oopMap)
+   __ pop(rbp);
+ }
+@@ -2550,6 +2672,9 @@ void SharedRuntime::generate_deopt_blob() {
+   if (UseAVX > 2) {
+     pad += 1024;
+   }
++  if (UseAPX) {
++    pad += 1024;
++  }
+ #if INCLUDE_JVMCI
+   if (EnableJVMCI) {
+     pad += 512; // Increase the buffer size when compiling for JVMCI
+@@ -3103,7 +3228,7 @@ SafepointBlob* SharedRuntime::generate_handler_blob(address call_ptr, int poll_t
+   OopMap* map;
+ 
+   // Allocate space for the code.  Setup code generation tools.
+-  CodeBuffer buffer("handler_blob", 2048, 1024);
++  CodeBuffer buffer("handler_blob", 2348, 1024);
+   MacroAssembler* masm = new MacroAssembler(&buffer);
+ 
+   address start   = __ pc();
+@@ -3266,7 +3391,7 @@ RuntimeStub* SharedRuntime::generate_resolve_blob(address destination, const cha
+   // allocate space for the code
+   ResourceMark rm;
+ 
+-  CodeBuffer buffer(name, 1200, 512);
++  CodeBuffer buffer(name, 1752, 512);
+   MacroAssembler* masm = new MacroAssembler(&buffer);
+ 
+   int frame_size_in_words;
+diff --git a/src/hotspot/cpu/x86/upcallLinker_x86_64.cpp b/src/hotspot/cpu/x86/upcallLinker_x86_64.cpp
+index 7b9d49dd461..82179f9022e 100644
+--- a/src/hotspot/cpu/x86/upcallLinker_x86_64.cpp
++++ b/src/hotspot/cpu/x86/upcallLinker_x86_64.cpp
+@@ -40,13 +40,17 @@
+ #define __ _masm->
+ 
+ static bool is_valid_XMM(XMMRegister reg) {
+-  return reg->is_valid() && (UseAVX >= 3 || (reg->encoding() < 16)); // why is this not covered by is_valid()?
++  return reg->is_valid() && (reg->encoding() < (UseAVX >= 3 ? 32 : 16)); // why is this not covered by is_valid()?
++}
++
++static bool is_valid_gp(Register reg) {
++  return reg->is_valid() && (reg->encoding() < (UseAPX ? 32 : 16));
+ }
+ 
+ // for callee saved regs, according to the caller's ABI
+ static int compute_reg_save_area_size(const ABIDescriptor& abi) {
+   int size = 0;
+-  for (Register reg = as_Register(0); reg->is_valid(); reg = reg->successor()) {
++  for (Register reg = as_Register(0); is_valid_gp(reg); reg = reg->successor()) {
+     if (reg == rbp || reg == rsp) continue; // saved/restored by prologue/epilogue
+     if (!abi.is_volatile_reg(reg)) {
+       size += 8; // bytes
+@@ -84,7 +88,7 @@ static void preserve_callee_saved_registers(MacroAssembler* _masm, const ABIDesc
+   int offset = reg_save_area_offset;
+ 
+   __ block_comment("{ preserve_callee_saved_regs ");
+-  for (Register reg = as_Register(0); reg->is_valid(); reg = reg->successor()) {
++  for (Register reg = as_Register(0); is_valid_gp(reg); reg = reg->successor()) {
+     if (reg == rbp || reg == rsp) continue; // saved/restored by prologue/epilogue
+     if (!abi.is_volatile_reg(reg)) {
+       __ movptr(Address(rsp, offset), reg);
+@@ -134,7 +138,7 @@ static void restore_callee_saved_registers(MacroAssembler* _masm, const ABIDescr
+   int offset = reg_save_area_offset;
+ 
+   __ block_comment("{ restore_callee_saved_regs ");
+-  for (Register reg = as_Register(0); reg->is_valid(); reg = reg->successor()) {
++  for (Register reg = as_Register(0); is_valid_gp(reg); reg = reg->successor()) {
+     if (reg == rbp || reg == rsp) continue; // saved/restored by prologue/epilogue
+     if (!abi.is_volatile_reg(reg)) {
+       __ movptr(reg, Address(rsp, offset));
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index 2295dbdb73b..dc66680c8fe 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -1021,11 +1021,11 @@ void VM_Version::get_processor_features() {
+     FLAG_SET_DEFAULT(UseAVX, use_avx_limit);
+   }
+ 
+-  if (UseAPX > 0 && !supports_apx_f()) {
+-    warning("UseAPX=%d is not supported on this CPU, setting it to 0", UseAPX);
+-    FLAG_SET_DEFAULT(UseAPX, 0);
++  if (UseAPX && !supports_apx_f()) {
++    warning("UseAPX is not supported on this CPU, setting it to false");
++    FLAG_SET_DEFAULT(UseAPX, false);
+   } else if (FLAG_IS_DEFAULT(UseAPX)) {
+-    FLAG_SET_DEFAULT(UseAPX, supports_apx_f() ? 1 : 0);
++    FLAG_SET_DEFAULT(UseAPX, supports_apx_f() ? true : false);
+   }
+ 
+   if (UseAVX < 3) {
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index 288212d6d13..4fab80c46b8 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -128,6 +128,53 @@ reg_def R14_H(SOC, SOE, Op_RegI, 14, r14->as_VMReg()->next());
+ reg_def R15  (SOC, SOE, Op_RegI, 15, r15->as_VMReg());
+ reg_def R15_H(SOC, SOE, Op_RegI, 15, r15->as_VMReg()->next());
+ 
++reg_def R16  (SOC, SOC, Op_RegI, 16, r16->as_VMReg());
++reg_def R16_H(SOC, SOC, Op_RegI, 16, r16->as_VMReg()->next());
++
++reg_def R17  (SOC, SOC, Op_RegI, 17, r17->as_VMReg());
++reg_def R17_H(SOC, SOC, Op_RegI, 17, r17->as_VMReg()->next());
++
++reg_def R18  (SOC, SOC, Op_RegI, 18, r18->as_VMReg());
++reg_def R18_H(SOC, SOC, Op_RegI, 18, r18->as_VMReg()->next());
++
++reg_def R19  (SOC, SOC, Op_RegI, 19, r19->as_VMReg());
++reg_def R19_H(SOC, SOC, Op_RegI, 19, r19->as_VMReg()->next());
++
++reg_def R20  (SOC, SOC, Op_RegI, 20, r20->as_VMReg());
++reg_def R20_H(SOC, SOC, Op_RegI, 20, r20->as_VMReg()->next());
++
++reg_def R21  (SOC, SOC, Op_RegI, 21, r21->as_VMReg());
++reg_def R21_H(SOC, SOC, Op_RegI, 21, r21->as_VMReg()->next());
++
++reg_def R22  (SOC, SOC, Op_RegI, 22, r22->as_VMReg());
++reg_def R22_H(SOC, SOC, Op_RegI, 22, r22->as_VMReg()->next());
++
++reg_def R23  (SOC, SOC, Op_RegI, 23, r23->as_VMReg());
++reg_def R23_H(SOC, SOC, Op_RegI, 23, r23->as_VMReg()->next());
++
++reg_def R24  (SOC, SOC, Op_RegI, 24, r24->as_VMReg());
++reg_def R24_H(SOC, SOC, Op_RegI, 24, r24->as_VMReg()->next());
++
++reg_def R25  (SOC, SOC, Op_RegI, 25, r25->as_VMReg());
++reg_def R25_H(SOC, SOC, Op_RegI, 25, r25->as_VMReg()->next());
++
++reg_def R26  (SOC, SOC, Op_RegI, 26, r26->as_VMReg());
++reg_def R26_H(SOC, SOC, Op_RegI, 26, r26->as_VMReg()->next());
++
++reg_def R27  (SOC, SOC, Op_RegI, 27, r27->as_VMReg());
++reg_def R27_H(SOC, SOC, Op_RegI, 27, r27->as_VMReg()->next());
++
++reg_def R28  (SOC, SOC, Op_RegI, 28, r28->as_VMReg());
++reg_def R28_H(SOC, SOC, Op_RegI, 28, r28->as_VMReg()->next());
++
++reg_def R29  (SOC, SOC, Op_RegI, 29, r29->as_VMReg());
++reg_def R29_H(SOC, SOC, Op_RegI, 29, r29->as_VMReg()->next());
++
++reg_def R30  (SOC, SOC, Op_RegI, 30, r30->as_VMReg());
++reg_def R30_H(SOC, SOC, Op_RegI, 30, r30->as_VMReg()->next());
++
++reg_def R31  (SOC, SOC, Op_RegI, 31, r31->as_VMReg());
++reg_def R31_H(SOC, SOC, Op_RegI, 31, r31->as_VMReg()->next());
+ 
+ // Floating Point Registers
+ 
+@@ -154,6 +201,22 @@ alloc_class chunk0(R10,         R10_H,
+                    R13,         R13_H,
+                    R14,         R14_H,
+                    R15,         R15_H,
++                   R16,         R16_H,
++                   R17,         R17_H,
++                   R18,         R18_H,
++                   R19,         R19_H,
++                   R20,         R20_H,
++                   R21,         R21_H,
++                   R22,         R22_H,
++                   R23,         R23_H,
++                   R24,         R24_H,
++                   R25,         R25_H,
++                   R26,         R26_H,
++                   R27,         R27_H,
++                   R28,         R28_H,
++                   R29,         R29_H,
++                   R30,         R30_H,
++                   R31,         R31_H,
+                    RSP,         RSP_H);
+ 
+ 
+@@ -167,7 +230,7 @@ alloc_class chunk0(R10,         R10_H,
+ // Empty register class.
+ reg_class no_reg();
+ 
+-// Class for all pointer/long registers
++// Class for all pointer/long registers including APX extended GPRs.
+ reg_class all_reg(RAX, RAX_H,
+                   RDX, RDX_H,
+                   RBP, RBP_H,
+@@ -183,9 +246,25 @@ reg_class all_reg(RAX, RAX_H,
+                   R12, R12_H,
+                   R13, R13_H,
+                   R14, R14_H,
+-                  R15, R15_H);
+-
+-// Class for all int registers
++                  R15, R15_H,
++                  R16, R16_H,
++                  R17, R17_H,
++                  R18, R18_H,
++                  R19, R19_H,
++                  R20, R20_H,
++                  R21, R21_H,
++                  R22, R22_H,
++                  R23, R23_H,
++                  R24, R24_H,
++                  R25, R25_H,
++                  R26, R26_H,
++                  R27, R27_H,
++                  R28, R28_H,
++                  R29, R29_H,
++                  R30, R30_H,
++                  R31, R31_H);
++
++// Class for all int registers including APX extended GPRs.
+ reg_class all_int_reg(RAX
+                       RDX,
+                       RBP,
+@@ -199,7 +278,23 @@ reg_class all_int_reg(RAX
+                       R11,
+                       R12,
+                       R13,
+-                      R14);
++                      R14,
++                      R16,
++                      R17,
++                      R18,
++                      R19,
++                      R20,
++                      R21,
++                      R22,
++                      R23,
++                      R24,
++                      R25,
++                      R26,
++                      R27,
++                      R28,
++                      R29,
++                      R30,
++                      R31);
+ 
+ // Class for all pointer registers
+ reg_class any_reg %{
+@@ -386,6 +481,8 @@ static bool need_r12_heapbase() {
+ }
+ 
+ void reg_mask_init() {
++  constexpr Register egprs[] = {r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31};
++
+   // _ALL_REG_mask is generated by adlc from the all_reg register class below.
+   // We derive a number of subsets from it.
+   _ANY_REG_mask = _ALL_REG_mask;
+@@ -404,6 +501,12 @@ void reg_mask_init() {
+   _PTR_REG_mask.Remove(OptoReg::as_OptoReg(rsp->as_VMReg()->next()));
+   _PTR_REG_mask.Remove(OptoReg::as_OptoReg(r15->as_VMReg()));
+   _PTR_REG_mask.Remove(OptoReg::as_OptoReg(r15->as_VMReg()->next()));
++  if (!UseAPX) {
++    for (uint i = 0; i < sizeof(egprs)/sizeof(Register); i++) {
++      _PTR_REG_mask.Remove(OptoReg::as_OptoReg(egprs[i]->as_VMReg()));
++      _PTR_REG_mask.Remove(OptoReg::as_OptoReg(egprs[i]->as_VMReg()->next()));
++    }
++  }
+ 
+   _STACK_OR_PTR_REG_mask = _PTR_REG_mask;
+   _STACK_OR_PTR_REG_mask.OR(STACK_OR_STACK_SLOTS_mask());
+@@ -420,6 +523,7 @@ void reg_mask_init() {
+   _PTR_NO_RAX_RBX_REG_mask.Remove(OptoReg::as_OptoReg(rbx->as_VMReg()));
+   _PTR_NO_RAX_RBX_REG_mask.Remove(OptoReg::as_OptoReg(rbx->as_VMReg()->next()));
+ 
++
+   _LONG_REG_mask = _PTR_REG_mask;
+   _STACK_OR_LONG_REG_mask = _LONG_REG_mask;
+   _STACK_OR_LONG_REG_mask.OR(STACK_OR_STACK_SLOTS_mask());
+@@ -441,6 +545,12 @@ void reg_mask_init() {
+   _LONG_NO_RBP_R13_REG_mask.Remove(OptoReg::as_OptoReg(r13->as_VMReg()->next()));
+ 
+   _INT_REG_mask = _ALL_INT_REG_mask;
++  if (!UseAPX) {
++    for (uint i = 0; i < sizeof(egprs)/sizeof(Register); i++) {
++      _INT_REG_mask.Remove(OptoReg::as_OptoReg(egprs[i]->as_VMReg()));
++    }
++  }
++
+   if (PreserveFramePointer) {
+     _INT_REG_mask.Remove(OptoReg::as_OptoReg(rbp->as_VMReg()));
+   }
+@@ -12336,7 +12446,6 @@ instruct safePoint_poll_tls(rFlagsReg cr, rRegP poll)
+   format %{ "testl   rax, [$poll]\t"
+             "# Safepoint: poll for GC" %}
+   ins_cost(125);
+-  size(4); /* setting an explicit size will cause debug builds to assert if size is incorrect */
+   ins_encode %{
+     __ relocate(relocInfo::poll_type);
+     address pre_pc = __ pc();

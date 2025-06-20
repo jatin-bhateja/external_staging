@@ -1,0 +1,236 @@
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index 22490ba7bb3..2e14cd684e7 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -10527,7 +10527,7 @@ instruct xorI_rReg_im1_ndd(rRegI dst, rRegI src, immI_M1 imm)
+ // Xor Register with Immediate
+ instruct xorI_rReg_imm(rRegI dst, immI src, rFlagsReg cr)
+ %{
+-  predicate(!UseAPX);
++  predicate(!UseAPX &&  n->in(2)->bottom_type()->is_int()->get_con() != -1);
+   match(Set dst (XorI dst src));
+   effect(KILL cr);
+   flag(PD::Flag_sets_sign_flag, PD::Flag_sets_zero_flag, PD::Flag_sets_parity_flag, PD::Flag_clears_overflow_flag, PD::Flag_clears_carry_flag);
+@@ -10539,16 +10539,16 @@ instruct xorI_rReg_imm(rRegI dst, immI src, rFlagsReg cr)
+   ins_pipe(ialu_reg);
+ %}
+ 
+-instruct xorI_rReg_rReg_imm_ndd(rRegI dst, rRegI src1, immI src2, rFlagsReg cr)
++instruct xorI_rReg_rReg_imm_ndd(rRegI dst, rRegI src1, immI con, rFlagsReg cr)
+ %{
+-  predicate(UseAPX);
+-  match(Set dst (XorI src1 src2));
++  predicate(UseAPX && n->in(2)->bottom_type()->is_int()->get_con() != -1);
++  match(Set dst (XorI src1 con));
+   effect(KILL cr);
+   flag(PD::Flag_sets_sign_flag, PD::Flag_sets_zero_flag, PD::Flag_sets_parity_flag, PD::Flag_clears_overflow_flag, PD::Flag_clears_carry_flag);
+ 
+-  format %{ "exorl    $dst, $src1, $src2\t# int ndd" %}
++  format %{ "exorl    $dst, $src1, $con\t# int ndd" %}
+   ins_encode %{
+-    __ exorl($dst$$Register, $src1$$Register, $src2$$constant, false);
++    __ exorl($dst$$Register, $src1$$Register, $con$$constant, false);
+   %}
+   ins_pipe(ialu_reg);
+ %}
+@@ -10556,7 +10556,7 @@ instruct xorI_rReg_rReg_imm_ndd(rRegI dst, rRegI src1, immI src2, rFlagsReg cr)
+ // Xor Memory with Immediate
+ instruct xorI_rReg_mem_imm_ndd(rRegI dst, memory src1, immI src2, rFlagsReg cr)
+ %{
+-  predicate(UseAPX);
++  predicate(UseAPX && n->in(2)->bottom_type()->is_int()->get_con() != -1);
+   match(Set dst (XorI (LoadI src1) src2));
+   effect(KILL cr);
+   flag(PD::Flag_sets_sign_flag, PD::Flag_sets_zero_flag, PD::Flag_sets_parity_flag, PD::Flag_clears_overflow_flag, PD::Flag_clears_carry_flag);
+@@ -11201,7 +11201,7 @@ instruct xorL_rReg_im1_ndd(rRegL dst,rRegL src, immL_M1 imm)
+ // Xor Register with Immediate
+ instruct xorL_rReg_imm(rRegL dst, immL32 src, rFlagsReg cr)
+ %{
+-  predicate(!UseAPX);
++  predicate(!UseAPX  n->in(2)->bottom_type()->is_long()->get_con() != -1L);
+   match(Set dst (XorL dst src));
+   effect(KILL cr);
+   flag(PD::Flag_sets_sign_flag, PD::Flag_sets_zero_flag, PD::Flag_sets_parity_flag, PD::Flag_clears_overflow_flag, PD::Flag_clears_carry_flag);
+@@ -11215,7 +11215,7 @@ instruct xorL_rReg_imm(rRegL dst, immL32 src, rFlagsReg cr)
+ 
+ instruct xorL_rReg_rReg_imm(rRegL dst, rRegL src1, immL32 src2, rFlagsReg cr)
+ %{
+-  predicate(UseAPX);
++  predicate(UseAPX && n->in(2)->bottom_type()->is_long()->get_con() != -1L);
+   match(Set dst (XorL src1 src2));
+   effect(KILL cr);
+   flag(PD::Flag_sets_sign_flag, PD::Flag_sets_zero_flag, PD::Flag_sets_parity_flag, PD::Flag_clears_overflow_flag, PD::Flag_clears_carry_flag);
+@@ -11230,7 +11230,7 @@ instruct xorL_rReg_rReg_imm(rRegL dst, rRegL src1, immL32 src2, rFlagsReg cr)
+ // Xor Memory with Immediate
+ instruct xorL_rReg_mem_imm(rRegL dst, memory src1, immL32 src2, rFlagsReg cr)
+ %{
+-  predicate(UseAPX);
++  predicate(UseAPX && n->in(2)->bottom_type()->is_long()->get_con() != -1);
+   match(Set dst (XorL (LoadL src1) src2));
+   effect(KILL cr);
+   flag(PD::Flag_sets_sign_flag, PD::Flag_sets_zero_flag, PD::Flag_sets_parity_flag, PD::Flag_clears_overflow_flag, PD::Flag_clears_carry_flag);
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/AndnTestI.java b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/AndnTestI.java
+index 4ff18b0744c..4145b0f5641 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/AndnTestI.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/AndnTestI.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014, 2022, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2014, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -57,6 +57,19 @@ protected AndnTestI(Method method) {
+                 (byte) 0x02, // 00010 implied 0F 38 leading opcode bytes
+                 (byte) 0x00,
+                 (byte) 0xF2};
++        // from intel apx specifications EVEX.128.NP.0F38.W0 F2 /r
++        instrMaskAPX = new byte[]{
++                (byte) 0xFF,
++                (byte) 0x07,
++                (byte) 0x00,
++                (byte) 0x00,
++                (byte) 0xFF};
++        instrPatternAPX = new byte[]{
++                (byte) 0x62, // fixed prefix byte 0x62 for extended EVEX instruction
++                (byte) 0x02, // 00010 implied 0F 38 leading opcode bytes
++                (byte) 0x00,
++                (byte) 0x00,
++                (byte) 0xF2};
+     }
+ 
+     public static void main(String[] args) throws Exception {
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/BmiIntrinsicBase.java b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/BmiIntrinsicBase.java
+index 743e371d5c2..0e8c8fe9514 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/BmiIntrinsicBase.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/BmiIntrinsicBase.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014, 2022, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2014, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -111,7 +111,8 @@ protected void checkCompilation(Executable executable, int level) {
+     protected void checkEmittedCode(Executable executable) {
+         final byte[] nativeCode = NMethod.get(executable, false).insts;
+         final byte[] matchInstrPattern = (((BmiTestCase) testCase).getTestCaseX64() && Platform.isX64()) ? ((BmiTestCase_x64) testCase).getInstrPattern_x64() : ((BmiTestCase) testCase).getInstrPattern();
+-        if (!((BmiTestCase) testCase).verifyPositive(nativeCode)) {
++        boolean use_apx = CPUInfo.hasFeature("apx_f");
++        if (!((BmiTestCase) testCase).verifyPositive(nativeCode, use_apx)) {
+             throw new AssertionError(testCase.name() + " " + "CPU instructions expected not found in nativeCode: " + Utils.toHexString(nativeCode) + " ---- Expected instrPattern: " +
+             Utils.toHexString(matchInstrPattern));
+         } else {
+@@ -124,6 +125,8 @@ abstract static class BmiTestCase implements CompilerWhiteBoxTest.TestCase {
+         private final Method method;
+         protected byte[] instrMask;
+         protected byte[] instrPattern;
++        protected byte[] instrMaskAPX;
++        protected byte[] instrPatternAPX;
+         protected boolean isLongOperation;
+         protected String cpuFlag = "bmi1";
+         protected String vmFlag = "UseBMI1Instructions";
+@@ -160,6 +163,13 @@ protected int countCpuInstructions(byte[] nativeCode) {
+             return countCpuInstructions(nativeCode, instrMask, instrPattern);
+         }
+ 
++        protected int countCpuInstructionsAPX(byte[] nativeCode) {
++            if (instrMaskAPX == null || instrPatternAPX == null) {
++                return 0;
++            }
++            return countCpuInstructions(nativeCode, instrMaskAPX, instrPatternAPX);
++        }
++
+         public static int countCpuInstructions(byte[] nativeCode, byte[] instrMask, byte[] instrPattern) {
+             int count = 0;
+             int patternSize = Math.min(instrMask.length, instrPattern.length);
+@@ -181,8 +191,12 @@ public static int countCpuInstructions(byte[] nativeCode, byte[] instrMask, byte
+             return count;
+         }
+ 
+-        public boolean verifyPositive(byte[] nativeCode) {
+-            final int cnt = countCpuInstructions(nativeCode);
++        public boolean verifyPositive(byte[] nativeCode, boolean use_apx) {
++            int cnt = countCpuInstructions(nativeCode);
++            if (use_apx) {
++                System.out.println("CHECKING APX INST PATTERNS");
++                cnt += countCpuInstructionsAPX(nativeCode);
++            }
+             if (Platform.isX86()) {
+                 return cnt >= (isLongOperation ? 2 : 1);
+             } else {
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/BzhiTestI2L.java b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/BzhiTestI2L.java
+index daba485be50..4cf94a0eb8b 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/BzhiTestI2L.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/BzhiTestI2L.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2021, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -73,6 +73,21 @@ protected BzhiTestI2L(Method method) {
+             (byte) 0x62,    // 00010 implied 0F 38 leading opcode bytes
+             (byte) 0xA8,
+             (byte) 0xF5};
++
++        // from intel apx specifications EVEX.128.NP.0F38.W0 F5 /r
++        instrMaskAPX = new byte[]{
++                (byte) 0xFF,
++                (byte) 0x07,
++                (byte) 0x00,
++                (byte) 0x00,
++                (byte) 0xFF};
++
++        instrPatternAPX = new byte[]{
++                (byte) 0x62, // fixed prefix byte 0x62 for extended EVEX instruction
++                (byte) 0x02, // 00010 implied 0F 38 leading opcode bytes
++                (byte) 0x00,
++                (byte) 0x00,
++                (byte) 0xF5};
+     }
+ 
+     public static void main(String[] args) throws Exception {
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/LZcntTestI.java b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/LZcntTestI.java
+index d1b88ffd9d0..71218939201 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/LZcntTestI.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/LZcntTestI.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014, 2022, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2014, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -51,6 +51,9 @@ protected LZcntTestI(Method method) {
+ 
+         instrMask_x64 = new byte[]{(byte) 0xFF, (byte) 0x00, (byte) 0xFF, (byte) 0xFF};
+         instrPattern_x64 = new byte[]{(byte) 0xF3, (byte) 0x00, (byte) 0x0F, (byte) 0xBD};
++
++        instrMaskAPX = new byte[]{(byte) 0xFF, (byte)0x80, (byte) 0xFF};
++        instrPatternAPX = new byte[]{(byte) 0xD5, (byte) 0x80, (byte) 0xBD};
+     }
+ 
+     public static void main(String[] args) throws Exception {
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/TZcntTestI.java b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/TZcntTestI.java
+index 641fdb0b203..678e1333648 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/TZcntTestI.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/bmi/verifycode/TZcntTestI.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014, 2022, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2014, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -50,6 +50,9 @@ protected TZcntTestI(Method method) {
+ 
+         instrMask_x64 = new byte[]{(byte) 0xFF, (byte) 0x00, (byte) 0xFF, (byte) 0xFF};
+         instrPattern_x64 = new byte[]{(byte) 0xF3, (byte) 0x00, (byte) 0x0F, (byte) 0xBC};
++
++        instrMaskAPX = new byte[]{(byte) 0xFF, (byte)0x80, (byte) 0xFF};
++        instrPatternAPX = new byte[]{(byte) 0xD5, (byte) 0x80, (byte) 0xBC};
+     }
+ 
+     public static void main(String[] args) throws Exception {

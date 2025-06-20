@@ -1,0 +1,31 @@
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 80f0c0f4b49..bcb1de8c4b7 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1485,11 +1485,6 @@ const bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
+-    case Op_PopulateIndex:
+-      if (!is_LP64 || (UseAVX < 2)) {
+-        return false;
+-      }
+-      break;
+     case Op_RoundVF:
+       if (UseAVX < 2) { // enabled for AVX2 only
+         return false;
+@@ -1872,7 +1867,13 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+       }
+       break;
+     case Op_PopulateIndex:
+-      if (size_in_bits > 256 && !VM_Version::supports_avx512bw()) {
++      if (!is_LP64) {
++        return false;
++      }
++      if (size_in_bits <= 256 && is_integral_type(bt) && UseAVX < 2)) {
++        return false;
++      }
++      if (size_in_bits > 256 && is_subword_type(bt) !VM_Version::supports_avx512bw()) {
+         return false;
+       }
+       break;

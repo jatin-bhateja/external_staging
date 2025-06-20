@@ -1,0 +1,217 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index ac3c3437135..1df1cdc23f2 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -4323,6 +4323,24 @@ void C2_MacroAssembler::vector_castF2I_avx(XMMRegister dst, XMMRegister src, XMM
+                                            AddressLiteral float_sign_flip, Register scratch, int vec_enc) {
+   vcvttps2dq(dst, src, vec_enc);
+   vector_cast_float_special_cases_avx(dst, src, xtmp1, xtmp2, xtmp3, xtmp4, scratch, float_sign_flip, vec_enc);
++  switch(to_elem_bt) {
++    case T_INT:
++      break;
++    case T_SHORT:
++      vpxor(xtmp1, xtmp1, xtmp1, vec_enc);
++      vpackssdw(dst, dst, xtmp1, vec_enc);
++      vpermq(dst, dst, 0xD8, vec_enc);
++      break;
++    case T_BYTE:
++      vpxor(xtmp1, xtmp1, xtmp1, vec_enc);
++      vpackssdw(dst, dst, xtmp1, vec_enc);
++      vpermq(dst, dst, 0xD8, vec_enc);
++      vpacksswb(dst, dst, xtmp1, vec_enc);
++      break;
++    default:
++      fatal("Unsupported type %s", type2name(to_elem_bt));
++      break;
++  }
+ }
+ 
+ void C2_MacroAssembler::vector_castF2I_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+@@ -4343,21 +4361,23 @@ void C2_MacroAssembler::vector_castD2X_evex(BasicType to_elem_bt, XMMRegister ds
+                                             XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2,
+                                             AddressLiteral double_sign_flip, Register scratch, int vec_enc) {
+   vector_castD2L_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, double_sign_flip, scratch, vec_enc);
+-  if (to_elem_bt != T_LONG) {
+-    switch(to_elem_bt) {
+-      case T_INT:
+-        evpmovsqd(dst, dst, vec_enc);
+-        break;
+-      case T_SHORT:
+-        evpmovsqd(dst, dst, vec_enc);
+-        evpmovdw(dst, dst, vec_enc);
+-        break;
+-      case T_BYTE:
+-        evpmovsqd(dst, dst, vec_enc);
+-        evpmovdb(dst, dst, vec_enc);
+-        break;
+-      default: assert(false, "%s", type2name(to_elem_bt));
+-    }
++  switch(to_elem_bt) {
++    case T_LONG:
++      break;
++    case T_INT:
++      evpmovsqd(dst, dst, vec_enc);
++      break;
++    case T_SHORT:
++      evpmovsqd(dst, dst, vec_enc);
++      evpmovdw(dst, dst, vec_enc);
++      break;
++    case T_BYTE:
++      evpmovsqd(dst, dst, vec_enc);
++      evpmovdb(dst, dst, vec_enc);
++      break;
++    default:
++      fatal("Unsupported type %s", type2name(to_elem_bt));
++      break;
+   }
+ }
+ 
+@@ -5437,3 +5457,28 @@ void C2_MacroAssembler::udivmodL(Register rax, Register divisor, Register rdx, R
+ }
+ #endif
+ 
++void C2_MacroAssembler::vector_mask_reinterpret_narrow(KRegister dst, KRegister src, XMMRegister xtmp,
++                                                       int src_elem_sz, int dst_elem_sz, int vlen_enc) {
++  assert(src_elem_sz > dst_elem_sz, "");
++  switch(src_elem_sz) {
++    case 8:
++      evpmovm2q(xtmp, src, vlen_enc); break;
++    case 4:
++      evpmovm2d(xtmp, src, vlen_enc); break;
++    case 2:
++      evpmovm2w(xtmp, src, vlen_enc); break;
++    default:
++      ShouldNotReachHere(); break;
++  }
++
++  switch(dst_elem_sz) {
++    case 4:
++      evpmovd2m(dst, xtmp, vlen_enc); break;
++    case 2:
++      evpmovw2m(dst, xtmp, vlen_enc); break;
++    case 1:
++      evpmovb2m(dst, xtmp, vlen_enc); break;
++    default:
++      ShouldNotReachHere(); break;
++  }
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index b5af77dc8ec..e00f1ff85ab 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -447,4 +447,7 @@ public:
+ 
+   void vmovmask(BasicType elem_bt, Address dst, XMMRegister src, XMMRegister mask, int vec_enc);
+ 
++  void vector_mask_reinterpret_narrow(KRegister dst, KRegister src, XMMRegister xtmp,
++                                      int src_elem_sz, int dst_elem_sz, int vlen_enc);
++
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 31b5347a06d..794254f6a41 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1906,8 +1906,13 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+       //     Conversion to long in addition needs avx512dq
+       //     Need avx512vl for size_in_bits < 512
+       if (is_integral_type(bt) && (bt != T_INT)) {
+-        if (UseAVX <= 2) {
+-          return false;
++        if (is_subword_type(bt)) {
++          uint from_size_in_bits = type2aelembytes(bt) == 1 ? size_in_bits * 4 : size_in_bits * 2;
++          if ((from_size_in_bits < 256 && UseAVX == 0) ||
++              (from_size_in_bits == 256 && UseAVX < 2) ||
++              (from_size_in_bits > 256 && !VM_Version::supports_avx512bw())) {
++            return false;
++          }
+         }
+         if ((bt == T_LONG) && !VM_Version::supports_avx512dq()) {
+           return false;
+@@ -3672,64 +3677,23 @@ instruct reinterpret_mask(kReg dst) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct reinterpret_mask_W2B(kReg dst, kReg src, vec xtmp) %{
+-  predicate(UseAVX > 2 && Matcher::vector_length(n) != Matcher::vector_length(n->in(1)) &&
+-            n->bottom_type()->isa_vectmask() &&
+-            n->in(1)->bottom_type()->isa_vectmask() &&
+-            n->in(1)->bottom_type()->is_vectmask()->element_basic_type() == T_SHORT &&
+-            n->bottom_type()->is_vectmask()->element_basic_type() == T_BYTE); // dst == src
+-  match(Set dst (VectorReinterpret src));
+-  effect(TEMP xtmp);
+-  format %{ "vector_mask_reinterpret_W2B $dst $src\t!" %}
+-  ins_encode %{
+-     int src_sz = Matcher::vector_length(this, $src)*type2aelembytes(T_SHORT);
+-     int dst_sz = Matcher::vector_length(this)*type2aelembytes(T_BYTE);
+-     assert(src_sz == dst_sz , "src and dst size mismatch");
+-     int vlen_enc = vector_length_encoding(src_sz);
+-     __  evpmovm2w($xtmp$$XMMRegister, $src$$KRegister, vlen_enc);
+-     __  evpmovb2m($dst$$KRegister, $xtmp$$XMMRegister, vlen_enc);
+-  %}
+-  ins_pipe( pipe_slow );
+-%}
+-
+-instruct reinterpret_mask_D2B(kReg dst, kReg src, vec xtmp) %{
+-  predicate(UseAVX > 2 && Matcher::vector_length(n) != Matcher::vector_length(n->in(1)) &&
+-            n->bottom_type()->isa_vectmask() &&
+-            n->in(1)->bottom_type()->isa_vectmask() &&
+-            (n->in(1)->bottom_type()->is_vectmask()->element_basic_type() == T_INT ||
+-             n->in(1)->bottom_type()->is_vectmask()->element_basic_type() == T_FLOAT) &&
+-            n->bottom_type()->is_vectmask()->element_basic_type() == T_BYTE); // dst == src
+-  match(Set dst (VectorReinterpret src));
+-  effect(TEMP xtmp);
+-  format %{ "vector_mask_reinterpret_D2B $dst $src\t!" %}
+-  ins_encode %{
+-     int src_sz = Matcher::vector_length(this, $src)*type2aelembytes(T_INT);
+-     int dst_sz = Matcher::vector_length(this)*type2aelembytes(T_BYTE);
+-     assert(src_sz == dst_sz , "src and dst size mismatch");
+-     int vlen_enc = vector_length_encoding(src_sz);
+-     __  evpmovm2d($xtmp$$XMMRegister, $src$$KRegister, vlen_enc);
+-     __  evpmovb2m($dst$$KRegister, $xtmp$$XMMRegister, vlen_enc);
+-  %}
+-  ins_pipe( pipe_slow );
+-%}
+-
+-instruct reinterpret_mask_Q2B(kReg dst, kReg src, vec xtmp) %{
++instruct reinterpret_mask_narrow_evex(kReg dst, kReg src, vec xtmp) %{
+   predicate(UseAVX > 2 && Matcher::vector_length(n) != Matcher::vector_length(n->in(1)) &&
+             n->bottom_type()->isa_vectmask() &&
+             n->in(1)->bottom_type()->isa_vectmask() &&
+-            (n->in(1)->bottom_type()->is_vectmask()->element_basic_type() == T_LONG ||
+-             n->in(1)->bottom_type()->is_vectmask()->element_basic_type() == T_DOUBLE) &&
+-            n->bottom_type()->is_vectmask()->element_basic_type() == T_BYTE); // dst == src
++            type2aelembytes(n->in(1)->bottom_type()->is_vectmask()->element_basic_type()) >
++            type2aelembytes(n->bottom_type()->is_vectmask()->element_basic_type()));
+   match(Set dst (VectorReinterpret src));
+   effect(TEMP xtmp);
+-  format %{ "vector_mask_reinterpret_Q2B $dst $src\t!" %}
++  format %{ "vector_mask_reinterpret_narrow $dst $src\t!" %}
+   ins_encode %{
+-     int src_sz = Matcher::vector_length(this, $src)*type2aelembytes(T_LONG);
+-     int dst_sz = Matcher::vector_length(this)*type2aelembytes(T_BYTE);
+-     assert(src_sz == dst_sz , "src and dst size mismatch");
+-     int vlen_enc = vector_length_encoding(src_sz);
+-     __  evpmovm2q($xtmp$$XMMRegister, $src$$KRegister, vlen_enc);
+-     __  evpmovb2m($dst$$KRegister, $xtmp$$XMMRegister, vlen_enc);
++     int src_elem_sz = type2aelembytes(Matcher::vector_element_basic_type(this, $src));
++     int dst_elem_sz = type2aelembytes(Matcher::vector_element_basic_type(this));
++     int src_vec_sz = Matcher::vector_length(this, $src) * src_elem_sz;
++     int dst_vec_sz = Matcher::vector_length(this) * dst_elem_sz;
++     assert(src_vec_sz == dst_vec_sz , "src and dst size mismatch");
++     int vlen_enc = vector_length_encoding(src_vec_sz);
++     __ vector_mask_reinterpret_narrow($dst$$KRegister, $src$$KRegister, $xtmp$$XMMRegister, src_elem_sz, dst_elem_sz, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -7355,7 +7319,7 @@ instruct castFtoI_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec
+   // AVX512 platforms that dont support avx512vl also use AVX instructions to support F2I
+   predicate(!VM_Version::supports_avx512vl() &&
+             Matcher::vector_length_in_bytes(n) < 64 &&
+-            Matcher::vector_element_basic_type(n) == T_INT);
++            type2aelembytes(Matcher::vector_element_basic_type(n)) <= 4);
+   match(Set dst (VectorCastF2X src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP scratch, KILL cr);
+   format %{ "vector_cast_f2i $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3, $xtmp4 and $scratch as TEMP" %}

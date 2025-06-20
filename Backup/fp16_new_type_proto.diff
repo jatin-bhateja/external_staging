@@ -1,0 +1,1475 @@
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index bf8ef041c2c..4eb22ae3c35 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -4513,6 +4513,19 @@ instruct vReplS_reg(vec dst, rRegI src) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct ReplS_imm(vec dst, immH con, rRegI rtmp) %{
++  predicate(VM_Version::supports_avx512_fp16() && Matcher::vector_element_basic_type(n) == T_SHORT);
++  match(Set dst (Replicate con));
++  effect(TEMP rtmp);
++  format %{ "replicateS $dst, $con" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ movl($rtmp$$Register, $con$$constant);
++    __ evpbroadcastw($dst$$XMMRegister, $rtmp$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct ReplS_mem(vec dst, memory mem) %{
+   predicate(UseAVX >= 2 && Matcher::vector_element_basic_type(n) == T_SHORT);
+   match(Set dst (Replicate (LoadS mem)));
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index 550c8047034..a04e7015eee 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -2382,6 +2382,16 @@ operand immF()
+   interface(CONST_INTER);
+ %}
+ 
++// Half Float Immediate
++operand immH()
++%{
++  match(ConH);
++
++  op_cost(15);
++  format %{ %}
++  interface(CONST_INTER);
++%}
++
+ // Double Immediate zero
+ operand immD0()
+ %{
+@@ -4840,6 +4850,16 @@ instruct loadConF(regF dst, immF con) %{
+   ins_pipe(pipe_slow);
+ %}
+ 
++instruct loadConH(regF dst, immH con) %{
++  match(Set dst con);
++  ins_cost(125);
++  format %{ "movss   $dst, [$constantaddress]\t# load from constant table: halffloat=$con" %}
++  ins_encode %{
++    __ movflt($dst$$XMMRegister, $constantaddress($con));
++  %}
++  ins_pipe(pipe_slow);
++%}
++
+ instruct loadConN0(rRegN dst, immN0 src, rFlagsReg cr) %{
+   match(Set dst src);
+   effect(KILL cr);
+diff --git a/src/hotspot/share/adlc/archDesc.cpp b/src/hotspot/share/adlc/archDesc.cpp
+index f084f506bf5..237e0731db3 100644
+--- a/src/hotspot/share/adlc/archDesc.cpp
++++ b/src/hotspot/share/adlc/archDesc.cpp
+@@ -1053,6 +1053,7 @@ const char *ArchDesc::getIdealType(const char *idealOp) {
+   case 'P':    return "TypePtr::BOTTOM";
+   case 'N':    return "TypeNarrowOop::BOTTOM";
+   case 'F':    return "Type::FLOAT";
++  case 'H':    return "Type::HALF_FLOAT";
+   case 'D':    return "Type::DOUBLE";
+   case 'L':    return "TypeLong::LONG";
+   case 's':    return "TypeInt::CC /*flags*/";
+@@ -1090,7 +1091,7 @@ void ArchDesc::initBaseOpTypes() {
+     char *ident = (char *)NodeClassNames[j];
+     if (!strcmp(ident, "ConI") || !strcmp(ident, "ConP") ||
+         !strcmp(ident, "ConN") || !strcmp(ident, "ConNKlass") ||
+-        !strcmp(ident, "ConF") || !strcmp(ident, "ConD") ||
++        !strcmp(ident, "ConH") || !strcmp(ident, "ConF") || !strcmp(ident, "ConD") ||
+         !strcmp(ident, "ConL") || !strcmp(ident, "Con" ) ||
+         !strcmp(ident, "Bool")) {
+       constructOperand(ident, true);
+diff --git a/src/hotspot/share/adlc/forms.cpp b/src/hotspot/share/adlc/forms.cpp
+index c34a73ea1e1..16b96d89e46 100644
+--- a/src/hotspot/share/adlc/forms.cpp
++++ b/src/hotspot/share/adlc/forms.cpp
+@@ -220,6 +220,7 @@ Form::DataType Form::ideal_to_const_type(const char *name) const {
+   if (strcmp(name,"ConNKlass")==0) return Form::idealNKlass;
+   if (strcmp(name,"ConL")==0) return Form::idealL;
+   if (strcmp(name,"ConF")==0) return Form::idealF;
++  if (strcmp(name,"ConH")==0) return Form::idealH;
+   if (strcmp(name,"ConD")==0) return Form::idealD;
+   if (strcmp(name,"Bool")==0) return Form::idealI;
+ 
+diff --git a/src/hotspot/share/adlc/forms.hpp b/src/hotspot/share/adlc/forms.hpp
+index a82b9bbb338..77479c7fb52 100644
+--- a/src/hotspot/share/adlc/forms.hpp
++++ b/src/hotspot/share/adlc/forms.hpp
+@@ -183,7 +183,8 @@ class Form {
+     idealS      =  8,  // String  type
+     idealN      =  9,  // Narrow oop types
+     idealNKlass = 10,  // Narrow klass types
+-    idealV      = 11   // Vector  type
++    idealV      = 11,  // Vector  type
++    idealH      = 12   // HalfFloat  type
+   };
+   // Convert ideal name to a DataType, return DataType::none if not a 'ConX'
+   Form::DataType  ideal_to_const_type(const char *ideal_type_name) const;
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index 8c398202da1..35ecd3dfb5d 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -1088,7 +1088,7 @@ uint  InstructForm::reloc(FormDict &globals) {
+     } else if ( oper ) {
+       // floats and doubles loaded out of method's constant pool require reloc info
+       Form::DataType type = oper->is_base_constant(globals);
+-      if ( (type == Form::idealF) || (type == Form::idealD) ) {
++      if ( (type == Form::idealH) || (type == Form::idealF) || (type == Form::idealD) ) {
+         ++reloc_entries;
+       }
+     }
+@@ -1099,7 +1099,7 @@ uint  InstructForm::reloc(FormDict &globals) {
+   // !!!!!
+   // Check for any component being an immediate float or double.
+   Form::DataType data_type = is_chain_of_constant(globals);
+-  if( data_type==idealD || data_type==idealF ) {
++  if( data_type==idealH || data_type==idealD || data_type==idealF ) {
+     reloc_entries++;
+   }
+ 
+@@ -2662,6 +2662,7 @@ void OperandForm::format_constant(FILE *fp, uint const_index, uint const_type) {
+   case Form::idealN: fprintf(fp,"  if (_c%d) _c%d->dump_on(st);\n", const_index, const_index); break;
+   case Form::idealL: fprintf(fp,"  st->print(\"#\" INT64_FORMAT, (int64_t)_c%d);\n", const_index); break;
+   case Form::idealF: fprintf(fp,"  st->print(\"#%%f\", _c%d);\n", const_index); break;
++  case Form::idealH: fprintf(fp,"  st->print(\"#%%d\", _c%d);\n", const_index); break;
+   case Form::idealD: fprintf(fp,"  st->print(\"#%%f\", _c%d);\n", const_index); break;
+   default:
+     assert( false, "ShouldNotReachHere()");
+@@ -2743,6 +2744,7 @@ void OperandForm::access_constant(FILE *fp, FormDict &globals,
+   case idealP: fprintf(fp,"_c%d->get_con()",const_index); break;
+   case idealL: fprintf(fp,"_c%d",           const_index); break;
+   case idealF: fprintf(fp,"_c%d",           const_index); break;
++  case idealH: fprintf(fp,"_c%d",           const_index); break;
+   case idealD: fprintf(fp,"_c%d",           const_index); break;
+   default:
+     assert( false, "ShouldNotReachHere()");
+diff --git a/src/hotspot/share/adlc/output_c.cpp b/src/hotspot/share/adlc/output_c.cpp
+index 804e8f1a4e6..047ef168e2a 100644
+--- a/src/hotspot/share/adlc/output_c.cpp
++++ b/src/hotspot/share/adlc/output_c.cpp
+@@ -2418,6 +2418,8 @@ class DefineEmitState {
+       if( _constant_status == LITERAL_NOT_SEEN ) {
+         if ( _constant_type == Form::idealD ) {
+           fprintf(_fp,"->constantD()");
++        } else if ( _constant_type == Form::idealH ) {
++          fprintf(_fp,"->constantH()");
+         } else if ( _constant_type == Form::idealF ) {
+           fprintf(_fp,"->constantF()");
+         } else if ( _constant_type == Form::idealL ) {
+@@ -3786,6 +3788,8 @@ static void path_to_constant(FILE *fp, FormDict &globals,
+       fprintf(fp, "_leaf->bottom_type()->is_narrowoop()");
+     } else if ( (strcmp(optype,"ConNKlass") == 0) ) {
+       fprintf(fp, "_leaf->bottom_type()->is_narrowklass()");
++    } else if ( (strcmp(optype,"ConH") == 0) ) {
++      fprintf(fp, "_leaf->geth()");
+     } else if ( (strcmp(optype,"ConF") == 0) ) {
+       fprintf(fp, "_leaf->getf()");
+     } else if ( (strcmp(optype,"ConD") == 0) ) {
+diff --git a/src/hotspot/share/adlc/output_h.cpp b/src/hotspot/share/adlc/output_h.cpp
+index 9d54d840688..69948e8affb 100644
+--- a/src/hotspot/share/adlc/output_h.cpp
++++ b/src/hotspot/share/adlc/output_h.cpp
+@@ -233,6 +233,10 @@ static void declareConstStorage(FILE *fp, FormDict &globals, OperandForm *oper)
+       if (i > 0) fprintf(fp,", ");
+       fprintf(fp,"  jfloat         _c%d;\n", i);
+     }
++    else if (!strcmp(type, "ConH")) {
++      if (i > 0) fprintf(fp,", ");
++      fprintf(fp,"  jshort        _c%d;\n", i);
++    }
+     else if (!strcmp(type, "ConD")) {
+       if (i > 0) fprintf(fp,", ");
+       fprintf(fp,"  jdouble        _c%d;\n", i);
+@@ -269,6 +273,10 @@ static void declareConstStorage(FILE *fp, FormDict &globals, OperandForm *oper)
+         fprintf(fp,"  jlong            _c%d;\n", i);
+         i++;
+       }
++      else if (!strcmp(comp->base_type(globals), "ConH")) {
++        fprintf(fp,"  jshort            _c%d;\n", i);
++        i++;
++      }
+       else if (!strcmp(comp->base_type(globals), "ConF")) {
+         fprintf(fp,"  jfloat           _c%d;\n", i);
+         i++;
+@@ -314,6 +322,7 @@ static void defineConstructor(FILE *fp, const char *name, uint num_consts,
+     case Form::idealNKlass : { fprintf(fp,"const TypeNarrowKlass *c%d", i); break; }
+     case Form::idealP :      { fprintf(fp,"const TypePtr *c%d", i); break; }
+     case Form::idealL :      { fprintf(fp,"jlong c%d", i);   break;        }
++    case Form::idealH :      { fprintf(fp,"jshort c%d", i);   break;        }
+     case Form::idealF :      { fprintf(fp,"jfloat c%d", i);  break;        }
+     case Form::idealD :      { fprintf(fp,"jdouble c%d", i); break;        }
+     default:
+@@ -403,6 +412,11 @@ static uint dump_spec_constant(FILE *fp, const char *ideal_type, uint i, Operand
+     fprintf(fp,"   st->print(\"/0x%%08x\", _c%d);\n", i);
+     ++i;
+   }
++  else if (!strcmp(ideal_type, "ConH")) {
++    fprintf(fp,"   st->print(\"#%%d\", _c%d);\n", i);
++    fprintf(fp,"   st->print(\"/0x%%08x\", _c%d);\n", i);
++    ++i;
++  }
+   else if (!strcmp(ideal_type, "ConP")) {
+     fprintf(fp,"    _c%d->dump_on(st);\n", i);
+     ++i;
+@@ -1281,6 +1295,7 @@ void ArchDesc::declareClasses(FILE *fp) {
+         case Form::idealF: type = "Type::FLOAT";    break;
+         case Form::idealD: type = "Type::DOUBLE";   break;
+         case Form::idealL: type = "TypeLong::LONG"; break;
++        case Form::idealH: type = "Type::HALF_LONG"; break;
+         case Form::none: // fall through
+         default:
+           assert( false, "No support for this type of stackSlot");
+@@ -1425,6 +1440,14 @@ void ArchDesc::declareClasses(FILE *fp) {
+           fprintf(fp,   " return _c0;");
+           fprintf(fp, " }\n");
+         }
++        else if (!strcmp(oper->ideal_type(_globalNames), "ConH")) {
++          fprintf(fp,"  virtual intptr_t       constant() const {");
++          fprintf(fp,   " ShouldNotReachHere(); return 0; ");
++          fprintf(fp, " }\n");
++          fprintf(fp,"  virtual jshort         constantH() const {");
++          fprintf(fp,   " return (jshort)_c0;");
++          fprintf(fp, " }\n");
++        }
+         else if (!strcmp(oper->ideal_type(_globalNames), "ConF")) {
+           fprintf(fp,"  virtual intptr_t       constant() const {");
+           fprintf(fp,   " ShouldNotReachHere(); return 0; ");
+@@ -1897,6 +1920,9 @@ void ArchDesc::declareClasses(FILE *fp) {
+       case Form::idealD:
+         fprintf(fp,"    return  TypeD::make(opnd_array(1)->constantD());\n");
+         break;
++      case Form::idealH:
++        fprintf(fp,"    return  TypeH::make(opnd_array(1)->constantH());\n");
++        break;
+       case Form::idealF:
+         fprintf(fp,"    return  TypeF::make(opnd_array(1)->constantF());\n");
+         break;
+diff --git a/src/hotspot/share/opto/addnode.cpp b/src/hotspot/share/opto/addnode.cpp
+index 4215124b0d4..c70b587f492 100644
+--- a/src/hotspot/share/opto/addnode.cpp
++++ b/src/hotspot/share/opto/addnode.cpp
+@@ -33,6 +33,7 @@
+ #include "opto/mulnode.hpp"
+ #include "opto/phaseX.hpp"
+ #include "opto/subnode.hpp"
++#include "runtime/stubRoutines.hpp"
+ 
+ // Portions of code courtesy of Clifford Click
+ 
+@@ -706,6 +707,23 @@ Node *AddFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+   return commute(phase, this) ? this : nullptr;
+ }
+ 
++//=============================================================================
++//------------------------------add_of_identity--------------------------------
++// Check for addition of the identity
++const Type *AddHFNode::add_of_identity( const Type *t1, const Type *t2 ) const {
++  return nullptr;
++}
++
++//------------------------------add_ring---------------------------------------
++// Supplied function returns the sum of the inputs.
++// This also type-checks the inputs for sanity.  Guaranteed never to
++// be passed a TOP or BOTTOM type, these are filtered out by pre-check.
++const Type *AddHFNode::add_ring( const Type *t0, const Type *t1 ) const {
++  if (!t0->isa_half_float_constant() || !t1->isa_half_float_constant()) {
++    return bottom_type();
++  }
++  return TypeH::make(t0->getf() + t1->getf());
++}
+ 
+ //=============================================================================
+ //------------------------------add_of_identity--------------------------------
+@@ -1582,6 +1600,31 @@ Node* MaxNode::Identity(PhaseGVN* phase) {
+   return AddNode::Identity(phase);
+ }
+ 
++//------------------------------add_ring---------------------------------------
++const Type* MinHFNode::add_ring(const Type* t0, const Type* t1 ) const {
++  const TypeH* r0 = t0->isa_half_float_constant();
++  const TypeH* r1 = t1->isa_half_float_constant();
++  if (r0 == nullptr || r1 == nullptr) {
++    return bottom_type();
++  }
++
++  if (r0->is_nan()) {
++    return r0;
++  }
++  if (r1->is_nan()) {
++    return r1;
++  }
++
++  float f0 = r0->getf();
++  float f1 = r1->getf();
++  if (f0 != 0.0f || f1 != 0.0f) {
++    return f0 < f1 ? r0 : r1;
++  }
++
++  // handle min of 0.0, -0.0 case.
++  return (jint_cast(f0) < jint_cast(f1)) ? r0 : r1;
++}
++
+ //------------------------------add_ring---------------------------------------
+ const Type* MinFNode::add_ring(const Type* t0, const Type* t1 ) const {
+   const TypeF* r0 = t0->isa_float_constant();
+@@ -1657,6 +1700,31 @@ const Type* MaxFNode::add_ring(const Type* t0, const Type* t1) const {
+   return (jint_cast(f0) > jint_cast(f1)) ? r0 : r1;
+ }
+ 
++//------------------------------add_ring---------------------------------------
++const Type* MaxHFNode::add_ring(const Type* t0, const Type* t1) const {
++  const TypeH* r0 = t0->isa_half_float_constant();
++  const TypeH* r1 = t1->isa_half_float_constant();
++  if (r0 == nullptr || r1 == nullptr) {
++    return bottom_type();
++  }
++
++  if (r0->is_nan()) {
++    return r0;
++  }
++  if (r1->is_nan()) {
++    return r1;
++  }
++
++  float f0 = r0->getf();
++  float f1 = r1->getf();
++  if (f0 != 0.0f || f1 != 0.0f) {
++    return f0 > f1 ? r0 : r1;
++  }
++
++  // handle max of 0.0,-0.0 case.
++  return (jint_cast(f0) > jint_cast(f1)) ? r0 : r1;
++}
++
+ //------------------------------add_ring---------------------------------------
+ const Type* MaxDNode::add_ring(const Type* t0, const Type* t1) const {
+   const TypeD* r0 = t0->isa_double_constant();
+diff --git a/src/hotspot/share/opto/addnode.hpp b/src/hotspot/share/opto/addnode.hpp
+index 6ac08c63ad2..d9e655ffbee 100644
+--- a/src/hotspot/share/opto/addnode.hpp
++++ b/src/hotspot/share/opto/addnode.hpp
+@@ -164,10 +164,18 @@ class AddDNode : public AddNode {
+ 
+ //------------------------------AddHFNode---------------------------------------
+ // Add 2 half-precision floats
+-class AddHFNode : public AddFNode {
++class AddHFNode : public AddNode {
+ public:
+-  AddHFNode( Node *in1, Node *in2 ) : AddFNode(in1,in2) {}
++  AddHFNode( Node *in1, Node *in2 ) : AddNode(in1,in2) {}
+   virtual int Opcode() const;
++  virtual const Type *add_of_identity( const Type *t1, const Type *t2 ) const;
++  virtual const Type *add_ring( const Type *, const Type * ) const;
++  virtual const Type *add_id() const { return TypeH::ZERO; }
++  virtual const Type *bottom_type() const { return Type::HALF_FLOAT; }
++  int max_opcode() const { return Op_MaxHF; }
++  int min_opcode() const { return Op_MinHF; }
++  virtual Node* Identity(PhaseGVN* phase) { return this; }
++  virtual uint ideal_reg() const { return Op_RegF; }
+ };
+ 
+ //------------------------------AddPNode---------------------------------------
+@@ -416,20 +424,28 @@ class MinFNode : public MaxNode {
+ 
+ //------------------------------MaxHFNode--------------------------------------
+ // Maximum of 2 half floats.
+-class MaxHFNode : public MaxFNode {
++class MaxHFNode : public MaxNode {
+ public:
+-  MaxHFNode(Node* in1, Node* in2) : MaxFNode(in1, in2) {}
++  MaxHFNode(Node* in1, Node* in2) : MaxNode(in1, in2) {}
+   virtual int Opcode() const;
++  virtual const Type *add_ring(const Type*, const Type*) const;
++  virtual const Type *add_id() const { return TypeH::NEG_INF; }
++  virtual const Type *bottom_type() const { return Type::HALF_FLOAT; }
++  virtual uint ideal_reg() const { return Op_RegF; }
+   int max_opcode() const { return Op_MaxHF; }
+   int min_opcode() const { return Op_MinHF; }
+ };
+ 
+ //------------------------------MinHFNode---------------------------------------
+ // Minimum of 2 half floats.
+-class MinHFNode : public MinFNode {
++class MinHFNode : public MaxNode {
+ public:
+-  MinHFNode(Node* in1, Node* in2) : MinFNode(in1, in2) {}
++  MinHFNode(Node* in1, Node* in2) : MaxNode(in1, in2) {}
+   virtual int Opcode() const;
++  virtual const Type *add_ring(const Type*, const Type*) const;
++  virtual const Type *add_id() const { return TypeH::POS_INF; }
++  virtual const Type *bottom_type() const { return Type::HALF_FLOAT; }
++  virtual uint ideal_reg() const { return Op_RegF; }
+   int max_opcode() const { return Op_MaxHF; }
+   int min_opcode() const { return Op_MinHF; }
+ };
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 17b81e1a3bc..5251d7798a1 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -133,6 +133,7 @@ macro(Con)
+ macro(ConN)
+ macro(ConNKlass)
+ macro(ConD)
++macro(ConH)
+ macro(ConF)
+ macro(ConI)
+ macro(ConL)
+diff --git a/src/hotspot/share/opto/connode.cpp b/src/hotspot/share/opto/connode.cpp
+index 00049c6f19e..53328029726 100644
+--- a/src/hotspot/share/opto/connode.cpp
++++ b/src/hotspot/share/opto/connode.cpp
+@@ -46,6 +46,7 @@ uint ConNode::hash() const {
+ ConNode *ConNode::make(const Type *t) {
+   switch( t->basic_type() ) {
+   case T_INT:         return new ConINode( t->is_int() );
++  case T_SHORT:       return new ConHNode( t->is_half_float_constant() );
+   case T_LONG:        return new ConLNode( t->is_long() );
+   case T_FLOAT:       return new ConFNode( t->is_float_constant() );
+   case T_DOUBLE:      return new ConDNode( t->is_double_constant() );
+diff --git a/src/hotspot/share/opto/connode.hpp b/src/hotspot/share/opto/connode.hpp
+index 618326ec527..bfce6d6c9cb 100644
+--- a/src/hotspot/share/opto/connode.hpp
++++ b/src/hotspot/share/opto/connode.hpp
+@@ -115,6 +115,20 @@ class ConLNode : public ConNode {
+ 
+ };
+ 
++//------------------------------ConHNode---------------------------------------
++// Simple half float constants
++class ConHNode : public ConNode {
++public:
++  ConHNode( const TypeH *t ) : ConNode(t) {}
++  virtual int Opcode() const;
++
++  // Factory method:
++  static ConHNode* make(float con) {
++    return new ConHNode( TypeH::make(con) );
++  }
++
++};
++
+ //------------------------------ConFNode---------------------------------------
+ // Simple float constants
+ class ConFNode : public ConNode {
+diff --git a/src/hotspot/share/opto/constantTable.cpp b/src/hotspot/share/opto/constantTable.cpp
+index 66cf8105476..d74b3cd5fab 100644
+--- a/src/hotspot/share/opto/constantTable.cpp
++++ b/src/hotspot/share/opto/constantTable.cpp
+@@ -63,6 +63,7 @@ bool ConstantTable::Constant::operator==(const Constant& other) {
+   }
+   // For floating point values we compare the bit pattern.
+   switch (type()) {
++  case T_SHORT:   return (_v._value.i == other._v._value.i);
+   case T_INT:     return (_v._value.i == other._v._value.i);
+   case T_FLOAT:   return jint_cast(_v._value.f) == jint_cast(other._v._value.f);
+   case T_LONG:    return (_v._value.j == other._v._value.j);
+@@ -87,6 +88,7 @@ static int constant_size(ConstantTable::Constant* con) {
+     return type2aelembytes(con->type()) * con->get_array()->length();
+   }
+   switch (con->type()) {
++  case T_SHORT:   return sizeof(jshort );
+   case T_INT:     return sizeof(jint   );
+   case T_LONG:    return sizeof(jlong  );
+   case T_FLOAT:   return sizeof(jfloat );
+@@ -152,6 +154,7 @@ bool ConstantTable::emit(C2_MacroAssembler* masm) const {
+       constant_addr = masm->array_constant(con.type(), con.get_array(), con.alignment());
+     } else {
+       switch (con.type()) {
++      case T_SHORT:  constant_addr = masm->int_constant(   con.get_jint()   ); break;
+       case T_INT:    constant_addr = masm->int_constant(   con.get_jint()   ); break;
+       case T_LONG:   constant_addr = masm->long_constant(  con.get_jlong()  ); break;
+       case T_FLOAT:  constant_addr = masm->float_constant( con.get_jfloat() ); break;
+@@ -268,6 +271,7 @@ ConstantTable::Constant ConstantTable::add(MachConstantNode* n, MachOper* oper)
+   BasicType type = oper->type()->basic_type();
+   switch (type) {
+   case T_LONG:    value.j = oper->constantL(); break;
++  case T_SHORT:   value.i = oper->constantH(); break;
+   case T_INT:     value.i = oper->constant();  break;
+   case T_FLOAT:   value.f = oper->constantF(); break;
+   case T_DOUBLE:  value.d = oper->constantD(); break;
+diff --git a/src/hotspot/share/opto/convertnode.cpp b/src/hotspot/share/opto/convertnode.cpp
+index 67f9cf9d636..ba7c3a509c5 100644
+--- a/src/hotspot/share/opto/convertnode.cpp
++++ b/src/hotspot/share/opto/convertnode.cpp
+@@ -254,9 +254,6 @@ const Type* ConvF2HFNode::Value(PhaseGVN* phase) const {
+ //------------------------------Ideal------------------------------------------
+ Node* ConvF2HFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   // Optimize pattern - ConvHF2F (FP32BinOp) ConvF2HF ==> ReinterpretS2HF (FP16BinOp) ReinterpretHF2S.
+-  // It is safe to do so as we do not lose any precision bits during ConvHF2F and ConvF2HF conversions.
+-  // Eventually if the loop is vectorizable, ReinterpretS2HF/HF2S will be optimized away as they are
+-  // of the same size and only the vectorized sqrt nodes for half-precision floats will be generated.
+   if (Float16NodeFactory::is_binary_oper(in(1)->Opcode()) &&
+       in(1)->in(1)->Opcode() == Op_ConvHF2F &&
+       in(1)->in(2)->Opcode() == Op_ConvHF2F) {
+@@ -922,20 +919,17 @@ const Type* RoundDoubleModeNode::Value(PhaseGVN* phase) const {
+ 
+ const Type* ReinterpretS2HFNode::Value(PhaseGVN* phase) const {
+   const Type* type = phase->type( in(1) );
+-  // Convert FP16 constant value to Float constant value, this will allow
+-  // further constant folding to be done at float granularity by value routines
+-  // of FP16 IR nodes.
+-  if ((type->isa_int() && type->is_int()->is_con()) && StubRoutines::hf2f_adr() != nullptr) {
++  // Convert short constant value to a Half Float constant value
++  if ((type->isa_int() && type->is_int()->is_con())) {
+      jshort hfval = type->is_int()->get_con();
+-     jfloat fval = StubRoutines::hf2f(hfval);
+-     return TypeF::make(fval);
++     return TypeH::make(hfval);
+   }
+-  return Type::FLOAT;
++  return Type::HALF_FLOAT;
+ }
+ 
+ Node* ReinterpretS2HFNode::Identity(PhaseGVN* phase) {
+   if (in(1)->Opcode() == Op_ReinterpretHF2S) {
+-     assert(in(1)->in(1)->bottom_type()->isa_float(), "");
++     assert(in(1)->in(1)->bottom_type()->isa_half_float(), "");
+      return in(1)->in(1);
+   }
+   return this;
+@@ -943,10 +937,9 @@ Node* ReinterpretS2HFNode::Identity(PhaseGVN* phase) {
+ 
+ const Type* ReinterpretHF2SNode::Value(PhaseGVN* phase) const {
+   const Type* type = phase->type( in(1) );
+-  // Convert Float constant value to FP16 constant value.
+-  if (type->isa_float_constant() && StubRoutines::f2hf_adr() != nullptr) {
+-     jfloat fval = type->is_float_constant()->_f;
+-     jshort hfval = StubRoutines::f2hf(fval);
++  // Convert Half float constant value to short constant value.
++  if (type->isa_half_float_constant()) {
++     jshort hfval = type->is_half_float_constant()->_f;
+      return TypeInt::make(hfval);
+   }
+   return TypeInt::SHORT;
+diff --git a/src/hotspot/share/opto/convertnode.hpp b/src/hotspot/share/opto/convertnode.hpp
+index 0d426343772..2ef8438ba54 100644
+--- a/src/hotspot/share/opto/convertnode.hpp
++++ b/src/hotspot/share/opto/convertnode.hpp
+@@ -221,7 +221,7 @@ class ReinterpretS2HFNode : public Node {
+   public:
+   ReinterpretS2HFNode(Node* in1) : Node(0, in1) {}
+   virtual int Opcode() const;
+-  virtual const Type* bottom_type() const { return Type::FLOAT; }
++  virtual const Type* bottom_type() const { return Type::HALF_FLOAT; }
+   virtual const Type* Value(PhaseGVN* phase) const;
+   virtual Node* Identity(PhaseGVN* phase);
+   virtual uint  ideal_reg() const { return Op_RegF; }
+diff --git a/src/hotspot/share/opto/divnode.cpp b/src/hotspot/share/opto/divnode.cpp
+index b9a207b2dee..14cf2bd7677 100644
+--- a/src/hotspot/share/opto/divnode.cpp
++++ b/src/hotspot/share/opto/divnode.cpp
+@@ -747,6 +747,94 @@ Node *DivFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+   // return multiplication by the reciprocal
+   return (new MulFNode(in(1), phase->makecon(TypeF::make(reciprocal))));
+ }
++//=============================================================================
++//------------------------------Value------------------------------------------
++// An DivFNode divides its inputs.  The third input is a Control input, used to
++// prevent hoisting the divide above an unsafe test.
++const Type* DivHFNode::Value(PhaseGVN* phase) const {
++  // Either input is TOP ==> the result is TOP
++  const Type *t1 = phase->type( in(1) );
++  const Type *t2 = phase->type( in(2) );
++  if( t1 == Type::TOP ) return Type::TOP;
++  if( t2 == Type::TOP ) return Type::TOP;
++
++  // Either input is BOTTOM ==> the result is the local BOTTOM
++  const Type *bot = bottom_type();
++  if( (t1 == bot) || (t2 == bot) ||
++      (t1 == Type::BOTTOM) || (t2 == Type::BOTTOM) )
++    return bot;
++
++  // x/x == 1, we ignore 0/0.
++  // Note: if t1 and t2 are zero then result is NaN (JVMS page 213)
++  // Does not work for variables because of NaN's
++  if (in(1) == in(2) && t1->base() == Type::HalfFloatCon &&
++      !g_isnan(t1->getf()) && g_isfinite(t1->getf()) && t1->getf() != 0.0) { // could be negative ZERO or NaN
++    return TypeH::ONE;
++  }
++
++  if( t2 == TypeH::ONE )
++    return t1;
++
++  // If divisor is a constant and not zero, divide them numbers
++  if( t1->base() == Type::HalfFloatCon &&
++      t2->base() == Type::HalfFloatCon &&
++      t2->getf() != 0.0 ) // could be negative zero
++    return TypeH::make( t1->getf()/t2->getf() );
++
++  // If the dividend is a constant zero
++  // Note: if t1 and t2 are zero then result is NaN (JVMS page 213)
++  // Test TypeF::ZERO is not sufficient as it could be negative zero
++
++  if( t1 == TypeH::ZERO && !g_isnan(t2->getf()) && t2->getf() != 0.0 )
++    return TypeH::ZERO;
++
++  // Otherwise we give up all hope
++  return Type::HALF_FLOAT;
++}
++
++//------------------------------isA_Copy---------------------------------------
++// Dividing by self is 1.
++// If the divisor is 1, we are an identity on the dividend.
++Node* DivHFNode::Identity(PhaseGVN* phase) {
++  return (phase->type( in(2) ) == TypeH::ONE) ? in(1) : this;
++}
++
++
++//------------------------------Idealize---------------------------------------
++Node *DivHFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
++  if (in(0) && remove_dead_region(phase, can_reshape))  return this;
++  // Don't bother trying to transform a dead node
++  if( in(0) && in(0)->is_top() )  return nullptr;
++
++  const Type *t2 = phase->type( in(2) );
++  if( t2 == TypeH::ONE )         // Identity?
++    return nullptr;              // Skip it
++
++  const TypeH *tf = t2->isa_half_float_constant();
++  if( !tf ) return nullptr;
++  if( tf->base() != Type::HalfFloatCon ) return nullptr;
++
++  // Check for out of range values
++  if( tf->is_nan() || !tf->is_finite() ) return nullptr;
++
++  // Get the value
++  float f = tf->getf();
++  int exp;
++
++  // Only for special case of dividing by a power of 2
++  if( frexp((double)f, &exp) != 0.5 ) return nullptr;
++
++  // Limit the range of acceptable exponents
++  if( exp < -14 || exp > 15 ) return nullptr;
++
++  // Compute the reciprocal
++  float reciprocal = ((float)1.0) / f;
++
++  assert( frexp((double)reciprocal, &exp) == 0.5, "reciprocal should be power of 2" );
++
++  // return multiplication by the reciprocal
++  return (new MulHFNode(in(1), phase->makecon(TypeH::make(reciprocal))));
++}
+ 
+ //=============================================================================
+ //------------------------------Value------------------------------------------
+diff --git a/src/hotspot/share/opto/divnode.hpp b/src/hotspot/share/opto/divnode.hpp
+index 322aec18ec3..59e358d5987 100644
+--- a/src/hotspot/share/opto/divnode.hpp
++++ b/src/hotspot/share/opto/divnode.hpp
+@@ -80,10 +80,15 @@ class DivFNode : public Node {
+ 
+ //------------------------------DivHFNode--------------------------------------
+ // Half float division
+-class DivHFNode : public DivFNode {
++class DivHFNode : public Node {
+ public:
+-  DivHFNode(Node* c, Node* dividend, Node* divisor) : DivFNode(c, dividend, divisor) {}
++  DivHFNode( Node *c, Node *dividend, Node *divisor ) : Node(c, dividend, divisor) {}
+   virtual int Opcode() const;
++  virtual Node* Identity(PhaseGVN* phase);
++  virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
++  virtual const Type* Value(PhaseGVN* phase) const;
++  virtual const Type *bottom_type() const { return Type::HALF_FLOAT; }
++  virtual uint ideal_reg() const { return Op_RegF; }
+ };
+ 
+ //------------------------------DivDNode---------------------------------------
+diff --git a/src/hotspot/share/opto/machnode.cpp b/src/hotspot/share/opto/machnode.cpp
+index e271637893b..c905f5aa478 100644
+--- a/src/hotspot/share/opto/machnode.cpp
++++ b/src/hotspot/share/opto/machnode.cpp
+@@ -47,6 +47,7 @@ intptr_t  MachOper::constant() const { return 0x00; }
+ relocInfo::relocType MachOper::constant_reloc() const { return relocInfo::none; }
+ jdouble MachOper::constantD() const { ShouldNotReachHere(); }
+ jfloat  MachOper::constantF() const { ShouldNotReachHere(); }
++jshort  MachOper::constantH() const { ShouldNotReachHere(); }
+ jlong   MachOper::constantL() const { ShouldNotReachHere(); }
+ TypeOopPtr *MachOper::oop() const { return nullptr; }
+ int MachOper::ccode() const { return 0x00; }
+diff --git a/src/hotspot/share/opto/machnode.hpp b/src/hotspot/share/opto/machnode.hpp
+index 6fcbabdab90..c4c806861f8 100644
+--- a/src/hotspot/share/opto/machnode.hpp
++++ b/src/hotspot/share/opto/machnode.hpp
+@@ -148,6 +148,7 @@ class MachOper : public ResourceObj {
+   virtual jdouble constantD() const;
+   virtual jfloat  constantF() const;
+   virtual jlong   constantL() const;
++  virtual jshort  constantH() const;
+   virtual TypeOopPtr *oop() const;
+   virtual int  ccode() const;
+   // A zero, default, indicates this value is not needed.
+diff --git a/src/hotspot/share/opto/mulnode.cpp b/src/hotspot/share/opto/mulnode.cpp
+index adf7096fb69..a4815528f88 100644
+--- a/src/hotspot/share/opto/mulnode.cpp
++++ b/src/hotspot/share/opto/mulnode.cpp
+@@ -545,7 +545,7 @@ Node* MulFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+ //------------------------------Ideal------------------------------------------
+ // Check to see if we are multiplying by a constant 2 and convert to add, then try the regular MulNode::Ideal
+ Node* MulHFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+-  const TypeF* t2 = phase->type(in(2))->isa_float_constant();
++  const TypeH* t2 = phase->type(in(2))->isa_half_float_constant();
+ 
+   // x * 2 -> x + x
+   if (t2 != nullptr && t2->getf() == 2) {
+@@ -555,6 +555,12 @@ Node* MulHFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   return MulNode::Ideal(phase, can_reshape);
+ }
+ 
++// Compute the product type of two double ranges into this node.
++const Type *MulHFNode::mul_ring(const Type *t0, const Type *t1) const {
++  if( t0 == Type::HALF_FLOAT || t1 == Type::HALF_FLOAT ) return Type::HALF_FLOAT;
++  return TypeH::make( t0->getf() * t1->getf() );
++}
++
+ //=============================================================================
+ //------------------------------mul_ring---------------------------------------
+ // Compute the product type of two double ranges into this node.
+@@ -1916,6 +1922,28 @@ const Type* FmaFNode::Value(PhaseGVN* phase) const {
+ #endif
+ }
+ 
++//=============================================================================
++//------------------------------Value------------------------------------------
++const Type* FmaHFNode::Value(PhaseGVN* phase) const {
++  const Type *t1 = phase->type(in(1));
++  if (t1 == Type::TOP) return Type::TOP;
++  if (t1->base() != Type::HalfFloatCon) return Type::HALF_FLOAT;
++  const Type *t2 = phase->type(in(2));
++  if (t2 == Type::TOP) return Type::TOP;
++  if (t2->base() != Type::HalfFloatCon) return Type::HALF_FLOAT;
++  const Type *t3 = phase->type(in(3));
++  if (t3 == Type::TOP) return Type::TOP;
++  if (t3->base() != Type::HalfFloatCon) return Type::HALF_FLOAT;
++#ifndef __STDC_IEC_559__
++  return Type::HALF_FLOAT;
++#else
++  float f1 = t1->getf();
++  float f2 = t2->getf();
++  float f3 = t3->getf();
++  return TypeH::make(fma(f1, f2, f3));
++#endif
++}
++
+ //=============================================================================
+ //------------------------------hash-------------------------------------------
+ // Hash function for MulAddS2INode.  Operation is commutative with commutative pairs.
+diff --git a/src/hotspot/share/opto/mulnode.hpp b/src/hotspot/share/opto/mulnode.hpp
+index b5e96604ce9..7574ccab7cf 100644
+--- a/src/hotspot/share/opto/mulnode.hpp
++++ b/src/hotspot/share/opto/mulnode.hpp
+@@ -145,15 +145,20 @@ class MulFNode : public MulNode {
+ 
+ //------------------------------MulHFNode---------------------------------------
+ // Multiply 2 half floats
+-class MulHFNode : public MulFNode {
++class MulHFNode : public MulNode {
+ public:
+-  MulHFNode(Node* in1, Node* in2) : MulFNode(in1, in2) {}
++  MulHFNode(Node* in1, Node* in2) : MulNode(in1, in2) {}
+   virtual int Opcode() const;
++  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
++  virtual const Type *mul_ring( const Type *, const Type * ) const;
++  const Type *mul_id() const { return TypeH::ONE; }
++  const Type *add_id() const { return TypeH::ZERO; }
+   int add_opcode() const { return Op_AddHF; }
+   int mul_opcode() const { return Op_MulHF; }
+   int max_opcode() const { return Op_MaxHF; }
+   int min_opcode() const { return Op_MinHF; }
+-  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
++  const Type *bottom_type() const { return Type::HALF_FLOAT; }
++  virtual uint ideal_reg() const { return Op_RegF; }
+ };
+ 
+ //------------------------------MulDNode---------------------------------------
+@@ -405,10 +410,13 @@ class FmaFNode : public FmaNode {
+ 
+ //------------------------------FmaHFNode-------------------------------------
+ // fused-multiply-add half-precision float
+-class FmaHFNode : public FmaFNode {
++class FmaHFNode : public FmaNode {
+ public:
+-  FmaHFNode(Node* c, Node* in1, Node* in2, Node* in3) : FmaFNode(c, in1, in2, in3) {}
++  FmaHFNode(Node* c, Node* in1, Node* in2, Node* in3) : FmaNode(c, in1, in2, in3) {}
+   virtual int Opcode() const;
++  const Type* bottom_type() const { return Type::HALF_FLOAT; }
++  virtual uint ideal_reg() const { return Op_RegF; }
++  virtual const Type* Value(PhaseGVN* phase) const;
+ };
+ 
+ //------------------------------MulAddS2INode----------------------------------
+diff --git a/src/hotspot/share/opto/node.cpp b/src/hotspot/share/opto/node.cpp
+index 3f82c472163..71a6dfcfa5a 100644
+--- a/src/hotspot/share/opto/node.cpp
++++ b/src/hotspot/share/opto/node.cpp
+@@ -1596,6 +1596,13 @@ jfloat Node::getf() const {
+   return ((ConFNode*)this)->type()->is_float_constant()->getf();
+ }
+ 
++// Get a half float constant from a ConstNode.
++// Returns the constant if it is a float ConstNode
++jshort Node::geth() const {
++  assert( Opcode() == Op_ConH, "" );
++  return ((ConHNode*)this)->type()->is_half_float_constant()->geth();
++}
++
+ #ifndef PRODUCT
+ 
+ // Call this from debugger:
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index db8b00c0bda..f9ac9c760f3 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -1254,6 +1254,7 @@ class Node {
+   intptr_t get_narrowcon() const;
+   jdouble getd() const;
+   jfloat getf() const;
++  jshort geth() const;
+ 
+   // Nodes which are pinned into basic blocks
+   virtual bool pinned() const { return false; }
+diff --git a/src/hotspot/share/opto/subnode.cpp b/src/hotspot/share/opto/subnode.cpp
+index 445eb168214..e5fe203f803 100644
+--- a/src/hotspot/share/opto/subnode.cpp
++++ b/src/hotspot/share/opto/subnode.cpp
+@@ -554,6 +554,39 @@ const Type* SubFPNode::Value(PhaseGVN* phase) const {
+ 
+ //=============================================================================
+ //------------------------------Ideal------------------------------------------
++Node *SubHFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
++  const Type *t2 = phase->type( in(2) );
++  // Convert "x-c0" into "x+ -c0".
++  if( t2->base() == Type::HalfFloatCon ) {  // Might be bottom or top...
++    // return new (phase->C, 3) AddFNode(in(1), phase->makecon( TypeF::make(-t2->getf()) ) );
++  }
++
++  // Cannot replace 0.0-X with -X because a 'fsub' bytecode computes
++  // 0.0-0.0 as +0.0, while a 'fneg' bytecode computes -0.0.
++  //if( phase->type(in(1)) == TypeF::ZERO )
++  //return new (phase->C, 2) NegFNode(in(2));
++
++  return nullptr;
++}
++
++//------------------------------sub--------------------------------------------
++// A subtract node differences its two inputs.
++const Type *SubHFNode::sub( const Type *t1, const Type *t2 ) const {
++  // no folding if one of operands is infinity or NaN, do not do constant folding
++  if( g_isfinite(t1->getf()) && g_isfinite(t2->getf()) ) {
++    return TypeH::make( t1->getf() - t2->getf() );
++  }
++  else if( g_isnan(t1->getf()) ) {
++    return t1;
++  }
++  else if( g_isnan(t2->getf()) ) {
++    return t2;
++  }
++  else {
++    return Type::HALF_FLOAT;
++  }
++}
++//------------------------------Ideal------------------------------------------
+ Node *SubFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+   const Type *t2 = phase->type( in(2) );
+   // Convert "x-c0" into "x+ -c0".
+@@ -1947,6 +1980,15 @@ const Type* SqrtFNode::Value(PhaseGVN* phase) const {
+   return TypeF::make( (float)sqrt( (double)f ) );
+ }
+ 
++const Type* SqrtHFNode::Value(PhaseGVN* phase) const {
++  const Type *t1 = phase->type( in(1) );
++  if( t1 == Type::TOP ) return Type::TOP;
++  if( t1->base() != Type::HalfFloatCon ) return Type::HALF_FLOAT;
++  float f = t1->getf();
++  if( f < 0.0f ) return Type::HALF_FLOAT;
++  return TypeH::make( (float)sqrt( (double)f ) );
++}
++
+ const Type* ReverseINode::Value(PhaseGVN* phase) const {
+   const Type *t1 = phase->type( in(1) );
+   if (t1 == Type::TOP) {
+diff --git a/src/hotspot/share/opto/subnode.hpp b/src/hotspot/share/opto/subnode.hpp
+index c4f8151e348..6e82ab45c33 100644
+--- a/src/hotspot/share/opto/subnode.hpp
++++ b/src/hotspot/share/opto/subnode.hpp
+@@ -132,10 +132,15 @@ class SubDNode : public SubFPNode {
+ 
+ //------------------------------SubHFNode--------------------------------------
+ // Subtract 2 half floats
+-class SubHFNode : public SubFNode {
++class SubHFNode : public SubFPNode {
+ public:
+-  SubHFNode(Node* in1, Node* in2) : SubFNode(in1, in2) {}
++  SubHFNode(Node* in1, Node* in2) : SubFPNode(in1, in2) {}
+   virtual int Opcode() const;
++  virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
++  virtual const Type *sub( const Type *, const Type * ) const;
++  const Type   *add_id() const { return TypeH::ZERO; }
++  const Type   *bottom_type() const { return Type::HALF_FLOAT; }
++  virtual uint  ideal_reg() const { return Op_RegF; }
+ };
+ 
+ //------------------------------CmpNode---------------------------------------
+@@ -538,10 +543,16 @@ class SqrtFNode : public Node {
+ 
+ //------------------------------SqrtHFNode-------------------------------------
+ // square root of a half-precision float
+-class SqrtHFNode : public SqrtFNode {
++class SqrtHFNode : public Node {
+ public:
+-  SqrtHFNode(Compile* C, Node* c, Node* in1) : SqrtFNode(C, c, in1) {}
++  SqrtHFNode(Compile* C, Node *c, Node *in1) : Node(c, in1) {
++    init_flags(Flag_is_expensive);
++    C->add_expensive_node(this);
++  }
+   virtual int Opcode() const;
++  const Type *bottom_type() const { return Type::HALF_FLOAT; }
++  virtual uint ideal_reg() const { return Op_RegF; }
++  virtual const Type* Value(PhaseGVN* phase) const;
+ };
+ 
+ //-------------------------------ReverseBytesINode--------------------------------
+diff --git a/src/hotspot/share/opto/superword.cpp b/src/hotspot/share/opto/superword.cpp
+index 07cad42e3e2..a4f4b6366ed 100644
+--- a/src/hotspot/share/opto/superword.cpp
++++ b/src/hotspot/share/opto/superword.cpp
+@@ -2559,21 +2559,13 @@ const Type* VLoopTypes::container_type(Node* n) const {
+     }
+     return Type::get_const_basic_type(bt);
+   }
+-  const Type* t = _vloop.phase()->igvn().type(n);
+-
+-  // First check if the node is a float16 node returning a "Short" type.
+-  // If it is, then it needs to be checked before the next condition.
+-  // Else it might return TypeInt::INT for float16 nodes instead of TypeInt::SHORT
+-  // which could cause assertion errors in VectorCastNode::opcode().
+-  if (opc == Op_ReinterpretHF2S || VectorNode::is_float16_node(opc)) {
+-    return TypeInt::SHORT;
+-  }
+ 
++  const Type* t = _vloop.phase()->igvn().type(n);
+   if (t->basic_type() == T_INT) {
+     // Float to half float conversion may be succeeded by a conversion from
+     // half float to float, in such a case back propagation of narrow type (SHORT)
+     // may not be possible.
+-    if (opc == Op_ConvF2HF) {
++    if (n->Opcode() == Op_ConvF2HF) {
+       return TypeInt::SHORT;
+     }
+     // A narrow type of arithmetic operations will be determined by
+diff --git a/src/hotspot/share/opto/type.cpp b/src/hotspot/share/opto/type.cpp
+index 70cd46c900d..4b1d19ce2dc 100644
+--- a/src/hotspot/share/opto/type.cpp
++++ b/src/hotspot/share/opto/type.cpp
+@@ -42,6 +42,7 @@
+ #include "utilities/checkedCast.hpp"
+ #include "utilities/powerOfTwo.hpp"
+ #include "utilities/stringUtils.hpp"
++#include "runtime/stubRoutines.hpp"
+ 
+ // Portions of code courtesy of Clifford Click
+ 
+@@ -102,6 +103,9 @@ const Type::TypeInfo Type::_type_info[Type::lastype] = {
+   { Abio,            T_ILLEGAL,    "abIO",          false, 0,                    relocInfo::none          },  // Abio
+   { Return_Address,  T_ADDRESS,    "return_address",false, Op_RegP,              relocInfo::none          },  // Return_Address
+   { Memory,          T_ILLEGAL,    "memory",        false, 0,                    relocInfo::none          },  // Memory
++  { HalfFloatBot,    T_SHORT,      "halffloat_top", false, Op_RegF,              relocInfo::none          },  // HalfFloatTop
++  { HalfFloatCon,    T_SHORT,      "htcon:",        false, Op_RegF,              relocInfo::none          },  // HalfFloatCon
++  { HalfFloatTop,    T_SHORT,      "short",         false, Op_RegF,              relocInfo::none          },  // HalfFloatBot
+   { FloatBot,        T_FLOAT,      "float_top",     false, Op_RegF,              relocInfo::none          },  // FloatTop
+   { FloatCon,        T_FLOAT,      "ftcon:",        false, Op_RegF,              relocInfo::none          },  // FloatCon
+   { FloatTop,        T_FLOAT,      "float",         false, Op_RegF,              relocInfo::none          },  // FloatBot
+@@ -131,6 +135,7 @@ const Type *Type::ABIO;         // State-of-machine only
+ const Type *Type::BOTTOM;       // All values
+ const Type *Type::CONTROL;      // Control only
+ const Type *Type::DOUBLE;       // All doubles
++const Type *Type::HALF_FLOAT;   // All half floats
+ const Type *Type::FLOAT;        // All floats
+ const Type *Type::HALF;         // Placeholder half of doublewide type
+ const Type *Type::MEMORY;       // Abstract store only
+@@ -451,6 +456,7 @@ void Type::Initialize_shared(Compile* current) {
+   ABIO    = make(Abio);         // State-of-machine only
+   RETURN_ADDRESS=make(Return_Address);
+   FLOAT   = make(FloatBot);     // All floats
++  HALF_FLOAT   = make(HalfFloatBot); // All half floats
+   DOUBLE  = make(DoubleBot);    // All doubles
+   BOTTOM  = make(Bottom);       // Everything
+   HALF    = make(Half);         // Placeholder half of doublewide type
+@@ -462,6 +468,13 @@ void Type::Initialize_shared(Compile* current) {
+   TypeF::POS_INF = TypeF::make(jfloat_cast(POSITIVE_INFINITE_F));
+   TypeF::NEG_INF = TypeF::make(-jfloat_cast(POSITIVE_INFINITE_F));
+ 
++  TypeH::MAX = TypeH::make(max_jfloat); // HalfFloat MAX
++  TypeH::MIN = TypeH::make(min_jfloat); // HalfFloat MIN
++  TypeH::ZERO = TypeH::make(0.0f); // HalfFloat 0 (positive zero)
++  TypeH::ONE  = TypeH::make(1.0f); // HalfFloat 1
++  TypeH::POS_INF = TypeH::make(jfloat_cast(POSITIVE_INFINITE_F));
++  TypeH::NEG_INF = TypeH::make(-jfloat_cast(POSITIVE_INFINITE_F));
++
+   TypeD::MAX = TypeD::make(max_jdouble); // Double MAX
+   TypeD::MIN = TypeD::make(min_jdouble); // Double MIN
+   TypeD::ZERO = TypeD::make(0.0); // Double 0 (positive zero)
+@@ -1032,6 +1045,7 @@ const Type *Type::xmeet( const Type *t ) const {
+ 
+   // Cut in half the number of cases I must handle.  Only need cases for when
+   // the given enum "t->type" is less than or equal to the local enum "type".
++  case HalfFloatCon:
+   case FloatCon:
+   case DoubleCon:
+   case Int:
+@@ -1222,6 +1236,9 @@ Type::Category Type::category() const {
+     case Type::AryKlassPtr:
+     case Type::Function:
+     case Type::Return_Address:
++    case Type::HalfFloatTop:
++    case Type::HalfFloatCon:
++    case Type::HalfFloatBot:
+     case Type::FloatTop:
+     case Type::FloatCon:
+     case Type::FloatBot:
+@@ -1327,6 +1344,9 @@ const Type *TypeF::xmeet( const Type *t ) const {
+   case NarrowKlass:
+   case Int:
+   case Long:
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case DoubleTop:
+   case DoubleCon:
+   case DoubleBot:
+@@ -1405,6 +1425,138 @@ bool TypeF::empty(void) const {
+   return false;                 // always exactly a singleton
+ }
+ 
++//=============================================================================
++// Convenience common pre-built types.
++const TypeH *TypeH::MAX;        // Half float max
++const TypeH *TypeH::MIN;        // Half float min
++const TypeH *TypeH::ZERO;       // Half float zero
++const TypeH *TypeH::ONE;        // Half float one
++const TypeH *TypeH::POS_INF;    // Half float positive infinity
++const TypeH *TypeH::NEG_INF;    // Half float negative infinity
++
++//------------------------------make-------------------------------------------
++// Create a halffloat constant
++const TypeH *TypeH::make(short f) {
++  return (TypeH*)(new TypeH(f))->hashcons();
++}
++
++const TypeH *TypeH::make(float f) {
++  assert( StubRoutines::f2hf_adr() != nullptr, "");
++  short hf = StubRoutines::f2hf(f);
++  return (TypeH*)(new TypeH(hf))->hashcons();
++}
++
++//------------------------------meet-------------------------------------------
++// Compute the MEET of two types.  It returns a new Type object.
++const Type *TypeH::xmeet( const Type *t ) const {
++  // Perform a fast test for common case; meeting the same types together.
++  if( this == t ) return this;  // Meeting same type-rep?
++
++  // Current "this->_base" is FloatCon
++  switch (t->base()) {          // Switch on original type
++  case AnyPtr:                  // Mixing with oops happens when javac
++  case RawPtr:                  // reuses local variables
++  case OopPtr:
++  case InstPtr:
++  case AryPtr:
++  case MetadataPtr:
++  case KlassPtr:
++  case InstKlassPtr:
++  case AryKlassPtr:
++  case NarrowOop:
++  case NarrowKlass:
++  case Int:
++  case Long:
++  case FloatTop:
++  case FloatCon:
++  case FloatBot:
++  case DoubleTop:
++  case DoubleCon:
++  case DoubleBot:
++  case Bottom:                  // Ye Olde Default
++    return Type::BOTTOM;
++
++  case HalfFloatBot:
++    return t;
++
++  default:                      // All else is a mistake
++    typerr(t);
++
++  case HalfFloatCon:                // Float-constant vs Float-constant?
++    if( jint_cast(_f) != jint_cast(t->getf()) )         // unequal constants?
++                                // must compare bitwise as positive zero, negative zero and NaN have
++                                // all the same representation in C++
++      return HALF_FLOAT;        // Return generic float
++                                // Equal constants
++  case Top:
++  case HalfFloatTop:
++    break;                      // Return the float constant
++  }
++  return this;                  // Return the float constant
++}
++
++//------------------------------xdual------------------------------------------
++// Dual: symmetric
++const Type *TypeH::xdual() const {
++  return this;
++}
++
++//------------------------------eq---------------------------------------------
++// Structural equality check for Type representations
++bool TypeH::eq(const Type *t) const {
++  // Bitwise comparison to distinguish between +/-0. These values must be treated
++  // as different to be consistent with C1 and the interpreter.
++  return (jint_cast(_f) == jint_cast(t->geth()));
++}
++
++//------------------------------hash-------------------------------------------
++// Type-specific hashing function.
++uint TypeH::hash(void) const {
++  return *(uint*)(&_f);
++}
++
++//------------------------------is_finite--------------------------------------
++// Has a finite value
++bool TypeH::is_finite() const {
++  assert( StubRoutines::hf2f_adr() != nullptr, "");
++  float f = StubRoutines::hf2f(geth());
++  return g_isfinite(f) != 0;
++}
++
++float TypeH::getf() const {
++  assert( StubRoutines::hf2f_adr() != nullptr, "");
++  return StubRoutines::hf2f(geth());
++}
++
++//------------------------------is_nan-----------------------------------------
++// Is not a number (NaN)
++bool TypeH::is_nan()    const {
++  assert( StubRoutines::hf2f_adr() != nullptr, "");
++  float f = StubRoutines::hf2f(geth());
++  return g_isnan(f) != 0;
++}
++
++//------------------------------dump2------------------------------------------
++// Dump float constant Type
++#ifndef PRODUCT
++void TypeH::dump2( Dict &d, uint depth, outputStream *st ) const {
++  Type::dump2(d,depth, st);
++  st->print("%x", _f);
++}
++#endif
++
++//------------------------------singleton--------------------------------------
++// TRUE if Type is a singleton type, FALSE otherwise.   Singletons are simple
++// constants (Ldi nodes).  Singletons are integer, half float, float or double constants
++// or a single symbol.
++bool TypeH::singleton(void) const {
++  return true;                  // Always a singleton
++}
++
++bool TypeH::empty(void) const {
++  return false;                 // always exactly a singleton
++}
++
+ //=============================================================================
+ // Convenience common pre-built types.
+ const TypeD *TypeD::MAX;        // Floating point max
+@@ -1440,6 +1592,9 @@ const Type *TypeD::xmeet( const Type *t ) const {
+   case NarrowKlass:
+   case Int:
+   case Long:
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -1636,6 +1791,9 @@ const Type *TypeInt::xmeet( const Type *t ) const {
+   case NarrowOop:
+   case NarrowKlass:
+   case Long:
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -1899,6 +2057,9 @@ const Type *TypeLong::xmeet( const Type *t ) const {
+   case NarrowOop:
+   case NarrowKlass:
+   case Int:
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -2693,6 +2854,9 @@ const Type *TypePtr::xmeet_helper(const Type *t) const {
+   switch (t->base()) {          // switch on original type
+   case Int:                     // Mixing ints & oops happens when javac
+   case Long:                    // reuses local variables
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -3632,6 +3796,9 @@ const Type *TypeOopPtr::xmeet_helper(const Type *t) const {
+ 
+   case Int:                     // Mixing ints & oops happens when javac
+   case Long:                    // reuses local variables
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -4200,6 +4367,9 @@ const Type *TypeInstPtr::xmeet_helper(const Type *t) const {
+ 
+   case Int:                     // Mixing ints & oops happens when javac
+   case Long:                    // reuses local variables
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -4876,6 +5046,9 @@ const Type *TypeAryPtr::xmeet_helper(const Type *t) const {
+   // Mixing ints & oops happens when javac reuses local variables
+   case Int:
+   case Long:
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -5305,6 +5478,9 @@ const Type *TypeNarrowPtr::xmeet( const Type *t ) const {
+ 
+   case Int:                     // Mixing ints & oops happens when javac
+   case Long:                    // reuses local variables
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -5460,6 +5636,9 @@ const Type *TypeMetadataPtr::xmeet( const Type *t ) const {
+ 
+   case Int:                     // Mixing ints & oops happens when javac
+   case Long:                    // reuses local variables
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -5834,6 +6013,9 @@ const Type    *TypeInstKlassPtr::xmeet( const Type *t ) const {
+ 
+   case Int:                     // Mixing ints & oops happens when javac
+   case Long:                    // reuses local variables
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+@@ -6258,6 +6440,9 @@ const Type    *TypeAryKlassPtr::xmeet( const Type *t ) const {
+ 
+   case Int:                     // Mixing ints & oops happens when javac
+   case Long:                    // reuses local variables
++  case HalfFloatTop:
++  case HalfFloatCon:
++  case HalfFloatBot:
+   case FloatTop:
+   case FloatCon:
+   case FloatBot:
+diff --git a/src/hotspot/share/opto/type.hpp b/src/hotspot/share/opto/type.hpp
+index f6b7efcae3b..9a2ea39b997 100644
+--- a/src/hotspot/share/opto/type.hpp
++++ b/src/hotspot/share/opto/type.hpp
+@@ -45,6 +45,7 @@ class Dict;
+ class Type;
+ class   TypeD;
+ class   TypeF;
++class   TypeH;
+ class   TypeInteger;
+ class     TypeInt;
+ class     TypeLong;
+@@ -120,6 +121,9 @@ class Type {
+     Abio,                       // Abstract I/O
+     Return_Address,             // Subroutine return address
+     Memory,                     // Abstract store
++    HalfFloatTop,               // No float value
++    HalfFloatCon,               // Floating point constant
++    HalfFloatBot,               // Any float value
+     FloatTop,                   // No float value
+     FloatCon,                   // Floating point constant
+     FloatBot,                   // Any float value
+@@ -277,7 +281,8 @@ class Type {
+   bool is_ptr_to_narrowklass() const;
+ 
+   // Convenience access
+-  float getf() const;
++  short geth() const;
++  virtual float getf() const;
+   double getd() const;
+ 
+   const TypeInt    *is_int() const;
+@@ -289,6 +294,9 @@ class Type {
+   const TypeD      *isa_double() const;          // Returns null if not a Double{Top,Con,Bot}
+   const TypeD      *is_double_constant() const;  // Asserts it is a DoubleCon
+   const TypeD      *isa_double_constant() const; // Returns null if not a DoubleCon
++  const TypeH      *isa_half_float() const;          // Returns null if not a Float{Top,Con,Bot}
++  const TypeH      *is_half_float_constant() const;  // Asserts it is a FloatCon
++  const TypeH      *isa_half_float_constant() const; // Returns null if not a FloatCon
+   const TypeF      *isa_float() const;           // Returns null if not a Float{Top,Con,Bot}
+   const TypeF      *is_float_constant() const;   // Asserts it is a FloatCon
+   const TypeF      *isa_float_constant() const;  // Returns null if not a FloatCon
+@@ -428,6 +436,7 @@ class Type {
+   static const Type *CONTROL;
+   static const Type *DOUBLE;
+   static const Type *FLOAT;
++  static const Type *HALF_FLOAT;
+   static const Type *HALF;
+   static const Type *MEMORY;
+   static const Type *MULTI;
+@@ -518,6 +527,38 @@ class TypeF : public Type {
+ #endif
+ };
+ 
++// Class of Float-Constant Types.
++class TypeH : public Type {
++  TypeH( short f ) : Type(HalfFloatCon), _f(f) {};
++public:
++  virtual bool eq( const Type *t ) const;
++  virtual uint hash() const;             // Type specific hashing
++  virtual bool singleton(void) const;    // TRUE if type is a singleton
++  virtual bool empty(void) const;        // TRUE if type is vacuous
++public:
++  const short _f;               // Half Float constant
++
++  static const TypeH *make(float f);
++  static const TypeH *make(short f);
++
++  virtual bool        is_finite() const;  // Has a finite value
++  virtual bool        is_nan()    const;  // Is not a number (NaN)
++
++  virtual float getf() const;
++  virtual const Type *xmeet( const Type *t ) const;
++  virtual const Type *xdual() const;    // Compute dual right now.
++  // Convenience common pre-built types.
++  static const TypeH *MAX;
++  static const TypeH *MIN;
++  static const TypeH *ZERO; // positive zero only
++  static const TypeH *ONE;
++  static const TypeH *POS_INF;
++  static const TypeH *NEG_INF;
++#ifndef PRODUCT
++  virtual void dump2( Dict &d, uint depth, outputStream *st ) const;
++#endif
++};
++
+ //------------------------------TypeD------------------------------------------
+ // Class of Double-Constant Types.
+ class TypeD : public Type {
+@@ -1939,6 +1980,11 @@ inline float Type::getf() const {
+   return ((TypeF*)this)->_f;
+ }
+ 
++inline short Type::geth() const {
++  assert( _base == HalfFloatCon, "Not a HalfFloatCon" );
++  return ((TypeH*)this)->_f;
++}
++
+ inline double Type::getd() const {
+   assert( _base == DoubleCon, "Not a DoubleCon" );
+   return ((TypeD*)this)->_d;
+@@ -1971,6 +2017,21 @@ inline const TypeLong *Type::isa_long() const {
+   return ( _base == Long ? (TypeLong*)this : nullptr);
+ }
+ 
++inline const TypeH *Type::isa_half_float() const {
++  return ((_base == HalfFloatTop ||
++           _base == HalfFloatCon ||
++           _base == HalfFloatBot) ? (TypeH*)this : nullptr);
++}
++
++inline const TypeH *Type::is_half_float_constant() const {
++  assert( _base == HalfFloatCon, "Not a Float" );
++  return (TypeH*)this;
++}
++
++inline const TypeH *Type::isa_half_float_constant() const {
++  return ( _base == HalfFloatCon ? (TypeH*)this : nullptr);
++}
++
+ inline const TypeF *Type::isa_float() const {
+   return ((_base == FloatTop ||
+            _base == FloatCon ||
+@@ -2160,7 +2221,8 @@ inline const TypeNarrowKlass* Type::make_narrowklass() const {
+ }
+ 
+ inline bool Type::is_floatingpoint() const {
+-  if( (_base == FloatCon)  || (_base == FloatBot) ||
++  if( (_base == HalfFloatCon)  || (_base == HalfFloatBot) ||
++      (_base == FloatCon)  || (_base == FloatBot) ||
+       (_base == DoubleCon) || (_base == DoubleBot) )
+     return true;
+   return false;
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index c26e76d4909..d863d18ec96 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -590,23 +590,6 @@ bool VectorNode::is_rotate_opcode(int opc) {
+   }
+ }
+ 
+-bool VectorNode::is_float16_node(int opc) {
+-  switch (opc) {
+-  case Op_AddHF:
+-  case Op_SubHF:
+-  case Op_MulHF:
+-  case Op_DivHF:
+-  case Op_MinHF:
+-  case Op_MaxHF:
+-  case Op_SqrtHF:
+-  case Op_FmaHF:
+-  case Op_ConvF2HF:
+-  case Op_ReinterpretS2HF:
+-     return true;
+-  default:
+-     return false;
+-  }
+-}
+ bool VectorNode::is_scalar_rotate(Node* n) {
+   return is_rotate_opcode(n->Opcode());
+ }
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 7a119959f02..02e77f04a6d 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -104,7 +104,6 @@ class VectorNode : public TypeNode {
+   static bool is_muladds2i(const Node* n);
+   static bool is_roundopD(Node* n);
+   static bool is_scalar_rotate(Node* n);
+-  static bool is_float16_node(int opc);
+ 
+   static bool is_vector_rotate_supported(int opc, uint vlen, BasicType bt);
+   static bool is_vector_integral_negate_supported(int opc, uint vlen, BasicType bt, bool use_predicate);
+diff --git a/src/hotspot/share/utilities/globalDefinitions.hpp b/src/hotspot/share/utilities/globalDefinitions.hpp
+index 25af626c628..8d9b7f7a895 100644
+--- a/src/hotspot/share/utilities/globalDefinitions.hpp
++++ b/src/hotspot/share/utilities/globalDefinitions.hpp
+@@ -915,6 +915,7 @@ class JavaValue {
+  void set_jfloat(jfloat f) { _value.f = f;}
+  void set_jdouble(jdouble d) { _value.d = d;}
+  void set_jint(jint i) { _value.i = i;}
++ void set_jshort(jshort i) { _value.i = i;}
+  void set_jlong(jlong l) { _value.l = l;}
+  void set_jobject(jobject h) { _value.h = h;}
+  void set_oop(oopDesc* o) { _value.o = o;}

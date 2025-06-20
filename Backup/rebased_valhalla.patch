@@ -1,0 +1,427 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/make/Docs.gmk b/make/Docs.gmk
+index aff3a23c77b..0f4629c83d5 100644
+--- a/make/Docs.gmk
++++ b/make/Docs.gmk
+@@ -110,7 +110,7 @@ JAVA_WARNINGS_ARE_ERRORS ?= -Werror
+ JAVADOC_OPTIONS := -XDignore.symbol.file=true -use -keywords -notimestamp \
+     -encoding ISO-8859-1 -docencoding UTF-8 -breakiterator \
+     -splitIndex --system none -javafx --expand-requires transitive \
+-    -XDenableValueTypes \
++    -XDenableValueTypes -XDenablePrimitiveClasses \
+     --override-methods=summary
+ 
+ # The reference options must stay stable to allow for comparisons across the
+diff --git a/src/hotspot/share/ci/ciField.cpp b/src/hotspot/share/ci/ciField.cpp
+index f9a7df6d17d..f967940989d 100644
+--- a/src/hotspot/share/ci/ciField.cpp
++++ b/src/hotspot/share/ci/ciField.cpp
+@@ -204,12 +204,14 @@ ciField::ciField(fieldDescriptor *fd) :
+ 
+   BasicType field_type = fd->field_type();
+ 
++  initialize_from(fd);
++
+   // If the field is a pointer type, get the klass of the
+   // field.
+   if (is_reference_type(field_type)) {
+     _type = NULL;  // must call compute_type on first access
+   } else {
+-    _type = ciType::make(field_type);
++    _type = ciType::make(field_type, _secondary_fields_count);
+   }
+ 
+   initialize_from(fd);
+@@ -242,6 +244,10 @@ ciField::ciField(ciField* field, ciInstanceKlass* holder, int offset, bool is_fi
+   _is_flattened = false;
+   _is_null_free = field->_is_null_free;
+   _original_holder = (field->_original_holder != NULL) ? field->_original_holder : field->_holder;
++  _is_multifield = field->_is_multifield;
++  _is_multifield_base = field->_is_multifield_base;
++  _secondary_fields_count = field->_secondary_fields_count;
++
+ }
+ 
+ static bool trust_final_non_static_fields(ciInstanceKlass* holder) {
+@@ -295,6 +301,10 @@ void ciField::initialize_from(fieldDescriptor* fd) {
+   _is_null_free = fd->signature()->is_Q_signature();
+   _original_holder = NULL;
+ 
++  _is_multifield = fd->is_multifield();
++  _is_multifield_base = fd->is_multifield_base();
++  _secondary_fields_count = fd->secondary_fields_count(fd->index());
++
+   // Check to see if the field is constant.
+   Klass* k = _holder->get_Klass();
+   bool is_stable_field = FoldStableValues && is_stable();
+diff --git a/src/hotspot/share/ci/ciField.hpp b/src/hotspot/share/ci/ciField.hpp
+index f923b78eeeb..d69a26d40a5 100644
+--- a/src/hotspot/share/ci/ciField.hpp
++++ b/src/hotspot/share/ci/ciField.hpp
+@@ -49,9 +49,12 @@ private:
+   ciSymbol*        _signature;
+   ciType*          _type;
+   int              _offset;
++  int              _secondary_fields_count;
+   bool             _is_constant;
+   bool             _is_flattened;
+   bool             _is_null_free;
++  bool             _is_multifield;
++  bool             _is_multifield_base;
+   ciMethod*        _known_to_link_with_put;
+   ciInstanceKlass* _known_to_link_with_get;
+   ciConstant       _constant_value;
+@@ -105,6 +108,10 @@ public:
+   // Of what type is this field?
+   ciType* type() { return (_type == NULL) ? compute_type() : _type; }
+ 
++  bool is_multifield() { return _is_multifield; }
++  bool is_multifield_base() { return _is_multifield_base; }
++  int secondary_fields_count() { return _secondary_fields_count; } const
++
+   // How is this field actually stored in memory?
+   BasicType layout_type() { return type2field[type()->basic_type()]; }
+ 
+@@ -180,6 +187,8 @@ public:
+   bool is_transient            () const { return flags().is_transient(); }
+   bool is_flattened            () const { return _is_flattened; }
+   bool is_null_free            () const { return _is_null_free; }
++  bool is_multifield           () const { return _is_multifield; }
++
+ 
+   // The field is modified outside of instance initializer methods
+   // (or class/initializer methods if the field is static).
+diff --git a/src/hotspot/share/ci/ciInstanceKlass.cpp b/src/hotspot/share/ci/ciInstanceKlass.cpp
+index e07447aebb6..0071447689f 100644
+--- a/src/hotspot/share/ci/ciInstanceKlass.cpp
++++ b/src/hotspot/share/ci/ciInstanceKlass.cpp
+@@ -531,6 +531,7 @@ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(Growable
+   InstanceKlass* k = get_instanceKlass();
+   for (JavaFieldStream fs(k); !fs.done(); fs.next()) {
+     if (fs.access_flags().is_static())  continue;
++    if (fs.is_multifield()) continue;
+     flen += 1;
+   }
+ 
+@@ -549,6 +550,7 @@ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(Growable
+ 
+   for (JavaFieldStream fs(k); !fs.done(); fs.next()) {
+     if (fs.access_flags().is_static())  continue;
++    if (fs.is_multifield()) continue;
+     fieldDescriptor& fd = fs.field_descriptor();
+     if (fd.is_inlined() && flatten) {
+       // Inline type fields are embedded
+diff --git a/src/hotspot/share/ci/ciType.cpp b/src/hotspot/share/ci/ciType.cpp
+index 79512966846..19fe37ae69d 100644
+--- a/src/hotspot/share/ci/ciType.cpp
++++ b/src/hotspot/share/ci/ciType.cpp
+@@ -39,13 +39,15 @@ ciType* ciType::_basic_types[T_CONFLICT+1];
+ // ------------------------------------------------------------------
+ // ciType::ciType
+ //
+-ciType::ciType(BasicType basic_type) : ciMetadata() {
++ciType::ciType(BasicType basic_type, int bundle_size) : ciMetadata() {
+   assert(basic_type >= T_BOOLEAN && basic_type <= T_CONFLICT, "range check");
+   _basic_type = basic_type;
++  _bundle_size = bundle_size;
+ }
+ 
+ ciType::ciType(Klass* k) : ciMetadata(k) {
+   _basic_type = k->is_array_klass() ? T_ARRAY : (k->is_inline_klass() ? T_PRIMITIVE_OBJECT : T_OBJECT);
++  _bundle_size = 1;
+ }
+ 
+ 
+@@ -106,13 +108,17 @@ ciInstance* ciType::java_mirror() {
+ // Produce the ciType for a given primitive BasicType.
+ // As a bonus, produce the right reference type for T_OBJECT.
+ // Does not work on T_ARRAY.
+-ciType* ciType::make(BasicType t) {
+-  // short, etc.
+-  // Note: Bare T_ADDRESS means a raw pointer type, not a return_address.
+-  assert((uint)t < T_CONFLICT+1, "range check");
+-  if (t == T_OBJECT)  return ciEnv::_Object_klass;  // java/lang/Object
+-  assert(_basic_types[t] != NULL, "domain check");
+-  return _basic_types[t];
++ciType* ciType::make(BasicType t, int bundle_size) {
++  if (bundle_size == 1) {
++    // short, etc.
++    // Note: Bare T_ADDRESS means a raw pointer type, not a return_address.
++    assert((uint)t < T_CONFLICT+1, "range check");
++    if (t == T_OBJECT)  return ciEnv::_Object_klass;  // java/lang/Object
++    assert(_basic_types[t] != NULL, "domain check");
++    return _basic_types[t];
++  } else {
++    return new (CURRENT_ENV->arena()) ciType(t, bundle_size);
++  }
+ }
+ 
+ // ciReturnAddress
+diff --git a/src/hotspot/share/ci/ciType.hpp b/src/hotspot/share/ci/ciType.hpp
+index 2df869600ba..f8fd47675d5 100644
+--- a/src/hotspot/share/ci/ciType.hpp
++++ b/src/hotspot/share/ci/ciType.hpp
+@@ -39,8 +39,9 @@ class ciType : public ciMetadata {
+ 
+ private:
+   BasicType _basic_type;
++  int _bundle_size;
+ 
+-  ciType(BasicType t);     // for primitive and unloaded types
++  ciType(BasicType t, int bundle_size = 1);     // for primitive and unloaded types
+   ciType(Klass* k);        // for subclasses (reference types)
+ 
+   const char* type_string() { return "ciType"; }
+@@ -63,7 +64,8 @@ public:
+ 
+   // Returns true if this is not a klass or array (i.e., not a reference type).
+   bool is_primitive_type() const            { return !is_reference_type(basic_type()); }
+-  int size() const                          { return type2size[basic_type()]; }
++  int size() const                          { return _bundle_size * type2size[basic_type()]; }
++  int bundle_size() const                   { return _bundle_size; }
+   bool is_void() const                      { return basic_type() == T_VOID; }
+   bool is_one_word() const                  { return size() == 1; }
+   bool is_two_word() const                  { return size() == 2; }
+@@ -81,7 +83,7 @@ public:
+     print_name_on(tty);
+   }
+ 
+-  static ciType* make(BasicType t);
++  static ciType* make(BasicType t, int bundle_size = 1);
+ };
+ 
+ 
+diff --git a/src/hotspot/share/opto/inlinetypenode.cpp b/src/hotspot/share/opto/inlinetypenode.cpp
+index 9a0d8bd2911..4161e1eedcc 100644
+--- a/src/hotspot/share/opto/inlinetypenode.cpp
++++ b/src/hotspot/share/opto/inlinetypenode.cpp
+@@ -32,6 +32,8 @@
+ #include "opto/inlinetypenode.hpp"
+ #include "opto/rootnode.hpp"
+ #include "opto/phaseX.hpp"
++#include "opto/vectornode.hpp"
++
+ 
+ uint InlineTypeNode::size_of() const {
+   return sizeof(*this);
+@@ -233,6 +235,22 @@ ciType* InlineTypeNode::field_type(uint index) const {
+   return inline_klass()->declared_nonstatic_field_at(index)->type();
+ }
+ 
++
++int InlineTypeNode::secondary_field_count(uint index) const {
++  assert(is_multifield_base(index), "non-multifield field at index");
++  return inline_klass()->declared_nonstatic_field_at(index)->secondary_fields_count();
++}
++
++bool InlineTypeNode::is_multifield(uint index) const {
++  assert(index < field_count(), "index out of bounds");
++  return inline_klass()->declared_nonstatic_field_at(index)->is_multifield();
++}
++
++bool InlineTypeNode::is_multifield_base(uint index) const {
++  assert(index < field_count(), "index out of bounds");
++  return inline_klass()->declared_nonstatic_field_at(index)->is_multifield_base();
++}
++
+ bool InlineTypeNode::field_is_flattened(uint index) const {
+   assert(index < field_count(), "index out of bounds");
+   ciField* field = inline_klass()->declared_nonstatic_field_at(index);
+@@ -398,7 +416,11 @@ void InlineTypeNode::load(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass*
+         if (is_array) {
+           decorators |= IS_ARRAY;
+         }
+-        value = kit->access_load_at(base, adr, adr_type, val_type, bt, decorators);
++        if (ft->bundle_size() > 1) {
++          value = kit->gvn().transform(LoadVectorNode::make(0, kit->control(), base, adr, adr_type, ft->bundle_size(), ft->basic_type()));
++        } else {
++          value = kit->access_load_at(base, adr, adr_type, val_type, bt, decorators);
++        }
+       }
+       // Loading a non-flattened inline type from memory
+       if (ft->is_inlinetype()) {
+@@ -445,7 +467,12 @@ void InlineTypeNode::store(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass
+       if (ary_type != NULL) {
+         decorators |= IS_ARRAY;
+       }
+-      kit->access_store_at(base, adr, adr_type, value, val_type, bt, decorators);
++      if (ft->bundle_size() > 1) {
++        Node* store = StoreVectorNode::make(0, kit->control(), base, adr, adr_type, value, ft->bundle_size());
++        kit->set_memory(store, adr_type);
++      } else {
++        kit->access_store_at(base, adr, adr_type, value, val_type, bt, decorators);
++      }
+     }
+   }
+ }
+@@ -703,6 +730,14 @@ Node* InlineTypeNode::default_oop(PhaseGVN& gvn, ciInlineKlass* vk) {
+   return gvn.makecon(TypeInstPtr::make(vk->default_instance()));
+ }
+ 
++Node* InlineTypeNode::default_value(PhaseGVN& gvn, ciType* field_type) {
++  Node* value = gvn.zerocon(field_type->basic_type());
++  if (field_type->bundle_size() > 1)  {
++    value = gvn.transform(VectorNode::scalar2vector(value, field_type->bundle_size(), Type::get_const_type(field_type), false));
++  }
++  return value;
++}
++
+ InlineTypeNode* InlineTypeNode::make_default(PhaseGVN& gvn, ciInlineKlass* vk) {
+   // Create a new InlineTypeNode with default values
+   Node* oop = vk->is_initialized() ? default_oop(gvn, vk) : gvn.zerocon(T_PRIMITIVE_OBJECT);
+@@ -710,7 +745,7 @@ InlineTypeNode* InlineTypeNode::make_default(PhaseGVN& gvn, ciInlineKlass* vk) {
+   vt->set_is_init(gvn);
+   for (uint i = 0; i < vt->field_count(); ++i) {
+     ciType* field_type = vt->field_type(i);
+-    Node* value = gvn.zerocon(field_type->basic_type());
++    Node* value = default_value(gvn, field_type);
+     if (field_type->is_inlinetype()) {
+       ciInlineKlass* vk = field_type->as_inline_klass();
+       if (vt->field_is_null_free(i)) {
+@@ -742,7 +777,8 @@ bool InlineTypeNode::is_default(PhaseGVN* gvn) const {
+     } else if (value->is_InlineType()) {
+       value = value->as_InlineType()->get_oop();
+     }
+-    if (!gvn->type(value)->is_zero_type()) {
++    if (!gvn->type(value)->is_zero_type() && 
++        !VectorNode::is_all_zeros_vector(value)) {
+       return false;
+     }
+   }
+diff --git a/src/hotspot/share/opto/inlinetypenode.hpp b/src/hotspot/share/opto/inlinetypenode.hpp
+index dee49217c00..82073da4f5f 100644
+--- a/src/hotspot/share/opto/inlinetypenode.hpp
++++ b/src/hotspot/share/opto/inlinetypenode.hpp
+@@ -88,6 +88,8 @@ public:
+   // Returns the constant oop of the default inline type allocation
+   static Node* default_oop(PhaseGVN& gvn, ciInlineKlass* vk);
+ 
++  static Node* default_value(PhaseGVN& gvn, ciType* field_type);
++
+   // Support for control flow merges
+   bool has_phi_inputs(Node* region);
+   InlineTypeNode* clone_with_phis(PhaseGVN* gvn, Node* region, bool is_init = false);
+@@ -105,9 +107,13 @@ public:
+   uint          field_count() const { return req() - Values; }
+   Node*         field_value(uint index) const;
+   Node*         field_value_by_offset(int offset, bool recursive = false) const;
+-  void      set_field_value(uint index, Node* value);
+-  void      set_field_value_by_offset(int offset, Node* value);
++  void          set_field_value(uint index, Node* value);
++  void          set_field_value_by_offset(int offset, Node* value);
+   int           field_offset(uint index) const;
++  bool          is_multifield(uint index) const;
++  bool          is_multifield_base(uint index) const;
++  int           secondary_field_count(uint index) const;
++  bool          is_multifield() const;
+   uint          field_index(int offset) const;
+   ciType*       field_type(uint index) const;
+   bool          field_is_flattened(uint index) const;
+diff --git a/src/hotspot/share/runtime/fieldDescriptor.hpp b/src/hotspot/share/runtime/fieldDescriptor.hpp
+index df15d10a6cb..a4f655f2f44 100644
+--- a/src/hotspot/share/runtime/fieldDescriptor.hpp
++++ b/src/hotspot/share/runtime/fieldDescriptor.hpp
+@@ -91,8 +91,11 @@ class fieldDescriptor {
+   inline bool is_inlined() const;
+   inline bool is_inline_type()    const;
+   inline bool is_multifield()            const;
++  inline bool is_multifield_base()       const;
+   inline u2   multifield_base()          const;
+   inline jbyte multifield_index()        const;
++  inline int secondary_fields_count(int base_idx) const;
++
+ 
+   bool is_synthetic()             const    { return access_flags().is_synthetic(); }
+ 
+diff --git a/src/hotspot/share/runtime/fieldDescriptor.inline.hpp b/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
+index 3b321328012..37a4eb57ac0 100644
+--- a/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
++++ b/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
+@@ -85,8 +85,23 @@ inline BasicType fieldDescriptor::field_type() const {
+ inline bool fieldDescriptor::is_inlined()  const  { return field()->is_inlined(); }
+ inline bool fieldDescriptor::is_inline_type() const { return Signature::basic_type(field()->signature(_cp())) == T_PRIMITIVE_OBJECT; }
+ 
+-inline bool fieldDescriptor::is_multifield() const { return field()->is_multifield(); };
++inline bool fieldDescriptor::is_multifield() const { return field()->is_multifield(); }
++inline bool fieldDescriptor::is_multifield_base() const { return field()->is_multifield_base(); }
+ inline u2   fieldDescriptor::multifield_base() const { return field_holder()->multifield_info(field()->secondary_index()).base_index(); }
+ inline jbyte fieldDescriptor::multifield_index() const { return  field_holder()->multifield_info(field()->secondary_index()).multifield_index(); }
+ 
+-#endif // SHARE_RUNTIME_FIELDDESCRIPTOR_INLINE_HPP
+\ No newline at end of file
++inline int fieldDescriptor::secondary_fields_count(int base_idx) const {
++  Array<MultiFieldInfo>* multifield_info = field_holder()->multifield_info();
++  if (!is_multifield_base() || NULL == multifield_info) {
++    return 1;
++  }
++  int sec_fields_count = 1;
++  for (int i = 0; i < multifield_info->length(); i++) {
++    if (field_holder()->multifield_info(i).base_index() == base_idx) {
++      sec_fields_count++;
++    }
++  }
++  return  sec_fields_count;
++}
++
++#endif // SHARE_RUNTIME_FIELDDESCRIPTOR_INLINE_HPP
+diff --git a/src/java.base/share/classes/java/lang/MultiField.java b/src/java.base/share/classes/java/lang/MultiField.java
+deleted file mode 100644
+index db5d6b6d149..00000000000
+--- a/src/java.base/share/classes/java/lang/MultiField.java
++++ /dev/null
+@@ -1,52 +0,0 @@
+-/*
+-* Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
+-* DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+-*
+-* This code is free software; you can redistribute it and/or modify it
+-* under the terms of the GNU General Public License version 2 only, as
+-* published by the Free Software Foundation.  Oracle designates this
+-* particular file as subject to the "Classpath" exception as provided
+-* by Oracle in the LICENSE file that accompanied this code.
+-*
+-* This code is distributed in the hope that it will be useful, but WITHOUT
+-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+-* FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+-* version 2 for more details (a copy is included in the LICENSE file that
+-* accompanied this code).
+-*
+-* You should have received a copy of the GNU General Public License version
+-* 2 along with this work; if not, write to the Free Software Foundation,
+-* Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+-*
+-* Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+-* or visit www.oracle.com if you need additional information or have any
+-* questions.
+-*/
+-
+-package jdk.internal.vm.annotation;
+-
+-import java.lang.annotation.ElementType;
+-import java.lang.annotation.Retention;
+-import java.lang.annotation.RetentionPolicy;
+-import java.lang.annotation.Target;
+-
+-/**
+-* <p>An annotation expressing that the field has to be
+-* replicated several times and all replication must be
+-* layed out contiguously in memory. The annotation is
+-* ignored if the type of the field is not one of the
+-* eight Java basic primitive types: boolean, byte, short,
+-* char, int, long, float, double.
+-*/
+-@Retention(RetentionPolicy.RUNTIME)
+-@Target({ElementType.FIELD})
+-public @interface MultiField {
+-
+-   /**
+-    * The total number of fields (initial plus replicated).
+-    * This tag is only meaningful for field level annotations.
+-    *
+-    * @return total number of fields to layout.
+-    */
+-   byte value() default 0;
+-}
+\ No newline at end of file

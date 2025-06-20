@@ -1,0 +1,236 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
+index 60277a58c6c..a3b985f5670 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
+@@ -30,6 +30,8 @@ import jdk.internal.vm.annotation.ForceInline;
+ 
+ import static jdk.incubator.vector.VectorOperators.*;
+ 
++import jdk.internal.vm.vector.VectorSupport;
++
+ abstract class AbstractMask<E> extends VectorMask<E> {
+     AbstractMask(boolean[] bits) {
+         super(bits);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index 32b84aef14b..33946353cee 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -2930,14 +2930,13 @@ public abstract class ByteVector extends AbstractVector<Byte> {
+     ByteVector fromArray(VectorSpecies<Byte> species,
+                                    byte[] a, int offset,
+                                    VectorMask<Byte> m) {
+-        ByteSpecies vsp = (ByteSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            ByteSpecies vsp = (ByteSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index 691a4def745..79ff132473d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -2728,14 +2728,13 @@ public abstract class DoubleVector extends AbstractVector<Double> {
+     DoubleVector fromArray(VectorSpecies<Double> species,
+                                    double[] a, int offset,
+                                    VectorMask<Double> m) {
+-        DoubleSpecies vsp = (DoubleSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            DoubleSpecies vsp = (DoubleSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index d5dbc2f9efa..f490f03182b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -2752,14 +2752,13 @@ public abstract class FloatVector extends AbstractVector<Float> {
+     FloatVector fromArray(VectorSpecies<Float> species,
+                                    float[] a, int offset,
+                                    VectorMask<Float> m) {
+-        FloatSpecies vsp = (FloatSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            FloatSpecies vsp = (FloatSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index 3deb61e9904..0e11859f1a0 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -2922,14 +2922,13 @@ public abstract class IntVector extends AbstractVector<Integer> {
+     IntVector fromArray(VectorSpecies<Integer> species,
+                                    int[] a, int offset,
+                                    VectorMask<Integer> m) {
+-        IntSpecies vsp = (IntSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            IntSpecies vsp = (IntSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index b48778f5ec3..063a066c98f 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -2783,14 +2783,13 @@ public abstract class LongVector extends AbstractVector<Long> {
+     LongVector fromArray(VectorSpecies<Long> species,
+                                    long[] a, int offset,
+                                    VectorMask<Long> m) {
+-        LongSpecies vsp = (LongSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            LongSpecies vsp = (LongSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index e1cada48f17..78720c57e7a 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -2930,14 +2930,13 @@ public abstract class ShortVector extends AbstractVector<Short> {
+     ShortVector fromArray(VectorSpecies<Short> species,
+                                    short[] a, int offset,
+                                    VectorMask<Short> m) {
+-        ShortSpecies vsp = (ShortSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            ShortSpecies vsp = (ShortSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
+index 71cef5f9594..4d8a0e5f951 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
+@@ -237,26 +237,24 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
+      */
+     @ForceInline
+     public static <E> VectorMask<E> fromLong(VectorSpecies<E> species, long bits) {
+-        AbstractSpecies<E> vspecies = (AbstractSpecies<E>) species;
+-        int laneCount = vspecies.laneCount();
+-        if (laneCount < Long.SIZE) {
+-            int extraSignBits = Long.SIZE - laneCount;
+-            bits <<= extraSignBits;
+-            bits >>= extraSignBits;
+-        }
+-        if (bits == (bits >> 1)) {
+-            // Special case.
+-            assert(bits == 0 || bits == -1);
+-            return vspecies.maskAll(bits != 0);
+-        }
+-        // FIXME: Intrinsify this.
+-        long shifted = bits;
+-        boolean[] a = new boolean[laneCount];
+-        for (int i = 0; i < a.length; i++) {
+-            a[i] = ((shifted & 1) != 0);
+-            shifted >>= 1;  // replicate sign bit
+-        }
+-        return fromValues(vspecies, a);
++        AbstractSpecies<E> vsp = (AbstractSpecies<E>) species;
++        bits &= (1 << vsp.laneCount()) - 1;
++        return VectorSupport.broadcastCoerced(vsp.maskType(), vsp.elementType(), vsp.laneCount(), bits, vsp,
++                                              (m, s) -> {
++                                                  if (m == (m >> 1)) {
++                                                      // Special case.
++                                                      assert(m == 0 || m == -1);
++                                                      return s.maskAll(m != 0);
++                                                  }
++
++                                                  long shifted = m;
++                                                  boolean[] a = new boolean[s.laneCount()];
++                                                  for (int i = 0; i < a.length; i++) {
++                                                      a[i] = ((shifted & 1) != 0);
++                                                      shifted >>= 1;  // replicate sign bit
++                                                  }
++                                                  return fromValues(s, a);
++                                              });
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index 45c2cf9267c..cf21385adbb 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -3426,14 +3426,13 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     $abstractvectortype$ fromArray(VectorSpecies<$Boxtype$> species,
+                                    $type$[] a, int offset,
+                                    VectorMask<$Boxtype$> m) {
+-        $Type$Species vsp = ($Type$Species) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            $Type$Species vsp = ($Type$Species) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+old mode 100644
+new mode 100755

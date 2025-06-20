@@ -1,0 +1,250 @@
+diff --git a/make/RunTests.gmk b/make/RunTests.gmk
+index 4f81c096a33..b783e3bf4f5 100644
+--- a/make/RunTests.gmk
++++ b/make/RunTests.gmk
+@@ -993,8 +993,12 @@ define SetupRunJtregTestBody
+ 	$$(RM) -r $$($1_TEST_SUPPORT_DIR)
+ 	$$(RM) -r $$($1_TEST_RESULTS_DIR)
+ 
++
+   $1_COMMAND_LINE := \
+-      $$(JTREG_JAVA) $$($1_JTREG_LAUNCHER_OPTIONS) \
++      $$(PRINTF) "\nRunning with SDE version 9.54.0-2025-04-01\n\n"; \
++      $$(PRINTF) "\nJDK Under Test = $$(JDK_UNDER_TEST)\n\n"; \
++      $$(PRINTF) "\nLauncher JDK = $$(JTREG_JAVA)\n\n"; \
++      /home/jatinbha/softwares/sde-internal-conf-9.54.0-2025-04-01-lin/sde64 -follow_subprocess -dmr -ptr_raise -icount -- $$(JTREG_JAVA) $$($1_JTREG_LAUNCHER_OPTIONS) \
+           -Dprogram=jtreg -jar $$(JT_HOME)/lib/jtreg.jar \
+           $$($1_JTREG_BASIC_OPTIONS) \
+           -compilejdk:$$(JDK_FOR_COMPILE) \
+diff --git a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
+index f7b1e25cf3b..bb840356984 100644
+--- a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
+@@ -78,15 +78,21 @@ class ZRuntimeCallSpill {
+ 
+   void save() {
+     MacroAssembler* masm = _masm;
+-    __ push(rax);
+-    __ push(rcx);
+-    __ push(rdx);
+-    __ push(rdi);
+-    __ push(rsi);
+-    __ push(r8);
+-    __ push(r9);
+-    __ push(r10);
+-    __ push(r11);
++    if (VM_Version::supports_apx_f()) {
++      // FIXME [APX]
++      // Save all caller safe GPRs along with EGPRs using push2p, needs 16 byte stack alignment first
++      // Refer Assembler::pusha_uncached
++    } else {
++      __ push(rax);
++      __ push(rcx);
++      __ push(rdx);
++      __ push(rdi);
++      __ push(rsi);
++      __ push(r8);
++      __ push(r9);
++      __ push(r10);
++      __ push(r11);
++    }
+ 
+     if (_xmm_spill_size != 0) {
+       __ subptr(rsp, _xmm_spill_size);
+@@ -139,14 +145,19 @@ class ZRuntimeCallSpill {
+       __ addptr(rsp, _xmm_spill_size);
+     }
+ 
+-    __ pop(r11);
+-    __ pop(r10);
+-    __ pop(r9);
+-    __ pop(r8);
+-    __ pop(rsi);
+-    __ pop(rdi);
+-    __ pop(rdx);
+-    __ pop(rcx);
++    if (VM_Version::supports_apx_f()) {
++      //FIXME [APX]
++      // Restore caller saved GPRs and EGPRs using pop2p.
++    } else {
++      __ pop(r11);
++      __ pop(r10);
++      __ pop(r9);
++      __ pop(r8);
++      __ pop(rsi);
++      __ pop(rdi);
++      __ pop(rdx);
++      __ pop(rcx);
++    }
+     if (_result == noreg) {
+       __ pop(rax);
+     } else if (_result == rax) {
+@@ -392,8 +403,8 @@ void ZBarrierSetAssembler::store_barrier_fast(MacroAssembler* masm,
+     if (rnew_zaddress != noreg) {
+       // noreg means null; no need to color
+       __ movptr(rnew_zpointer, rnew_zaddress);
+-      __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodBeforeShl);
+       __ shlq(rnew_zpointer, barrier_Relocation::unpatched);
++      __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShl);
+       __ orq_imm32(rnew_zpointer, barrier_Relocation::unpatched);
+       __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatStoreGoodAfterOr);
+     }
+@@ -408,6 +419,7 @@ void ZBarrierSetAssembler::store_barrier_fast(MacroAssembler* masm,
+       __ movptr(rnew_zpointer, rnew_zaddress);
+     }
+     assert_different_registers(rcx, rnew_zpointer);
++    // FIXME [APX] using pushp and popp with PPX.
+     __ push(rcx);
+     __ movptr(rcx, ExternalAddress((address)&ZPointerLoadShift));
+     __ shlq(rnew_zpointer);
+@@ -472,6 +484,7 @@ void ZBarrierSetAssembler::store_barrier_medium(MacroAssembler* masm,
+     __ cmpptr(ref_addr, 0);
+     __ jcc(Assembler::notEqual, slow_path);
+ 
++    // FIXME [APX] Use pushp and popp.
+     // If we get this far, we know there is a young raw null value in the field.
+     // Try to self-heal null values for atomic accesses
+     __ push(rax);
+@@ -970,13 +983,13 @@ void ZBarrierSetAssembler::try_resolve_jobject_in_native(MacroAssembler* masm,
+ #define __ ce->masm()->
+ 
+ static void z_uncolor(LIR_Assembler* ce, LIR_Opr ref) {
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodBeforeShl);
+   __ shrq(ref->as_register(), barrier_Relocation::unpatched);
++  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShl);
+ }
+ 
+ static void z_color(LIR_Assembler* ce, LIR_Opr ref) {
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodBeforeShl);
+   __ shlq(ref->as_register(), barrier_Relocation::unpatched);
++  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShl);
+   __ orq_imm32(ref->as_register(), barrier_Relocation::unpatched);
+   __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatStoreGoodAfterOr);
+ }
+@@ -1279,8 +1292,8 @@ void ZBarrierSetAssembler::generate_c2_store_barrier_stub(MacroAssembler* masm,
+ 
+ static int patch_barrier_relocation_offset(int format) {
+   switch (format) {
+-  case ZBarrierRelocationFormatLoadGoodBeforeShl:
+-    return 3;
++  case ZBarrierRelocationFormatLoadGoodAfterShl:
++    return -1;
+ 
+   case ZBarrierRelocationFormatStoreGoodAfterCmp:
+     return -2;
+@@ -1301,7 +1314,7 @@ static int patch_barrier_relocation_offset(int format) {
+ 
+ static uint16_t patch_barrier_relocation_value(int format) {
+   switch (format) {
+-  case ZBarrierRelocationFormatLoadGoodBeforeShl:
++  case ZBarrierRelocationFormatLoadGoodAfterShl:
+     return (uint16_t)ZPointerLoadShift;
+ 
+   case ZBarrierRelocationFormatMarkBadAfterTest:
+@@ -1328,7 +1341,7 @@ void ZBarrierSetAssembler::patch_barrier_relocation(address addr, int format) {
+   const int offset = patch_barrier_relocation_offset(format);
+   const uint16_t value = patch_barrier_relocation_value(format);
+   uint8_t* const patch_addr = (uint8_t*)addr + offset;
+-  if (format == ZBarrierRelocationFormatLoadGoodBeforeShl) {
++  if (format == ZBarrierRelocationFormatLoadGoodAfterShl) {
+     *patch_addr = (uint8_t)value;
+   } else {
+     *(uint16_t*)patch_addr = value;
+diff --git a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.hpp b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.hpp
+index 91be2e3b945..87c4700f67f 100644
+--- a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.hpp
+@@ -49,7 +49,7 @@ class ZLoadBarrierStubC2;
+ class ZStoreBarrierStubC2;
+ #endif // COMPILER2
+ 
+-const int ZBarrierRelocationFormatLoadGoodBeforeShl = 0;
++const int ZBarrierRelocationFormatLoadGoodAfterShl = 0;
+ const int ZBarrierRelocationFormatLoadBadAfterTest  = 1;
+ const int ZBarrierRelocationFormatMarkBadAfterTest  = 2;
+ const int ZBarrierRelocationFormatStoreGoodAfterCmp = 3;
+diff --git a/src/hotspot/cpu/x86/gc/z/z_x86_64.ad b/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
+index 045aa5d5381..f792cc86e5c 100644
+--- a/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
++++ b/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
+@@ -35,15 +35,15 @@ source %{
+ #include "gc/z/zBarrierSetAssembler.hpp"
+ 
+ static void z_color(MacroAssembler* masm, const MachNode* node, Register ref) {
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodBeforeShl);
+   __ shlq(ref, barrier_Relocation::unpatched);
++  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShl);
+   __ orq_imm32(ref, barrier_Relocation::unpatched);
+   __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatStoreGoodAfterOr);
+ }
+ 
+ static void z_uncolor(MacroAssembler* masm, const MachNode* node, Register ref) {
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodBeforeShl);
+   __ shrq(ref, barrier_Relocation::unpatched);
++  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShl);
+ }
+ 
+ static void z_keep_alive_load_barrier(MacroAssembler* masm, const MachNode* node, Address ref_addr, Register ref) {
+diff --git a/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp b/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
+index 9e6a4789dc2..bf7bbf75c3a 100644
+--- a/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
++++ b/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
+@@ -221,7 +221,7 @@ bool CodeInstaller::pd_relocate(address pc, jint mark) {
+       return true;
+ #if INCLUDE_ZGC
+     case Z_BARRIER_RELOCATION_FORMAT_LOAD_GOOD_BEFORE_SHL:
+-      _instructions->relocate(pc, barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodBeforeShl);
++      _instructions->relocate(pc, barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShl);
+       return true;
+     case Z_BARRIER_RELOCATION_FORMAT_LOAD_BAD_AFTER_TEST:
+       _instructions->relocate(pc, barrier_Relocation::spec(), ZBarrierRelocationFormatLoadBadAfterTest);
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index b94ff7dbd9e..4e13bf42067 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -186,22 +186,7 @@ reg_def R31_H(SOC, SOC, Op_RegI, 31, r31->as_VMReg()->next());
+ // which participate in fixed calling sequences should come last.
+ // Registers which are used as pairs must fall on an even boundary.
+ 
+-alloc_class chunk0(R10,         R10_H,
+-                   R11,         R11_H,
+-                   R8,          R8_H,
+-                   R9,          R9_H,
+-                   R12,         R12_H,
+-                   RCX,         RCX_H,
+-                   RBX,         RBX_H,
+-                   RDI,         RDI_H,
+-                   RDX,         RDX_H,
+-                   RSI,         RSI_H,
+-                   RAX,         RAX_H,
+-                   RBP,         RBP_H,
+-                   R13,         R13_H,
+-                   R14,         R14_H,
+-                   R15,         R15_H,
+-                   R16,         R16_H,
++alloc_class chunk0(R16,         R16_H,
+                    R17,         R17_H,
+                    R18,         R18_H,
+                    R19,         R19_H,
+@@ -217,6 +202,21 @@ alloc_class chunk0(R10,         R10_H,
+                    R29,         R29_H,
+                    R30,         R30_H,
+                    R31,         R31_H,
++                   RSI,         RSI_H,
++                   RDX,         RDX_H,
++                   RCX,         RCX_H,
++                   R8,          R8_H,
++                   R9,          R9_H,
++                   RDI,         RDI_H,
++                   R10,         R10_H,
++                   R11,         R11_H,
++                   R12,         R12_H,
++                   RBX,         RBX_H,
++                   RAX,         RAX_H,
++                   RBP,         RBP_H,
++                   R13,         R13_H,
++                   R14,         R14_H,
++                   R15,         R15_H,
+                    RSP,         RSP_H);
+ 
+ 

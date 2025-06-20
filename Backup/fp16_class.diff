@@ -1,0 +1,490 @@
+diff --cc src/hotspot/cpu/x86/assembler_x86.cpp
+index 3aaf27999bc,f46a65377e9..00000000000
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@@ -8506,9 -8619,17 +8506,17 @@@ void Assembler::vminsh(XMMRegister dst
+    emit_int16(0x5D, (0xC0 | encode));
+  }
+  
+- void Assembler::vsqrtsh(XMMRegister dst, XMMRegister src) {
++ void Assembler::efpclasssh(KRegister kdst, XMMRegister src, uint8_t imm8) {
++   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++   InstructionAttr attributes(AVX_128bit, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ false);
++   attributes.set_is_evex_instruction();
++   int encode = vex_prefix_and_encode(kdst->encoding(), 0, src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F_3A, &attributes);
++   emit_int24((unsigned char)0x67, (unsigned char)(0xC0 | encode), imm8);
++ }
++ 
++ void Assembler::esqrtsh(XMMRegister dst, XMMRegister src) {
+    assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
+ -  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+ +  InstructionAttr attributes(AVX_128bit, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+    attributes.set_is_evex_instruction();
+    int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
+    emit_int16(0x51, (0xC0 | encode));
+diff --cc src/hotspot/cpu/x86/assembler_x86.hpp
+index e721afb1a3c,ae6109f1219..00000000000
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+diff --cc src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 6a0f8989e98,d0284766e26..00000000000
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@@ -7093,27 -7130,3 +7117,26 @@@ void C2_MacroAssembler::vector_saturati
+    }
+  }
+  
+ +void C2_MacroAssembler::evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc) {
+ +  switch(opcode) {
+ +    case Op_AddVHF: evaddph(dst, src1, src2, vlen_enc); break;
+ +    case Op_SubVHF: evsubph(dst, src1, src2, vlen_enc); break;
+ +    case Op_MulVHF: evmulph(dst, src1, src2, vlen_enc); break;
+ +    case Op_DivVHF: evdivph(dst, src1, src2, vlen_enc); break;
+ +    case Op_MaxVHF: evmaxph(dst, src1, src2, vlen_enc); break;
+ +    case Op_MinVHF: evminph(dst, src1, src2, vlen_enc); break;
+ +    default: assert(false, "%s", NodeClassNames[opcode]); break;
+ +  }
+ +}
+ +
+ +void C2_MacroAssembler::evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc) {
+ +  switch(opcode) {
+ +    case Op_AddVHF: evaddph(dst, src1, src2, vlen_enc); break;
+ +    case Op_SubVHF: evsubph(dst, src1, src2, vlen_enc); break;
+ +    case Op_MulVHF: evmulph(dst, src1, src2, vlen_enc); break;
+ +    case Op_DivVHF: evdivph(dst, src1, src2, vlen_enc); break;
+ +    case Op_MaxVHF: evmaxph(dst, src1, src2, vlen_enc); break;
+ +    case Op_MinVHF: evminph(dst, src1, src2, vlen_enc); break;
+ +    default: assert(false, "%s", NodeClassNames[opcode]); break;
+ +  }
+ +}
+- 
+diff --cc src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index f9416c9e11a,bf7a10ef96f..00000000000
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+diff --cc src/hotspot/cpu/x86/x86.ad
+index 13583225091,af9e0b391f9..00000000000
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@@ -10933,12 -10900,15 +10936,12 @@@ instruct convHF2SAndHF2F(regF dst, reg
+    ins_pipe(pipe_slow);
+  %}
+  
+ -instruct fpclass_op_fp16(regI dst, regF src)
+ +instruct scalar_sqrt_HF_reg(regF dst, regF src)
+  %{
+ -  match(Set dst (IsNan src));
+ -  match(Set dst (IsFinite src));
+ -  match(Set dst (IsInfinite src));
+ -  format %{ "fpclass_float16_op $dst, $src" %}
+ +  match(Set dst (SqrtHF src));
+ +  format %{ "scalar_sqrt_fp16 $dst, $src" %}
+    ins_encode %{
+-     __ vsqrtsh($dst$$XMMRegister, $src$$XMMRegister);
+ -    int opcode = this->ideal_Opcode();
+ -    __ fpclass_float16_op(opcode, $dst$$XMMRegister, $src$$XMMRegister);
+++    __ esqrtsh($dst$$XMMRegister, $src$$XMMRegister);
+    %}
+    ins_pipe(pipe_slow);
+  %}
+@@@ -10951,32 -10921,36 +10954,45 @@@ instruct scalar_binOps_HF_reg(regF dst
+    match(Set dst (MinHF src1 src2));
+    match(Set dst (MulHF src1 src2));
+    match(Set dst (SubHF src1 src2));
+ -  format %{ "scalar_float16_op $dst, $src1, $src2" %}
+ +  format %{ "scalar_binop_fp16 $dst, $src1, $src2" %}
+    ins_encode %{
+      int opcode = this->ideal_Opcode();
+-     __ efp16sh(opcode, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister);
++     __ scalar_float16_op(opcode, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister);
+    %}
+    ins_pipe(pipe_slow);
+  %}
+  
+ -instruct scalar_fma_fp16(regF dst, regF src1, regF src2)
+ +instruct scalar_fma_HF_reg(regF dst, regF src1, regF src2)
+  %{
++   predicate(VM_Version::supports_avx512_fp16());
+    match(Set dst (FmaHF  src2 (Binary dst src1)));
+    effect(DEF dst);
+ -  format %{ "efmadd132sh $dst, $src1, $src2\t# $dst = $dst * $src1 + $src2 fma packedH" %}
+ -  ins_cost(150);
+ +  format %{ "scalar_fma_fp16 $dst, $src1, $src2\t# $dst = $dst * $src1 + $src2 fma packedH" %}
+    ins_encode %{
+ -    __ efmadd132sh($dst$$XMMRegister, $src2$$XMMRegister, $src1$$XMMRegister);
+ +    __ vfmadd132sh($dst$$XMMRegister, $src2$$XMMRegister, $src1$$XMMRegister);
+    %}
+    ins_pipe( pipe_slow );
+  %}
+  
+++instruct scalar_fpclass_HF_reg(regI dst, regF src)
+++%{
+++  match(Set dst (IsNan src));
+++  match(Set dst (IsFinite src));
+++  match(Set dst (IsInfinite src));
+++  format %{ "scalar_fpclass_fp16 $dst, $src" %}
+++  ins_encode %{
+++    int opcode = this->ideal_Opcode();
+++    __ fpclass_float16_op(opcode, $dst$$XMMRegister, $src$$XMMRegister);
+++  %}
+++  ins_pipe(pipe_slow);
+++%}
+  
+ -instruct vector_sqrt_fp16_reg(vec dst, vec src)
+ +instruct vector_sqrt_HF_reg(vec dst, vec src)
+  %{
+    match(Set dst (SqrtVHF src));
+ -  format %{ "evsqrtph_reg $dst, $src" %}
+ -  ins_cost(150);
+ +  format %{ "vector_sqrt_fp16 $dst, $src" %}
+    ins_encode %{
+      int vlen_enc = vector_length_encoding(this);
+ -    int opcode = this->ideal_Opcode();
+      __ evsqrtph($dst$$XMMRegister, $src$$XMMRegister, vlen_enc);
+    %}
+    ins_pipe(pipe_slow);
+diff --cc src/hotspot/share/classfile/vmIntrinsics.hpp
+index cf68217ae2c,5a9984a4a14..00000000000
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@@ -937,21 -939,18 +937,29 @@@ class methodHandle
+    do_intrinsic(_getAndSetReference,       jdk_internal_misc_Unsafe,     getAndSetReference_name, getAndSetReference_signature, F_R)   \
+     do_name(     getAndSetReference_name,                                "getAndSetReference")                                         \
+     do_signature(getAndSetReference_signature,                           "(Ljava/lang/Object;JLjava/lang/Object;)Ljava/lang/Object;" ) \
+ -                                                                                                                         \
+ -  /* Float16Math API intrinsification support */                                                                         \
+ -  /* Float16 signatures */                                                                                               \
+ -  do_name(isNaN_name,     "isFinite")                                                                                    \
+ -  do_signature(float16_fpclass_op_sig, "(SLjdk/internal/vm/vector/Float16Math$Float16FpClassOp;)Z")                      \
+ -  do_signature(float16_sqrt_math_op_sig, "(SLjdk/internal/vm/vector/Float16Math$Float16SqrtOp;)S")                       \
+ -  do_signature(float16_fma_math_op_sig, "(SSSLjdk/internal/vm/vector/Float16Math$Float16FmaOp;)S")                       \
+ -  do_intrinsic(_isnan_float16, jdk_internal_vm_vector_Float16Math, isNaN_name, float16_fpclass_op_sig, F_S)              \
+ -  do_intrinsic(_isfinite_float16, jdk_internal_vm_vector_Float16Math, isFinite_name, float16_fpclass_op_sig, F_S)        \
+ -  do_intrinsic(_isinfinite_float16, jdk_internal_vm_vector_Float16Math, isInfinite_name, float16_fpclass_op_sig, F_S)    \
+ -  do_intrinsic(_sqrt_float16, jdk_internal_vm_vector_Float16Math, sqrt_name, float16_sqrt_math_op_sig, F_S)              \
+ -  do_intrinsic(_fma_float16, jdk_internal_vm_vector_Float16Math, fma_name, float16_fma_math_op_sig, F_S)                 \
+ +                                                                                                                             \
+ +  /* Float16Math API intrinsification support */                                                                             \
+ +  /* Float16 signatures */                                                                                                   \
+ +  do_signature(float16_unary_math_op_sig, "(Ljava/lang/Class;"                                                               \
+ +                                           "Ljava/lang/Object;"                                                              \
+ +                                           "Ljava/util/function/UnaryOperator;)"                                             \
+ +                                           "Ljava/lang/Object;")                                                             \
+ +  do_signature(float16_ternary_math_op_sig, "(Ljava/lang/Class;"                                                             \
+ +                                             "Ljava/lang/Object;"                                                            \
+ +                                             "Ljava/lang/Object;"                                                            \
+ +                                             "Ljava/lang/Object;"                                                            \
+ +                                             "Ljdk/internal/vm/vector/Float16Math$TernaryOperator;)"                         \
+ +                                             "Ljava/lang/Object;")                                                           \
+++  do_signature(float16_fpclass_op_sig, "(Ljava/lang/Class;"                                                                  \
+++                                        "Ljava/lang/Object;"                                                                 \
+++                                        "Ljdk/internal/vm/vector/Float16Math$FloatingPointClassOperator;)Z")                 \
+ +  do_intrinsic(_sqrt_float16, jdk_internal_vm_vector_Float16Math, sqrt_name, float16_unary_math_op_sig, F_S)                 \
+ +  do_intrinsic(_fma_float16, jdk_internal_vm_vector_Float16Math, fma_name, float16_ternary_math_op_sig, F_S)                 \
+++                                                                                                                             \
+++  do_name(isNaN_name,     "isNaN")                                                                                           \
+++  do_intrinsic(_isnan_float16, jdk_internal_vm_vector_Float16Math, isNaN_name, float16_fpclass_op_sig, F_S)                  \
+++  do_intrinsic(_isfinite_float16, jdk_internal_vm_vector_Float16Math, isFinite_name, float16_fpclass_op_sig, F_S)            \
+++  do_intrinsic(_isinfinite_float16, jdk_internal_vm_vector_Float16Math, isInfinite_name, float16_fpclass_op_sig, F_S)        \
+                                                                                                                                                 \
+    /* Vector API intrinsification support */                                                                                                    \
+                                                                                                                                                 \
+diff --cc src/hotspot/share/opto/library_call.cpp
+index 6d4990787d7,e2987466926..00000000000
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@@ -531,6 -542,9 +531,9 @@@ bool LibraryCallKit::try_to_inline(int 
+    case vmIntrinsics::_longBitsToDouble:
+    case vmIntrinsics::_floatToFloat16:
+    case vmIntrinsics::_float16ToFloat:           return inline_fp_conversions(intrinsic_id());
++   case vmIntrinsics::_isnan_float16:
++   case vmIntrinsics::_isfinite_float16:
+ -  case vmIntrinsics::_isinfinite_float16:
+++  case vmIntrinsics::_isinfinite_float16:       return inline_fp16_operations(intrinsic_id(), 1, false);
+    case vmIntrinsics::_sqrt_float16:             return inline_fp16_operations(intrinsic_id(), 1);
+    case vmIntrinsics::_fma_float16:              return inline_fp16_operations(intrinsic_id(), 3);
+    case vmIntrinsics::_floatIsFinite:
+@@@ -8609,49 -8615,7 +8612,49 @@@ bool LibraryCallKit::inline_blackhole(
+    return true;
+  }
+  
+ -bool LibraryCallKit::inline_fp16_operations(vmIntrinsics::ID id, int num_args) {
+ +Node* LibraryCallKit::unbox_fp16_value(const TypeInstPtr* float16_box_type, ciField* field, Node* box) {
+ +  const TypeInstPtr* box_type = _gvn.type(box)->isa_instptr();
+ +  if (box_type == nullptr || box_type->instance_klass() != float16_box_type->instance_klass()) {
+ +    return nullptr; // box klass is not Float16
+ +  }
+ +
+ +  // Null check; get notnull casted pointer
+ +  Node* null_ctl = top();
+ +  Node* not_null_box = null_check_oop(box, &null_ctl, true);
+ +  // If not_null_box is dead, only null-path is taken
+ +  if (stopped()) {
+ +    set_control(null_ctl);
+ +    return nullptr;
+ +  }
+ +  assert(not_null_box->bottom_type()->is_instptr()->maybe_null() == false, "");
+ +  const TypePtr* adr_type = C->alias_type(field)->adr_type();
+ +  Node* adr = basic_plus_adr(not_null_box, field->offset_in_bytes());
+ +  return access_load_at(not_null_box, adr, adr_type, TypeInt::SHORT, T_SHORT, IN_HEAP);
+ +}
+ +
+ +Node* LibraryCallKit::box_fp16_value(const TypeInstPtr* float16_box_type, ciField* field, Node* value) {
+ +  PreserveReexecuteState preexecs(this);
+ +  jvms()->set_should_reexecute(true);
+ +
+ +  const TypeKlassPtr* klass_type = float16_box_type->as_klass_type();
+ +  Node* klass_node = makecon(klass_type);
+ +  Node* box = new_instance(klass_node);
+ +
+ +  Node* value_field = basic_plus_adr(box, field->offset_in_bytes());
+ +  const TypePtr* value_adr_type = value_field->bottom_type()->is_ptr();
+ +
+ +  Node* field_store = _gvn.transform(access_store_at(box,
+ +                                                     value_field,
+ +                                                     value_adr_type,
+ +                                                     value,
+ +                                                     TypeInt::SHORT,
+ +                                                     T_SHORT,
+ +                                                     IN_HEAP));
+ +  set_memory(field_store, value_adr_type);
+ +  return box;
+ +}
+ +
+- bool LibraryCallKit::inline_fp16_operations(vmIntrinsics::ID id, int num_args) {
+++bool LibraryCallKit::inline_fp16_operations(vmIntrinsics::ID id, int num_args, bool needs_boxing) {
+    if (!Matcher::match_rule_supported(Op_ReinterpretS2HF) ||
+        !Matcher::match_rule_supported(Op_ReinterpretHF2S)) {
+      return false;
+@@@ -8700,20 -8643,19 +8703,34 @@@
+  
+    Node* result = nullptr;
+    switch (id) {
+ -  // Unary operations
+ -  case vmIntrinsics::_isfinite_float16:   result = _gvn.transform(new IsFiniteHFNode(fld1)); break;
+ -  case vmIntrinsics::_isinfinite_float16: result = _gvn.transform(new IsInfiniteHFNode(fld1)); break;
+ -  case vmIntrinsics::_isnan_float16:      result = _gvn.transform(new IsNanHFNode(fld1)); break;
+ -  case vmIntrinsics::_sqrt_float16:       result = _gvn.transform(new SqrtHFNode(C, control(), fld1)); break;
+ -
+ -  // Ternary operations
+ -  case vmIntrinsics::_fma_float16:        result = _gvn.transform(new FmaHFNode(control(), fld1, fld2, fld3)); break;
+ -  default:
+ -    fatal_unexpected_iid(id);
+ -    break;
+ +    // Unary operations
+ +    case vmIntrinsics::_sqrt_float16:
+ +      result = _gvn.transform(new SqrtHFNode(C, control(), fld1));
+ +      break;
+ +    // Ternary operations
+ +    case vmIntrinsics::_fma_float16:
+ +      result = _gvn.transform(new FmaHFNode(fld1, fld2, fld3));
+ +      break;
+++    case vmIntrinsics::_isfinite_float16:
+++      result = _gvn.transform(new IsFiniteHFNode(fld1));
+++      break;
+++    case vmIntrinsics::_isinfinite_float16:
+++      result = _gvn.transform(new IsInfiniteHFNode(fld1));
+++      break;
+++    case vmIntrinsics::_isnan_float16:
+++      result = _gvn.transform(new IsNanHFNode(fld1));
+++      break;
+ +    default:
+ +      fatal_unexpected_iid(id);
+ +      break;
+ +  }
+-   result = _gvn.transform(new ReinterpretHF2SNode(result));
+-   set_result(box_fp16_value(float16_box_type, field, result));
+++
+++  if (needs_boxing) {
+++    result = _gvn.transform(new ReinterpretHF2SNode(result));
+++    set_result(box_fp16_value(float16_box_type, field, result));
+++  } else {
+++    set_result(result);
++   }
+ -  set_result(_gvn.transform(new ReinterpretHF2SNode(result)));
+    return true;
+  }
+  
+diff --cc src/hotspot/share/opto/vectornode.cpp
+index 74a621c0281,ebe8f445b9b..00000000000
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@@ -589,6 -590,26 +589,27 @@@ bool VectorNode::is_rotate_opcode(int o
+    }
+  }
+  
++ bool VectorNode::is_float16_node(int opc) {
++   switch (opc) {
++   case Op_AddHF:
++   case Op_SubHF:
++   case Op_MulHF:
++   case Op_DivHF:
++   case Op_MinHF:
++   case Op_MaxHF:
++   case Op_SqrtHF:
++   case Op_FmaHF:
++   case Op_ConvF2HF:
++   case Op_IsFiniteHF:
++   case Op_IsInfiniteHF:
++   case Op_IsNanHF:
++   case Op_ReinterpretS2HF:
++      return true;
++   default:
++      return false;
++   }
++ }
+++
+  bool VectorNode::is_scalar_rotate(Node* n) {
+    return is_rotate_opcode(n->Opcode());
+  }
+diff --cc src/java.base/share/classes/jdk/internal/vm/vector/Float16Math.java
+index fc385975c18,aee767399d5..00000000000
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/Float16Math.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/Float16Math.java
+@@@ -25,27 -25,62 +25,50 @@@
+  package jdk.internal.vm.vector;
+  
+  import jdk.internal.vm.annotation.IntrinsicCandidate;
+ -import jdk.internal.vm.annotation.ForceInline;
+ +import java.util.function.UnaryOperator;
+  
+ -import static java.lang.Float.*;
+ +public class Float16Math {
+  
+ -/**
+ - * The class {@code Float16Math} constains intrinsic entry points corresponding
+ - * to scalar numeric operations defined in Float16 class.
+ - * @author
+ - * @since   24
+ - */
+ -public final class Float16Math {
+ -    private Float16Math() {
+ -    }
+ -
+ -    public interface Float16FpClassOp {
+ -        boolean apply(short a);
+ -    }
+ -
+ -    public interface Float16SqrtOp {
+ -        short apply(short a);
+ +    @FunctionalInterface
+ +    public interface TernaryOperator<T> {
+ +        T apply(T a, T b, T c);
+      }
+  
+ -    public interface Float16FmaOp {
+ -        short apply(short a, short b, short c);
+++    @FunctionalInterface
+++    public interface FloatingPointClassOperator<T> {
+++        boolean apply(T a);
++     }
++ 
+      @IntrinsicCandidate
+ -    public static boolean isNaN(short a, Float16FpClassOp defaultImpl) {
+ +    public static <T> T sqrt(Class<T> box_class, T oa, UnaryOperator<T> defaultImpl) {
+          assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+ -        return defaultImpl.apply(a);
+ +        return defaultImpl.apply(oa);
+      }
+  
+      @IntrinsicCandidate
+ -    public static boolean isInfinite(short a, Float16FpClassOp defaultImpl) {
+ +    public static <T> T fma(Class<T> box_class, T oa, T ob, T oc, TernaryOperator<T> defaultImpl) {
+          assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+ -        return defaultImpl.apply(a);
+ +        return defaultImpl.apply(oa, ob, oc);
+      }
+  
++     @IntrinsicCandidate
+ -    public static boolean isFinite(short a, Float16FpClassOp defaultImpl) {
+++    public static boolean isNaN(Class<T> box_class, T oa, FloatingPointClassOperator defaultImpl) {
++         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+ -        return defaultImpl.apply(a);
+++        return defaultImpl.apply(oa);
++     }
++ 
++     @IntrinsicCandidate
+ -    public static short sqrt(short a, Float16SqrtOp defaultImpl) {
+++    public static boolean isInfinite(Class<T> box_class, T oa, FloatingPointClassOperator defaultImpl) {
++         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+ -        return defaultImpl.apply(a);
+++        return defaultImpl.apply(oa);
++     }
++ 
++     @IntrinsicCandidate
+ -    public static short fma(short a, short b, short c, Float16FmaOp defaultImpl) {
+++    public static boolean isFinite(Class<T> box_class, T oa, FloatingPointClassOperator defaultImpl) {
++         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+ -        return defaultImpl.apply(a, b, c);
+++        return defaultImpl.apply(oa);
++     }
++ 
+      public static boolean isNonCapturingLambda(Object o) {
+          return o.getClass().getDeclaredFields().length == 0;
+      }
+diff --cc src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
+index fce71e4589e,e79bf162ee3..00000000000
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
+@@@ -715,9 -557,10 +715,12 @@@ public final class Float1
+       * @see Double#isNaN(double)
+       */
+      public static boolean isNaN(Float16 f16) {
+-         final short bits = float16ToRawShortBits(f16);
+--        // A NaN value has all ones in its exponent and a non-zero significand
+-         return ((bits & 0x7c00) == 0x7c00 && (bits & 0x03ff) != 0);
+ -        short res = Float16Math.isNaN(float16ToRawShortBits(f16),
+ -                (f16) ->  ((bits & 0x7c00) == 0x7c00 && (bits & 0x03ff) != 0));
+ -        return shortBitsToFloat16(res);
+++        return Float16Math.isNaN(Float16.class, this,
+++            (fp16) -> {
+++                final short bits = float16ToRawShortBits(f16);
+++                // A NaN value has all ones in its exponent and a non-zero significand
+++                return ((bits & 0x7c00) == 0x7c00 && (bits & 0x03ff) != 0)
+++            });
+      }
+  
+      /**
+@@@ -736,8 -579,9 +739,8 @@@
+       * @see Double#isInfinite(double)
+       */
+      public static boolean isInfinite(Float16 f16) {
+-         return ((float16ToRawShortBits(f16) ^
+-                  float16ToRawShortBits(POSITIVE_INFINITY)) & 0x7fff) == 0;
+ -        short res = Float16Math.isInfinite(float16ToRawShortBits(f16),
+ -                (f16) -> ((float16ToRawShortBits(f16) ^ float16ToRawShortBits(POSITIVE_INFINITY)) & 0x7fff) == 0);
+ -        return shortBitsToFloat16(res);
+++        return Float16Math.isInFinite(Float16.class, this,
+++            (f16) -> ((float16ToRawShortBits(f16) ^ float16ToRawShortBits(POSITIVE_INFINITY)) & 0x7fff) == 0);
+      }
+  
+      /**
+@@@ -757,9 -601,10 +760,9 @@@
+       * @see Double#isFinite(double)
+       */
+      public static boolean isFinite(Float16 f16) {
+-         return (float16ToRawShortBits(f16) & (short)0x0000_7FFF) <=
+-             float16ToRawShortBits(MAX_VALUE);
+-      }
+ -        short res = Float16Math.isFinite(float16ToRawShortBits(f16),
+ -                (f16) ->   (float16ToRawShortBits(f16) & (short)0x0000_7FFF) <= float16ToRawShortBits(MAX_VALUE));
+ -        return shortBitsToFloat16(res);
+++        return Float16Math.isFinite(Float16.class, this,
+++            (f16) -> (float16ToRawShortBits(f16) & (short)0x0000_7FFF) <= float16ToRawShortBits(MAX_VALUE));
++     }
+  
+      /**
+       * {@return the value of this {@code Float16} as a {@code byte} after
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index 51dda136bc1..08cd7db8ae3 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -295,7 +295,7 @@ class LibraryCallKit : public GraphKit {
+   bool inline_onspinwait();
+   bool inline_fp_conversions(vmIntrinsics::ID id);
+   bool inline_fp_range_check(vmIntrinsics::ID id);
+-  bool inline_fp16_operations(vmIntrinsics::ID id, int num_args);
++  bool inline_fp16_operations(vmIntrinsics::ID id, int num_args, bool needs_boxing = true);
+   Node* unbox_fp16_value(const TypeInstPtr* box_class, ciField* field, Node* box);
+   Node* box_fp16_value(const TypeInstPtr* box_class, ciField* field, Node* value);
+   bool inline_number_methods(vmIntrinsics::ID id);

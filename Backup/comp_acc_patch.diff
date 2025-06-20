@@ -1,0 +1,1015 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index bef0530c6be..a657bfc48ce 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -2528,6 +2528,13 @@ void Assembler::knotwl(KRegister dst, KRegister src) {
+   emit_int16(0x44, (0xC0 | encode));
+ }
+ 
++void Assembler::knotql(KRegister dst, KRegister src) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_128bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x44, (0xC0 | encode));
++}
++
+ // This instruction produces ZF or CF flags
+ void Assembler::kortestbl(KRegister src1, KRegister src2) {
+   assert(VM_Version::supports_avx512dq(), "");
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 2cc357d4258..5091c727f00 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1470,6 +1470,7 @@ private:
+   void kmovql(Register dst, KRegister src);
+ 
+   void knotwl(KRegister dst, KRegister src);
++  void knotql(KRegister dst, KRegister src);
+ 
+   void kortestbl(KRegister dst, KRegister src);
+   void kortestwl(KRegister dst, KRegister src);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 5fdc6d0e419..ec4f8be182f 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -1894,7 +1894,7 @@ void C2_MacroAssembler::reduce8L(int opcode, Register dst, Register src1, XMMReg
+ }
+ 
+ void C2_MacroAssembler::genmask(KRegister dst, Register len, Register temp) {
+-  assert(ArrayCopyPartialInlineSize <= 64,"");
++  assert(UsePartialInlineSize <= 64,"");
+   mov64(temp, -1L);
+   bzhiq(temp, temp, len);
+   kmovql(dst, temp);
+@@ -2111,11 +2111,37 @@ void C2_MacroAssembler::get_elem(BasicType typ, XMMRegister dst, XMMRegister src
+   }
+ }
+ 
++void C2_MacroAssembler::evpcmp(BasicType typ, KRegister kdmask, KRegister ksmask, XMMRegister src1, XMMRegister src2, int comparison, int vector_len) {
++  switch(typ) {
++    case T_BYTE:
++    case T_BOOLEAN:
++      evpcmpb(kdmask, ksmask, src1, src2, comparison, vector_len);
++      break;
++    case T_SHORT:
++    case T_CHAR:
++      evpcmpw(kdmask, ksmask, src1, src2, comparison, vector_len);
++      break;
++    case T_INT:
++    case T_FLOAT:
++      evpcmpd(kdmask, ksmask, src1, src2, comparison, vector_len);
++      break;
++    case T_LONG:
++    case T_DOUBLE:
++      evpcmpq(kdmask, ksmask, src1, src2, comparison, vector_len);
++      break;
++    default:
++      assert(false,"Should not reach here.");
++      break;
++  }
++}
++
+ void C2_MacroAssembler::evpcmp(BasicType typ, KRegister kdmask, KRegister ksmask, XMMRegister src1, AddressLiteral adr, int comparison, int vector_len, Register scratch) {
+   switch(typ) {
++    case T_BOOLEAN:
+     case T_BYTE:
+       evpcmpb(kdmask, ksmask, src1, adr, comparison, vector_len, scratch);
+       break;
++    case T_CHAR:
+     case T_SHORT:
+       evpcmpw(kdmask, ksmask, src1, adr, comparison, vector_len, scratch);
+       break;
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index d9f409e3942..610afcd8492 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -135,6 +135,7 @@ public:
+ 
+   // blend
+   void evpcmp(BasicType typ, KRegister kdmask, KRegister ksmask, XMMRegister src1, AddressLiteral adr, int comparison, int vector_len, Register scratch = rscratch1);
++  void evpcmp(BasicType typ, KRegister kdmask, KRegister ksmask, XMMRegister src1, XMMRegister src2, int comparison, int vector_len);
+   void evpblend(BasicType typ, XMMRegister dst, KRegister kmask, XMMRegister src1, XMMRegister src2, bool merge, int vector_len);
+ 
+   void load_vector_mask(XMMRegister dst, XMMRegister src, int vlen_in_bytes, BasicType elem_bt);
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index dfa2bcacb4c..ef2d7eb0688 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -1406,12 +1406,12 @@ void VM_Version::get_processor_features() {
+     }
+ #ifdef COMPILER2
+     if (UseAVX > 2) {
+-      if (FLAG_IS_DEFAULT(ArrayCopyPartialInlineSize) ||
+-          (!FLAG_IS_DEFAULT(ArrayCopyPartialInlineSize) &&
+-           ArrayCopyPartialInlineSize != 0 &&
+-           ArrayCopyPartialInlineSize != 32 &&
+-           ArrayCopyPartialInlineSize != 16 &&
+-           ArrayCopyPartialInlineSize != 64)) {
++      if (FLAG_IS_DEFAULT(UsePartialInlineSize) ||
++          (!FLAG_IS_DEFAULT(UsePartialInlineSize) &&
++           UsePartialInlineSize != 0 &&
++           UsePartialInlineSize != 32 &&
++           UsePartialInlineSize != 16 &&
++           UsePartialInlineSize != 64)) {
+         int inline_size = 0;
+         if (MaxVectorSize >= 64 && AVX3Threshold == 0) {
+           inline_size = 64;
+@@ -1420,18 +1420,18 @@ void VM_Version::get_processor_features() {
+         } else if (MaxVectorSize >= 16) {
+           inline_size = 16;
+         }
+-        if(!FLAG_IS_DEFAULT(ArrayCopyPartialInlineSize)) {
+-          warning("Setting ArrayCopyPartialInlineSize as %d", inline_size);
++        if(!FLAG_IS_DEFAULT(UsePartialInlineSize)) {
++          warning("Setting UsePartialInlineSize as %d", inline_size);
+         }
+-        ArrayCopyPartialInlineSize = inline_size;
++        UsePartialInlineSize = inline_size;
+       }
+ 
+-      if (ArrayCopyPartialInlineSize > MaxVectorSize) {
+-        ArrayCopyPartialInlineSize = MaxVectorSize >= 16 ? MaxVectorSize : 0;
+-        if (ArrayCopyPartialInlineSize) {
+-          warning("Setting ArrayCopyPartialInlineSize as MaxVectorSize" INTX_FORMAT ")", MaxVectorSize);
++      if (UsePartialInlineSize > MaxVectorSize) {
++        UsePartialInlineSize = MaxVectorSize >= 16 ? MaxVectorSize : 0;
++        if (UsePartialInlineSize) {
++          warning("Setting UsePartialInlineSize as MaxVectorSize" INTX_FORMAT ")", MaxVectorSize);
+         } else {
+-          warning("Setting ArrayCopyPartialInlineSize as " INTX_FORMAT, ArrayCopyPartialInlineSize);
++          warning("Setting UsePartialInlineSize as " INTX_FORMAT, UsePartialInlineSize);
+         }
+       }
+     }
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index c8aa03e2cd6..ba67d71a2e9 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1574,6 +1574,7 @@ const bool Matcher::match_rule_supported(int opcode) {
+       }
+       break;
+ 
++    case Op_VectorCmpMasked:
+     case Op_VectorMaskGen:
+     case Op_LoadVectorMasked:
+     case Op_StoreVectorMasked:
+@@ -8010,7 +8011,32 @@ instruct vprorate(vec dst, vec src, vec shift) %{
+ %}
+ 
+ #ifdef _LP64
+-// ---------------------------------- Masked Block Copy ------------------------------------
++// ---------------------------------- Masked Operations ------------------------------------
++
++instruct vmask_cmp_node(rRegI dst, vec src1, vec src2, kReg mask, kReg ktmp1, kReg ktmp2) %{
++  match(Set dst (VectorCmpMasked src1 (Binary src2 mask)));
++  effect(TEMP_DEF dst, TEMP ktmp1, TEMP ktmp2);
++  format %{ "vector_mask_cmp $src1, $src2, $mask \t! vector mask comparison" %}
++  ins_encode %{
++    Label DONE;
++    const MachNode* src1_node = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    const MachNode* src2_node = static_cast<const MachNode*>(this->in(this->operand_index($src2)));
++    assert(0 == Type::cmp(src1_node->bottom_type(), src2_node->bottom_type()), "");
++    int vector_len = vector_length_encoding(src1_node);
++    BasicType elmType =  src1_node->bottom_type()->is_vect()->element_basic_type();
++    __ knotql($ktmp2$$KRegister, $mask$$KRegister);
++    __ mov64($dst$$Register, -1L);
++    __ evpcmp(elmType, $ktmp1$$KRegister, $mask$$KRegister, $src1$$XMMRegister, $src2$$XMMRegister, Assembler::eq, vector_len);
++    __ kortestql($ktmp2$$KRegister, $ktmp1$$KRegister);
++    __ jccb(Assembler::carrySet, DONE);
++    __ kmovql($dst$$Register, $ktmp1$$KRegister);
++    __ notq($dst$$Register);
++    __ tzcntq($dst$$Register, $dst$$Register);
++    __ bind(DONE);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct vmasked_load64(vec dst, memory mem, kReg mask) %{
+   match(Set dst (LoadVectorMasked mem mask));
+   format %{ "vector_masked_load $dst, $mem, $mask \t! vector masked copy" %}
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index 673558e9dea..f43911a04e8 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -782,6 +782,7 @@ bool InstructForm::captures_bottom_type(FormDict &globals) const {
+        !strcmp(_matrule->_rChild->_opType,"ShenandoahCompareAndExchangeN") ||
+ #endif
+        !strcmp(_matrule->_rChild->_opType,"StrInflatedCopy") ||
++       !strcmp(_matrule->_rChild->_opType,"VectorCmpMasked")||
+        !strcmp(_matrule->_rChild->_opType,"VectorMaskGen")||
+        !strcmp(_matrule->_rChild->_opType,"CompareAndExchangeP") ||
+        !strcmp(_matrule->_rChild->_opType,"CompareAndExchangeN"))) return true;
+diff --git a/src/hotspot/share/opto/arraycopynode.cpp b/src/hotspot/share/opto/arraycopynode.cpp
+index f0e25b8f81e..d04dc5a55f3 100644
+--- a/src/hotspot/share/opto/arraycopynode.cpp
++++ b/src/hotspot/share/opto/arraycopynode.cpp
+@@ -738,7 +738,7 @@ bool ArrayCopyNode::modifies(intptr_t offset_lo, intptr_t offset_hi, PhaseTransf
+ 
+ // As an optimization, choose optimum vector size for copy length known at compile time.
+ int ArrayCopyNode::get_partial_inline_vector_lane_count(BasicType type, int const_len) {
+-  int lane_count = ArrayCopyPartialInlineSize/type2aelembytes(type);
++  int lane_count = UsePartialInlineSize/type2aelembytes(type);
+   if (const_len > 0) {
+     int size_in_bytes = const_len * type2aelembytes(type);
+     if (size_in_bytes <= 16)
+diff --git a/src/hotspot/share/opto/c2_globals.hpp b/src/hotspot/share/opto/c2_globals.hpp
+index eaf2f5c05f3..d998cbbdcd1 100644
+--- a/src/hotspot/share/opto/c2_globals.hpp
++++ b/src/hotspot/share/opto/c2_globals.hpp
+@@ -82,7 +82,7 @@
+           "actual size could be less depending on elements type")           \
+           range(0, max_jint)                                                \
+                                                                             \
+-  product(intx, ArrayCopyPartialInlineSize, -1, DIAGNOSTIC,                 \
++  product(intx, UsePartialInlineSize, -1, DIAGNOSTIC,                 \
+           "Partial inline size used for array copy acceleration.")          \
+           range(-1, 64)                                                     \
+                                                                             \
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index e78c7f919dd..d6accd92ed6 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -412,6 +412,7 @@ macro(StoreVector)
+ macro(StoreVectorScatter)
+ macro(LoadVectorMasked)
+ macro(StoreVectorMasked)
++macro(VectorCmpMasked)
+ macro(VectorMaskGen)
+ macro(Pack)
+ macro(PackB)
+diff --git a/src/hotspot/share/opto/compile.cpp b/src/hotspot/share/opto/compile.cpp
+index a5f27abc9f7..fd74cf12a3c 100644
+--- a/src/hotspot/share/opto/compile.cpp
++++ b/src/hotspot/share/opto/compile.cpp
+@@ -3412,6 +3412,7 @@ void Compile::final_graph_reshaping_main_switch(Node* n, Final_Reshape_Counts& f
+   case Op_StoreVector:
+   case Op_LoadVectorGather:
+   case Op_StoreVectorScatter:
++  case Op_VectorCmpMasked:
+   case Op_VectorMaskGen:
+   case Op_LoadVectorMasked:
+   case Op_StoreVectorMasked:
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index 5905f735e5c..b21fe99bddb 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -5203,7 +5203,7 @@ bool LibraryCallKit::inline_vectorizedMismatch() {
+   const TypeAryPtr* top_a = a_type->isa_aryptr();
+   const TypeAryPtr* top_b = b_type->isa_aryptr();
+   if (top_a == NULL || top_a->klass() == NULL ||
+-    top_b == NULL || top_b->klass() == NULL) {
++      top_b == NULL || top_b->klass() == NULL) {
+     // failed array check
+     return false;
+   }
+@@ -5214,13 +5214,108 @@ bool LibraryCallKit::inline_vectorizedMismatch() {
+   Node* obja_adr = make_unsafe_address(obja, aoffset, ACCESS_READ);
+   Node* objb_adr = make_unsafe_address(objb, boffset, ACCESS_READ);
+ 
+-  call = make_runtime_call(RC_LEAF,
+-    OptoRuntime::vectorizedMismatch_Type(),
+-    stubAddr, stubName, TypePtr::BOTTOM,
+-    obja_adr, objb_adr, length, scale);
++  BasicType type_a_basic = top_a->elem()->array_element_basic_type();
++  BasicType type_b_basic = top_b->elem()->array_element_basic_type();
++  assert(type_a_basic == type_b_basic, "Source objects type mismatch");
++  BasicType vecType = type_a_basic;
++  if(vecType == T_OBJECT) {
++    vecType = UseCompressedOops ? T_INT : T_LONG;
++  }
++
++  bool gen_stub = true;
++  assert(scale->is_Con() && scale->bottom_type()->isa_int(), "non-constant scale value");
++  int scale_val  =  scale->get_int();
++  BasicType prim_types[] = {T_BYTE, T_SHORT, T_INT, T_LONG};
++  vecType = prim_types[scale_val];
++  assert(vecType >= type_a_basic, "element scale type mismatch");
++  int vecLen = UsePartialInlineSize / type2aelembytes(vecType);
++  bool partially_inline_compare =
++       (Matcher::match_rule_supported_vector(Op_VectorMaskGen , vecLen, vecType) &&
++        Matcher::match_rule_supported_vector(Op_LoadVectorMasked , vecLen, vecType) &&
++        Matcher::match_rule_supported_vector(Op_VectorCmpMasked, vecLen, vecType));
++
++  Node* len_cmp;
++  Node* fast_path;
++  Node* slow_path;
++  Node* cmp_size;
++  Node* cmp_length;
++  Node* fastcomp_result;
++
++  if (partially_inline_compare) {
++    cmp_size       = _gvn.transform(new LShiftINode(length, scale));
++    cmp_length     = _gvn.transform(new CmpINode(cmp_size, intcon(UsePartialInlineSize)));
++    len_cmp        = _gvn.transform(new BoolNode(cmp_length, BoolTest::le));
++
++    if (len_cmp->is_Con() && len_cmp->bottom_type()->isa_int()) {
++      partially_inline_compare = len_cmp->get_int() == 1 ? true : false;
++      gen_stub = partially_inline_compare ? false : true;
++    }
++  }
+ 
+-  Node* result = _gvn.transform(new ProjNode(call, TypeFunc::Parms));
+-  set_result(result);
++  if (partially_inline_compare) {
++    if(false == gen_stub) {
++      fast_path = slow_path = control();
++    } else {
++      fast_path      = generate_guard(len_cmp, NULL, PROB_MAX);
++      slow_path      = control();
++    }
++
++    const TypeVect* vt = TypeVect::make(vecType, vecLen);
++    Node* mask_gen     = _gvn.transform(new VectorMaskGenNode(ConvI2L(length), TypeVect::VECTMASK,
++                                        Type::get_const_basic_type(vecType)));
++
++    //Node* mask_not = _gvn.transform(new VectorMaskOpNode(Op_Not, mask_gen));
++    const TypePtr* top_a = obja_adr->Value(&_gvn)->isa_ptr();
++    const TypePtr* top_b = objb_adr->Value(&_gvn)->isa_ptr();
++
++    int alias_idx = C->get_alias_index(top_a);
++    Node* mm = memory(alias_idx);
++    Node* masked_load1  = _gvn.transform(new LoadVectorMaskedNode(fast_path, mm, obja_adr, top_a, vt, mask_gen));
++
++
++    alias_idx = C->get_alias_index(top_b);
++    mm = memory(alias_idx);
++    Node* masked_load2 = _gvn.transform(new LoadVectorMaskedNode(fast_path, mm, objb_adr, top_b, vt, mask_gen));
++    fastcomp_result = _gvn.transform(new VectorCmpMaskedNode(masked_load1, masked_load2, mask_gen, TypeInt::INT));
++    assert(control() == slow_path, "control == slow_path");
++
++    if (false == gen_stub) {
++      set_result(fastcomp_result);
++      return true;
++    }
++  }
++
++  Node* init_mem = map()->memory();
++  call = make_runtime_call(RC_LEAF,
++                           OptoRuntime::vectorizedMismatch_Type(),
++                           stubAddr, stubName, TypePtr::BOTTOM,
++                           obja_adr, objb_adr, length, scale);
++
++  Node* call_result = _gvn.transform(new ProjNode(call, TypeFunc::Parms));
++  if (partially_inline_compare) {
++    Node* call_mem = map()->memory();
++
++    Node* exit_block = new RegionNode(3);
++    exit_block->init_req(1, fast_path);
++    exit_block->init_req(2, control());
++    exit_block = _gvn.transform(exit_block);
++
++    Node* result = new PhiNode(exit_block, TypeInt::INT);
++    result->init_req(1, fastcomp_result);
++    result->init_req(2, call_result);
++    result = _gvn.transform(result);
++
++    Node* mem_phi = new PhiNode(exit_block, Type::MEMORY, TypePtr::BOTTOM);
++    mem_phi->init_req(1, init_mem);
++    mem_phi->init_req(2, call_mem);
++
++    C->set_max_vector_size(UsePartialInlineSize);
++    set_all_memory(_gvn.transform(mem_phi));
++    set_result(((RegionNode*)exit_block), ((PhiNode*)result));
++    clear_upper_avx();
++  } else {
++    set_result(call_result);
++  }
+   return true;
+ }
+ 
+diff --git a/src/hotspot/share/opto/macroArrayCopy.cpp b/src/hotspot/share/opto/macroArrayCopy.cpp
+index 34f157900bd..6f626ca3bbc 100644
+--- a/src/hotspot/share/opto/macroArrayCopy.cpp
++++ b/src/hotspot/share/opto/macroArrayCopy.cpp
+@@ -174,8 +174,8 @@ void PhaseMacroExpand::generate_limit_guard(Node** ctrl, Node* offset, Node* sub
+ 
+ //
+ // Partial in-lining handling for smaller conjoint/disjoint array copies having
+-// length(in bytes) less than ArrayCopyPartialInlineSize.
+-//  if (length <= ArrayCopyPartialInlineSize) {
++// length(in bytes) less than UsePartialInlineSize.
++//  if (length <= UsePartialInlineSize) {
+ //    partial_inlining_block:
+ //      mask = Mask_Gen
+ //      vload = LoadVectorMasked src , mask
+@@ -216,7 +216,7 @@ void PhaseMacroExpand::generate_partial_inlining_block(Node** ctrl, MergeMemNode
+   // Return if copy length is greater than partial inline size limit or
+   // target does not supports masked load/stores.
+   int lane_count = ArrayCopyNode::get_partial_inline_vector_lane_count(type, const_len);
+-  if ( const_len > ArrayCopyPartialInlineSize ||
++  if ( const_len > UsePartialInlineSize ||
+       !Matcher::match_rule_supported_vector(Op_LoadVectorMasked, lane_count, type)  ||
+       !Matcher::match_rule_supported_vector(Op_StoreVectorMasked, lane_count, type) ||
+       !Matcher::match_rule_supported_vector(Op_VectorMaskGen, lane_count, type)) {
+@@ -226,7 +226,7 @@ void PhaseMacroExpand::generate_partial_inlining_block(Node** ctrl, MergeMemNode
+   Node* copy_bytes = new LShiftXNode(length, intcon(shift));
+   transform_later(copy_bytes);
+ 
+-  Node* cmp_le = new CmpULNode(copy_bytes, longcon(ArrayCopyPartialInlineSize));
++  Node* cmp_le = new CmpULNode(copy_bytes, longcon(UsePartialInlineSize));
+   transform_later(cmp_le);
+   Node* bol_le = new BoolNode(cmp_le, BoolTest::le);
+   transform_later(bol_le);
+@@ -1187,7 +1187,7 @@ bool PhaseMacroExpand::generate_unchecked_arraycopy(Node** ctrl, MergeMemNode**
+ 
+   Node* result_memory = NULL;
+   RegionNode* exit_block = NULL;
+-  if (ArrayCopyPartialInlineSize > 0 && is_subword_type(basic_elem_type) &&
++  if (UsePartialInlineSize > 0 && is_subword_type(basic_elem_type) &&
+     Matcher::vector_width_in_bytes(basic_elem_type) >= 16) {
+     generate_partial_inlining_block(ctrl, mem, adr_type, &exit_block, &result_memory,
+                                     copy_length, src_start, dest_start, basic_elem_type);
+diff --git a/src/hotspot/share/opto/matcher.cpp b/src/hotspot/share/opto/matcher.cpp
+index 13d24a41355..d2aa8abb2b8 100644
+--- a/src/hotspot/share/opto/matcher.cpp
++++ b/src/hotspot/share/opto/matcher.cpp
+@@ -2224,6 +2224,7 @@ bool Matcher::find_shared_visit(MStack& mstack, Node* n, uint opcode, bool& mem_
+     case Op_FmaVF:
+     case Op_MacroLogicV:
+     case Op_LoadVectorMasked:
++    case Op_VectorCmpMasked:
+       set_shared(n); // Force result into register (it will be anyways)
+       break;
+     case Op_ConP: {  // Convert pointers above the centerline to NUL
+@@ -2317,6 +2318,12 @@ void Matcher::find_shared_post_visit(Node* n, uint opcode) {
+       n->del_req(3);
+       break;
+     }
++    case Op_VectorCmpMasked: {
++      Node* pair1 = new BinaryNode(n->in(2), n->in(3));
++      n->set_req(2, pair1);
++      n->del_req(3);
++      break;
++    }
+     case Op_MacroLogicV: {
+       Node* pair1 = new BinaryNode(n->in(1), n->in(2));
+       Node* pair2 = new BinaryNode(n->in(3), n->in(4));
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 06af47efc77..64aa8b2a224 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -836,6 +836,18 @@ class LoadVectorMaskedNode : public LoadVectorNode {
+   Node* Ideal(PhaseGVN* phase, bool can_reshape);
+ };
+ 
++class VectorCmpMaskedNode : public TypeNode {
++  public:
++   VectorCmpMaskedNode(Node* src1, Node* src2, Node* mask, const Type* ty): TypeNode(ty, 4)  {
++     init_req(1, src1);
++     init_req(2, src2);
++     init_req(3, mask);
++   }
++
++  virtual int Opcode() const;
++};
++
++
+ class VectorMaskGenNode : public TypeNode {
+  public:
+   VectorMaskGenNode(Node* length, const Type* ty, const Type* ety): TypeNode(ty, 2), _elemType(ety) {
+diff --git a/src/java.base/share/classes/java/nio/BufferMismatch.java b/src/java.base/share/classes/java/nio/BufferMismatch.java
+index a9988f77b8c..07d30c0f6a3 100644
+--- a/src/java.base/share/classes/java/nio/BufferMismatch.java
++++ b/src/java.base/share/classes/java/nio/BufferMismatch.java
+@@ -35,41 +35,36 @@ final class BufferMismatch {
+     static final ScopedMemoryAccess SCOPED_MEMORY_ACCESS = ScopedMemoryAccess.getScopedMemoryAccess();
+ 
+     static int mismatch(ByteBuffer a, int aOff, ByteBuffer b, int bOff, int length) {
+-        int i = 0;
+-        if (length > 7) {
+-            if (a.get(aOff) != b.get(bOff))
+-                return 0;
+-            i = SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
++        if (length == 0) {
++            return -1;
++        }
++        if (a.get(aOff) != b.get(bOff)) {
++            return 0;
++        }
++        return SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
+                     a.base(), a.address + aOff,
+                     b.base(), b.address + bOff,
+                     length,
+                     ArraysSupport.LOG2_ARRAY_BYTE_INDEX_SCALE);
+-            if (i >= 0) return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a.get(aOff + i) != b.get(bOff + i))
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+     static int mismatch(CharBuffer a, int aOff, CharBuffer b, int bOff, int length) {
+         int i = 0;
++        if (length == 0) {
++            return -1;
++        }
+         // Ensure only heap or off-heap buffer instances use the
+         // vectorized mismatch. If either buffer is a StringCharBuffer
+         // (order is null) then the slow path is taken
+-        if (length > 3 && a.charRegionOrder() == b.charRegionOrder()
++        if (a.charRegionOrder() == b.charRegionOrder()
+             && a.charRegionOrder() != null && b.charRegionOrder() != null) {
+             if (a.get(aOff) != b.get(bOff))
+                 return 0;
+-            i = SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
++            return SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
+                     a.base(), a.address + (aOff << ArraysSupport.LOG2_ARRAY_CHAR_INDEX_SCALE),
+                     b.base(), b.address + (bOff << ArraysSupport.LOG2_ARRAY_CHAR_INDEX_SCALE),
+                     length,
+                     ArraysSupport.LOG2_ARRAY_CHAR_INDEX_SCALE);
+-            if (i >= 0) return i;
+-            i = length - ~i;
+         }
+         for (; i < length; i++) {
+             if (a.get(aOff + i) != b.get(bOff + i))
+@@ -80,16 +75,17 @@ final class BufferMismatch {
+ 
+     static int mismatch(ShortBuffer a, int aOff, ShortBuffer b, int bOff, int length) {
+         int i = 0;
+-        if (length > 3 && a.order() == b.order()) {
++        if (length == 0) {
++            return -1;
++        }
++        if (a.order() == b.order()) {
+             if (a.get(aOff) != b.get(bOff))
+                 return 0;
+-            i = SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
+-                    a.base(), a.address + (aOff << ArraysSupport.LOG2_ARRAY_SHORT_INDEX_SCALE),
+-                    b.base(), b.address + (bOff << ArraysSupport.LOG2_ARRAY_SHORT_INDEX_SCALE),
+-                    length,
+-                    ArraysSupport.LOG2_ARRAY_SHORT_INDEX_SCALE);
+-            if (i >= 0) return i;
+-            i = length - ~i;
++            return SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
++                       a.base(), a.address + (aOff << ArraysSupport.LOG2_ARRAY_SHORT_INDEX_SCALE),
++                       b.base(), b.address + (bOff << ArraysSupport.LOG2_ARRAY_SHORT_INDEX_SCALE),
++                       length,
++                       ArraysSupport.LOG2_ARRAY_SHORT_INDEX_SCALE);
+         }
+         for (; i < length; i++) {
+             if (a.get(aOff + i) != b.get(bOff + i))
+@@ -103,13 +99,11 @@ final class BufferMismatch {
+         if (length > 1 && a.order() == b.order()) {
+             if (a.get(aOff) != b.get(bOff))
+                 return 0;
+-            i = SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
+-                    a.base(), a.address + (aOff << ArraysSupport.LOG2_ARRAY_INT_INDEX_SCALE),
+-                    b.base(), b.address + (bOff << ArraysSupport.LOG2_ARRAY_INT_INDEX_SCALE),
+-                    length,
+-                    ArraysSupport.LOG2_ARRAY_INT_INDEX_SCALE);
+-            if (i >= 0) return i;
+-            i = length - ~i;
++            return SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
++                       a.base(), a.address + (aOff << ArraysSupport.LOG2_ARRAY_INT_INDEX_SCALE),
++                       b.base(), b.address + (bOff << ArraysSupport.LOG2_ARRAY_INT_INDEX_SCALE),
++                       length,
++                       ArraysSupport.LOG2_ARRAY_INT_INDEX_SCALE);
+         }
+         for (; i < length; i++) {
+             if (a.get(aOff + i) != b.get(bOff + i))
+@@ -161,12 +155,11 @@ final class BufferMismatch {
+         if (length > 0 && a.order() == b.order()) {
+             if (a.get(aOff) != b.get(bOff))
+                 return 0;
+-            i = SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
+-                    a.base(), a.address + (aOff << ArraysSupport.LOG2_ARRAY_LONG_INDEX_SCALE),
+-                    b.base(), b.address + (bOff << ArraysSupport.LOG2_ARRAY_LONG_INDEX_SCALE),
+-                    length,
+-                    ArraysSupport.LOG2_ARRAY_LONG_INDEX_SCALE);
+-            return i >= 0 ? i : -1;
++            return SCOPED_MEMORY_ACCESS.vectorizedMismatch(a.scope(), b.scope(),
++                       a.base(), a.address + (aOff << ArraysSupport.LOG2_ARRAY_LONG_INDEX_SCALE),
++                       b.base(), b.address + (bOff << ArraysSupport.LOG2_ARRAY_LONG_INDEX_SCALE),
++                       length,
++                       ArraysSupport.LOG2_ARRAY_LONG_INDEX_SCALE);
+         }
+         for (; i < length; i++) {
+             if (a.get(aOff + i) != b.get(bOff + i))
+diff --git a/src/java.base/share/classes/jdk/internal/util/ArraysSupport.java b/src/java.base/share/classes/jdk/internal/util/ArraysSupport.java
+index dbdc1833c76..34236bd3f09 100644
+--- a/src/java.base/share/classes/jdk/internal/util/ArraysSupport.java
++++ b/src/java.base/share/classes/jdk/internal/util/ArraysSupport.java
+@@ -121,6 +121,7 @@ public class ArraysSupport {
+ 
+         int log2ValuesPerWidth = LOG2_ARRAY_LONG_INDEX_SCALE - log2ArrayIndexScale;
+         int wi = 0;
++        // Main loop performs unsafe comparison at granularity of 8 bytes (long).
+         for (; wi < length >> log2ValuesPerWidth; wi++) {
+             long bi = ((long) wi) << LOG2_ARRAY_LONG_INDEX_SCALE;
+             long av = U.getLongUnaligned(a, aOffset + bi);
+@@ -137,27 +138,19 @@ public class ArraysSupport {
+         // Calculate the tail of remaining elements to check
+         int tail = length - (wi << log2ValuesPerWidth);
+ 
+-        if (log2ArrayIndexScale < LOG2_ARRAY_INT_INDEX_SCALE) {
+-            int wordTail = 1 << (LOG2_ARRAY_INT_INDEX_SCALE - log2ArrayIndexScale);
+-            // Handle 4 bytes or 2 chars in the tail using int width
+-            if (tail >= wordTail) {
+-                long bi = ((long) wi) << LOG2_ARRAY_LONG_INDEX_SCALE;
+-                int av = U.getIntUnaligned(a, aOffset + bi);
+-                int bv = U.getIntUnaligned(b, bOffset + bi);
+-                if (av != bv) {
+-                    int x = av ^ bv;
+-                    int o = BIG_ENDIAN
+-                            ? Integer.numberOfLeadingZeros(x) >> (LOG2_BYTE_BIT_SIZE + log2ArrayIndexScale)
+-                            : Integer.numberOfTrailingZeros(x) >> (LOG2_BYTE_BIT_SIZE + log2ArrayIndexScale);
+-                    return (wi << log2ValuesPerWidth) + o;
+-                }
+-                tail -= wordTail;
++        // Remaining chunk between 0-7 bytes.
++        long tailByteOffset = (((long) wi) << LOG2_ARRAY_LONG_INDEX_SCALE);
++        int tailBytes = tail << log2ArrayIndexScale;
++        for (int i = 0 ; i < tailBytes; i++) {
++            long aTailByteOffset = aOffset + tailByteOffset + i;
++            long bTailByteOffset = bOffset + tailByteOffset + i;
++            byte av = U.getByte(a, aTailByteOffset);
++            byte bv = U.getByte(b, bTailByteOffset);
++            if(av != bv) {
++                return (int)((aTailByteOffset - aOffset) >> log2ArrayIndexScale);
+             }
+-            return ~tail;
+-        }
+-        else {
+-            return ~tail;
+         }
++        return -1;
+     }
+ 
+     // Booleans
+@@ -166,47 +159,33 @@ public class ArraysSupport {
+     public static int mismatch(boolean[] a,
+                                boolean[] b,
+                                int length) {
+-        int i = 0;
+-        if (length > 7) {
+-            if (a[0] != b[0])
+-                return 0;
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[0] != b[0]) {
++            return 0;
++        }
++        return vectorizedMismatch(
+                     a, Unsafe.ARRAY_BOOLEAN_BASE_OFFSET,
+                     b, Unsafe.ARRAY_BOOLEAN_BASE_OFFSET,
+                     length, LOG2_ARRAY_BOOLEAN_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[i] != b[i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+     public static int mismatch(boolean[] a, int aFromIndex,
+                                boolean[] b, int bFromIndex,
+                                int length) {
+-        int i = 0;
+-        if (length > 7) {
+-            if (a[aFromIndex] != b[bFromIndex])
+-                return 0;
+-            int aOffset = Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + aFromIndex;
+-            int bOffset = Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + bFromIndex;
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[aFromIndex] != b[bFromIndex]) {
++            return 0;
++        }
++        int aOffset = Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + aFromIndex;
++        int bOffset = Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + bFromIndex;
++        return vectorizedMismatch(
+                     a, aOffset,
+                     b, bOffset,
+                     length, LOG2_ARRAY_BOOLEAN_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[aFromIndex + i] != b[bFromIndex + i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+ 
+@@ -231,27 +210,16 @@ public class ArraysSupport {
+         // ISSUE: defer to index receiving methods if performance is good
+         // assert length <= a.length
+         // assert length <= b.length
+-
+-        int i = 0;
+-        if (length > 7) {
+-            if (a[0] != b[0])
+-                return 0;
+-            i = vectorizedMismatch(
+-                    a, Unsafe.ARRAY_BYTE_BASE_OFFSET,
+-                    b, Unsafe.ARRAY_BYTE_BASE_OFFSET,
+-                    length, LOG2_ARRAY_BYTE_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            // Align to tail
+-            i = length - ~i;
+-//            assert i >= 0 && i <= 7;
++        if (length == 0) {
++            return -1;
+         }
+-        // Tail < 8 bytes
+-        for (; i < length; i++) {
+-            if (a[i] != b[i])
+-                return i;
++        if (a[0] != b[0]) {
++            return 0;
+         }
+-        return -1;
++        return vectorizedMismatch(
++                   a, Unsafe.ARRAY_BYTE_BASE_OFFSET,
++                   b, Unsafe.ARRAY_BYTE_BASE_OFFSET,
++                   length, LOG2_ARRAY_BYTE_INDEX_SCALE);
+     }
+ 
+     /**
+@@ -280,26 +248,18 @@ public class ArraysSupport {
+         // assert 0 <= bFromIndex < b.length
+         // assert 0 <= bFromIndex + length <= b.length
+         // assert length >= 0
+-
+-        int i = 0;
+-        if (length > 7) {
+-            if (a[aFromIndex] != b[bFromIndex])
+-                return 0;
+-            int aOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + aFromIndex;
+-            int bOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + bFromIndex;
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[aFromIndex] != b[bFromIndex]) {
++            return 0;
++        }
++        int aOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + aFromIndex;
++        int bOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + bFromIndex;
++        return vectorizedMismatch(
+                     a, aOffset,
+                     b, bOffset,
+                     length, LOG2_ARRAY_BYTE_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[aFromIndex + i] != b[bFromIndex + i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+ 
+@@ -308,47 +268,33 @@ public class ArraysSupport {
+     public static int mismatch(char[] a,
+                                char[] b,
+                                int length) {
+-        int i = 0;
+-        if (length > 3) {
+-            if (a[0] != b[0])
+-                return 0;
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[0] != b[0]) {
++            return 0;
++        }
++        return vectorizedMismatch(
+                     a, Unsafe.ARRAY_CHAR_BASE_OFFSET,
+                     b, Unsafe.ARRAY_CHAR_BASE_OFFSET,
+                     length, LOG2_ARRAY_CHAR_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[i] != b[i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+     public static int mismatch(char[] a, int aFromIndex,
+                                char[] b, int bFromIndex,
+                                int length) {
+-        int i = 0;
+-        if (length > 3) {
+-            if (a[aFromIndex] != b[bFromIndex])
+-                return 0;
+-            int aOffset = Unsafe.ARRAY_CHAR_BASE_OFFSET + (aFromIndex << LOG2_ARRAY_CHAR_INDEX_SCALE);
+-            int bOffset = Unsafe.ARRAY_CHAR_BASE_OFFSET + (bFromIndex << LOG2_ARRAY_CHAR_INDEX_SCALE);
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[aFromIndex] != b[bFromIndex]) {
++            return 0;
++        }
++        int aOffset = Unsafe.ARRAY_CHAR_BASE_OFFSET + (aFromIndex << LOG2_ARRAY_CHAR_INDEX_SCALE);
++        int bOffset = Unsafe.ARRAY_CHAR_BASE_OFFSET + (bFromIndex << LOG2_ARRAY_CHAR_INDEX_SCALE);
++        return vectorizedMismatch(
+                     a, aOffset,
+                     b, bOffset,
+                     length, LOG2_ARRAY_CHAR_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[aFromIndex + i] != b[bFromIndex + i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+ 
+@@ -357,96 +303,66 @@ public class ArraysSupport {
+     public static int mismatch(short[] a,
+                                short[] b,
+                                int length) {
+-        int i = 0;
+-        if (length > 3) {
+-            if (a[0] != b[0])
+-                return 0;
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[0] != b[0]) {
++            return 0;
++        }
++        return vectorizedMismatch(
+                     a, Unsafe.ARRAY_SHORT_BASE_OFFSET,
+                     b, Unsafe.ARRAY_SHORT_BASE_OFFSET,
+                     length, LOG2_ARRAY_SHORT_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[i] != b[i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+     public static int mismatch(short[] a, int aFromIndex,
+                                short[] b, int bFromIndex,
+                                int length) {
+-        int i = 0;
+-        if (length > 3) {
+-            if (a[aFromIndex] != b[bFromIndex])
+-                return 0;
+-            int aOffset = Unsafe.ARRAY_SHORT_BASE_OFFSET + (aFromIndex << LOG2_ARRAY_SHORT_INDEX_SCALE);
+-            int bOffset = Unsafe.ARRAY_SHORT_BASE_OFFSET + (bFromIndex << LOG2_ARRAY_SHORT_INDEX_SCALE);
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[aFromIndex] != b[bFromIndex]) {
++            return 0;
++        }
++        int aOffset = Unsafe.ARRAY_SHORT_BASE_OFFSET + (aFromIndex << LOG2_ARRAY_SHORT_INDEX_SCALE);
++        int bOffset = Unsafe.ARRAY_SHORT_BASE_OFFSET + (bFromIndex << LOG2_ARRAY_SHORT_INDEX_SCALE);
++        return vectorizedMismatch(
+                     a, aOffset,
+                     b, bOffset,
+                     length, LOG2_ARRAY_SHORT_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[aFromIndex + i] != b[bFromIndex + i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+ 
+-    // Ints
+-
+     public static int mismatch(int[] a,
+                                int[] b,
+                                int length) {
+-        int i = 0;
+-        if (length > 1) {
+-            if (a[0] != b[0])
+-                return 0;
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[0] != b[0]) {
++            return 0;
++        }
++        return vectorizedMismatch(
+                     a, Unsafe.ARRAY_INT_BASE_OFFSET,
+                     b, Unsafe.ARRAY_INT_BASE_OFFSET,
+                     length, LOG2_ARRAY_INT_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[i] != b[i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+     public static int mismatch(int[] a, int aFromIndex,
+                                int[] b, int bFromIndex,
+                                int length) {
+-        int i = 0;
+-        if (length > 1) {
+-            if (a[aFromIndex] != b[bFromIndex])
+-                return 0;
+-            int aOffset = Unsafe.ARRAY_INT_BASE_OFFSET + (aFromIndex << LOG2_ARRAY_INT_INDEX_SCALE);
+-            int bOffset = Unsafe.ARRAY_INT_BASE_OFFSET + (bFromIndex << LOG2_ARRAY_INT_INDEX_SCALE);
+-            i = vectorizedMismatch(
++        if (length == 0) {
++            return -1;
++        }
++        if (a[aFromIndex] != b[bFromIndex]) {
++            return 0;
++        }
++        int aOffset = Unsafe.ARRAY_INT_BASE_OFFSET + (aFromIndex << LOG2_ARRAY_INT_INDEX_SCALE);
++        int bOffset = Unsafe.ARRAY_INT_BASE_OFFSET + (bFromIndex << LOG2_ARRAY_INT_INDEX_SCALE);
++        return vectorizedMismatch(
+                     a, aOffset,
+                     b, bOffset,
+                     length, LOG2_ARRAY_INT_INDEX_SCALE);
+-            if (i >= 0)
+-                return i;
+-            i = length - ~i;
+-        }
+-        for (; i < length; i++) {
+-            if (a[aFromIndex + i] != b[bFromIndex + i])
+-                return i;
+-        }
+-        return -1;
+     }
+ 
+ 
+@@ -505,13 +421,13 @@ public class ArraysSupport {
+         if (length == 0) {
+             return -1;
+         }
+-        if (a[0] != b[0])
++        if (a[0] != b[0]) {
+             return 0;
+-        int i = vectorizedMismatch(
+-                a, Unsafe.ARRAY_LONG_BASE_OFFSET,
+-                b, Unsafe.ARRAY_LONG_BASE_OFFSET,
+-                length, LOG2_ARRAY_LONG_INDEX_SCALE);
+-        return i >= 0 ? i : -1;
++        }
++        return vectorizedMismatch(
++                   a, Unsafe.ARRAY_LONG_BASE_OFFSET,
++                   b, Unsafe.ARRAY_LONG_BASE_OFFSET,
++                   length, LOG2_ARRAY_LONG_INDEX_SCALE);
+     }
+ 
+     public static int mismatch(long[] a, int aFromIndex,
+@@ -520,15 +436,15 @@ public class ArraysSupport {
+         if (length == 0) {
+             return -1;
+         }
+-        if (a[aFromIndex] != b[bFromIndex])
++        if (a[aFromIndex] != b[bFromIndex]) {
+             return 0;
++        }
+         int aOffset = Unsafe.ARRAY_LONG_BASE_OFFSET + (aFromIndex << LOG2_ARRAY_LONG_INDEX_SCALE);
+         int bOffset = Unsafe.ARRAY_LONG_BASE_OFFSET + (bFromIndex << LOG2_ARRAY_LONG_INDEX_SCALE);
+-        int i = vectorizedMismatch(
+-                a, aOffset,
+-                b, bOffset,
+-                length, LOG2_ARRAY_LONG_INDEX_SCALE);
+-        return i >= 0 ? i : -1;
++        return vectorizedMismatch(
++                   a, aOffset,
++                   b, bOffset,
++                   length, LOG2_ARRAY_LONG_INDEX_SCALE);
+     }
+ 
+ 

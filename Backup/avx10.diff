@@ -1,0 +1,253 @@
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index 68fc4380a59..cbed5e67176 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -341,6 +341,17 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     __ movl(Address(rsi, 0), rax);
+     __ movl(Address(rsi, 4), rdx);
+ 
++    //
++    // cpuid(0x24) Converged Vector ISA Main Leaf (EAX = 24H, ECX = 0).
++    //
++    __ bind(sefsl1_cpuid);
++    __ movl(rax, 0x24);
++    __ movl(rcx, 0);
++    __ cpuid();
++    __ lea(rsi, Address(rbp, in_bytes(VM_Version::std_cpuid24_offset())));
++    __ movl(Address(rsi, 0), rax);
++    __ movl(Address(rsi, 4), rbx);
++
+     //
+     // Extended cpuid(0x80000000)
+     //
+@@ -490,16 +501,18 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+       // check _cpuid_info.sef_cpuid7_ebx.bits.avx512f
+       __ lea(rsi, Address(rbp, in_bytes(VM_Version::sef_cpuid7_offset())));
+       __ movl(rax, 0x10000);
+-      __ andl(rax, Address(rsi, 4)); // xcr0 bits sse | ymm
+-      __ cmpl(rax, 0x10000);
+-      __ jccb(Assembler::notEqual, legacy_setup); // jump if EVEX is not supported
++      __ andl(rax, Address(rsi, 4));
++      __ lea(rsi, Address(rbp, in_bytes(VM_Version::sefsl1_cpuid7_offset())));
++      __ movl(rbx, 0x80000);
++      __ andl(rbx, Address(rsi, 4));
++      __ orl(rax, rbx);
++      __ jccb(Assembler::equal, legacy_setup); // jump if EVEX is not supported
+       // check _cpuid_info.xem_xcr0_eax.bits.opmask
+       // check _cpuid_info.xem_xcr0_eax.bits.zmm512
+       // check _cpuid_info.xem_xcr0_eax.bits.zmm32
+       __ movl(rax, 0xE0);
+       __ andl(rax, Address(rbp, in_bytes(VM_Version::xem_xcr0_offset()))); // xcr0 bits sse | ymm
+-      __ cmpl(rax, 0xE0);
+-      __ jccb(Assembler::notEqual, legacy_setup); // jump if EVEX is not supported
++      __ jccb(Assembler::equal, legacy_setup); // jump if EVEX is not supported
+ 
+       if (FLAG_IS_DEFAULT(UseAVX)) {
+         __ lea(rsi, Address(rbp, in_bytes(VM_Version::std_cpuid1_offset())));
+@@ -577,15 +590,13 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+       __ lea(rsi, Address(rbp, in_bytes(VM_Version::sef_cpuid7_offset())));
+       __ movl(rax, 0x10000);
+       __ andl(rax, Address(rsi, 4));
+-      __ cmpl(rax, 0x10000);
+-      __ jcc(Assembler::notEqual, legacy_save_restore);
++      __ jcc(Assembler::equal, legacy_save_restore);
+       // check _cpuid_info.xem_xcr0_eax.bits.opmask
+       // check _cpuid_info.xem_xcr0_eax.bits.zmm512
+       // check _cpuid_info.xem_xcr0_eax.bits.zmm32
+       __ movl(rax, 0xE0);
+       __ andl(rax, Address(rbp, in_bytes(VM_Version::xem_xcr0_offset()))); // xcr0 bits sse | ymm
+-      __ cmpl(rax, 0xE0);
+-      __ jcc(Assembler::notEqual, legacy_save_restore);
++      __ jcc(Assembler::equal, legacy_save_restore);
+ 
+       if (FLAG_IS_DEFAULT(UseAVX)) {
+         __ lea(rsi, Address(rbp, in_bytes(VM_Version::std_cpuid1_offset())));
+@@ -1029,6 +1040,8 @@ void VM_Version::get_processor_features() {
+     _features &= ~CPU_AVX512_IFMA;
+     _features &= ~CPU_APX_F;
+     _features &= ~CPU_AVX512_FP16;
++    _features &= ~CPU_AVX10_1;
++    _features &= ~CPU_AVX10_2;
+   }
+ 
+   // Currently APX support is only enabled for targets supporting AVX512VL feature.
+@@ -1080,6 +1093,8 @@ void VM_Version::get_processor_features() {
+       _features &= ~CPU_AVX512_IFMA;
+       _features &= ~CPU_AVX_IFMA;
+       _features &= ~CPU_AVX512_FP16;
++      _features &= ~CPU_AVX10_1;
++      _features &= ~CPU_AVX10_2;
+     }
+   }
+ 
+@@ -3054,7 +3069,37 @@ uint64_t VM_Version::CpuidInfo::feature_flags() const {
+       if (sef_cpuid7_ecx.bits.avx512_vbmi2 != 0)
+         result |= CPU_AVX512_VBMI2;
+     }
++    if (is_intel()) {
++      if (sefsl1_cpuid7_edx.bits.avx10 != 0 &&
++          std_cpuid24_ebx.avx10_vlen_512 !=0 &&
++          std_cpuid24_ebx.avx10_converged_isa_version >= 1 &&
++          xem_xcr0_eax.bits.opmask != 0 &&
++          xem_xcr0_eax.bits.zmm512 != 0 &&
++          xem_xcr0_eax.bits.zmm32 != 0) {
++        result |= CPU_AVX10_1;
++        result |= CPU_AVX_IFMA;
++        result |= CPU_AVX512F;
++        result |= CPU_AVX512CD;
++        result |= CPU_AVX512DQ;
++        result |= CPU_AVX512_IFMA;
++        result |= CPU_AVX512PF;
++        result |= CPU_AVX512ER;
++        result |= CPU_AVX512BW;
++        result |= CPU_AVX512VL;
++        result |= CPU_AVX512_VPOPCNTDQ;
++        result |= CPU_AVX512_VPCLMULQDQ;
++        result |= CPU_AVX512_VAES;
++        result |= CPU_AVX512_VNNI;
++        result |= CPU_AVX512_BITALG;
++        result |= CPU_AVX512_VBMI;
++        result |= CPU_AVX512_VBMI2;
++      }
++      if (std_cpuid24_ebx.avx10_converged_isa_version >= 2) {
++        result |= CPU_AVX10_2;
++      }
++    }
+   }
++
+   if (std_cpuid1_ecx.bits.hv != 0)
+     result |= CPU_HV;
+   if (sef_cpuid7_ebx.bits.bmi1 != 0)
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.hpp b/src/hotspot/cpu/x86/vm_version_x86.hpp
+index 9bd3116cf84..b419c8a744e 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.hpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.hpp
+@@ -295,12 +295,32 @@ class VM_Version : public Abstract_VM_Version {
+   union SefCpuid7SubLeaf1Edx {
+     uint32_t value;
+     struct {
+-      uint32_t       : 21,
++      uint32_t       : 19,
++              avx10  : 1,
++                     : 1,
+               apx_f  : 1,
+                      : 10;
+     } bits;
+   };
+ 
++  union StdCpuid24MainLeafEax {
++    uint32_t value;
++    struct {
++      uint32_t  sub_leaves_cnt  : 31
++    } bits;
++  };
++
++  union StdCpuid24MainLeafEbx {
++    uint32_t value;
++    struct {
++      uint32_t  avx10_converged_isa_version  : 8,
++                                             : 8,
++                                             : 2,
++                avx10_vlen_512               : 1,
++                                             : 13;
++    } bits;
++  };
++
+   union ExtCpuid1EEbx {
+     uint32_t value;
+     struct {
+@@ -342,7 +362,7 @@ class VM_Version : public Abstract_VM_Version {
+   /*
+    * Update following files when declaring new flags:
+    * test/lib-test/jdk/test/whitebox/CPUInfoTest.java
+-   * src/jdk.internal.vm.ci/share/classes/jdk.vm.ci.amd64/src/jdk/vm/ci/amd64/AMD64.java
++   * src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java
+    */
+   enum Feature_Flag : uint64_t {
+ #define CPU_FEATURE_FLAGS(decl) \
+@@ -420,7 +440,9 @@ class VM_Version : public Abstract_VM_Version {
+     decl(AVX_IFMA,          "avx_ifma",          59) /* 256-bit VEX-coded variant of AVX512-IFMA*/ \
+     decl(APX_F,             "apx_f",             60) /* Intel Advanced Performance Extensions*/ \
+     decl(SHA512,            "sha512",            61) /* SHA512 instructions*/ \
+-    decl(AVX512_FP16,       "avx512_fp16",       62) /* AVX512 FP16 ISA support*/
++    decl(AVX512_FP16,       "avx512_fp16",       62) /* AVX512 FP16 ISA support*/ \
++    decl(AVX10_1,           "avx10_1",           63) /* AVX10.1 512 bit vector ISA support*/ \
++    decl(AVX10_2,           "avx10_2",           64) /* AVX10.2 512 bit vector ISA support*/
+ 
+ #define DECLARE_CPU_FEATURE_FLAG(id, name, bit) CPU_##id = (1ULL << bit),
+     CPU_FEATURE_FLAGS(DECLARE_CPU_FEATURE_FLAG)
+@@ -490,6 +512,11 @@ class VM_Version : public Abstract_VM_Version {
+     SefCpuid7SubLeaf1Eax sefsl1_cpuid7_eax;
+     SefCpuid7SubLeaf1Edx sefsl1_cpuid7_edx;
+ 
++    // cpuid function 24 converged vector ISA main leaf
++    // eax = 24, ecx = 0
++    StdCpuid24MainLeafEax std_cpuid24_eax;
++    StdCpuid24MainLeafEbx std_cpuid24_ebx;
++
+     // cpuid function 0xB (processor topology)
+     // ecx = 0
+     uint32_t     tpl_cpuidB0_eax;
+@@ -609,6 +636,7 @@ class VM_Version : public Abstract_VM_Version {
+   // Offsets for cpuid asm stub
+   static ByteSize std_cpuid0_offset() { return byte_offset_of(CpuidInfo, std_max_function); }
+   static ByteSize std_cpuid1_offset() { return byte_offset_of(CpuidInfo, std_cpuid1_eax); }
++  static ByteSize std_cpuid24_offset() { return byte_offset_of(CpuidInfo, std_cpuid24_eax); }
+   static ByteSize dcp_cpuid4_offset() { return byte_offset_of(CpuidInfo, dcp_cpuid4_eax); }
+   static ByteSize sef_cpuid7_offset() { return byte_offset_of(CpuidInfo, sef_cpuid7_eax); }
+   static ByteSize sefsl1_cpuid7_offset() { return byte_offset_of(CpuidInfo, sefsl1_cpuid7_eax); }
+@@ -644,7 +672,7 @@ class VM_Version : public Abstract_VM_Version {
+ 
+   static void clean_cpuFeatures()   { _features = 0; }
+   static void set_avx_cpuFeatures() { _features |= (CPU_SSE | CPU_SSE2 | CPU_AVX | CPU_VZEROUPPER ); }
+-  static void set_evex_cpuFeatures() { _features |= (CPU_AVX512F | CPU_SSE | CPU_SSE2 | CPU_VZEROUPPER ); }
++  static void set_evex_cpuFeatures() { _features |= (CPU_AVX10_1 | CPU_AVX512F | CPU_SSE | CPU_SSE2 | CPU_VZEROUPPER ); }
+   static void set_apx_cpuFeatures() { _features |= CPU_APX_F; }
+   static void set_bmi_cpuFeatures() { _features |= (CPU_BMI1 | CPU_BMI2 | CPU_LZCNT | CPU_POPCNT); }
+ 
+@@ -765,6 +793,12 @@ class VM_Version : public Abstract_VM_Version {
+   static bool supports_cet_ss()       { return (_features & CPU_CET_SS) != 0; }
+   static bool supports_cet_ibt()      { return (_features & CPU_CET_IBT) != 0; }
+   static bool supports_sha512()       { return (_features & CPU_SHA512) != 0; }
++w
++  // Intel® AVX10 introduces a versioned approach for enumeration that is monotonically increasing, inclusive,
++  // and supporting all vector lengths. Feature set supported by an AVX10 vector ISA version is also supported
++  // by all the versions above it.
++  static bool supports_avx10_1()      { return (_features & CPU_AVX10_1) != 0; }
++  static bool supports_avx10_2()      { return (_features & CPU_AVX10_2) != 0; }
+ 
+   //
+   // Feature identification not affected by VM flags
+diff --git a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java
+index d25f7e71990..c75b3d9f9ce 100644
+--- a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java
++++ b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java
+@@ -258,6 +258,8 @@
+         APX_F,
+         SHA512,
+         AVX512_FP16,
++        AVX10_1,
++        AVX10_2
+     }
+ 
+     private final EnumSet<CPUFeature> features;
+diff --git a/test/lib-test/jdk/test/whitebox/CPUInfoTest.java b/test/lib-test/jdk/test/whitebox/CPUInfoTest.java
+index 54a9ef872f5..4a68333aa92 100644
+--- a/test/lib-test/jdk/test/whitebox/CPUInfoTest.java
++++ b/test/lib-test/jdk/test/whitebox/CPUInfoTest.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2020, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -66,7 +66,7 @@
+                     "hv",           "fsrm",             "avx512_bitalg",     "gfni",
+                     "f16c",         "pku",              "ospke",             "cet_ibt",
+                     "cet_ss",       "avx512_ifma",      "serialize",         "avx_ifma",
+-                    "apx_f"
++                    "apx_f", "avx10_1", "avx10_2"
+                     );
+             // @formatter:on
+             // Checkstyle: resume

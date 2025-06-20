@@ -1,0 +1,1520 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 9f08dd292be..cbac923e3f5 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -2145,9 +2145,10 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+   }
+ 
+   Node* cnt  = argument(6);
++  const TypeInt* cnt_type = cnt->bottom_type()->isa_int();
++
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+-  const TypeInt* cnt_type = cnt->bottom_type()->isa_int();
+ 
+   // If CPU supports vector constant rotate instructions pass it directly
+   bool is_const_rotate = is_rotate && cnt_type && cnt_type->is_con() &&
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 7f4d05d83af..7ac00335d1a 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -2113,10 +2113,9 @@ Node* SelectFromTwoVectorNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+ 
+   const TypeVect* index_vect_type = index_vec->bottom_type()->is_vect();
+   BasicType index_elem_bt = index_vect_type->element_basic_type();
+-  assert(!is_floating_point_type(index_elem_bt), "");
+ 
+   // Downcast index vector to a type agnostic shuffle representation, shuffle indices
+-  // are held in a byte vector which are later massaged to target specific permutation
++  // are held in a byte vector which are later transformed to target specific permutation
+   // index format by subsequent VectorLoadShuffle.
+   int cast_vopc = VectorCastNode::opcode(0, index_elem_bt, true);
+   Node* index_byte_vec = phase->transform(VectorCastNode::make(cast_vopc, index_vec, T_BYTE, num_elem));
+@@ -2127,14 +2126,14 @@ Node* SelectFromTwoVectorNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   // Compute the blend mask for merging two indipendently permututed vectors
+   // using shuff index in two vector index range [0, VLEN * 2).
+   BoolTest::mask pred = BoolTest::le;
+-  ConINode* pred_node = (ConINode*)phase->makecon(TypeInt::make(pred));
++  ConINode* pred_node = phase->makecon(TypeInt::make(pred))->as_ConI();
+   const TypeVect* vmask_type = TypeVect::makemask(T_BYTE, num_elem);
+   Node* mask = phase->transform(new VectorMaskCmpNode(pred, index_byte_vec, bcast_lane_cnt_m1_vec, pred_node, vmask_type));
+ 
+   // Rearrange expects the indexes to lie within single vector index range [0, VLEN).
+   index_byte_vec = phase->transform(VectorNode::make(Op_AndV, index_byte_vec, bcast_lane_cnt_m1_vec, index_byte_vec->bottom_type()->is_vect()));
+ 
+-  // Load indexes from byte vector and appropriatly massage them to target specific
++  // Load indexes from byte vector and appropriatly transform them to target specific
+   // permutation index format.
+   index_vec = phase->transform(new VectorLoadShuffleNode(index_byte_vec, index_vect_type));
+ 
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index cc3a4185f7d..66f5587a0fb 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -1613,12 +1613,15 @@ class VectorRearrangeNode : public VectorNode {
+ };
+ 
+ 
+-// Selects elements from second and third vector based on the indices held in
+-// first vector two input vectors based on the indexes held in first vector.
++// Select elements from two source vectors based on the wrapped indexes held in
++// the first vector.
+ class SelectFromTwoVectorNode : public VectorNode {
+ public:
+-  SelectFromTwoVectorNode(Node* index, Node* src1, Node* src2, const TypeVect* vt)
+-  : VectorNode(index, src1, src2, vt) {}
++  SelectFromTwoVectorNode(Node* indexes, Node* src1, Node* src2, const TypeVect* vt)
++  : VectorNode(indexes, src1, src2, vt) {
++      assert(is_integral_type(indexes->bottom_type()->is_vect()->element_basic_type()),
++             "indexes must be an integral vector");
++  }
+ 
+   Node* Ideal(PhaseGVN* phase, bool can_reshape);
+   virtual int Opcode() const;
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index 9887ddeb3db..437b2502832 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -2594,11 +2594,11 @@ final ByteVector selectFromTemplate(ByteVector v,
+     @ForceInline
+     final ByteVector selectFromTemplate(Class<? extends Vector<Byte>> indexVecClass,
+                                                   ByteVector v1, ByteVector v2) {
+-        int twoVectorLen = length() * 2;
+-        ByteVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return (ByteVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, byte.class, byte.class,
+-                                                              length(), wrapped_indexes, v1, v2,
+-                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        int twoVectorLenMask = (length() << 1) - 1;
++        ByteVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLenMask);
++        return VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, byte.class, byte.class,
++                                                   length(), wrapped_indexes, v1, v2,
++                                                   (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index fca46e1850f..a81955fbcd1 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -2436,13 +2436,12 @@ final DoubleVector selectFromTemplate(DoubleVector v,
+     @ForceInline
+     final DoubleVector selectFromTemplate(Class<? extends Vector<Long>> indexVecClass,
+                                                   DoubleVector v1, DoubleVector v2) {
+-        int twoVectorLen = length() * 2;
+-        LongVector wrapped_indexes = this.convert(VectorOperators.D2L, 0)
+-                                                   .lanewise(VectorOperators.AND, twoVectorLen - 1)
+-                                                   .reinterpretAsLongs();
+-        return (DoubleVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , double.class,
+-                                                              long.class, length(), wrapped_indexes, v1, v2,
+-                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        int twoVectorLenMask = (length() << 1) - 1;
++        Vector<Long> wrapped_indexes = this.convert(VectorOperators.D2L, 0)
++                                                   .lanewise(VectorOperators.AND, twoVectorLenMask);
++        return VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , double.class, long.class,
++                                                   length(), wrapped_indexes, v1, v2,
++                                                   (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index 6515dcdf9a9..7718b93053a 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -2448,13 +2448,12 @@ final FloatVector selectFromTemplate(FloatVector v,
+     @ForceInline
+     final FloatVector selectFromTemplate(Class<? extends Vector<Integer>> indexVecClass,
+                                                   FloatVector v1, FloatVector v2) {
+-        int twoVectorLen = length() * 2;
+-        IntVector wrapped_indexes = this.convert(VectorOperators.F2I, 0)
+-                                                   .lanewise(VectorOperators.AND, twoVectorLen - 1)
+-                                                   .reinterpretAsInts();
+-        return (FloatVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , float.class,
+-                                                              int.class, length(), wrapped_indexes, v1, v2,
+-                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        int twoVectorLenMask = (length() << 1) - 1;
++        Vector<Integer> wrapped_indexes = this.convert(VectorOperators.F2I, 0)
++                                                   .lanewise(VectorOperators.AND, twoVectorLenMask);
++        return VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , float.class, int.class,
++                                                   length(), wrapped_indexes, v1, v2,
++                                                   (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index f26495f5bcd..77b4d7c748f 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -2579,11 +2579,11 @@ final IntVector selectFromTemplate(IntVector v,
+     @ForceInline
+     final IntVector selectFromTemplate(Class<? extends Vector<Integer>> indexVecClass,
+                                                   IntVector v1, IntVector v2) {
+-        int twoVectorLen = length() * 2;
+-        IntVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return (IntVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, int.class, int.class,
+-                                                              length(), wrapped_indexes, v1, v2,
+-                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        int twoVectorLenMask = (length() << 1) - 1;
++        IntVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLenMask);
++        return VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, int.class, int.class,
++                                                   length(), wrapped_indexes, v1, v2,
++                                                   (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index 974e94b7e2f..1a8a77c819f 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -2445,11 +2445,11 @@ final LongVector selectFromTemplate(LongVector v,
+     @ForceInline
+     final LongVector selectFromTemplate(Class<? extends Vector<Long>> indexVecClass,
+                                                   LongVector v1, LongVector v2) {
+-        int twoVectorLen = length() * 2;
+-        LongVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return (LongVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, long.class, long.class,
+-                                                              length(), wrapped_indexes, v1, v2,
+-                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        int twoVectorLenMask = (length() << 1) - 1;
++        LongVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLenMask);
++        return VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, long.class, long.class,
++                                                   length(), wrapped_indexes, v1, v2,
++                                                   (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index 764f77303d9..fd54535dcd3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -2595,11 +2595,11 @@ final ShortVector selectFromTemplate(ShortVector v,
+     @ForceInline
+     final ShortVector selectFromTemplate(Class<? extends Vector<Short>> indexVecClass,
+                                                   ShortVector v1, ShortVector v2) {
+-        int twoVectorLen = length() * 2;
+-        ShortVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return (ShortVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, short.class, short.class,
+-                                                              length(), wrapped_indexes, v1, v2,
+-                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        int twoVectorLenMask = (length() << 1) - 1;
++        ShortVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLenMask);
++        return VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, short.class, short.class,
++                                                   length(), wrapped_indexes, v1, v2,
++                                                   (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index a3a98ac2946..338d1fb914e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -2971,20 +2971,19 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     @ForceInline
+     final $abstractvectortype$ selectFromTemplate(Class<? extends Vector<$Boxbitstype$>> indexVecClass,
+                                                   $abstractvectortype$ v1, $abstractvectortype$ v2) {
+-        int twoVectorLen = length() * 2;
++        int twoVectorLenMask = (length() << 1) - 1;
+ #if[FP]
+-        $abstractbitsvectortype$ wrapped_indexes = this.convert(VectorOperators.{#if[intOrFloat]?F2I:D2L}, 0)
+-                                                   .lanewise(VectorOperators.AND, twoVectorLen - 1)
+-                                                   .reinterpretAs$Bitstype$s();
+-        return ($Type$Vector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , $type$.class,
+-                                                              $bitstype$.class, length(), wrapped_indexes, v1, v2,
+-                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        Vector<$Boxbitstype$> wrapped_indexes = this.convert(VectorOperators.{#if[intOrFloat]?F2I:D2L}, 0)
++                                                   .lanewise(VectorOperators.AND, twoVectorLenMask);
++        return VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , $type$.class, $bitstype$.class,
++                                                   length(), wrapped_indexes, v1, v2,
++                                                   (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+ #else[FP]
+-        $abstractvectortype$ wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return ($Type$Vector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, $type$.class, $type$.class,
+-                                                              length(), wrapped_indexes, v1, v2,
+-                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        $abstractvectortype$ wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLenMask);
++        return VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, $type$.class, $type$.class,
++                                                   length(), wrapped_indexes, v1, v2,
++                                                   (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+ #end[FP]
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+old mode 100644
+new mode 100755
+diff --git a/test/jdk/jdk/incubator/vector/Byte128VectorTests.java b/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
+index 5c5dafef5dd..6897e39ff84 100644
+--- a/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(byte[] r, byte[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(byte[] r, byte[] order, byte[] a, byte[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1010,7 +1010,7 @@ static byte bits(byte e) {
+     static final List<IntFunction<byte[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("byte[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (byte)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (byte)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Byte256VectorTests.java b/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
+index 0883c77efb7..2f58b49e5ab 100644
+--- a/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(byte[] r, byte[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(byte[] r, byte[] order, byte[] a, byte[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1010,7 +1010,7 @@ static byte bits(byte e) {
+     static final List<IntFunction<byte[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("byte[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (byte)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (byte)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Byte512VectorTests.java b/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
+index 683a8a7b555..e51a30da8b8 100644
+--- a/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(byte[] r, byte[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(byte[] r, byte[] order, byte[] a, byte[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1010,7 +1010,7 @@ static byte bits(byte e) {
+     static final List<IntFunction<byte[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("byte[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (byte)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (byte)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Byte64VectorTests.java b/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
+index 24f9921081d..afe35951cb7 100644
+--- a/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(byte[] r, byte[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(byte[] r, byte[] order, byte[] a, byte[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1010,7 +1010,7 @@ static byte bits(byte e) {
+     static final List<IntFunction<byte[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("byte[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (byte)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (byte)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java b/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
+index d421777fe95..69aed00b5c0 100644
+--- a/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
+@@ -320,20 +320,20 @@ static void assertexpandArraysEquals(byte[] r, byte[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(byte[] r, byte[] order, byte[] a, byte[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1015,7 +1015,7 @@ static byte bits(byte e) {
+     static final List<IntFunction<byte[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("byte[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (byte)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (byte)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Double128VectorTests.java b/test/jdk/jdk/incubator/vector/Double128VectorTests.java
+index 029d8aa3072..395f1b183e8 100644
+--- a/test/jdk/jdk/incubator/vector/Double128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double128VectorTests.java
+@@ -332,20 +332,20 @@ static void assertexpandArraysEquals(double[] r, double[] a, boolean[] m, int ve
+ 
+     static void assertSelectFromTwoVectorEquals(double[] r, double[] order, double[] a, double[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1154,7 +1154,7 @@ static long bits(double e) {
+     static final List<IntFunction<double[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("double[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (double)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (double)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Double256VectorTests.java b/test/jdk/jdk/incubator/vector/Double256VectorTests.java
+index e51002a220d..1a815f99853 100644
+--- a/test/jdk/jdk/incubator/vector/Double256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double256VectorTests.java
+@@ -332,20 +332,20 @@ static void assertexpandArraysEquals(double[] r, double[] a, boolean[] m, int ve
+ 
+     static void assertSelectFromTwoVectorEquals(double[] r, double[] order, double[] a, double[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1154,7 +1154,7 @@ static long bits(double e) {
+     static final List<IntFunction<double[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("double[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (double)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (double)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Double512VectorTests.java b/test/jdk/jdk/incubator/vector/Double512VectorTests.java
+index dbb04ae70cf..5c1c109d8bc 100644
+--- a/test/jdk/jdk/incubator/vector/Double512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double512VectorTests.java
+@@ -332,20 +332,20 @@ static void assertexpandArraysEquals(double[] r, double[] a, boolean[] m, int ve
+ 
+     static void assertSelectFromTwoVectorEquals(double[] r, double[] order, double[] a, double[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1154,7 +1154,7 @@ static long bits(double e) {
+     static final List<IntFunction<double[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("double[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (double)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (double)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Double64VectorTests.java b/test/jdk/jdk/incubator/vector/Double64VectorTests.java
+index 2f34c46a3a3..ba77c9568f1 100644
+--- a/test/jdk/jdk/incubator/vector/Double64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double64VectorTests.java
+@@ -332,20 +332,20 @@ static void assertexpandArraysEquals(double[] r, double[] a, boolean[] m, int ve
+ 
+     static void assertSelectFromTwoVectorEquals(double[] r, double[] order, double[] a, double[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1154,7 +1154,7 @@ static long bits(double e) {
+     static final List<IntFunction<double[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("double[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (double)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (double)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java b/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
+index 533701f640a..64d7fe3f73b 100644
+--- a/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
+@@ -337,20 +337,20 @@ static void assertexpandArraysEquals(double[] r, double[] a, boolean[] m, int ve
+ 
+     static void assertSelectFromTwoVectorEquals(double[] r, double[] order, double[] a, double[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1159,7 +1159,7 @@ static long bits(double e) {
+     static final List<IntFunction<double[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("double[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (double)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (double)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Float128VectorTests.java b/test/jdk/jdk/incubator/vector/Float128VectorTests.java
+index fe75cc25dc3..a966d0cda63 100644
+--- a/test/jdk/jdk/incubator/vector/Float128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float128VectorTests.java
+@@ -332,20 +332,20 @@ static void assertexpandArraysEquals(float[] r, float[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(float[] r, float[] order, float[] a, float[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1165,7 +1165,7 @@ static int bits(float e) {
+     static final List<IntFunction<float[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("float[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (float)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (float)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Float256VectorTests.java b/test/jdk/jdk/incubator/vector/Float256VectorTests.java
+index a3a702dfc2f..020a1fd9e5d 100644
+--- a/test/jdk/jdk/incubator/vector/Float256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float256VectorTests.java
+@@ -332,20 +332,20 @@ static void assertexpandArraysEquals(float[] r, float[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(float[] r, float[] order, float[] a, float[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1165,7 +1165,7 @@ static int bits(float e) {
+     static final List<IntFunction<float[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("float[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (float)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (float)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Float512VectorTests.java b/test/jdk/jdk/incubator/vector/Float512VectorTests.java
+index 507d2cbd031..a4e9c29098e 100644
+--- a/test/jdk/jdk/incubator/vector/Float512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float512VectorTests.java
+@@ -332,20 +332,20 @@ static void assertexpandArraysEquals(float[] r, float[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(float[] r, float[] order, float[] a, float[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1165,7 +1165,7 @@ static int bits(float e) {
+     static final List<IntFunction<float[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("float[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (float)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (float)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Float64VectorTests.java b/test/jdk/jdk/incubator/vector/Float64VectorTests.java
+index 04f8852529c..9f4c23aea5b 100644
+--- a/test/jdk/jdk/incubator/vector/Float64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float64VectorTests.java
+@@ -332,20 +332,20 @@ static void assertexpandArraysEquals(float[] r, float[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(float[] r, float[] order, float[] a, float[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1165,7 +1165,7 @@ static int bits(float e) {
+     static final List<IntFunction<float[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("float[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (float)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (float)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java b/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
+index 174a8186328..9f8264a6ad5 100644
+--- a/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
+@@ -337,20 +337,20 @@ static void assertexpandArraysEquals(float[] r, float[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(float[] r, float[] order, float[] a, float[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1170,7 +1170,7 @@ static int bits(float e) {
+     static final List<IntFunction<float[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("float[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (float)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (float)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Int128VectorTests.java b/test/jdk/jdk/incubator/vector/Int128VectorTests.java
+index ad3bd77540a..fd4fd511907 100644
+--- a/test/jdk/jdk/incubator/vector/Int128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int128VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(int[] r, int[] a, boolean[] m, int vector_l
+ 
+     static void assertSelectFromTwoVectorEquals(int[] r, int[] order, int[] a, int[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1000,7 +1000,7 @@ static int bits(int e) {
+     static final List<IntFunction<int[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("int[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (int)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (int)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Int256VectorTests.java b/test/jdk/jdk/incubator/vector/Int256VectorTests.java
+index 8a103884382..735907516fa 100644
+--- a/test/jdk/jdk/incubator/vector/Int256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int256VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(int[] r, int[] a, boolean[] m, int vector_l
+ 
+     static void assertSelectFromTwoVectorEquals(int[] r, int[] order, int[] a, int[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1000,7 +1000,7 @@ static int bits(int e) {
+     static final List<IntFunction<int[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("int[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (int)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (int)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Int512VectorTests.java b/test/jdk/jdk/incubator/vector/Int512VectorTests.java
+index 6f2b82b61a7..9b7d3436eb2 100644
+--- a/test/jdk/jdk/incubator/vector/Int512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int512VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(int[] r, int[] a, boolean[] m, int vector_l
+ 
+     static void assertSelectFromTwoVectorEquals(int[] r, int[] order, int[] a, int[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1000,7 +1000,7 @@ static int bits(int e) {
+     static final List<IntFunction<int[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("int[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (int)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (int)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Int64VectorTests.java b/test/jdk/jdk/incubator/vector/Int64VectorTests.java
+index c087ccad866..95eeb6a6f2f 100644
+--- a/test/jdk/jdk/incubator/vector/Int64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int64VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(int[] r, int[] a, boolean[] m, int vector_l
+ 
+     static void assertSelectFromTwoVectorEquals(int[] r, int[] order, int[] a, int[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1000,7 +1000,7 @@ static int bits(int e) {
+     static final List<IntFunction<int[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("int[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (int)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (int)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java b/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
+index 4690b4da2df..a7173bedd06 100644
+--- a/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
+@@ -320,20 +320,20 @@ static void assertexpandArraysEquals(int[] r, int[] a, boolean[] m, int vector_l
+ 
+     static void assertSelectFromTwoVectorEquals(int[] r, int[] order, int[] a, int[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1005,7 +1005,7 @@ static int bits(int e) {
+     static final List<IntFunction<int[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("int[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (int)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (int)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Long128VectorTests.java b/test/jdk/jdk/incubator/vector/Long128VectorTests.java
+index 65bf61a1b12..91eccf4d520 100644
+--- a/test/jdk/jdk/incubator/vector/Long128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long128VectorTests.java
+@@ -272,20 +272,20 @@ static void assertexpandArraysEquals(long[] r, long[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(long[] r, long[] order, long[] a, long[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -990,7 +990,7 @@ static long bits(long e) {
+     static final List<IntFunction<long[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("long[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (long)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (long)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Long256VectorTests.java b/test/jdk/jdk/incubator/vector/Long256VectorTests.java
+index 8d842da694e..15934583b77 100644
+--- a/test/jdk/jdk/incubator/vector/Long256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long256VectorTests.java
+@@ -272,20 +272,20 @@ static void assertexpandArraysEquals(long[] r, long[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(long[] r, long[] order, long[] a, long[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -990,7 +990,7 @@ static long bits(long e) {
+     static final List<IntFunction<long[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("long[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (long)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (long)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Long512VectorTests.java b/test/jdk/jdk/incubator/vector/Long512VectorTests.java
+index d48f0c15745..87ad0daaf0b 100644
+--- a/test/jdk/jdk/incubator/vector/Long512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long512VectorTests.java
+@@ -272,20 +272,20 @@ static void assertexpandArraysEquals(long[] r, long[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(long[] r, long[] order, long[] a, long[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -990,7 +990,7 @@ static long bits(long e) {
+     static final List<IntFunction<long[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("long[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (long)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (long)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Long64VectorTests.java b/test/jdk/jdk/incubator/vector/Long64VectorTests.java
+index 1a2044600ec..4d80d47490c 100644
+--- a/test/jdk/jdk/incubator/vector/Long64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long64VectorTests.java
+@@ -272,20 +272,20 @@ static void assertexpandArraysEquals(long[] r, long[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(long[] r, long[] order, long[] a, long[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -990,7 +990,7 @@ static long bits(long e) {
+     static final List<IntFunction<long[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("long[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (long)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (long)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/LongMaxVectorTests.java b/test/jdk/jdk/incubator/vector/LongMaxVectorTests.java
+index fa32d6e3e28..145f9f88ea7 100644
+--- a/test/jdk/jdk/incubator/vector/LongMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/LongMaxVectorTests.java
+@@ -277,20 +277,20 @@ static void assertexpandArraysEquals(long[] r, long[] a, boolean[] m, int vector
+ 
+     static void assertSelectFromTwoVectorEquals(long[] r, long[] order, long[] a, long[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -995,7 +995,7 @@ static long bits(long e) {
+     static final List<IntFunction<long[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("long[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (long)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (long)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Short128VectorTests.java b/test/jdk/jdk/incubator/vector/Short128VectorTests.java
+index 34616b6c493..dbb81d84287 100644
+--- a/test/jdk/jdk/incubator/vector/Short128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short128VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(short[] r, short[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a, short[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1000,7 +1000,7 @@ static short bits(short e) {
+     static final List<IntFunction<short[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("short[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (short)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (short)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Short256VectorTests.java b/test/jdk/jdk/incubator/vector/Short256VectorTests.java
+index e40e325a9c0..316eda3a7ab 100644
+--- a/test/jdk/jdk/incubator/vector/Short256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short256VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(short[] r, short[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a, short[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1000,7 +1000,7 @@ static short bits(short e) {
+     static final List<IntFunction<short[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("short[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (short)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (short)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Short512VectorTests.java b/test/jdk/jdk/incubator/vector/Short512VectorTests.java
+index a67cfa60f7a..ceecb85666a 100644
+--- a/test/jdk/jdk/incubator/vector/Short512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short512VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(short[] r, short[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a, short[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1000,7 +1000,7 @@ static short bits(short e) {
+     static final List<IntFunction<short[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("short[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (short)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (short)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Short64VectorTests.java b/test/jdk/jdk/incubator/vector/Short64VectorTests.java
+index 06a56aecd1b..b8fcc9444be 100644
+--- a/test/jdk/jdk/incubator/vector/Short64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short64VectorTests.java
+@@ -315,20 +315,20 @@ static void assertexpandArraysEquals(short[] r, short[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a, short[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1000,7 +1000,7 @@ static short bits(short e) {
+     static final List<IntFunction<short[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("short[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (short)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (short)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java b/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
+index ecdbc7ff5ce..c84874ae6e0 100644
+--- a/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
+@@ -320,20 +320,20 @@ static void assertexpandArraysEquals(short[] r, short[] a, boolean[] m, int vect
+ 
+     static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a, short[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1005,7 +1005,7 @@ static short bits(short e) {
+     static final List<IntFunction<short[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("short[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> (short)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> (short)(RAND.nextInt()));
+             })
+     );
+ 
+diff --git a/test/jdk/jdk/incubator/vector/gen-tests.sh b/test/jdk/jdk/incubator/vector/gen-tests.sh
+old mode 100644
+new mode 100755
+diff --git a/test/jdk/jdk/incubator/vector/templates/Unit-header.template b/test/jdk/jdk/incubator/vector/templates/Unit-header.template
+index 880a57e771e..f4b4ec9d2e0 100644
+--- a/test/jdk/jdk/incubator/vector/templates/Unit-header.template
++++ b/test/jdk/jdk/incubator/vector/templates/Unit-header.template
+@@ -398,20 +398,20 @@ relativeError));
+ 
+     static void assertSelectFromTwoVectorEquals($type$[] r, $type$[] order, $type$[] a, $type$[] b, int vector_len) {
+         int i = 0, j = 0;
++        boolean is_exceptional_idx = false;
++        int idx = 0, wrapped_index = 0, oidx = 0;
+         try {
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+-                    int idx = i + j;
+-                    boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-                    int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
++                    idx = i + j;
++                    wrapped_index =(((int)order[idx]) & (2 * vector_len -1));
++                    is_exceptional_idx = wrapped_index >= vector_len;
++                    oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+                 }
+             }
+         } catch (AssertionError e) {
+-            int idx = i + j;
+-            boolean is_exceptional_idx = (int)order[idx] >= vector_len;
+-            int oidx = is_exceptional_idx ? ((int)order[idx] - vector_len) : (int)order[idx];
+-            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + (int)order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
++            Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]), "at index #" + idx + ", order = " + order[idx] + ", a = " + a[i + oidx] + ", b = " + b[i + oidx]);
+         }
+     }
+ 
+@@ -1257,7 +1257,7 @@ relativeError));
+     static final List<IntFunction<$type$[]>> SELECT_FROM_INDEX_GENERATORS = List.of(
+             withToString("$type$[0..VECLEN*2)", (int s) -> {
+                 return fill(s * BUFFER_REPS,
+-                            i -> ($type$)(RAND.nextInt(SPECIES.length() * 2)));
++                            i -> ($type$)(RAND.nextInt()));
+             })
+     );
+ 

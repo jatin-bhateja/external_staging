@@ -1,0 +1,427 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 7b907218f35..a188eddcc32 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -816,8 +816,8 @@ class Assembler : public AbstractAssembler  {
+   void check_relocation(RelocationHolder const& rspec, int format);
+ #endif
+ 
+-  void emit_data(jint data, relocInfo::relocType    rtype, int format);
+-  void emit_data(jint data, RelocationHolder const& rspec, int format);
++  void emit_data(jint data, relocInfo::relocType    rtype, int format = 0);
++  void emit_data(jint data, RelocationHolder const& rspec, int format = 0);
+   void emit_data64(jlong data, relocInfo::relocType rtype, int format = 0);
+   void emit_data64(jlong data, RelocationHolder const& rspec, int format = 0);
+ 
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 54e5f55fa2b..03603ea0660 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -5280,6 +5280,53 @@ void C2_MacroAssembler::vector_mask_compress(KRegister dst, KRegister src, Regis
+   kmov(dst, rtmp2);
+ }
+ 
++void C2_MacroAssembler::vector_compress_expand_avx2(int opcode, XMMRegister dst, XMMRegister src, XMMRegister mask,
++                                                    Register rtmp, Register rscratch, XMMRegister permv,
++                                                    XMMRegister xtmp, BasicType bt, int vec_enc) {
++  assert(type2aelembytes(bt) >= 4, "");
++  assert(opcode == Op_CompressV || opcode == Op_ExpandV, "");
++  if (bt == T_INT || bt == T_FLOAT) {
++    vmovmskps(rtmp, mask, vec_enc);
++    shlq(rtmp, 5);
++    if (opcode == Op_CompressV) {
++      lea(rscratch, ExternalAddress(StubRoutines::x86::compress_perm_table32()));
++    } else {
++      lea(rscratch, ExternalAddress(StubRoutines::x86::expand_perm_table32()));
++    }
++    addptr(rtmp, rscratch);
++    vmovdqu(permv, Address(rtmp));
++    vpermps(dst, permv, src, Assembler::AVX_256bit);
++    vpxor(xtmp, xtmp, xtmp, vec_enc);
++    // Blend the results with zero vector using permute vector as mask, its
++    // non-participating lanes holds a -1 value.
++    vblendvps(dst, dst, xtmp, permv, vec_enc);
++  } else {
++    assert(bt == T_LONG || bt == T_DOUBLE, "");
++    vmovmskpd(rtmp, mask, vec_enc);
++    shlq(rtmp, 5);
++    if (opcode == Op_CompressV) {
++      lea(rscratch, ExternalAddress(StubRoutines::x86::compress_perm_table64()));
++    } else {
++      lea(rscratch, ExternalAddress(StubRoutines::x86::expand_perm_table64()));
++    }
++    addptr(rtmp, rscratch);
++    vmovdqu(permv, Address(rtmp));
++    vmovdqu(xtmp, permv);
++    // Multiply permute index by 2 to get double word index.
++    vpsllq(permv, permv, 1, vec_enc);
++    // Duplicate each double word shuffle
++    vpsllq(dst, permv, 32, vec_enc);
++    vpor(permv, permv, dst, vec_enc);
++    // Add one to get alternate double word index
++    vpaddd(permv, permv, ExternalAddress(StubRoutines::x86::vector_long_shuffle_mask()), vec_enc, noreg);
++    vpermps(dst, permv, src, Assembler::AVX_256bit);
++    vpxor(permv, permv, permv, vec_enc);
++    // Blend the results with zero vector using permute vector as mask, its
++    // non-participating lanes holds a -1 value.
++    vblendvps(dst, dst, permv, xtmp, vec_enc);
++  }
++}
++
+ void C2_MacroAssembler::vector_compress_expand(int opcode, XMMRegister dst, XMMRegister src, KRegister mask,
+                                                bool merge, BasicType bt, int vec_enc) {
+   if (opcode == Op_CompressV) {
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index e9e1412957b..a7d3e4553ac 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -482,6 +482,9 @@
+   void vector_signum_evex(int opcode, XMMRegister dst, XMMRegister src, XMMRegister zero, XMMRegister one,
+                           KRegister ktmp1, int vec_enc);
+ 
++  void vector_compress_expand_avx2(int opcode, XMMRegister dst, XMMRegister src, XMMRegister mask, Register rtmp,
++                                   Register rscratch, XMMRegister permv, XMMRegister xtmp, BasicType bt, int vec_enc);
++
+   void vmovmask(BasicType elem_bt, XMMRegister dst, Address src, XMMRegister mask, int vec_enc);
+ 
+   void vmovmask(BasicType elem_bt, Address dst, XMMRegister src, XMMRegister mask, int vec_enc);
+diff --git a/src/hotspot/cpu/x86/stubGenerator_x86_32.cpp b/src/hotspot/cpu/x86/stubGenerator_x86_32.cpp
+index e6305ded696..e6e7ffafd46 100644
+--- a/src/hotspot/cpu/x86/stubGenerator_x86_32.cpp
++++ b/src/hotspot/cpu/x86/stubGenerator_x86_32.cpp
+@@ -627,6 +627,75 @@ class StubGenerator: public StubCodeGenerator {
+     return start;
+   }
+ 
++  address StubGenerator::generate_compress_perm_table(const char *stub_name, int32_t esize) {
++    __ align(CodeEntryAlignment);
++    StubCodeMark mark(this, "StubRoutines", stub_name);
++    address start = __ pc();
++    if (esize == 32) {
++      for (int i = 0; i < 256; i++) {
++        int ctr = 0;
++        int tmp = i;
++        for (int j = 0; j < 8; j++) {
++          if (tmp & (1 << j)) {
++            __ emit_data(j, relocInfo::none);
++            ctr++;
++          }
++        }
++        for (; ctr < 8; ctr++) {
++          __ emit_data(-1, relocInfo::none);
++        }
++      }
++    } else {
++      assert(esize == 64, "");
++      for (int i = 0; i < 16; i++) {
++        int ctr = 0;
++        int tmp = i;
++        for (int j = 0; j < 4; j++) {
++          if (tmp & (1 << j)) {
++            __ emit_data64(j, relocInfo::none);
++            ctr++;
++          }
++        }
++        for (; ctr < 4; ctr++) {
++          __ emit_data64(-1L, relocInfo::none);
++        }
++      }
++    }
++    return start;
++  }
++
++  address StubGenerator::generate_expand_perm_table(const char *stub_name, int32_t esize) {
++    __ align(CodeEntryAlignment);
++    StubCodeMark mark(this, "StubRoutines", stub_name);
++    address start = __ pc();
++    if (esize == 32) {
++      for (int i = 0; i < 256; i++) {
++        int tmp = i;
++        int ctr = 0;
++        for (int j = 0; j < 8; j++) {
++          if (tmp & (1 << j)) {
++            __ emit_data(ctr++, relocInfo::none);
++          } else {
++            __ emit_data(-1, relocInfo::none);
++          }
++        }
++      }
++    } else {
++      assert(esize == 64, "");
++      for (int i = 0; i < 16; i++) {
++        int tmp = i;
++        int ctr = 0;
++        for (int j = 0; j < 4; j++) {
++          if (tmp & (1 << j)) {
++            __ emit_data64(ctr++, relocInfo::none);
++          } else {
++            __ emit_data64(-1L, relocInfo::none);
++          }
++        }
++      }
++    }
++    return start;
++  }
+ 
+   address generate_popcount_avx_lut(const char *stub_name) {
+     __ align64();
+@@ -4253,6 +4322,13 @@ class StubGenerator: public StubCodeGenerator {
+     StubRoutines::x86::_vector_reverse_byte_perm_mask_int = generate_vector_reverse_byte_perm_mask_int("perm_mask_int");
+     StubRoutines::x86::_vector_reverse_byte_perm_mask_short = generate_vector_reverse_byte_perm_mask_short("perm_mask_short");
+ 
++    if (VM_Version::supports_avx2() && !VM_Version::supports_avx512vl()) {
++      StubRoutines::x86::_compress_perm_table32 = generate_compress_perm_table("compress_perm_table32", 32);
++      StubRoutines::x86::_compress_perm_table64 = generate_compress_perm_table("compress_perm_table64", 64);
++      StubRoutines::x86::_expand_perm_table32 = generate_expand_perm_table("expand_perm_table32", 32);
++      StubRoutines::x86::_expand_perm_table64 = generate_expand_perm_table("expand_perm_table64", 64);
++    }
++
+     if (VM_Version::supports_avx2() && !VM_Version::supports_avx512_vpopcntdq()) {
+       // lut implementation influenced by counting 1s algorithm from section 5-1 of Hackers' Delight.
+       StubRoutines::x86::_vector_popcount_lut = generate_popcount_avx_lut("popcount_lut");
+diff --git a/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp b/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
+index 85f3bbf6109..346fcd48c7c 100644
+--- a/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
++++ b/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
+@@ -951,6 +951,76 @@ address StubGenerator::generate_fp_mask(const char *stub_name, int64_t mask) {
+   return start;
+ }
+ 
++address StubGenerator::generate_compress_perm_table(const char *stub_name, int32_t esize) {
++  __ align(CodeEntryAlignment);
++  StubCodeMark mark(this, "StubRoutines", stub_name);
++  address start = __ pc();
++  if (esize == 32) {
++    for (int i = 0; i < 256; i++) {
++      int tmp = i;
++      int ctr = 0;
++      for (int j = 0; j < 8; j++) {
++        if (tmp & (1 << j)) {
++          __ emit_data(j, relocInfo::none);
++          ctr++;
++        }
++      }
++      for (; ctr < 8; ctr++) {
++        __ emit_data(-1, relocInfo::none);
++      }
++    }
++  } else {
++    assert(esize == 64, "");
++    for (int i = 0; i < 16; i++) {
++      int tmp = i;
++      int ctr = 0;
++      for (int j = 0; j < 4; j++) {
++        if (tmp & (1 << j)) {
++          __ emit_data64(j, relocInfo::none);
++          ctr++;
++        }
++      }
++      for (; ctr < 4; ctr++) {
++        __ emit_data64(-1L, relocInfo::none);
++      }
++    }
++  }
++  return start;
++}
++
++address StubGenerator::generate_expand_perm_table(const char *stub_name, int32_t esize) {
++  __ align(CodeEntryAlignment);
++  StubCodeMark mark(this, "StubRoutines", stub_name);
++  address start = __ pc();
++  if (esize == 32) {
++    for (int i = 0; i < 256; i++) {
++      int tmp = i;
++      int ctr = 0;
++      for (int j = 0; j < 8; j++) {
++        if (tmp & (1 << j)) {
++          __ emit_data(ctr++, relocInfo::none);
++        } else {
++          __ emit_data(-1, relocInfo::none);
++        }
++      }
++    }
++  } else {
++    assert(esize == 64, "");
++    for (int i = 0; i < 16; i++) {
++      int tmp = i;
++      int ctr = 0;
++      for (int j = 0; j < 4; j++) {
++        if (tmp & (1 << j)) {
++          __ emit_data64(ctr++, relocInfo::none);
++        } else {
++          __ emit_data64(-1L, relocInfo::none);
++        }
++      }
++    }
++  }
++  return start;
++}
++
+ address StubGenerator::generate_vector_mask(const char *stub_name, int64_t mask) {
+   __ align(CodeEntryAlignment);
+   StubCodeMark mark(this, "StubRoutines", stub_name);
+@@ -4093,6 +4163,13 @@ void StubGenerator::generate_compiler_stubs() {
+   StubRoutines::x86::_vector_reverse_byte_perm_mask_int = generate_vector_reverse_byte_perm_mask_int("perm_mask_int");
+   StubRoutines::x86::_vector_reverse_byte_perm_mask_short = generate_vector_reverse_byte_perm_mask_short("perm_mask_short");
+ 
++  if (VM_Version::supports_avx2() && !VM_Version::supports_avx512vl()) {
++    StubRoutines::x86::_compress_perm_table32 = generate_compress_perm_table("compress_perm_table32", 32);
++    StubRoutines::x86::_compress_perm_table64 = generate_compress_perm_table("compress_perm_table64", 64);
++    StubRoutines::x86::_expand_perm_table32 = generate_expand_perm_table("expand_perm_table32", 32);
++    StubRoutines::x86::_expand_perm_table64 = generate_expand_perm_table("expand_perm_table64", 64);
++  }
++
+   if (VM_Version::supports_avx2() && !VM_Version::supports_avx512_vpopcntdq()) {
+     // lut implementation influenced by counting 1s algorithm from section 5-1 of Hackers' Delight.
+     StubRoutines::x86::_vector_popcount_lut = generate_popcount_avx_lut("popcount_lut");
+diff --git a/src/hotspot/cpu/x86/stubGenerator_x86_64.hpp b/src/hotspot/cpu/x86/stubGenerator_x86_64.hpp
+index 6b7da718498..d30e88df83f 100644
+--- a/src/hotspot/cpu/x86/stubGenerator_x86_64.hpp
++++ b/src/hotspot/cpu/x86/stubGenerator_x86_64.hpp
+@@ -99,6 +99,10 @@ class StubGenerator: public StubCodeGenerator {
+ 
+   address generate_fp_mask(const char *stub_name, int64_t mask);
+ 
++  address generate_compress_perm_table(const char *stub_name, int32_t esize);
++
++  address generate_expand_perm_table(const char *stub_name, int32_t esize);
++
+   address generate_vector_mask(const char *stub_name, int64_t mask);
+ 
+   address generate_vector_byte_perm_mask(const char *stub_name);
+diff --git a/src/hotspot/cpu/x86/stubRoutines_x86.cpp b/src/hotspot/cpu/x86/stubRoutines_x86.cpp
+index cebf661ae75..d23178386ed 100644
+--- a/src/hotspot/cpu/x86/stubRoutines_x86.cpp
++++ b/src/hotspot/cpu/x86/stubRoutines_x86.cpp
+@@ -84,6 +84,10 @@ address StubRoutines::x86::_join_2_3_base64 = nullptr;
+ address StubRoutines::x86::_decoding_table_base64 = nullptr;
+ #endif
+ address StubRoutines::x86::_pshuffle_byte_flip_mask_addr = nullptr;
++address StubRoutines::x86::_compress_perm_table32 = nullptr;
++address StubRoutines::x86::_compress_perm_table64 = nullptr;
++address StubRoutines::x86::_expand_perm_table32 = nullptr;
++address StubRoutines::x86::_expand_perm_table64 = nullptr;
+ 
+ const uint64_t StubRoutines::x86::_crc_by128_masks[] =
+ {
+diff --git a/src/hotspot/cpu/x86/stubRoutines_x86.hpp b/src/hotspot/cpu/x86/stubRoutines_x86.hpp
+index 6c602324f3e..4a018a001da 100644
+--- a/src/hotspot/cpu/x86/stubRoutines_x86.hpp
++++ b/src/hotspot/cpu/x86/stubRoutines_x86.hpp
+@@ -37,7 +37,7 @@ enum platform_dependent_constants {
+   _continuation_stubs_code_size =  1000 LP64_ONLY(+1000),
+   // AVX512 intrinsics add more code in 64-bit VM,
+   // Windows have more code to save/restore registers
+-  _compiler_stubs_code_size     = 20000 LP64_ONLY(+32000) WINDOWS_ONLY(+2000),
++  _compiler_stubs_code_size     = 20000 LP64_ONLY(+39000) WINDOWS_ONLY(+2000),
+   _final_stubs_code_size        = 10000 LP64_ONLY(+20000) WINDOWS_ONLY(+2000) ZGC_ONLY(+20000)
+ };
+ 
+@@ -58,6 +58,10 @@ class x86 {
+   static address _float_sign_flip;
+   static address _double_sign_mask;
+   static address _double_sign_flip;
++  static address _compress_perm_table32;
++  static address _compress_perm_table64;
++  static address _expand_perm_table32;
++  static address _expand_perm_table64;
+ 
+  public:
+ 
+@@ -243,6 +247,22 @@ class x86 {
+     return _vector_double_sign_flip;
+   }
+ 
++  static address compress_perm_table32() {
++    return _compress_perm_table32;
++  }
++
++  static address compress_perm_table64() {
++    return _compress_perm_table64;
++  }
++
++  static address expand_perm_table32() {
++    return _expand_perm_table32;
++  }
++
++  static address expand_perm_table64() {
++    return _expand_perm_table64;
++  }
++
+   static address vector_all_bits_set() {
+     return _vector_all_bits_set;
+   }
+diff --git a/src/hotspot/cpu/x86/stubRoutines_x86_64.cpp b/src/hotspot/cpu/x86/stubRoutines_x86_64.cpp
+index 417b32eb4a6..eb6c11d7167 100644
+--- a/src/hotspot/cpu/x86/stubRoutines_x86_64.cpp
++++ b/src/hotspot/cpu/x86/stubRoutines_x86_64.cpp
+@@ -44,4 +44,3 @@ address StubRoutines::x86::_float_sign_mask = nullptr;
+ address StubRoutines::x86::_float_sign_flip = nullptr;
+ address StubRoutines::x86::_double_sign_mask = nullptr;
+ address StubRoutines::x86::_double_sign_flip = nullptr;
+-
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 9db209fe48b..36e6da884e6 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1425,6 +1425,8 @@ bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
++    case Op_CompressV:
++    case Op_ExpandV:
+     case Op_PopCountVL:
+       if (UseAVX < 2) {
+         return false;
+@@ -1659,12 +1661,6 @@ bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
+-    case Op_CompressV:
+-    case Op_ExpandV:
+-      if (!VM_Version::supports_avx512vl()) {
+-        return false;
+-      }
+-      break;
+     case Op_SqrtF:
+       if (UseSSE < 1) {
+         return false;
+@@ -1955,10 +1951,6 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+       if (size_in_bits < 128 ) {
+         return false;
+       }
+-      if (size_in_bits < 512 && !VM_Version::supports_avx512vl()) {
+-        return false;
+-      }
+-      break;
+     case Op_VectorLongToMask:
+       if (UseAVX < 1 || !is_LP64) {
+         return false;
+@@ -9163,8 +9155,24 @@ instruct vmask_first_or_last_true_avx(rRegI dst, vec mask, immI size, rRegL tmp,
+ %}
+ 
+ // --------------------------------- Compress/Expand Operations ---------------------------
++instruct vcompress_reg_avx(vec dst, vec src, vec mask, rRegI rtmp, rRegI rscratch, vec perm, vec xtmp, rFlagsReg cr) %{
++  predicate(!VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n) <= 32);
++  match(Set dst (CompressV src mask));
++  match(Set dst (ExpandV src mask));
++  effect(TEMP_DEF dst, TEMP perm, TEMP xtmp, TEMP rtmp, TEMP rscratch, KILL cr);
++  format %{ "vector_compress $dst, $src, $mask \t!using $xtmp, $rtmp, $rscratch and $perm as TEMP" %}
++  ins_encode %{
++    int opcode = this->ideal_Opcode();
++    int vlen_enc = vector_length_encoding(this);
++    BasicType bt  = Matcher::vector_element_basic_type(this);
++    __ vector_compress_expand_avx2(opcode, $dst$$XMMRegister, $src$$XMMRegister, $mask$$XMMRegister, $rtmp$$Register,
++                                   $rscratch$$Register, $perm$$XMMRegister, $xtmp$$XMMRegister, bt, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
+ 
+ instruct vcompress_expand_reg_evex(vec dst, vec src, kReg mask) %{
++  predicate(VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n) == 64);
+   match(Set dst (CompressV src mask));
+   match(Set dst (ExpandV src mask));
+   format %{ "vector_compress_expand $dst, $src, $mask" %}

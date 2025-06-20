@@ -1,0 +1,78 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 001ff472f40..44ff013e6a2 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -5955,6 +5955,12 @@ void Assembler::popp(Register dst) {
+   int encode = prefixq_and_encode_rex2(dst->encoding());
+   emit_int8((unsigned char)0x58 | encode);
+ }
++
++void Assembler::jmpabs(int64_t target) {
++  assert(VM_Version::supports_apx_f(), "requires APX");
++  emit_int24(0xd5, 0x0, 0xA1);
++  emit_int64(target);
++}
+ #endif //_LP64
+ 
+ 
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 28457b7005b..ef777c4ebe2 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1027,6 +1027,7 @@ class Assembler : public AbstractAssembler  {
+   void pop2p(Register src1, Register src2);
+   void pushp(Register src);
+   void popp(Register src);
++  void jmpabs(int64_t target);
+ 
+ #endif
+   void vzeroupper_uncached();
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index 6216cf44b88..2549feb8a40 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -1045,6 +1045,10 @@ void VM_Version::get_processor_features() {
+     FLAG_SET_DEFAULT(UseAPX, apx_supported ? true : false);
+   }
+ 
++  if (!UseAPX) {
++    _features &= ~CPU_APX_F;
++  }
++
+   if (UseAVX < 2) {
+     _features &= ~CPU_AVX2;
+     _features &= ~CPU_AVX_IFMA;
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index 1490cfa60b3..402b03bd469 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -1866,8 +1866,24 @@ encode %{
+ 
+   enc_class Java_To_Runtime(method meth) %{
+     // No relocation needed
+-    __ mov64(r10, (int64_t) $meth$$method);
+-    __ call(r10);
++    if (VM_Version::supports_apx_f()) {
++      // Since targets of call to trampoline (do_jmpabs) and JMPABS
++      // are absolute address, it may improve branch prediction
++      // in comparison to existing register indirect addressing mode
++      // based stub call.
++      // Note: All the call clobbered registers are spilled before the
++      // call to runtime routines and callee saved registers are anyways
++      // saved by the callee before its use.
++      Label do_jmpabs, done;
++      __ call(do_jmpabs, relocInfo::none);
++      __ jmp(done);
++      __ bind(do_jmpabs);
++      __ jmpabs((int64_t) $meth$$method);
++      __ bind(done);
++    } else {
++      __ mov64(r10, (int64_t) $meth$$method);
++      __ call(r10);
++    }
+     __ post_call_nop();
+   %}
+ 

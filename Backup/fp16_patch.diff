@@ -1,0 +1,210 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/classfile/classFileParser.cpp b/src/hotspot/share/classfile/classFileParser.cpp
+index 0e5d270c729..ec628e9c1fc 100644
+--- a/src/hotspot/share/classfile/classFileParser.cpp
++++ b/src/hotspot/share/classfile/classFileParser.cpp
+@@ -4704,6 +4704,13 @@ bool ClassFileParser::is_jdk_internal_class(const Symbol* class_name) const {
+   return false;
+ }
+ 
++bool ClassFileParser::is_jdk_internal_class_sig(const char* sig) const {
++  if (strstr(sig, vmSymbols::java_lang_Float16_signature()->as_C_string())) {
++    return true;
++  }
++  return false;
++}
++
+ // utility methods for format checking
+ 
+ void ClassFileParser::verify_legal_class_modifiers(jint flags, const char* name, bool is_Object, TRAPS) const {
+@@ -5166,7 +5173,7 @@ const char* ClassFileParser::skip_over_field_signature(const char* signature,
+     case JVM_SIGNATURE_PRIMITIVE_OBJECT:
+       // Can't enable this check fully until JDK upgrades the bytecode generators (TODO: JDK-8270852).
+       // For now, compare to class file version 51 so old verifier doesn't see Q signatures.
+-      if ( (_major_version < 51 /* CONSTANT_CLASS_DESCRIPTORS */ ) || (!EnablePrimitiveClasses)) {
++      if ( (_major_version < 51 /* CONSTANT_CLASS_DESCRIPTORS */ ) || (!EnablePrimitiveClasses && !is_jdk_internal_class_sig(signature))) {
+         classfile_parse_error("Class name contains illegal Q-signature "
+                               "in descriptor in class file %s, requires option -XX:+EnablePrimitiveClasses",
+                               CHECK_0);
+diff --git a/src/hotspot/share/classfile/classFileParser.hpp b/src/hotspot/share/classfile/classFileParser.hpp
+index 50ed95496bb..19c03ab3989 100644
+--- a/src/hotspot/share/classfile/classFileParser.hpp
++++ b/src/hotspot/share/classfile/classFileParser.hpp
+@@ -219,6 +219,8 @@ class ClassFileParser {
+ 
+   bool is_jdk_internal_class(const Symbol* class_name) const;
+ 
++  bool is_jdk_internal_class_sig(const char* sig) const;
++
+   void parse_stream(const ClassFileStream* const stream, TRAPS);
+ 
+   void mangle_hidden_class_name(InstanceKlass* const ik);
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index eb79291e086..0644287b6dd 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -82,6 +82,7 @@ class SerializeClosure;
+   template(java_lang_CharacterDataLatin1,             "java/lang/CharacterDataLatin1")            \
+   template(java_lang_Float,                           "java/lang/Float")                          \
+   template(java_lang_Float16,                         "java/lang/Float16")                        \
++  template(java_lang_Float16_signature,               "Qjava/lang/Float16;")                      \
+   template(java_lang_Double,                          "java/lang/Double")                         \
+   template(java_lang_Byte,                            "java/lang/Byte")                           \
+   template(java_lang_Byte_ByteCache,                  "java/lang/Byte$ByteCache")                 \
+diff --git a/src/hotspot/share/opto/convertnode.cpp b/src/hotspot/share/opto/convertnode.cpp
+index c73a391cbc7..e1884431cd7 100644
+--- a/src/hotspot/share/opto/convertnode.cpp
++++ b/src/hotspot/share/opto/convertnode.cpp
+@@ -867,6 +867,14 @@ const Type* ReinterpretS2HFNode::Value(PhaseGVN* phase) const {
+   return Type::FLOAT;
+ }
+ 
++Node* ReinterpretS2HFNode::Identity(PhaseGVN* phase) {
++  if (in(1)->Opcode() == Op_ReinterpretHF2S) {
++     assert(in(1)->in(1)->bottom_type()->isa_float(), "");
++     return in(1)->in(1);
++  }
++  return this;
++}
++
+ const Type* ReinterpretHF2SNode::Value(PhaseGVN* phase) const {
+   const Type* type = phase->type( in(1) );
+   // Convert Float constant value to FP16 constant value.
+diff --git a/src/hotspot/share/opto/convertnode.hpp b/src/hotspot/share/opto/convertnode.hpp
+index 94121ffbaa1..18f109d8025 100644
+--- a/src/hotspot/share/opto/convertnode.hpp
++++ b/src/hotspot/share/opto/convertnode.hpp
+@@ -179,6 +179,7 @@ class ReinterpretS2HFNode : public Node {
+   virtual int Opcode() const;
+   virtual const Type *bottom_type() const { return Type::FLOAT; }
+   virtual const Type* Value(PhaseGVN* phase) const;
++  virtual Node* Identity(PhaseGVN* phase);
+   virtual uint  ideal_reg() const { return Op_RegF; }
+ };
+ 
+diff --git a/src/java.base/share/classes/java/lang/Float16.java b/src/java.base/share/classes/java/lang/Float16.java
+index 2197521d7d9..91d60d0c6f1 100644
+--- a/src/java.base/share/classes/java/lang/Float16.java
++++ b/src/java.base/share/classes/java/lang/Float16.java
+@@ -52,6 +52,8 @@ import jdk.internal.vm.annotation.IntrinsicCandidate;
+  * @since 20.00
+  */
+ 
++// Currently Float16 is a primitive class but in future will be aligned with
++// Enhanced Primitive Boxes described by JEP-402 (https://openjdk.org/jeps/402)
+ public primitive class Float16 {
+    private final short value;
+ 
+diff --git a/src/jdk.compiler/share/classes/com/sun/tools/javac/code/Types.java b/src/jdk.compiler/share/classes/com/sun/tools/javac/code/Types.java
+index 40e8c9aab3a..59449635ca1 100644
+--- a/src/jdk.compiler/share/classes/com/sun/tools/javac/code/Types.java
++++ b/src/jdk.compiler/share/classes/com/sun/tools/javac/code/Types.java
+@@ -5248,7 +5248,9 @@ public class Types {
+                     if (type.isCompound()) {
+                         reportIllegalSignature(type);
+                     }
+-                    if (types.allowPrimitiveClasses && type.isPrimitiveClass())
++                    String fully_qual_name = ((ClassType)type).toString();
++                    boolean is_jdk_internal_class =  fully_qual_name.indexOf("java.lang.Float16") >= 0;
++                    if ((types.allowPrimitiveClasses || is_jdk_internal_class) && type.isPrimitiveClass())
+                         append('Q');
+                     else
+                         append('L');
+diff --git a/src/jdk.compiler/share/classes/com/sun/tools/javac/jvm/ClassReader.java b/src/jdk.compiler/share/classes/com/sun/tools/javac/jvm/ClassReader.java
+index 29c5ed1ccd5..21a82078834 100644
+--- a/src/jdk.compiler/share/classes/com/sun/tools/javac/jvm/ClassReader.java
++++ b/src/jdk.compiler/share/classes/com/sun/tools/javac/jvm/ClassReader.java
+@@ -467,6 +467,13 @@ public class ClassReader {
+         return sigToType();
+     }
+ 
++    /** Avoid throwing class format error on encountering signatures of known
++     *  value classes.
++     */
++    boolean is_jdk_internal_class_sig(String sig) {
++        return sig.indexOf("Qjava/lang/Float16;") >= 0;
++    }
++
+     /** Convert signature to type, where signature is implicit.
+      */
+     Type sigToType() {
+@@ -515,7 +522,8 @@ public class ClassReader {
+         case 'L':
+             {
+                 // int oldsigp = sigp;
+-                if ((char) signature[sigp] == 'Q' && !allowPrimitiveClasses) {
++                String sigstr = new String(signature, sigp, Math.min(signature.length - sigp, 32));
++                if ((char) signature[sigp] == 'Q' && !allowPrimitiveClasses && !is_jdk_internal_class_sig(sigstr)) {
+                     throw badClassFile("bad.class.signature",
+                                        quoteBadSignature());
+                 }
+@@ -577,7 +585,8 @@ public class ClassReader {
+      */
+     Type classSigToType() {
+         byte prefix = signature[sigp];
+-        if (prefix != 'L' && (!allowPrimitiveClasses || prefix != 'Q'))
++        String sigstr = new String(signature, sigp, Math.min(signature.length - sigp, 32));
++        if (prefix != 'L' && ((!allowPrimitiveClasses && !is_jdk_internal_class_sig(sigstr)) || prefix != 'Q'))
+             throw badClassFile("bad.class.signature", quoteBadSignature());
+         sigp++;
+         Type outer = Type.noType;
+diff --git a/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java b/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
+index 023cdb305ea..28c64e99892 100644
+--- a/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
++++ b/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
+@@ -151,6 +151,11 @@ public class IRNode {
+         beforeMatchingNameRegex(ADD_L, "AddL");
+     }
+ 
++    public static final String ADD_HF = PREFIX + "ADD_HF" + POSTFIX;
++    static {
++        beforeMatchingNameRegex(ADD_HF, "AddHF");
++    }
++
+     public static final String ADD_V = PREFIX + "ADD_V" + POSTFIX;
+     static {
+         beforeMatchingNameRegex(ADD_V, "AddV(B|S|I|L|F|D)");
+@@ -893,6 +898,16 @@ public class IRNode {
+         trapNodes(RANGE_CHECK_TRAP,"range_check");
+     }
+ 
++    public static final String REINTERPRET_S2HF = PREFIX + "REINTERPRET_S2HF" + POSTFIX;
++    static {
++        beforeMatchingNameRegex(REINTERPRET_S2HF, "ReinterpretS2HF");
++    }
++
++    public static final String REINTERPRET_HF2S = PREFIX + "REINTERPRET_HF2S" + POSTFIX;
++    static {
++        beforeMatchingNameRegex(REINTERPRET_HF2S, "ReinterpretHF2S");
++    }
++
+     public static final String REPLICATE_B = PREFIX + "REPLICATE_B" + POSTFIX;
+     static {
+         String regex = START + "ReplicateB" + MID + END;
+diff --git a/test/hotspot/jtreg/compiler/lib/ir_framework/test/IREncodingPrinter.java b/test/hotspot/jtreg/compiler/lib/ir_framework/test/IREncodingPrinter.java
+index f293adba8b4..766b65a8e12 100644
+--- a/test/hotspot/jtreg/compiler/lib/ir_framework/test/IREncodingPrinter.java
++++ b/test/hotspot/jtreg/compiler/lib/ir_framework/test/IREncodingPrinter.java
+@@ -75,6 +75,7 @@ public class IREncodingPrinter {
+         "avx512dq",
+         "avx512vl",
+         "avx512f",
++        "avx512_fp16",
+         // AArch64
+         "sha3",
+         "asimd",
+diff --git a/test/jdk/java/lang/Float16/FP16ScalarOperations.java b/test/jdk/java/lang/Float16/FP16ScalarOperations.java
+index 933da4123ee..bf1af721b6a 100644
+--- a/test/jdk/java/lang/Float16/FP16ScalarOperations.java
++++ b/test/jdk/java/lang/Float16/FP16ScalarOperations.java
+@@ -33,7 +33,7 @@ import java.util.Random;
+ 
+ public class FP16ScalarOperations {
+ 
+-   public static Random r = new Random(1024);
++    public static Random r = new Random(1024);
+ 
+     public static short actual_value(char oper, short val1, short val2) {
+         Float16 obj1 = new Float16((short)val1);

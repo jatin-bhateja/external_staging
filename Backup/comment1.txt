@@ -1,0 +1,14 @@
+
+This patch moves the definition of two existing vector re-interpretation APIs viewAsIntegralLanes and viewAsFloatingPointLanes
+into their respective concrete vector classes so that return values can be type casted using concrete vector types.
+
+This will make sure that subsequent inline expander's vector length and type queries through vector species always return constant values i.e. species
+accessors are de-virtualized at compile time.
+
+Typecasting a class instance emits checkcast bytecode, both interpreter and C1 level 3 compiler populates the ReceiverType information
+for checkcast in MDO profile. C2 consults this profiling information to generate CheckCastPP IR with most granular type. In absence of profiled receiver
+type information of final checkcast operation over resultant vector in above APIs, casting is performed using abstract vector type which inhabits de-virtualization of vector length and type accessors. There by leading to intrinsification failures of subsequent vector APIs, this patch make vector casting using concrete vector type deterministic similar to lanewise APIs.
+
+Patch has been regressed though VectorAPI jtreg suite at different AVX levels.
+
+Kindly review and share your feedback.

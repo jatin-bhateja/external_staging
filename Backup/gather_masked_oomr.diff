@@ -1,0 +1,90 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index 8fae8d71b04..c6b36fc3b32 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -3820,12 +3820,13 @@ ByteVector fromArray0Template(Class<M> maskClass, byte[] a, int offset,
+         }
+ 
+         // Check indices are within array bounds.
+-        // FIXME: Check index under mask controlling.
++        long mask_val = m.toLong();
+         for (int i = 0; i < vsp.length(); i += lsp.length()) {
+             IntVector vix = IntVector
+                 .fromArray(lsp, indexMap, mapOffset + i)
+                 .add(offset);
+-            VectorIntrinsics.checkIndex(vix, a.length);
++            VectorIntrinsics.checkIndex(vix, a.length, VectorMask.fromLong(lsp, mask_val));
++            mask_val >>= lsp.length();
+         }
+ 
+         return VectorSupport.loadWithMap(
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index ba21e8a9e95..145c02e1139 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -3806,12 +3806,13 @@ ShortVector fromArray0Template(Class<M> maskClass, short[] a, int offset,
+         }
+ 
+         // Check indices are within array bounds.
+-        // FIXME: Check index under mask controlling.
++        long mask_val = m.toLong();
+         for (int i = 0; i < vsp.length(); i += lsp.length()) {
+             IntVector vix = IntVector
+                 .fromArray(lsp, indexMap, mapOffset + i)
+                 .add(offset);
+-            VectorIntrinsics.checkIndex(vix, a.length);
++            VectorIntrinsics.checkIndex(vix, a.length, VectorMask.fromLong(lsp, mask_val));
++            mask_val >>= lsp.length();
+         }
+ 
+         return VectorSupport.loadWithMap(
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorIntrinsics.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorIntrinsics.java
+index c0e70ca58e6..b58648ff7e5 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorIntrinsics.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorIntrinsics.java
+@@ -89,6 +89,22 @@ static IntVector checkIndex(IntVector vix, int length) {
+         }
+     }
+ 
++    static IntVector checkIndex(IntVector vix, int length, VectorMask<Integer> m) {
++        switch (VectorIntrinsics.VECTOR_ACCESS_OOB_CHECK) {
++            case 0: return vix; // no range check
++            case 1: // fall-through
++            case 2:
++                if (vix.compare(VectorOperators.LT, 0)
++                    .or(vix.compare(VectorOperators.GE, length))
++                    .and(m)
++                    .anyTrue()) {
++                    throw checkIndexFailed(vix, length);
++                }
++                return vix;
++            default: throw new InternalError();
++        }
++    }
++
+     private static
+     IndexOutOfBoundsException checkIndexFailed(IntVector vix, int length) {
+         String msg = String.format("Range check failed: vector %s out of bounds for length %d", vix, length);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index d7562bae475..7d6c2e937d3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -4837,12 +4837,13 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         }
+ 
+         // Check indices are within array bounds.
+-        // FIXME: Check index under mask controlling.
++        long mask_val = m.toLong();
+         for (int i = 0; i < vsp.length(); i += lsp.length()) {
+             IntVector vix = IntVector
+                 .fromArray(lsp, indexMap, mapOffset + i)
+                 .add(offset);
+-            VectorIntrinsics.checkIndex(vix, a.length);
++            VectorIntrinsics.checkIndex(vix, a.length, VectorMask.fromLong(lsp, mask_val));
++            mask_val >>= lsp.length();
+         }
+ 
+         return VectorSupport.loadWithMap(

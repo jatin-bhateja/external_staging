@@ -1,0 +1,1033 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index d6e73e2152f..888400ba843 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -3038,6 +3038,60 @@ void Assembler::vmovdqu(Address dst, XMMRegister src) {
+   emit_operand(src, dst);
+ }
+ 
++void Assembler::vpmaskmovd(XMMRegister dst, XMMRegister mask, Address src, int vector_len) {
++  assert((VM_Version::supports_avx2() && vector_len == AVX_256bit), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ false, /* uses_vl */ false);
++  vex_prefix(src, mask->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8((unsigned char)0x8C);
++  emit_operand(dst, src);
++}
++
++void Assembler::vpmaskmovq(XMMRegister dst, XMMRegister mask, Address src, int vector_len) {
++  assert((VM_Version::supports_avx2() && vector_len == AVX_256bit), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ false, /* uses_vl */ false);
++  vex_prefix(src, mask->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8((unsigned char)0x8C);
++  emit_operand(dst, src);
++}
++
++void Assembler::vmaskmovps(XMMRegister dst, Address src, XMMRegister mask, int vector_len) {
++  assert(UseAVX > 0, "requires some form of AVX");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  vex_prefix(src, mask->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x2C);
++  emit_operand(dst, src);
++}
++
++void Assembler::vmaskmovpd(XMMRegister dst, Address src, XMMRegister mask, int vector_len) {
++  assert(UseAVX > 0, "requires some form of AVX");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  vex_prefix(src, mask->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x2D);
++  emit_operand(dst, src);
++}
++
++void Assembler::vmaskmovps(Address dst, XMMRegister src, XMMRegister mask, int vector_len) {
++  assert(UseAVX > 0, "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  vex_prefix(dst, mask->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x2E);
++  emit_operand(src, dst);
++}
++
++void Assembler::vmaskmovpd(Address dst, XMMRegister src, XMMRegister mask, int vector_len) {
++  assert(UseAVX > 0, "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  vex_prefix(dst, mask->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x2F);
++  emit_operand(src, dst);
++}
++
+ // Move Unaligned EVEX enabled Vector (programmable : 8,16,32,64)
+ void Assembler::evmovdqub(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len) {
+   assert(VM_Version::supports_avx512vlbw(), "");
+@@ -4394,14 +4448,6 @@ void Assembler::vmovmskpd(Register dst, XMMRegister src, int vec_enc) {
+   emit_int16(0x50, (0xC0 | encode));
+ }
+ 
+-void Assembler::vpmaskmovd(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
+-  assert((VM_Version::supports_avx2() && vector_len == AVX_256bit), "");
+-  InstructionMark im(this);
+-  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ false, /* uses_vl */ true);
+-  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
+-  emit_int8((unsigned char)0x8C);
+-  emit_operand(dst, src);
+-}
+ 
+ void Assembler::pextrd(Register dst, XMMRegister src, int imm8) {
+   assert(VM_Version::supports_sse4_1(), "");
+@@ -11987,6 +12033,16 @@ void Assembler::evcompresspd(XMMRegister dst, KRegister mask, XMMRegister src, b
+   emit_int16((unsigned char)0x8A, (0xC0 | encode));
+ }
+ 
++// ModR/M Byte mod = 00, r/m = 101 (none) Disp32 RIP without specifying a base register.
++void Assembler::lea_rip(Register dst, int disp32) {
++  int dst_enc = raw_encode(dst);
++  assert(dst_enc < 8, "");
++  prefix(REX_W);
++  emit_int8(0x8D);
++  emit_modrm(0x0, dst_enc, 0x5);
++  emit_int32(disp32);
++}
++
+ #ifndef _LP64
+ 
+ void Assembler::incl(Register dst) {
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 90412811653..b2ea9185169 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -908,6 +908,8 @@ private:
+ 
+   void lea(Register dst, Address src);
+ 
++  void lea_rip(Register dst, int disp32);
++
+   void mov(Register dst, Register src);
+ 
+ #ifdef _LP64
+@@ -1804,6 +1806,13 @@ private:
+   void vmovmskps(Register dst, XMMRegister src, int vec_enc);
+   void vmovmskpd(Register dst, XMMRegister src, int vec_enc);
+   void vpmaskmovd(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void vpmaskmovq(XMMRegister dst, XMMRegister mask, Address src, int vector_len);
++
++
++  void vmaskmovps(XMMRegister dst, Address src, XMMRegister mask, int vector_len);
++  void vmaskmovpd(XMMRegister dst, Address src, XMMRegister mask, int vector_len);
++  void vmaskmovps(Address dst, XMMRegister src, XMMRegister mask, int vector_len);
++  void vmaskmovpd(Address dst, XMMRegister src, XMMRegister mask, int vector_len);
+ 
+   // SSE 4.1 extract
+   void pextrd(Register dst, XMMRegister src, int imm8);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 56f480bd1fe..8376f031acb 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -1991,6 +1991,200 @@ void C2_MacroAssembler::evmovdqu(BasicType type, KRegister kmask, Address dst, X
+   MacroAssembler::evmovdqu(type, kmask, dst, src, merge, vector_len);
+ }
+ 
++#ifdef _LP64
++void C2_MacroAssembler::vmovmask_subword(int elem_sz, XMMRegister dst, Address src, XMMRegister xtmp1,
++                                         XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister mask,
++                                         Register rtmp1, Register rtmp2, Register rtmp3, Register rtmp4,
++                                         Register rtmp5, Register rtmp6, int vec_enc) {
++  Label done, copy_loop, L0, L1, L2, L3;
++  assert(elem_sz == 1 || elem_sz == 2, "");
++
++  // Initialization sequence.
++  vpxor(xtmp3, xtmp3, xtmp3, vec_enc);
++  vpxor(dst, dst, dst, vec_enc);
++  leaptr(rtmp4, src);
++
++  // Move mask to GPR.
++  vpmovmskb(rtmp1, mask, vec_enc);
++
++  // Predicated VectorLoad operation loads the contents from memory
++  // locations corresponding to true mask bit.
++  // There are no direct HW instructions to perform masked loads
++  // over X86 target support AVX2 feature, hence we iterate over memory
++  // location and loads the contents from addresses corresponding to
++  // true mask bits.
++  bind(copy_loop);
++    vpor(dst, dst, xtmp3, vec_enc);
++    vpxor(xtmp3, xtmp3, xtmp3, vec_enc);
++    cmpl(rtmp1, 0);
++    jcc(Assembler::equal, done);
++    xorl(rtmp6, rtmp6);
++
++    // Extract first true mask bit index.
++    bsfl(rtmp2, rtmp1);
++    // Reset first true mask bit.
++    blsrl(rtmp1, rtmp1);
++    movl(rtmp3, rtmp2);
++
++    // load address = array_base + mask_bit_position * prim_size;
++    // Scalar loads are written into vector in chunks of 8 bytes.
++    // Shift the newly loaded contents by normalizing the shift count
++    // for quad word range as mask bit position may span across
++    // quad word boundary.
++    if (elem_sz == 1) {
++      movb(rtmp6, Address(rtmp4, rtmp3, Address::times_1));
++      andl(rtmp3, 7);
++      shll(rtmp3, 3);
++      // Compute jump table index.
++      shrl(rtmp2, 3);
++    } else {
++      assert(elem_sz == 2, "");
++      movw(rtmp6, Address(rtmp4, rtmp3, Address::times_2));
++      andl(rtmp3, 3);
++      shll(rtmp3, 4);
++      // Compute jump table index.
++      shrl(rtmp2, 2);
++    }
++    shlxl(rtmp6, rtmp6, rtmp3);
++
++    // Compute the starting address of jump table,
++    // each jump table index holds the address of
++    // instruction sequence to copy the quadword
++    // chunk into appropriate vector location.
++
++    // Both rtmp5 and rtmp2 are bound to GPRs in lower
++    // register bank, this is done to keep lea_to_jmp_table_offset
++    // agnostic to emission of additional rex prefix needed to
++    // encode GPRs in higher register bank (r8-r15).
++    int lea_to_jmp_table_offset = 7;
++    lea_rip(rtmp5, lea_to_jmp_table_offset);
++    // Each short jump occupies 2 bytes.
++    shll(rtmp2, 1);
++    // Add jump table index to its base address.
++    addptr(rtmp5,rtmp2);
++    jmp(rtmp5);
++
++    // TODO: Optimize redundant indirection in jump table.
++    // jmp_table:
++    jmpb(L0);
++    jmpb(L1);
++    jmpb(L2);
++    jmpb(L3);
++
++    bind(L0);
++      movq(xtmp3, rtmp6);
++      jmp(copy_loop);
++
++    bind(L1);
++      vpinsrq(xtmp3, xtmp3, rtmp6, 1);
++      jmp(copy_loop);
++
++    bind(L2);
++      movq(xtmp1, rtmp6);
++      vinserti128(xtmp3, xtmp3, xtmp1, 1);
++      jmp(copy_loop);
++
++    bind(L3);
++      vpinsrq(xtmp1, xtmp1, rtmp6, 1);
++      vinserti128(xtmp3, xtmp3, xtmp1, 1);
++      jmp(copy_loop);
++
++  bind(done);
++}
++#endif
++
++void C2_MacroAssembler::vmovmask_subword(int elem_sz, Address dst, XMMRegister src,
++                                         XMMRegister xtmp1, XMMRegister mask, Register rtmp1,
++                                         Register rtmp2, Register rtmp3, Register rtmp4,
++                                         Register rtmp5, int vec_enc) {
++  Label copy_loop, done;
++  assert(elem_sz == 1 || elem_sz == 2, "");
++
++  // Move MSB bit of each mask lane to GPR.
++  vpmovmskb(rtmp2, mask, vec_enc);
++  // Following loop iterates over mask bitvector contained
++  // in GPR, pick the source lane corresponding to set mask bit
++  // and stores it to destination memory location.
++  bind(copy_loop);
++    cmpl(rtmp2, 0);
++    jcc(Assembler::equal, done);
++    // Get index of least significant true mask bit.
++    bsfl(rtmp3, rtmp2);
++    movl(rtmp1, rtmp3);
++    // Normalize this index to doubleword index range(0-7).
++    if (elem_sz == 1) {
++      shrl(rtmp1, 2);
++    } else {
++      shrl(rtmp1, 1);
++    }
++    movdl(xtmp1, rtmp1);
++    // Broadcast the normalized index into vector.
++    vpbroadcastd(xtmp1, xtmp1, vec_enc);
++    // Shuffle the source vector based normalized index vector.
++    vpermd(xtmp1, xtmp1, src, Assembler::AVX_256bit);
++    // Extract the first doubleword element of shuffled vector.
++    movdl(rtmp4, xtmp1);
++    movl(rtmp5, rtmp3);
++    // Shift and extract the exact byte/word to be stored into
++    // destination memory location. Destination address is computed
++    // based on following equation:
++    //     dst_address = _base + _mask_index * sub-word-size
++    if (elem_sz == 1) {
++      shll(rtmp1, 2);
++      subl(rtmp3, rtmp1);
++      shll(rtmp3, 3);
++      shrxl(rtmp4, rtmp4, rtmp3);
++      andl(rtmp4, 0xff);
++      leaptr(rtmp3, dst);
++      movb(Address(rtmp3, rtmp5, Address::times_1), rtmp4);
++    } else {
++      shll(rtmp1, 1);
++      subl(rtmp3, rtmp1);
++      shll(rtmp3, 4);
++      shrxl(rtmp4, rtmp4, rtmp3);
++      andl(rtmp4, 0xffff);
++      leaptr(rtmp3, dst);
++      movw(Address(rtmp3, rtmp5, Address::times_2), rtmp4);
++    }
++    // Reset the least significant set mask bit and loop back.
++    blsrl(rtmp2, rtmp2);
++    jcc(Assembler::notEqual, copy_loop);
++  bind(done);
++}
++
++void C2_MacroAssembler::vmovmask(BasicType elem_bt, XMMRegister dst, Address src, XMMRegister mask,
++                                 int vec_enc) {
++  switch(elem_bt) {
++    case T_INT:
++    case T_FLOAT:
++      vmaskmovps(dst, src, mask, vec_enc);
++      break;
++    case T_LONG:
++    case T_DOUBLE:
++      vmaskmovpd(dst, src, mask, vec_enc);
++      break;
++    default:
++      fatal("Unsupported type %s", type2name(elem_bt));
++      break;
++  }
++}
++
++void C2_MacroAssembler::vmovmask(BasicType elem_bt, Address dst, XMMRegister src, XMMRegister mask,
++                                 int vec_enc) {
++  switch(elem_bt) {
++    case T_INT:
++    case T_FLOAT:
++      vmaskmovps(dst, src, mask, vec_enc);
++      break;
++    case T_LONG:
++    case T_DOUBLE:
++      vmaskmovpd(dst, src, mask, vec_enc);
++      break;
++    default:
++      fatal("Unsupported type %s", type2name(elem_bt));
++      break;
++  }
++}
+ 
+ void C2_MacroAssembler::reduceFloatMinMax(int opcode, int vlen, bool is_dst_valid,
+                                           XMMRegister dst, XMMRegister src,
+@@ -5285,6 +5479,68 @@ void C2_MacroAssembler::udivmodI(Register rax, Register divisor, Register rdx, R
+   subl(rdx, tmp); // remainder
+   bind(done);
+ }
++void C2_MacroAssembler::vector_store_mask_avx(XMMRegister dst, XMMRegister src, int elem_sz,
++                                              XMMRegister xtmp, int vector_len, int vec_enc) {
++  switch(elem_sz) {
++    case 1: {
++      if (vector_len <= 16 && UseAVX <= 2) {
++        assert(UseSSE >= 3, "required");
++        pabsb(dst, src);
++      } else {
++        assert(UseAVX > 0, "required");
++        vpabsb(dst, src, vec_enc);
++      }
++    } break;
++    case 2: {
++      if (vector_len <= 8) {
++        assert(UseSSE >= 3, "required");
++        pxor(xtmp, xtmp);
++        pabsw(dst, src);
++        packuswb(dst, xtmp);
++      } else {
++        assert(UseAVX > 0, "required");
++        vextracti128(dst, src, 0x1);
++        vpacksswb(dst, src, dst, vec_enc);
++        vpabsb(dst, dst, vec_enc);
++      }
++    } break;
++    case 4: {
++      if (vector_len <= 4) {
++        assert(UseSSE >= 3, "required");
++        pxor(xtmp, xtmp);
++        pabsd(dst, src);
++        packusdw(dst, xtmp);
++        packuswb(dst, xtmp);
++      } else {
++        assert(UseAVX > 0, "required");
++        vpxor(xtmp, xtmp, xtmp, vec_enc);
++        vextracti128(dst, src, 0x1);
++        vpackssdw(dst, src, dst, vec_enc);
++        vpacksswb(dst, dst, xtmp, vec_enc);
++        vpabsb(dst, dst, vec_enc);
++      }
++    } break;
++    case 8: {
++      if (vector_len == 2) {
++        assert(UseSSE >= 3, "required");
++        pxor(xtmp, xtmp);
++        pshufd(dst, src, 0x8);
++        pabsd(dst, dst);
++        packusdw(dst, xtmp);
++        packuswb(dst, xtmp);
++      } else {
++        assert(vector_len == 4, "");
++        vpshufps(dst, src, src, 0x88, Assembler::AVX_256bit);
++        vextracti128(xtmp, dst, 0x1);
++        vblendps(dst, dst, xtmp, 0xC, vec_enc);
++        vpxor(xtmp, xtmp, xtmp, vec_enc);
++        vpackssdw(dst, dst, xtmp, vec_enc);
++        vpacksswb(dst, dst, xtmp, vec_enc);
++        vpabsb(dst, dst, vec_enc);
++      }
++    } break;
++  }
++}
+ 
+ #ifdef _LP64
+ void C2_MacroAssembler::udivL(Register rax, Register divisor, Register rdx) {
+@@ -5366,5 +5622,6 @@ void C2_MacroAssembler::udivmodL(Register rax, Register divisor, Register rdx, R
+   subq(rdx, tmp); // remainder
+   bind(done);
+ }
++
+ #endif
+ 
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 7fe02ce27ce..1563d4695fa 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -442,4 +442,24 @@ public:
+ 
+   void vector_signum_evex(int opcode, XMMRegister dst, XMMRegister src, XMMRegister zero, XMMRegister one,
+                           KRegister ktmp1, int vec_enc);
++
++  void vmovmask(BasicType elem_bt, XMMRegister dst, Address src, XMMRegister mask, int vec_enc);
++
++  void vmovmask(BasicType elem_bt, Address dst, XMMRegister src, XMMRegister mask, int vec_enc);
++
++  void vmovmask_subword(int elem_sz, Address dst, XMMRegister src,
++                        XMMRegister xtmp1, XMMRegister mask, Register rtmp1,
++                        Register rtmp2, Register rtmp3, Register rtmp4, Register rtmp5,
++                        int vec_enc);
++#ifdef _LP64
++  void vmovmask_subword(int elem_sz, XMMRegister dst, Address src,
++                        XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3,
++                        XMMRegister mask, Register rtmp1, Register rtmp2, Register rtmp3,
++                        Register rtmp4, Register rtmp5, Register rtmp6, int vec_enc);
++#endif
++
++  void vector_store_mask_avx(XMMRegister dst, XMMRegister src, int elem_sz,
++                             XMMRegister xtmp, int vector_len, int vec_enc);
++
++
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.cpp b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+index 35a41a803ae..9af76f3bcde 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+@@ -2576,6 +2576,16 @@ void MacroAssembler::vmovdqu(XMMRegister dst, AddressLiteral src, Register scrat
+   }
+ }
+ 
++void MacroAssembler::vmovdqu(XMMRegister dst, Address src, int vector_len) {
++  if (vector_len == AVX_512bit) {
++    evmovdquq(dst, src, AVX_512bit);
++  } else if (vector_len == AVX_256bit) {
++    vmovdqu(dst, src);
++  } else {
++    movdqu(dst, src);
++  }
++}
++
+ void MacroAssembler::vmovdqu(XMMRegister dst, AddressLiteral src, Register scratch_reg, int vector_len) {
+   if (vector_len == AVX_512bit) {
+     evmovdquq(dst, src, AVX_512bit, scratch_reg);
+@@ -3729,6 +3739,10 @@ void MacroAssembler::subptr(Register dst, Register src) {
+   LP64_ONLY(subq(dst, src)) NOT_LP64(subl(dst, src));
+ }
+ 
++void MacroAssembler::leaptr(Register dst, Address src) {
++  LP64_ONLY(leaq(dst, src)) NOT_LP64(leal(dst, src));
++}
++
+ // C++ bool manipulation
+ void MacroAssembler::testbool(Register dst) {
+   if(sizeof(bool) == 1)
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.hpp b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+index 081c28fc8a5..1ba9d86aa9c 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+@@ -831,6 +831,7 @@ public:
+   void lea(Register dst, AddressLiteral adr);
+   void lea(Address dst, AddressLiteral adr);
+   void lea(Register dst, Address adr) { Assembler::lea(dst, adr); }
++  void leaptr(Register dst, Address src);
+ 
+   void leal32(Register dst, Address src) { leal(dst, src); }
+ 
+@@ -1159,10 +1160,12 @@ public:
+   void vmovdqu(Address     dst, XMMRegister src);
+   void vmovdqu(XMMRegister dst, Address src);
+   void vmovdqu(XMMRegister dst, XMMRegister src);
++  void vmovdqu(XMMRegister dst, Address src, int vector_len);
+   void vmovdqu(XMMRegister dst, AddressLiteral src, Register scratch_reg = rscratch1);
+   void vmovdqu(XMMRegister dst, AddressLiteral src, Register scratch_reg, int vector_len);
+ 
+ 
++
+   // AVX512 Unaligned
+   void evmovdqu(BasicType type, KRegister kmask, Address dst, XMMRegister src,  bool merge, int vector_len);
+   void evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, Address src, bool merge, int vector_len);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index c79a64f6557..7827235b28d 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1589,8 +1589,6 @@ const bool Matcher::match_rule_supported(int opcode) {
+ 
+     case Op_VectorCmpMasked:
+     case Op_VectorMaskGen:
+-    case Op_LoadVectorMasked:
+-    case Op_StoreVectorMasked:
+       if (!is_LP64  || UseAVX < 3 || !VM_Version::supports_bmi2()) {
+         return false;
+       }
+@@ -1753,8 +1751,6 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+     case Op_ClearArray:
+     case Op_VectorMaskGen:
+     case Op_VectorCmpMasked:
+-    case Op_LoadVectorMasked:
+-    case Op_StoreVectorMasked:
+       if (!is_LP64 || !VM_Version::supports_avx512bw()) {
+         return false;
+       }
+@@ -1762,6 +1758,16 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+         return false;
+       }
+       break;
++    case Op_LoadVectorMasked:
++      if (!is_LP64 || (!VM_Version::supports_avx512bw() && (size_in_bits == 512 || UseAVX < 2))) {
++        return false;
++      }
++      break;
++    case Op_StoreVectorMasked:
++      if (!is_LP64 || (!VM_Version::supports_avx512bw() && (size_in_bits == 512 || UseAVX < 2))) {
++        return false;
++      }
++      break;
+     case Op_CMoveVD:
+       if (vlen != 4) {
+         return false; // implementation limitation (only vcmov4D_reg is present)
+@@ -8244,98 +8250,59 @@ instruct vstoreMask1B(vec dst, vec src, immI_1 size) %{
+   match(Set dst (VectorStoreMask src size));
+   format %{ "vector_store_mask $dst, $src \t! elem size is $size byte[s]" %}
+   ins_encode %{
+-    int vlen = Matcher::vector_length(this);
+-    if (vlen <= 16 && UseAVX <= 2) {
+-      assert(UseSSE >= 3, "required");
+-      __ pabsb($dst$$XMMRegister, $src$$XMMRegister);
+-    } else {
+-      assert(UseAVX > 0, "required");
+-      int src_vlen_enc = vector_length_encoding(this, $src);
+-      __ vpabsb($dst$$XMMRegister, $src$$XMMRegister, src_vlen_enc);
+-    }
++    int vector_len = Matcher::vector_length(this);
++    int src_vlen_enc = vector_length_encoding(this, $src);
++    __ vector_store_mask_avx($dst$$XMMRegister, $src$$XMMRegister, 1, xnoreg, vector_len, src_vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vstoreMask2B(vec dst, vec src, vec xtmp, immI_2 size) %{
++instruct vstoreMask2B(vec dst, vec src, immI_2 size, vec xtmp) %{
+   predicate(Matcher::vector_length(n) <= 16 && n->in(1)->bottom_type()->isa_vectmask() == NULL);
+   match(Set dst (VectorStoreMask src size));
+   effect(TEMP_DEF dst, TEMP xtmp);
+   format %{ "vector_store_mask $dst, $src \t! elem size is $size byte[s]" %}
+   ins_encode %{
+-    int vlen_enc = Assembler::AVX_128bit;
+-    int vlen = Matcher::vector_length(this);
+-    if (vlen <= 8) {
+-      assert(UseSSE >= 3, "required");
+-      __ pxor($xtmp$$XMMRegister, $xtmp$$XMMRegister);
+-      __ pabsw($dst$$XMMRegister, $src$$XMMRegister);
+-      __ packuswb($dst$$XMMRegister, $xtmp$$XMMRegister);
+-    } else {
+-      assert(UseAVX > 0, "required");
+-      __ vextracti128($dst$$XMMRegister, $src$$XMMRegister, 0x1);
+-      __ vpacksswb($dst$$XMMRegister, $src$$XMMRegister, $dst$$XMMRegister, vlen_enc);
+-      __ vpabsb($dst$$XMMRegister, $dst$$XMMRegister, vlen_enc);
+-    }
++    int vec_enc = Assembler::AVX_128bit;
++    int vector_len = Matcher::vector_length(this);
++    __ vector_store_mask_avx($dst$$XMMRegister, $src$$XMMRegister, 2, $xtmp$$XMMRegister, vector_len, vec_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vstoreMask4B(vec dst, vec src, vec xtmp, immI_4 size) %{
++instruct vstoreMask4B(vec dst, vec src, immI_4 size, vec xtmp) %{
+   predicate(UseAVX <= 2 && Matcher::vector_length(n) <= 8 && n->in(1)->bottom_type()->isa_vectmask() == NULL);
+   match(Set dst (VectorStoreMask src size));
+   format %{ "vector_store_mask $dst, $src \t! elem size is $size byte[s]" %}
+   effect(TEMP_DEF dst, TEMP xtmp);
+   ins_encode %{
+-    int vlen_enc = Assembler::AVX_128bit;
+-    int vlen = Matcher::vector_length(this);
+-    if (vlen <= 4) {
+-      assert(UseSSE >= 3, "required");
+-      __ pxor($xtmp$$XMMRegister, $xtmp$$XMMRegister);
+-      __ pabsd($dst$$XMMRegister, $src$$XMMRegister);
+-      __ packusdw($dst$$XMMRegister, $xtmp$$XMMRegister);
+-      __ packuswb($dst$$XMMRegister, $xtmp$$XMMRegister);
+-    } else {
+-      assert(UseAVX > 0, "required");
+-      __ vpxor($xtmp$$XMMRegister, $xtmp$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
+-      __ vextracti128($dst$$XMMRegister, $src$$XMMRegister, 0x1);
+-      __ vpackssdw($dst$$XMMRegister, $src$$XMMRegister, $dst$$XMMRegister, vlen_enc);
+-      __ vpacksswb($dst$$XMMRegister, $dst$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
+-      __ vpabsb($dst$$XMMRegister, $dst$$XMMRegister, vlen_enc);
+-    }
++    int vec_enc = Assembler::AVX_128bit;
++    int vector_len = Matcher::vector_length(this);
++    __ vector_store_mask_avx($dst$$XMMRegister, $src$$XMMRegister, 4, $xtmp$$XMMRegister, vector_len, vec_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct storeMask8B(vec dst, vec src, vec xtmp, immI_8 size) %{
++instruct storeMask8B(vec dst, vec src, immI_8 size, vec xtmp) %{
+   predicate(UseAVX <= 2 && Matcher::vector_length(n) == 2);
+   match(Set dst (VectorStoreMask src size));
+   effect(TEMP_DEF dst, TEMP xtmp);
+   format %{ "vector_store_mask $dst, $src \t! elem size is $size byte[s]" %}
+   ins_encode %{
+     assert(UseSSE >= 3, "required");
+-    __ pxor($xtmp$$XMMRegister, $xtmp$$XMMRegister);
+-    __ pshufd($dst$$XMMRegister, $src$$XMMRegister, 0x8);
+-    __ pabsd($dst$$XMMRegister, $dst$$XMMRegister);
+-    __ packusdw($dst$$XMMRegister, $xtmp$$XMMRegister);
+-    __ packuswb($dst$$XMMRegister, $xtmp$$XMMRegister);
++    __ vector_store_mask_avx($dst$$XMMRegister, $src$$XMMRegister, 8, $xtmp$$XMMRegister, 2, Assembler::AVX_128bit);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct storeMask8B_avx(vec dst, vec src, immI_8 size, vec vtmp) %{
++instruct storeMask8B_avx(vec dst, vec src, immI_8 size, vec xtmp) %{
+   predicate(UseAVX <= 2 && Matcher::vector_length(n) == 4);
+   match(Set dst (VectorStoreMask src size));
+-  format %{ "vector_store_mask $dst, $src \t! elem size is $size byte[s], using $vtmp as TEMP" %}
+-  effect(TEMP_DEF dst, TEMP vtmp);
++  format %{ "vector_store_mask $dst, $src \t! elem size is $size byte[s], using $xtmp as TEMP" %}
++  effect(TEMP_DEF dst, TEMP xtmp);
+   ins_encode %{
+-    int vlen_enc = Assembler::AVX_128bit;
+-    __ vpshufps($dst$$XMMRegister, $src$$XMMRegister, $src$$XMMRegister, 0x88, Assembler::AVX_256bit);
+-    __ vextracti128($vtmp$$XMMRegister, $dst$$XMMRegister, 0x1);
+-    __ vblendps($dst$$XMMRegister, $dst$$XMMRegister, $vtmp$$XMMRegister, 0xC, vlen_enc);
+-    __ vpxor($vtmp$$XMMRegister, $vtmp$$XMMRegister, $vtmp$$XMMRegister, vlen_enc);
+-    __ vpackssdw($dst$$XMMRegister, $dst$$XMMRegister, $vtmp$$XMMRegister, vlen_enc);
+-    __ vpacksswb($dst$$XMMRegister, $dst$$XMMRegister, $vtmp$$XMMRegister, vlen_enc);
+-    __ vpabsb($dst$$XMMRegister, $dst$$XMMRegister, vlen_enc);
++    int vec_enc = Assembler::AVX_128bit;
++    __ vector_store_mask_avx($dst$$XMMRegister, $src$$XMMRegister, 8, $xtmp$$XMMRegister, 4, vec_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -9106,8 +9073,63 @@ instruct vmask_cmp_node(rRegI dst, vec src1, vec src2, kReg mask, kReg ktmp1, kR
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct vmasked_load_avx_subword_in_range(vec dst, memory mem, vec mask, vec xtmp1) %{
++  predicate(!n->in(3)->bottom_type()->isa_vectmask() &&
++            n->as_LoadVectorMasked()->is_in_range_mem_access() &&
++            is_subword_type(Matcher::vector_element_basic_type(n->in(3))));
++  match(Set dst (LoadVectorMasked mem mask));
++  effect(TEMP dst, TEMP xtmp1);
++  format %{ "vector_masked_load $dst, $mem, $mask \t! using $xtmp1 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vpxor($xtmp1$$XMMRegister, $xtmp1$$XMMRegister, $xtmp1$$XMMRegister, vlen_enc);
++    __ vmovdqu($dst$$XMMRegister, $mem$$Address, vlen_enc);
++    __ vpblendvb($dst$$XMMRegister, $xtmp1$$XMMRegister, $dst$$XMMRegister, $mask$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++#ifdef _LP64
++instruct vmasked_load_avx_subword_out_of_range(vec dst, memory mem, vec mask, vec xtmp1, vec xtmp2, vec xtmp3,
++                                               vec xtmp4, rRegL rtmp1, rcx_RegL rtmp2, rRegL rtmp3, rRegL rtmp4,
++                                               rax_RegL rtmp5, rRegL rtmp6) %{
++  predicate(!n->in(3)->bottom_type()->isa_vectmask() &&
++            !n->as_LoadVectorMasked()->is_in_range_mem_access() &&
++            is_subword_type(Matcher::vector_element_basic_type(n->in(3))));
++  match(Set dst (LoadVectorMasked mem mask));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP rtmp1, TEMP rtmp2, TEMP rtmp3, TEMP rtmp4, TEMP rtmp5, TEMP rtmp6);
++  format %{ "vector_masked_load $dst, $mem, $mask \t! using $xtmp1, $xtmp2, $xtmp3, $xtmp4, $rtmp1, $rtmp2, $rtmp3, $rtmp4, $rtmp5 and $rtmp6 as TEMP" %}
++  ins_encode %{
++    BasicType elmType = this->bottom_type()->is_vect()->element_basic_type();
++    int vector_len = Matcher::vector_length(this);
++    int vlen_enc = vector_length_encoding(this);
++    int elem_sz = type2aelembytes(elmType);
++    __ vector_store_mask_avx($xtmp4$$XMMRegister, $mask$$XMMRegister, elem_sz, $xtmp1$$XMMRegister, vector_len, vlen_enc);
++    __ vpxor($xtmp3$$XMMRegister, $xtmp3$$XMMRegister, $xtmp3$$XMMRegister, vlen_enc);
++    __ vpsubb($xtmp4$$XMMRegister, $xtmp3$$XMMRegister, $xtmp4$$XMMRegister, vlen_enc);
++    __ vmovmask_subword(elem_sz, $dst$$XMMRegister, $mem$$Address, $xtmp1$$XMMRegister, $xtmp2$$XMMRegister,
++                        $xtmp3$$XMMRegister, $xtmp4$$XMMRegister, $rtmp1$$Register, $rtmp2$$Register, $rtmp3$$Register,
++                        $rtmp4$$Register, $rtmp5$$Register, $rtmp6$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++#endif
++
++instruct vmasked_load_avx_non_subword(vec dst, memory mem, vec mask) %{
++  predicate(!n->in(3)->bottom_type()->isa_vectmask() &&
++            !is_subword_type(Matcher::vector_element_basic_type(n->in(3))));
++  match(Set dst (LoadVectorMasked mem mask));
++  format %{ "vector_masked_load $dst, $mem, $mask \t! vector masked copy" %}
++  ins_encode %{
++    BasicType elmType = this->bottom_type()->is_vect()->element_basic_type();
++    int vlen_enc = vector_length_encoding(this);
++    __ vmovmask(elmType, $dst$$XMMRegister, $mem$$Address, $mask$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
+ 
+-instruct vmasked_load64(vec dst, memory mem, kReg mask) %{
++instruct vmasked_load_evex(vec dst, memory mem, kReg mask) %{
++  predicate(n->in(3)->bottom_type()->isa_vectmask());
+   match(Set dst (LoadVectorMasked mem mask));
+   format %{ "vector_masked_load $dst, $mem, $mask \t! vector masked copy" %}
+   ins_encode %{
+@@ -9139,14 +9161,52 @@ instruct vmask_gen_imm(kReg dst, immL len, rRegL temp) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vmasked_store64(memory mem, vec src, kReg mask) %{
++instruct vmasked_store_avx_subword(memory mem, vec src, vec mask, vec xtmp1, vec xtmp2, rRegL rtmp1,
++                                   rRegL rtmp2, rRegL rtmp3, rRegL rtmp4, rRegL rtmp5) %{
++  predicate(!n->in(3)->in(2)->bottom_type()->isa_vectmask() &&
++            is_subword_type(Matcher::vector_element_basic_type(n->in(3)->in(1))));
++  match(Set mem (StoreVectorMasked mem (Binary src mask)));
++  effect(TEMP xtmp1, TEMP xtmp2, TEMP rtmp1, TEMP rtmp2, TEMP rtmp3, TEMP rtmp4, TEMP rtmp5);
++  format %{ "vector_masked_store $mem, $src, $mask \t! using $xtmp1, $xtmp2, $rtmp1, $rtmp2, $rtmp3, $rtmp4 and $rtmp5 as TEMP" %}
++  ins_encode %{
++    const MachNode* src_node = static_cast<const MachNode*>(this->in(this->operand_index($src)));
++    int vlen_enc = vector_length_encoding(src_node);
++    int vector_len = Matcher::vector_length(src_node);
++    BasicType elmType =  src_node->bottom_type()->is_vect()->element_basic_type();
++    int elem_sz = type2aelembytes(elmType);
++    __ vector_store_mask_avx($xtmp2$$XMMRegister, $mask$$XMMRegister, elem_sz, $xtmp1$$XMMRegister, vector_len, vlen_enc);
++    __ vpxor($xtmp1$$XMMRegister, $xtmp1$$XMMRegister, $xtmp1$$XMMRegister, vlen_enc);
++    __ vpsubb($xtmp2$$XMMRegister, $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, vlen_enc);
++    __ vmovmask_subword(elem_sz, $mem$$Address, $src$$XMMRegister, $xtmp1$$XMMRegister,
++                        $xtmp2$$XMMRegister, $rtmp1$$Register, $rtmp2$$Register,
++                        $rtmp3$$Register, $rtmp4$$Register, $rtmp5$$Register,vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vmasked_store_avx_non_subword(memory mem, vec src, vec mask) %{
++  predicate(!n->in(3)->in(2)->bottom_type()->isa_vectmask() &&
++            !is_subword_type(Matcher::vector_element_basic_type(n->in(3)->in(1))));
++  match(Set mem (StoreVectorMasked mem (Binary src mask)));
++  format %{ "vector_masked_store $mem, $src, $mask \t! vector masked store" %}
++  ins_encode %{
++    const MachNode* src_node = static_cast<const MachNode*>(this->in(this->operand_index($src)));
++    int vlen_enc = vector_length_encoding(src_node);
++    BasicType elmType =  src_node->bottom_type()->is_vect()->element_basic_type();
++    __ vmovmask(elmType, $mem$$Address, $src$$XMMRegister, $mask$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vmasked_store_evex(memory mem, vec src, kReg mask) %{
++  predicate(n->in(3)->in(2)->bottom_type()->isa_vectmask());
+   match(Set mem (StoreVectorMasked mem (Binary src mask)));
+   format %{ "vector_masked_store $mem, $src, $mask \t! vector masked store" %}
+   ins_encode %{
+     const MachNode* src_node = static_cast<const MachNode*>(this->in(this->operand_index($src)));
+     BasicType elmType =  src_node->bottom_type()->is_vect()->element_basic_type();
+-    int vector_len = vector_length_encoding(src_node);
+-    __ evmovdqu(elmType, $mask$$KRegister, $mem$$Address, $src$$XMMRegister, true, vector_len);
++    int vlen_enc = vector_length_encoding(src_node);
++    __ evmovdqu(elmType, $mask$$KRegister, $mem$$Address, $src$$XMMRegister, true, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index de9eb642f19..f787a061dc5 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -943,8 +943,10 @@ public:
+   DEFINE_CLASS_QUERY(ExpandV)
+   DEFINE_CLASS_QUERY(CompressM)
+   DEFINE_CLASS_QUERY(LoadVector)
++  DEFINE_CLASS_QUERY(LoadVectorMasked)
+   DEFINE_CLASS_QUERY(LoadVectorGather)
+   DEFINE_CLASS_QUERY(StoreVector)
++  DEFINE_CLASS_QUERY(StoreVectorMasked)
+   DEFINE_CLASS_QUERY(StoreVectorScatter)
+   DEFINE_CLASS_QUERY(ShiftV)
+   DEFINE_CLASS_QUERY(Unlock)
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index c03b6aea2bc..069ca31b2da 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -305,6 +305,10 @@ bool LibraryCallKit::arch_supports_vector(int sopc, int num_elem, BasicType type
+       }
+     }
+ 
++    if (sopc == Op_StoreVectorMasked || sopc == Op_LoadVectorMasked) {
++      return true;
++    }
++
+     if (!is_supported) {
+     #ifndef PRODUCT
+       if (C->print_intrinsics()) {
+@@ -1151,16 +1155,19 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+   const TypeInstPtr* mask_klass   = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
++  const TypeInt* offset_in_range = gvn().type(argument(8))->isa_int();
+ 
+   if (vector_klass == NULL || mask_klass == NULL || elem_klass == NULL || vlen == NULL ||
+-      vector_klass->const_oop() == NULL || mask_klass->const_oop() == NULL ||
+-      elem_klass->const_oop() == NULL || !vlen->is_con()) {
++      (!is_store && (offset_in_range == NULL || !offset_in_range->is_con())) ||
++       vector_klass->const_oop() == NULL || mask_klass->const_oop() == NULL ||
++       elem_klass->const_oop() == NULL || !vlen->is_con()) {
+     if (C->print_intrinsics()) {
+-      tty->print_cr("  ** missing constant: vclass=%s mclass=%s etype=%s vlen=%s",
++      tty->print_cr("  ** missing constant: vclass=%s mclass=%s etype=%s vlen=%s, offset_in_range=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(2)->Opcode()],
+-                    NodeClassNames[argument(3)->Opcode()]);
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(8)->Opcode()]);
+     }
+     return false; // not enough info for intrinsification
+   }
+@@ -1229,16 +1236,6 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+       needs_predicate = true;
+     } else {
+       // Masked vector load with IOOBE always uses the predicated load.
+-      const TypeInt* offset_in_range = gvn().type(argument(8))->isa_int();
+-      if (!offset_in_range->is_con()) {
+-        if (C->print_intrinsics()) {
+-          tty->print_cr("  ** missing constant: offsetInRange=%s",
+-                        NodeClassNames[argument(8)->Opcode()]);
+-        }
+-        set_map(old_map);
+-        set_sp(old_sp);
+-        return false;
+-      }
+       needs_predicate = (offset_in_range->get_con() == 0);
+     }
+ 
+@@ -1356,7 +1353,7 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+     if (supports_predicate) {
+       // Generate masked load vector node if predicate feature is supported.
+       const TypeVect* vt = TypeVect::make(mem_elem_bt, mem_num_elem);
+-      vload = gvn().transform(new LoadVectorMaskedNode(control(), memory(addr), addr, addr_type, vt, mask));
++      vload = gvn().transform(new LoadVectorMaskedNode(control(), memory(addr), addr, addr_type, vt, mask, offset_in_range->get_con() == 1));
+     } else {
+       // Use the vector blend to implement the masked load vector. The biased elements are zeros.
+       Node* zero = gvn().transform(gvn().zerocon(mem_elem_bt));
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 15e50e05481..bb0f1d7e3ff 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -904,8 +904,7 @@ class StoreVectorMaskedNode : public StoreVectorNode {
+  public:
+   StoreVectorMaskedNode(Node* c, Node* mem, Node* dst, Node* src, const TypePtr* at, Node* mask)
+    : StoreVectorNode(c, mem, dst, at, src) {
+-    assert(mask->bottom_type()->isa_vectmask(), "sanity");
+-    init_class_id(Class_StoreVector);
++    init_class_id(Class_StoreVectorMasked);
+     set_mismatched_access();
+     add_req(mask);
+   }
+@@ -921,20 +920,22 @@ class StoreVectorMaskedNode : public StoreVectorNode {
+ //------------------------------LoadVectorMaskedNode--------------------------------
+ // Load Vector from memory under the influence of a predicate register(mask).
+ class LoadVectorMaskedNode : public LoadVectorNode {
++   bool _in_range_mem_access;
+  public:
+-  LoadVectorMaskedNode(Node* c, Node* mem, Node* src, const TypePtr* at, const TypeVect* vt, Node* mask)
+-   : LoadVectorNode(c, mem, src, at, vt) {
+-    assert(mask->bottom_type()->isa_vectmask(), "sanity");
+-    init_class_id(Class_LoadVector);
++  LoadVectorMaskedNode(Node* c, Node* mem, Node* src, const TypePtr* at, const TypeVect* vt, Node* mask, bool in_range = true)
++   : LoadVectorNode(c, mem, src, at, vt), _in_range_mem_access(in_range) {
++    init_class_id(Class_LoadVectorMasked);
+     set_mismatched_access();
+     add_req(mask);
+   }
+ 
++  virtual  uint  size_of() const { return sizeof(LoadVectorMaskedNode); }
+   virtual int Opcode() const;
+-
+   virtual uint match_edge(uint idx) const {
+     return idx > 1;
+   }
++
++  bool is_in_range_mem_access() { return _in_range_mem_access; }
+   Node* Ideal(PhaseGVN* phase, bool can_reshape);
+ };
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index fe36780b507..71246b1ba48 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -3920,6 +3920,7 @@ public abstract class ByteVector extends AbstractVector<Byte> {
+ 
+     // End of low-level memory operations.
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(int offset,
+                                 ByteSpecies vsp,
+@@ -3930,6 +3931,7 @@ public abstract class ByteVector extends AbstractVector<Byte> {
+             .checkIndexByLane(offset, limit, vsp.iota(), scale);
+     }
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(long offset,
+                                 ByteSpecies vsp,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index 083d59e9e1b..4d33760a034 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -3531,6 +3531,7 @@ public abstract class DoubleVector extends AbstractVector<Double> {
+ 
+     // End of low-level memory operations.
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(int offset,
+                                 DoubleSpecies vsp,
+@@ -3541,6 +3542,7 @@ public abstract class DoubleVector extends AbstractVector<Double> {
+             .checkIndexByLane(offset, limit, vsp.iota(), scale);
+     }
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(long offset,
+                                 DoubleSpecies vsp,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index 1b5bb4d55d0..37201f50bf8 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -3481,6 +3481,7 @@ public abstract class FloatVector extends AbstractVector<Float> {
+ 
+     // End of low-level memory operations.
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(int offset,
+                                 FloatSpecies vsp,
+@@ -3491,6 +3492,7 @@ public abstract class FloatVector extends AbstractVector<Float> {
+             .checkIndexByLane(offset, limit, vsp.iota(), scale);
+     }
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(long offset,
+                                 FloatSpecies vsp,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index a707ea9d232..38781e8e833 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -3638,6 +3638,7 @@ public abstract class IntVector extends AbstractVector<Integer> {
+ 
+     // End of low-level memory operations.
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(int offset,
+                                 IntSpecies vsp,
+@@ -3648,6 +3649,7 @@ public abstract class IntVector extends AbstractVector<Integer> {
+             .checkIndexByLane(offset, limit, vsp.iota(), scale);
+     }
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(long offset,
+                                 IntSpecies vsp,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index 8caba363dec..1695fb06fef 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -3573,6 +3573,7 @@ public abstract class LongVector extends AbstractVector<Long> {
+ 
+     // End of low-level memory operations.
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(int offset,
+                                 LongSpecies vsp,
+@@ -3583,6 +3584,7 @@ public abstract class LongVector extends AbstractVector<Long> {
+             .checkIndexByLane(offset, limit, vsp.iota(), scale);
+     }
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(long offset,
+                                 LongSpecies vsp,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index 1a0b4d5b7d6..98c834e13b9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -3906,6 +3906,7 @@ public abstract class ShortVector extends AbstractVector<Short> {
+ 
+     // End of low-level memory operations.
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(int offset,
+                                 ShortSpecies vsp,
+@@ -3916,6 +3917,7 @@ public abstract class ShortVector extends AbstractVector<Short> {
+             .checkIndexByLane(offset, limit, vsp.iota(), scale);
+     }
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(long offset,
+                                 ShortSpecies vsp,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index 4d634eb756d..13cafef0018 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -5133,6 +5133,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ 
+     // End of low-level memory operations.
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(int offset,
+                                 $Type$Species vsp,
+@@ -5143,6 +5144,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+             .checkIndexByLane(offset, limit, vsp.iota(), scale);
+     }
+ 
++    @ForceInline
+     private static
+     void checkMaskFromIndexSize(long offset,
+                                 $Type$Species vsp,

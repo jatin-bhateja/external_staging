@@ -1,0 +1,42 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index b6c86260c51..7027ab9ff5b 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -12928,9 +12928,9 @@ int Assembler::prefix_and_encode(int dst_enc, bool dst_is_byte, int src_enc, boo
+ int Assembler::prefix_and_encode_rex2(int dst_enc, int src_enc, int init_bits) {
+   int bits = init_bits;
+   bits |= get_reg_prefix_bits(dst_enc);
+-  bits |= get_base_prefix_bits(dst_enc);
++  bits |= get_base_prefix_bits(src_enc);
+   dst_enc &= 0x7;
+-  src_enc &= 0x7;  
++  src_enc &= 0x7;
+   prefix16(REX2 | bits);
+   return dst_enc << 3 | src_enc;
+ }
+@@ -13499,7 +13499,12 @@ void Assembler::divq(Register src) {
+ 
+ void Assembler::imulq(Register dst, Register src) {
+   int encode = prefixq_and_encode(dst->encoding(), src->encoding());
+-  emit_int24(0x0F, (unsigned char)0xAF, (0xC0 | encode));
++  bool needs_rex2 = (dst->encoding() >= 16 || src->encoding() >= 16);
++  if (needs_rex2) {
++    emit_int16((unsigned char)0xAF, (0xC0 | encode));
++  } else {
++    emit_int24(0x0F, (unsigned char)0xAF, (0xC0 | encode));
++  }
+ }
+ 
+ void Assembler::imulq(Register src) {
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 898fe1783d7..8251c5d2004 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -710,7 +710,6 @@ class Assembler : public AbstractAssembler  {
+   // in a 32bit vm. This is somewhat unfortunate but keeps the ifdef noise down.
+ 
+ private:
+-
+   bool _legacy_mode_bw;
+   bool _legacy_mode_dq;
+   bool _legacy_mode_vl;

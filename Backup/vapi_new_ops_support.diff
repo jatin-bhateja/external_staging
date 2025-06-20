@@ -1,0 +1,1359 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 523280918e0..5709f0942f0 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -7645,6 +7645,145 @@ void Assembler::vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector
+   emit_operand(dst, src, 0);
+ }
+ 
++void Assembler::vpaddsb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds, src)) || VM_Version::supports_avx512bw()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xEC, (0xC0 | encode));
++}
++
++void Assembler::vpaddsb(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds)) || VM_Version::supports_avx512bw()), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xEC);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::vpaddsw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds, src)) || VM_Version::supports_avx512bw()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xED, (0xC0 | encode));
++}
++
++void Assembler::vpaddsw(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds)) || VM_Version::supports_avx512bw()), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xED);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::vpaddusb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds, src)) || VM_Version::supports_avx512bw()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xDC, (0xC0 | encode));
++}
++
++void Assembler::vpaddusb(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds)) || VM_Version::supports_avx512bw()), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xDC);
++  emit_operand(dst, src, 0);
++}
++
++
++void Assembler::vpaddusw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds, src)) || VM_Version::supports_avx512bw()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xDD, (0xC0 | encode));
++}
++
++void Assembler::vpaddusw(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds)) || VM_Version::supports_avx512bw()), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xDD);
++  emit_operand(dst, src, 0);
++}
++
++
++void Assembler::vpsubsb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds, src)) || VM_Version::supports_avx512bw()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xE8, (0xC0 | encode));
++}
++
++void Assembler::vpsubsb(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds)) || VM_Version::supports_avx512bw()), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xE8);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::vpsubsw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds, src)) || VM_Version::supports_avx512bw()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xE9, (0xC0 | encode));
++}
++
++void Assembler::vpsubsw(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds)) || VM_Version::supports_avx512bw()), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xE9);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::vpsubusb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds, src)) || VM_Version::supports_avx512bw()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD8, (0xC0 | encode));
++}
++
++void Assembler::vpsubusb(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds)) || VM_Version::supports_avx512bw()), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xD8);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::vpsubusw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds, src)) || VM_Version::supports_avx512bw()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD9, (0xC0 | encode));
++}
++
++void Assembler::vpsubusw(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(UseAVX > 0 && ((vector_len < Assembler::AVX_512bit && !needs_evex(dst, nds)) || VM_Version::supports_avx512bw()), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xD9);
++  emit_operand(dst, src, 0);
++}
++
++
+ void Assembler::psubb(XMMRegister dst, XMMRegister src) {
+   NOT_LP64(assert(VM_Version::supports_sse2(), ""));
+   InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -7674,13 +7813,6 @@ void Assembler::psubq(XMMRegister dst, XMMRegister src) {
+   emit_int8((0xC0 | encode));
+ }
+ 
+-void Assembler::vpsubusb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 0, "requires some form of AVX");
+-  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
+-  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
+-  emit_int16((unsigned char)0xD8, (0xC0 | encode));
+-}
+-
+ void Assembler::vpsubb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(UseAVX > 0, "requires some form of AVX");
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -10027,6 +10159,223 @@ void Assembler::evsubpd(XMMRegister dst, KRegister mask, XMMRegister nds, Addres
+   emit_operand(dst, src, 0);
+ }
+ 
++void Assembler::evpaddsb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xEC, (0xC0 | encode));
++}
++
++void Assembler::evpaddsb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_NObit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xEC);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evpaddsw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xED, (0xC0 | encode));
++}
++
++void Assembler::evpaddsw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_NObit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xED);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evpaddusb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xDC, (0xC0 | encode));
++}
++
++void Assembler::evpaddusb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_NObit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xDC);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evpaddusw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xDD, (0xC0 | encode));
++}
++
++void Assembler::evpaddusw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_NObit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xDD);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evpsubsb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xE8, (0xC0 | encode));
++}
++
++void Assembler::evpsubsb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_NObit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xE8);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evpsubsw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xE9, (0xC0 | encode));
++}
++
++void Assembler::evpsubsw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_NObit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xE9);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evpsubusb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD8, (0xC0 | encode));
++}
++
++void Assembler::evpsubusb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_NObit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xD8);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evpsubusw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD9, (0xC0 | encode));
++}
++
++
++void Assembler::evpsubusw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_NObit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xD9);
++  emit_operand(dst, src, 0);
++}
++
+ void Assembler::evpmullw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
+   assert(VM_Version::supports_avx512bw() && (vector_len == AVX_512bit || VM_Version::supports_avx512vl()), "");
+   InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index c8b211694b2..b703e57dfb0 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -2508,6 +2508,40 @@ class Assembler : public AbstractAssembler  {
+   void vpaddd(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+ 
++  // Saturating packed insturctions.
++  void vpaddsb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void vpaddsw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void vpaddusb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void vpaddusw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evpaddsb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpaddsw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpaddusb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpaddusw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void vpsubsb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void vpsubsw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void vpsubusb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void vpsubusw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evpsubsb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsubsw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsubusb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsubusw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void vpaddsb(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void vpaddsw(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void vpaddusb(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void vpaddusw(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evpaddsb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpaddsw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpaddusb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpaddusw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void vpsubsb(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void vpsubsw(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void vpsubusb(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void vpsubusw(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evpsubsb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpsubsw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpsubusb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpsubusw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++
+   // Leaf level assembler routines for masked operations.
+   void evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
+   void evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
+@@ -2651,7 +2685,6 @@ class Assembler : public AbstractAssembler  {
+   void psubw(XMMRegister dst, XMMRegister src);
+   void psubd(XMMRegister dst, XMMRegister src);
+   void psubq(XMMRegister dst, XMMRegister src);
+-  void vpsubusb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+   void vpsubb(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+   void vpsubw(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+   void vpsubd(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 1847d2d6ecd..734ed59344f 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -4525,7 +4525,126 @@ void C2_MacroAssembler::evmasked_op(int ideal_opc, BasicType eType, KRegister ma
+     case Op_RotateLeftV:
+       evrold(eType, dst, mask, src1, imm8, merge, vlen_enc); break;
+     default:
+-      fatal("Unsupported masked operation"); break;
++      fatal("Unsupported operation  %s", NodeClassNames[ideal_opc]);
++      break;
++  }
++}
++
++void C2_MacroAssembler::evmasked_saturating_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1,
++                                               XMMRegister src2, bool is_unsigned, bool merge, int vlen_enc) {
++  if (is_unsigned) {
++    evmasked_saturating_unsigned_op(ideal_opc, mask, dst, src1, src2, merge, vlen_enc);
++  } else {
++    evmasked_saturating_signed_op(ideal_opc, mask, dst, src1, src2, merge, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::evmasked_saturating_signed_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1,
++                                                     XMMRegister src2, bool merge, int vlen_enc) {
++  switch (ideal_opc) {
++    case Op_SaturatingAddVB:
++      evpaddsb(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingAddVS:
++      evpaddsw(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingSubVB:
++      evpsubsb(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingSubVS:
++      evpsubsw(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++    default:
++      fatal("Unsupported operation  %s", NodeClassNames[ideal_opc]);
++      break;
++  }
++}
++
++void C2_MacroAssembler::evmasked_saturating_unsigned_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1,
++                                                        XMMRegister src2, bool merge, int vlen_enc) {
++  switch (ideal_opc) {
++    case Op_SaturatingAddVB:
++      evpaddusb(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingAddVS:
++      evpaddusw(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingSubVB:
++      evpsubusb(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingSubVS:
++      evpsubusw(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++    default:
++      fatal("Unsupported operation  %s", NodeClassNames[ideal_opc]);
++      break;
++  }
++}
++
++void C2_MacroAssembler::evmasked_saturating_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1,
++                                               Address src2, bool is_unsigned, bool merge, int vlen_enc) {
++  if (is_unsigned) {
++    evmasked_saturating_unsigned_op(ideal_opc, mask, dst, src1, src2, merge, vlen_enc);
++  } else {
++    evmasked_saturating_signed_op(ideal_opc, mask, dst, src1, src2, merge, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::evmasked_saturating_signed_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1,
++                                                      Address src2, bool merge, int vlen_enc) {
++  switch (ideal_opc) {
++    case Op_SaturatingAddVB:
++      evpaddsb(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingAddVS:
++      evpaddsw(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingSubVB:
++      evpsubsb(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingSubVS:
++      evpsubsw(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++    default:
++      fatal("Unsupported operation  %s", NodeClassNames[ideal_opc]);
++      break;
++  }
++}
++
++void C2_MacroAssembler::evmasked_saturating_unsigned_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1,
++                                                        Address src2, bool merge, int vlen_enc) {
++  switch (ideal_opc) {
++    case Op_SaturatingAddVB:
++      evpaddusb(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingAddVS:
++      evpaddusw(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingSubVB:
++      evpsubusb(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingSubVS:
++      evpsubusw(dst, mask, src1, src2, merge, vlen_enc);
++      break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++    default:
++      fatal("Unsupported operation  %s", NodeClassNames[ideal_opc]);
++      break;
+   }
+ }
+ 
+@@ -4626,7 +4745,8 @@ void C2_MacroAssembler::evmasked_op(int ideal_opc, BasicType eType, KRegister ma
+     case Op_AndV:
+       evand(eType, dst, mask, src1, src2, merge, vlen_enc); break;
+     default:
+-      fatal("Unsupported masked operation"); break;
++      fatal("Unsupported operation  %s", NodeClassNames[ideal_opc]);
++      break;
+   }
+ }
+ 
+@@ -4690,7 +4810,8 @@ void C2_MacroAssembler::evmasked_op(int ideal_opc, BasicType eType, KRegister ma
+     case Op_AndV:
+       evand(eType, dst, mask, src1, src2, merge, vlen_enc); break;
+     default:
+-      fatal("Unsupported masked operation"); break;
++      fatal("Unsupported operation  %s", NodeClassNames[ideal_opc]);
++      break;
+   }
+ }
+ 
+@@ -6378,8 +6499,8 @@ void C2_MacroAssembler::vector_rearrange_int_float(BasicType bt, XMMRegister dst
+   }
+ }
+ 
+-void C2_MacroAssembler::select_from_two_vector_evex(BasicType elem_bt, int vlen_enc, XMMRegister dst,
+-                                                    XMMRegister src1, XMMRegister src2) {
++void C2_MacroAssembler::select_from_two_vector_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src1,
++                                                    XMMRegister src2, int vlen_enc) {
+   switch(elem_bt) {
+     case T_BYTE:
+       evpermi2b(dst, src1, src2, vlen_enc);
+@@ -6406,3 +6527,115 @@ void C2_MacroAssembler::select_from_two_vector_evex(BasicType elem_bt, int vlen_
+       break;
+   }
+ }
++
++void C2_MacroAssembler::saturating_signed_vector_op(int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc) {
++  switch(opc) {
++    case Op_SaturatingAddVB:
++      vpaddsb(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingAddVS:
++      vpaddsw(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingSubVB:
++      vpsubsb(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingSubVS:
++      vpsubsw(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++    default:
++      fatal("Unsupported operation  %s", NodeClassNames[opc]);
++      break;
++  }
++}
++
++void C2_MacroAssembler::saturating_unsigned_vector_op(int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc) {
++  switch(opc) {
++    case Op_SaturatingAddVB:
++      vpaddusb(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingAddVS:
++      vpaddusw(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingSubVB:
++      vpsubusb(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingSubVS:
++      vpsubusw(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++    default:
++      fatal("Unsupported operation  %s", NodeClassNames[opc]);
++      break;
++  }
++}
++
++void C2_MacroAssembler::saturating_vector_op(int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2, bool is_unsigned, int vlen_enc) {
++  if (is_unsigned) {
++    saturating_unsigned_vector_op(opc, dst, src1, src2, vlen_enc);
++  } else {
++    saturating_signed_vector_op(opc, dst, src1, src2, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::saturating_signed_vector_op(int opc, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc) {
++  switch(opc) {
++    case Op_SaturatingAddVB:
++      vpaddsb(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingAddVS:
++      vpaddsw(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingSubVB:
++      vpsubsb(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingSubVS:
++      vpsubsw(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++    default:
++      fatal("Unsupported operation  %s", NodeClassNames[opc]);
++      break;
++  }
++}
++
++void C2_MacroAssembler::saturating_unsigned_vector_op(int opc, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc) {
++  switch(opc) {
++    case Op_SaturatingAddVB:
++      vpaddusb(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingAddVS:
++      vpaddusw(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingSubVB:
++      vpsubusb(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingSubVS:
++      vpsubusw(dst, src1, src2, vlen_enc);
++      break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++    default:
++      fatal("Unsupported operation  %s", NodeClassNames[opc]);
++      break;
++  }
++}
++
++void C2_MacroAssembler::saturating_vector_op(int opc, XMMRegister dst, XMMRegister src1, Address src2, bool is_unsigned, int vlen_enc) {
++  if (is_unsigned) {
++    saturating_unsigned_vector_op(opc, dst, src1, src2, vlen_enc);
++  } else {
++    saturating_signed_vector_op(opc, dst, src1, src2, vlen_enc);
++  }
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 75d481fc9c1..27963fbac76 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -495,6 +495,35 @@
+   void vgather8b_offset(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
+                               Register offset, Register rtmp, int vlen_enc);
+ 
+-  void select_from_two_vector_evex(BasicType elem_bt, int vlen_enc, XMMRegister dst, XMMRegister src1, XMMRegister src2);
++  void select_from_two_vector_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc);
+ 
++  void saturating_vector_op(int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2, bool is_unsigned, int vlen_enc);
++
++  void saturating_vector_op(int opc, XMMRegister dst, XMMRegister src1, Address src2, bool is_unsigned, int vlen_enc);
++
++  void saturating_signed_vector_op(int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc);
++
++  void saturating_signed_vector_op(int opc, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc);
++
++  void saturating_unsigned_vector_op(int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc);
++
++  void saturating_unsigned_vector_op(int opc, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc);
++
++  void evmasked_saturating_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                              bool is_unsigned, bool merge, int vlen_enc);
++
++  void evmasked_saturating_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1, Address src2,
++                              bool is_unsigned, bool merge, int vlen_enc);
++
++  void evmasked_saturating_signed_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                              bool merge, int vlen_enc);
++
++  void evmasked_saturating_signed_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1, Address src2,
++                              bool merge, int vlen_enc);
++
++  void evmasked_saturating_unsigned_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1,
++                                       XMMRegister src2, bool merge, int vlen_enc);
++
++  void evmasked_saturating_unsigned_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1,
++                                       Address src2, bool merge, int vlen_enc);
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 4169ee7aeb6..1497e59bef7 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1960,8 +1960,23 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+        if (bt == T_DOUBLE && !VM_Version::supports_avx512dq()) {
+          return false;
+        }
+-       return true;
+        break;
++    case Op_SaturatingAddVB:
++    case Op_SaturatingAddVS:
++    case Op_SaturatingSubVB:
++    case Op_SaturatingSubVS:
++       if (size_in_bits < 128 || (size_in_bits == 512 && !VM_Version::supports_avx512bw())) {
++         return false;
++       }
++       break;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++      if (size_in_bits < 128) {
++        return false; // Implementation limitation
++      }
++      break;
+     case Op_MaskAll:
+       if (!VM_Version::supports_evex()) {
+         return false;
+@@ -2147,6 +2162,22 @@ bool Matcher::match_rule_supported_vector_masked(int opcode, int vlen, BasicType
+         return false; // Implementation limitation
+       }
+       return true;
++    case Op_SaturatingAddVI:
++    case Op_SaturatingAddVL:
++    case Op_SaturatingSubVI:
++    case Op_SaturatingSubVL:
++      if (size_in_bits < 128) {
++        return false; // Implementation limitation
++      }
++      return true;
++    case Op_SaturatingAddVB:
++    case Op_SaturatingAddVS:
++    case Op_SaturatingSubVB:
++    case Op_SaturatingSubVS:
++      if (size_in_bits < 128 || !VM_Version::supports_avx512bw()) {
++        return false; // Implementation limitation
++      }
++      return true;
+ 
+     case Op_VectorMaskCmp:
+       if (is_subword_type(bt) && !VM_Version::supports_avx512bw()) {
+@@ -10437,45 +10468,77 @@ instruct DoubleClassCheck_reg_reg_vfpclass(rRegI dst, regD src, kReg ktmp, rFlag
+ %}
+ 
+ 
+-instruct selectFromTwoVecB_evex(vec dst, vec src1, vec src2)
++instruct selectFromTwoVec_evex(vec dst, vec src1, vec src2)
+ %{
+-  predicate(Matcher::vector_element_basic_type(n) == T_BYTE && VM_Version::supports_avx512_vbmi() &&
+-            (Matcher::vector_length_in_bytes(n) == 64 || VM_Version::supports_avx512vl()));
+   match(Set dst (SelectFromTwoVector (Binary dst src1) src2));
+   effect(TEMP dst);
+   format %{ "select_from_two_vector $dst, $src1, $src2 \t!" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+-    __ select_from_two_vector_evex(T_BYTE, vlen_enc, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister);
++    BasicType bt = Matcher::vector_element_basic_type(this);
++    __ select_from_two_vector_evex(bt, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, vlen_enc);
+   %}
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct selectFromTwoVecW_evex(vec dst, vec src1, vec src2)
++instruct saturating_subword_op_reg(vec dst, vec src1, vec src2)
+ %{
+-  predicate(Matcher::vector_element_basic_type(n) == T_SHORT && VM_Version::supports_avx512bw() &&
+-            (Matcher::vector_length_in_bytes(n) == 64 || VM_Version::supports_avx512vl()));
+-  match(Set dst (SelectFromTwoVector (Binary dst src1) src2));
+-  effect(TEMP dst);
+-  format %{ "select_from_two_vector $dst, $src1, $src2 \t!" %}
++  match(Set dst (SaturatingAddVB src1 src2));
++  match(Set dst (SaturatingAddVS src1 src2));
++  match(Set dst (SaturatingSubVB src1 src2));
++  match(Set dst (SaturatingSubVS src1 src2));
++  format %{ "saturating_vector_op $dst, $src1, $src2 \t!" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+-    __ select_from_two_vector_evex(T_SHORT, vlen_enc, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister);
++    bool is_unsigned = Type::is_utype(Matcher::vector_element_type(this));
++    __ saturating_vector_op(this->ideal_Opcode(), $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, is_unsigned, vlen_enc);
+   %}
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct selectFromTwoVecDQPSPD_evex(vec dst, vec src1, vec src2)
++instruct saturating_subword_op_mem(vec dst, vec src1, memory src2)
+ %{
+-  predicate(!is_subword_type(Matcher::vector_element_basic_type(n)) &&
+-            (Matcher::vector_length_in_bytes(n) == 64 || VM_Version::supports_avx512vl()));
+-  match(Set dst (SelectFromTwoVector (Binary dst src1) src2));
+-  effect(TEMP dst);
+-  format %{ "select_from_two_vector $dst, $src1, $src2 \t!" %}
++  match(Set dst (SaturatingAddVB src1 (LoadVector src2)));
++  match(Set dst (SaturatingAddVS src1 (LoadVector src2)));
++  match(Set dst (SaturatingSubVB src1 (LoadVector src2)));
++  match(Set dst (SaturatingSubVS src1 (LoadVector src2)));
++  format %{ "saturating_vector_op $dst, $src1, $src2 \t!" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+-    BasicType bt = Matcher::vector_element_basic_type(this);
+-    __ select_from_two_vector_evex(bt, vlen_enc, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister);
++    bool is_unsigned = Type::is_utype(Matcher::vector_element_type(this));
++    __ saturating_vector_op(this->ideal_Opcode(), $dst$$XMMRegister, $src1$$XMMRegister, $src2$$Address, is_unsigned, vlen_enc);
+   %}
+   ins_pipe(pipe_slow);
+ %}
++
++instruct saturating_subword_masked_op_reg(vec dst, vec src, kReg mask) %{
++  match(Set dst (SaturatingAddVB (Binary dst src) mask));
++  match(Set dst (SaturatingAddVS (Binary dst src) mask));
++  match(Set dst (SaturatingSubVB (Binary dst src) mask));
++  match(Set dst (SaturatingSubVS (Binary dst src) mask));
++  format %{ "saturating_vector_masked_op $dst, $mask, $src \t!" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opc = this->ideal_Opcode();
++    bool is_unsigned = Type::is_utype(Matcher::vector_element_type(this));
++    __ evmasked_saturating_op(opc, $mask$$KRegister, $dst$$XMMRegister,
++                              $dst$$XMMRegister, $src$$XMMRegister, is_unsigned, true, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct saturating_subword_masked_op_mem(vec dst, memory src, kReg mask) %{
++  match(Set dst (SaturatingAddVB (Binary dst (LoadVector src)) mask));
++  match(Set dst (SaturatingAddVS (Binary dst (LoadVector src)) mask));
++  match(Set dst (SaturatingSubVB (Binary dst (LoadVector src)) mask));
++  match(Set dst (SaturatingSubVS (Binary dst (LoadVector src)) mask));
++  format %{ "saturating_vector_masked_op $dst, $mask, $src \t!" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opc = this->ideal_Opcode();
++    bool is_unsigned = Type::is_utype(Matcher::vector_element_type(this));
++    __ evmasked_saturating_op(opc, $mask$$KRegister, $dst$$XMMRegister,
++                              $dst$$XMMRegister, $src$$Address, is_unsigned, true, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index 8ef07d83a76..77dd4a075e4 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -4360,6 +4360,8 @@ bool MatchRule::is_vector() const {
+     "VectorMaskWrapper","VectorMaskCmp","VectorReinterpret","LoadVectorMasked","StoreVectorMasked",
+     "FmaVD","FmaVF","PopCountVI","PopCountVL","PopulateIndex","VectorLongToMask",
+     "CountLeadingZerosV", "CountTrailingZerosV", "SignumVF", "SignumVD",
++    "SaturatingAddVB", "SaturatingAddVS", "SaturatingAddVI", "SaturatingAddVL",
++    "SaturatingSubVB", "SaturatingSubVS", "SaturatingSubVI", "SaturatingSubVL",
+     // Next are vector mask ops.
+     "MaskAll", "AndVMask", "OrVMask", "XorVMask", "VectorMaskCast",
+     "RoundVF", "RoundVD",
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 30a1c1847d9..b08def22e02 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -342,6 +342,14 @@ macro(SaturatingSubI)
+ macro(SaturatingSubL)
+ macro(SaturatingUSubI)
+ macro(SaturatingUSubL)
++macro(SaturatingAddVB)
++macro(SaturatingAddVS)
++macro(SaturatingAddVI)
++macro(SaturatingAddVL)
++macro(SaturatingSubVB)
++macro(SaturatingSubVS)
++macro(SaturatingSubVI)
++macro(SaturatingSubVL)
+ macro(SignumD)
+ macro(SignumF)
+ macro(SignumVF)
+diff --git a/src/hotspot/share/opto/matcher.cpp b/src/hotspot/share/opto/matcher.cpp
+index 8a7c078489c..15904cc559e 100644
+--- a/src/hotspot/share/opto/matcher.cpp
++++ b/src/hotspot/share/opto/matcher.cpp
+@@ -2817,6 +2817,18 @@ BasicType Matcher::vector_element_basic_type(const MachNode* use, const MachOper
+   return def->bottom_type()->is_vect()->element_basic_type();
+ }
+ 
++const Type* Matcher::vector_element_type(const Node* n) {
++  const TypeVect* vt = n->bottom_type()->is_vect();
++  return vt->element_type();
++}
++
++const Type* Matcher::vector_element_type(const MachNode* use, const MachOper* opnd) {
++  int def_idx = use->operand_index(opnd);
++  Node* def = use->in(def_idx);
++  return def->bottom_type()->is_vect()->element_type();
++}
++
++
+ bool Matcher::is_non_long_integral_vector(const Node* n) {
+   BasicType bt = vector_element_basic_type(n);
+   assert(bt != T_CHAR, "char is not allowed in vector");
+diff --git a/src/hotspot/share/opto/matcher.hpp b/src/hotspot/share/opto/matcher.hpp
+index 84e48086f92..645ed871940 100644
+--- a/src/hotspot/share/opto/matcher.hpp
++++ b/src/hotspot/share/opto/matcher.hpp
+@@ -376,6 +376,8 @@ class Matcher : public PhaseTransform {
+   // Vector element basic type
+   static BasicType vector_element_basic_type(const Node* n);
+   static BasicType vector_element_basic_type(const MachNode* use, const MachOper* opnd);
++  static const Type* vector_element_type(const Node* n);
++  static const Type* vector_element_type(const MachNode* use, const MachOper* opnd);
+ 
+   // Vector element basic type is non double word integral type.
+   static bool is_non_long_integral_vector(const Node* n);
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index ae379c4833a..23484a5ee1f 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -167,6 +167,7 @@ class RootNode;
+ class SafePointNode;
+ class SafePointScalarObjectNode;
+ class SafePointScalarMergeNode;
++class SaturatingVectorNode;
+ class StartNode;
+ class State;
+ class StoreNode;
+@@ -739,6 +740,7 @@ class Node {
+         DEFINE_CLASS_ID(CompressM, Vector, 6)
+         DEFINE_CLASS_ID(Reduction, Vector, 7)
+         DEFINE_CLASS_ID(NegV, Vector, 8)
++        DEFINE_CLASS_ID(SaturatingVector, Vector, 9)
+       DEFINE_CLASS_ID(Con, Type, 8)
+           DEFINE_CLASS_ID(ConI, Con, 0)
+       DEFINE_CLASS_ID(SafePointScalarMerge, Type, 9)
+@@ -1004,6 +1006,7 @@ class Node {
+   DEFINE_CLASS_QUERY(StoreVectorScatter)
+   DEFINE_CLASS_QUERY(StoreVectorMasked)
+   DEFINE_CLASS_QUERY(StoreVectorScatterMasked)
++  DEFINE_CLASS_QUERY(SaturatingVector)
+   DEFINE_CLASS_QUERY(ShiftV)
+   DEFINE_CLASS_QUERY(Unlock)
+ 
+diff --git a/src/hotspot/share/opto/type.cpp b/src/hotspot/share/opto/type.cpp
+index 16c48800338..c959bc7b297 100644
+--- a/src/hotspot/share/opto/type.cpp
++++ b/src/hotspot/share/opto/type.cpp
+@@ -158,6 +158,9 @@ BasicType Type::array_element_basic_type() const {
+     if (this == TypeInt::BYTE)  return T_BYTE;
+     if (this == TypeInt::BOOL)  return T_BOOLEAN;
+     if (this == TypeInt::SHORT) return T_SHORT;
++    if (this == TypeInt::UBYTE)  return T_BYTE;
++    if (this == TypeInt::USHORT) return T_SHORT;
++    if (this == TypeInt::UINT)   return T_INT;
+     return T_VOID;
+   }
+   return bt;
+@@ -1526,6 +1529,26 @@ const TypeInteger* TypeInteger::make(jlong lo, jlong hi, int w, BasicType bt) {
+   return TypeLong::make(lo, hi, w);
+ }
+ 
++const Type* Type::get_utype(BasicType bt) {
++  switch(bt) {
++    case T_BYTE:  return TypeInt::UBYTE;
++    case T_SHORT: return TypeInt::USHORT;
++    case T_INT:   return TypeInt::UINT;
++    case T_LONG:  return TypeLong::ULONG;
++    default: fatal("Unexpected type: %s", type2name(bt)); break;
++  }
++}
++
++bool Type::is_utype(const Type* elem_ty) {
++  if (elem_ty == TypeInt::UBYTE  ||
++      elem_ty == TypeInt::USHORT ||
++      elem_ty == TypeInt::UINT   ||
++      elem_ty == TypeLong::ULONG) {
++    return true;
++  }
++  return false;
++}
++
+ jlong TypeInteger::get_con_as_long(BasicType bt) const {
+   if (bt == T_INT) {
+     return is_int()->get_con();
+diff --git a/src/hotspot/share/opto/type.hpp b/src/hotspot/share/opto/type.hpp
+index 196628a38db..7a0bdcc637e 100644
+--- a/src/hotspot/share/opto/type.hpp
++++ b/src/hotspot/share/opto/type.hpp
+@@ -465,6 +465,8 @@ class Type {
+                                                       int stable_dimension,
+                                                       BasicType loadbt,
+                                                       bool is_unsigned_load);
++  static const Type* get_utype(BasicType elem_bt);
++  static bool is_utype(const Type* elem_ty);
+ 
+   // Speculative type helper methods. See TypePtr.
+   virtual const TypePtr* speculative() const                                  { return nullptr; }
+@@ -820,7 +822,6 @@ class TypeVect : public Type {
+   }
+   static const TypeVect *makemask(const Type* elem, uint length);
+ 
+-
+   virtual const Type *xmeet( const Type *t) const;
+   virtual const Type *xdual() const;     // Compute dual right now.
+ 
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index a61de2d7f1b..5a6f97e9aec 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -466,6 +466,7 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   }
+ 
+   Node* operation = nullptr;
++  bool is_unsigned_op = VectorNode::is_unsigned_opcode(opc);
+   if (opc == Op_CallLeafVector) {
+     assert(UseVectorStubs, "sanity");
+     operation = gen_call_to_svml(opr->get_con(), elem_bt, num_elem, opd1, opd2);
+@@ -477,11 +478,16 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+       return false;
+      }
+   } else {
+-    const TypeVect* vt = TypeVect::make(elem_bt, num_elem, is_vector_mask(vbox_klass));
++    const TypeVect* vt = nullptr;
++    if (!is_unsigned_op) {
++      vt = TypeVect::make(elem_bt, num_elem, is_vector_mask(vbox_klass));
++    } else {
++      vt = TypeVect::make(Type::get_utype(elem_bt), num_elem, is_vector_mask(vbox_klass));
++    }
+     switch (n) {
+       case 1:
+       case 2: {
+-        operation = VectorNode::make(sopc, opd1, opd2, vt, is_vector_mask(vbox_klass), VectorNode::is_shift_opcode(opc));
++        operation = VectorNode::make(sopc, opd1, opd2, vt, is_vector_mask(vbox_klass), VectorNode::is_shift_opcode(opc), is_unsigned_op);
+         break;
+       }
+       case 3: {
+@@ -491,18 +497,34 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+       default: fatal("unsupported arity: %d", n);
+     }
+   }
+-
++  // Reinterpret unsigned vector nodes to signed vectors before boxing it to
++  // facilitate seamless unboxing-boxing optimization.
+   if (is_masked_op && mask != nullptr) {
+     if (use_predicate) {
+       operation->add_req(mask);
+       operation->add_flag(Node::Flag_is_predicated_vector);
++      operation = gvn().transform(operation);
++      if (is_unsigned_op) {
++        const TypeVect* to_vect_type = TypeVect::make(elem_bt, num_elem, is_vector_mask(vbox_klass));
++        operation = gvn().transform(new VectorReinterpretNode(operation, operation->bottom_type()->is_vect(), to_vect_type));
++      }
+     } else {
+       operation->add_flag(Node::Flag_is_predicated_using_blend);
+       operation = gvn().transform(operation);
++      if (is_unsigned_op) {
++        const TypeVect* to_vect_type = TypeVect::make(elem_bt, num_elem, is_vector_mask(vbox_klass));
++        operation = gvn().transform(new VectorReinterpretNode(operation, operation->bottom_type()->is_vect(), to_vect_type));
++      }
+       operation = new VectorBlendNode(opd1, operation, mask);
++      operation = gvn().transform(operation);
++    }
++  } else {
++    operation = gvn().transform(operation);
++    if (is_unsigned_op) {
++      const TypeVect* to_vect_type = TypeVect::make(elem_bt, num_elem, is_vector_mask(vbox_klass));
++      operation = gvn().transform(new VectorReinterpretNode(operation, operation->bottom_type()->is_vect(), to_vect_type));
+     }
+   }
+-  operation = gvn().transform(operation);
+ 
+   // Wrap it up in VectorBox to keep object type information.
+   Node* vbox = box_vector(operation, vbox_type, elem_bt, num_elem);
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index ad43f5a806e..a805f96b428 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -277,7 +277,6 @@ int VectorNode::opcode(int sopc, BasicType bt) {
+     case T_LONG: return Op_UMinV;
+     default: return 0;
+     }
+-
+   case Op_UMaxI:
+   case Op_UMaxL:
+     switch(bt) {
+@@ -287,6 +286,24 @@ int VectorNode::opcode(int sopc, BasicType bt) {
+     case T_LONG: return Op_UMaxV;
+     default: return 0;
+     }
++  case Op_SaturatingAddI:
++  case Op_SaturatingUAddI:
++    switch (bt) {
++    case T_BYTE: return Op_SaturatingAddVB;
++    case T_SHORT: return Op_SaturatingAddVS;
++    case T_INT:  return Op_SaturatingAddVI;
++    case T_LONG: return Op_SaturatingAddVL;
++    default: return 0;
++    }
++  case Op_SaturatingSubI:
++  case Op_SaturatingUSubI:
++    switch (bt) {
++    case T_BYTE: return Op_SaturatingSubVB;
++    case T_SHORT: return Op_SaturatingSubVS;
++    case T_INT:  return Op_SaturatingSubVI;
++    case T_LONG: return Op_SaturatingSubVL;
++    default: return 0;
++    }
+   default:
+     assert(!VectorNode::is_convert_opcode(sopc),
+            "Convert node %s should be processed by VectorCastNode::opcode()",
+@@ -526,6 +543,18 @@ bool VectorNode::is_shift_opcode(int opc) {
+   }
+ }
+ 
++bool VectorNode::is_unsigned_opcode(int opc) {
++  switch (opc) {
++  case Op_SaturatingUAddI:
++  case Op_SaturatingUSubI:
++  case Op_SaturatingUSubL:
++  case Op_SaturatingUAddL:
++    return true;
++  default:
++    return false;
++  }
++}
++
+ // Vector unsigned right shift for signed subword types behaves differently
+ // from Java Spec. But when the shift amount is a constant not greater than
+ // the number of sign extended bits, the unsigned right shift can be
+@@ -686,7 +715,7 @@ VectorNode* VectorNode::make_mask_node(int vopc, Node* n1, Node* n2, uint vlen,
+ }
+ 
+ // Make a vector node for binary operation
+-VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, bool is_mask, bool is_var_shift) {
++VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, bool is_mask, bool is_var_shift, bool is_unsigned) {
+   // This method should not be called for unimplemented vectors.
+   guarantee(vopc > 0, "vopc must be > 0");
+ 
+@@ -781,6 +810,16 @@ VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, b
+   case Op_ExpandBitsV: return new ExpandBitsVNode(n1, n2, vt);
+   case Op_CountLeadingZerosV: return new CountLeadingZerosVNode(n1, vt);
+   case Op_CountTrailingZerosV: return new CountTrailingZerosVNode(n1, vt);
++
++  case Op_SaturatingAddVB: return new SaturatingAddVBNode(n1, n2, vt, is_unsigned);
++  case Op_SaturatingAddVS: return new SaturatingAddVSNode(n1, n2, vt, is_unsigned);
++  case Op_SaturatingSubVB: return new SaturatingSubVBNode(n1, n2, vt, is_unsigned);
++  case Op_SaturatingSubVS: return new SaturatingSubVSNode(n1, n2, vt, is_unsigned);
++  case Op_SaturatingAddVI: return new SaturatingAddVINode(n1, n2, vt, is_unsigned);
++  case Op_SaturatingAddVL: return new SaturatingAddVLNode(n1, n2, vt, is_unsigned);
++  case Op_SaturatingSubVI: return new SaturatingSubVINode(n1, n2, vt, is_unsigned);
++  case Op_SaturatingSubVL: return new SaturatingSubVLNode(n1, n2, vt, is_unsigned);
++
+   default:
+     fatal("Missed vector creation for '%s'", NodeClassNames[vopc]);
+     return nullptr;
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index abfaf33bd16..30250ce5784 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -78,12 +78,13 @@ class VectorNode : public TypeNode {
+   static VectorNode* scalar2vector(Node* s, uint vlen, const Type* opd_t, bool is_mask = false);
+   static VectorNode* shift_count(int opc, Node* cnt, uint vlen, BasicType bt);
+   static VectorNode* make(int opc, Node* n1, Node* n2, uint vlen, BasicType bt, bool is_var_shift = false);
+-  static VectorNode* make(int vopc, Node* n1, Node* n2, const TypeVect* vt, bool is_mask = false, bool is_var_shift = false);
++  static VectorNode* make(int vopc, Node* n1, Node* n2, const TypeVect* vt, bool is_mask = false, bool is_var_shift = false, bool is_unsigned = false);
+   static VectorNode* make(int opc, Node* n1, Node* n2, Node* n3, uint vlen, BasicType bt);
+   static VectorNode* make(int vopc, Node* n1, Node* n2, Node* n3, const TypeVect* vt);
+   static VectorNode* make_mask_node(int vopc, Node* n1, Node* n2, uint vlen, BasicType bt);
+ 
+   static bool is_shift_opcode(int opc);
++  static bool is_unsigned_opcode(int opc);
+   static bool can_use_RShiftI_instead_of_URShiftI(Node* n, BasicType bt);
+   static bool is_convert_opcode(int opc);
+   static bool is_minmax_opcode(int opc);
+@@ -149,7 +150,9 @@ class SaturatingVectorNode : public VectorNode {
+   bool _is_unsigned;
+ 
+  public:
+-  SaturatingVectorNode(Node* in1, Node* in2, const TypeVect* vt, bool is_unsigned) : VectorNode(in1, in2, vt), _is_unsigned(is_unsigned) {}
++  SaturatingVectorNode(Node* in1, Node* in2, const TypeVect* vt, bool is_unsigned) : VectorNode(in1, in2, vt), _is_unsigned(is_unsigned) {
++    init_class_id(Class_SaturatingVector);
++  }
+ 
+   // Needed for proper cloning.
+   virtual uint size_of() const { return sizeof(*this); }
+diff --git a/src/java.base/share/classes/java/lang/Byte.java b/src/java.base/share/classes/java/lang/Byte.java
+index 440ab17c61a..080e8b7c946 100644
+--- a/src/java.base/share/classes/java/lang/Byte.java
++++ b/src/java.base/share/classes/java/lang/Byte.java
+@@ -644,11 +644,11 @@ public static byte saturatingAdd(byte a, byte b) {
+      * @since 24
+      */
+     public static byte saturatingSub(byte a, byte b) {
+-        byte res = (byte)(a + b);
++        byte res = (byte)(a - b);
+         // Saturation occurs when result of computation over opposite polarity inputs exceeds the byte
+         // value range, in this case, for a non-commutative operation like subtraction, result polarity does not
+         // comply with first argument polarity.
+-        boolean opposite_polarity_inputs = ((a ^ b) & POLARITY_MASK_BYTE) == 1;
++        boolean opposite_polarity_inputs = ((a ^ b) & POLARITY_MASK_BYTE) == POLARITY_MASK_BYTE;
+         if (opposite_polarity_inputs && ((res & POLARITY_MASK_BYTE) != (a & POLARITY_MASK_BYTE))) {
+             return res < 0 ? Byte.MAX_VALUE : Byte.MIN_VALUE;
+         } else {
+@@ -668,8 +668,8 @@ public static byte saturatingSub(byte a, byte b) {
+      */
+     public static byte saturatingUnsignedAdd(byte a, byte b) {
+         byte res = (byte)(a + b);
+-        boolean overflow = ((POLARITY_MASK_BYTE & (a | b)) == POLARITY_MASK_BYTE) && ((POLARITY_MASK_BYTE & res) == 0);
+-        if (overflow) {
++        boolean overflow = Byte.compareUnsigned(res, (byte)(a | b)) < 0;
++        if (overflow)  {
+            return Byte.UNSIGNED_MAX;
+         } else {
+            return res;
+diff --git a/src/java.base/share/classes/java/lang/Integer.java b/src/java.base/share/classes/java/lang/Integer.java
+index d015a72dcde..05c7f5760ad 100644
+--- a/src/java.base/share/classes/java/lang/Integer.java
++++ b/src/java.base/share/classes/java/lang/Integer.java
+@@ -2081,7 +2081,7 @@ public static int saturatingAdd(int a, int b) {
+      */
+     public static int saturatingSub(int a, int b) {
+         int res = a - b;
+-        boolean opposite_polarity_inputs = ((a ^ b) & POLARITY_MASK_INT) == 1;
++        boolean opposite_polarity_inputs = ((a ^ b) & POLARITY_MASK_INT) == POLARITY_MASK_INT;
+         // Saturation occurs when result of computation over opposite polarity inputs exceeds the int
+         // value range, in this case, for a non-commutative operation like subtraction, result polarity does not
+         // comply with first argument polarity.
+@@ -2104,8 +2104,8 @@ public static int saturatingSub(int a, int b) {
+      */
+     public static int saturatingUnsignedAdd(int a, int b) {
+         int res = a + b;
+-        boolean overflow = ((POLARITY_MASK_INT & (a | b)) == POLARITY_MASK_INT) && ((POLARITY_MASK_INT & res) == 0);
+-        if (overflow) {
++        boolean overflow = Integer.compareUnsigned(res, (a | b)) < 0;
++        if (overflow)  {
+            return Integer.UNSIGNED_MAX;
+         } else {
+            return res;
+diff --git a/src/java.base/share/classes/java/lang/Long.java b/src/java.base/share/classes/java/lang/Long.java
+index 9b431ad0cc4..72dc4e27ba9 100644
+--- a/src/java.base/share/classes/java/lang/Long.java
++++ b/src/java.base/share/classes/java/lang/Long.java
+@@ -2030,8 +2030,8 @@ public static long saturatingAdd(long a, long b) {
+      * @since 24
+      */
+     public static long saturatingSub(long a, long b) {
+-        boolean opposite_polarity_inputs = ((a ^ b) & POLARITY_MASK_LONG) == 1;
+-        long res = a + b;
++        boolean opposite_polarity_inputs = ((a ^ b) & POLARITY_MASK_LONG) == POLARITY_MASK_LONG;
++        long res = a - b;
+         // Saturation occurs when result of computation over opposite polarity inputs exceeds the long
+         // value range, in this case, for a non-commutative operation like subtraction, result polarity does not
+         // comply with first argument polarity.
+@@ -2054,8 +2054,8 @@ public static long saturatingSub(long a, long b) {
+      */
+     public static long saturatingUnsignedAdd(long a, long b) {
+         long res = a + b;
+-        boolean overflow = ((POLARITY_MASK_LONG & (a | b)) == POLARITY_MASK_LONG) && ((POLARITY_MASK_LONG & res) == 0);
+-        if (overflow) {
++        boolean overflow = Long.compareUnsigned(res, (a | b)) < 0;
++        if (overflow)  {
+            return Long.UNSIGNED_MAX;
+         } else {
+            return res;
+diff --git a/src/java.base/share/classes/java/lang/Short.java b/src/java.base/share/classes/java/lang/Short.java
+index a009ec2a8f3..1f4313392b8 100644
+--- a/src/java.base/share/classes/java/lang/Short.java
++++ b/src/java.base/share/classes/java/lang/Short.java
+@@ -679,11 +679,11 @@ public static short saturatingAdd(short a, short b) {
+      * @since 24
+      */
+     public static short saturatingSub(short a, short b) {
+-        short res = (short)(a + b);
++        short res = (short)(a - b);
+         // Saturation occurs when result of computation over opposite polarity inputs exceeds the short
+         // value range, in this case, for a non-commutative operation like subtraction, result polarity does not
+         // comply with first argument polarity.
+-        boolean opposite_polarity_inputs = ((a ^ b) & POLARITY_MASK_SHORT) == 1;
++        boolean opposite_polarity_inputs = ((a ^ b) & POLARITY_MASK_SHORT) == POLARITY_MASK_SHORT;
+         if (opposite_polarity_inputs && ((res & POLARITY_MASK_SHORT) != (a & POLARITY_MASK_SHORT))) {
+             return res < 0 ? Short.MAX_VALUE : Short.MIN_VALUE;
+         } else {
+@@ -703,8 +703,8 @@ public static short saturatingSub(short a, short b) {
+      */
+     public static short saturatingUnsignedAdd(short a, short b) {
+         short res = (short)(a + b);
+-        boolean overflow = ((POLARITY_MASK_SHORT & (a | b)) == POLARITY_MASK_SHORT) && ((POLARITY_MASK_SHORT & res) == 0);
+-        if (overflow) {
++        boolean overflow = Short.compareUnsigned(res, (short)(a | b)) < 0;
++        if (overflow)  {
+            return Short.UNSIGNED_MAX;
+         } else {
+            return res;

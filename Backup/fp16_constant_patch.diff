@@ -1,0 +1,140 @@
+diff --git a/src/hotspot/share/opto/divnode.cpp b/src/hotspot/share/opto/divnode.cpp
+index a70194274a7..37c929d2b94 100644
+--- a/src/hotspot/share/opto/divnode.cpp
++++ b/src/hotspot/share/opto/divnode.cpp
+@@ -823,39 +823,45 @@ const Type* DivHFNode::Value(PhaseGVN* phase) const {
+     return bot;
+   }
+ 
++  const TypeH* t1_hf = t1->isa_half_float_constant();
++  const TypeH* t2_hf = t2->isa_half_float_constant();
++
+   // x/x == 1, we ignore 0/0.
+   // Note: if t1 and t2 are zero then result is NaN (JVMS page 213)
+   // Does not work for variables because of NaN's
+-  if (in(1) == in(2) && t1->base() == Type::HalfFloatCon &&
+-      !g_isnan(t1->getf()) && g_isfinite(t1->getf()) && t1->getf() != 0.0) { // could be negative ZERO or NaN
++  if (in(1) == in(2) && t1_hf != nullptr &&
++      !t1_hf->is_nan() && t1_hf->is_finite() && t1_hf->getf() != 0.0f) { // could be negative ZERO or NaN
+     return TypeH::ONE;
+   }
+ 
+-  if (t2 == TypeH::ONE) {
+-    return t1;
++  if (t2_hf == nullptr || t1_hf == nullptr) {
++    return Type::HALF_FLOAT;
+   }
+ 
+-  // If divisor is a constant and not zero, divide the numbers
+-  if (t1->base() == Type::HalfFloatCon &&
+-      t2->base() == Type::HalfFloatCon &&
+-      t2->getf() != 0.0)  {
+-    // could be negative zero
+-    return TypeH::make(t1->getf() / t2->getf());
++  if (t2_hf == TypeH::ONE) {
++    return t1_hf;
+   }
+ 
+-  // If the dividend is a constant zero
+-  // Note: if t1 and t2 are zero then result is NaN (JVMS page 213)
+-  // Test TypeHF::ZERO is not sufficient as it could be negative zero
++  // If divisor is a non-zero constant then division operation
++  // does not have an undefined or implimentation specific behavior
++  // and follows the usual rules applicable to other IEEE 754
++  // floating point types.
++  if (t2_hf != TypeH::ZERO)  {
++    // could be negative zero
++    return TypeH::make(t1_hf->getf() / t2_hf->getf());
++  }
+ 
+-  if (t1 == TypeH::ZERO && !g_isnan(t2->getf()) && t2->getf() != 0.0) {
+-    return TypeH::ZERO;
++  // Division of a nonzero finite value by a zero results in a
++  // signed infinity. The sign of the result is -ve if exactly
++  // one of the operand is -ve value.
++  if (t1_hf->is_finite() && t1_hf != TypeH::ZERO && t2_hf == TypeH::ZERO)  {
++    return is_neg ? TypeH::NEG_INF : TypeH::POS_INF;
+   }
+ 
+-  // If divisor or dividend is nan then result is nan.
+-  if (g_isnan(t1->getf()) || g_isnan(t2->getf())) {
++  // Division of a zero by a zero results in NaN
++  if (t1_hf == TypeH::ZERO && t2_hf == TypeH::ZERO) {
+     return TypeH::make(NAN);
+   }
+-
+   // Otherwise we give up all hope
+   return Type::HALF_FLOAT;
+ }
+diff --git a/src/hotspot/share/opto/subnode.cpp b/src/hotspot/share/opto/subnode.cpp
+index d1384384101..adadbb4a176 100644
+--- a/src/hotspot/share/opto/subnode.cpp
++++ b/src/hotspot/share/opto/subnode.cpp
+@@ -560,17 +560,14 @@ const Type* SubFPNode::Value(PhaseGVN* phase) const {
+ //------------------------------sub--------------------------------------------
+ // A subtract node differences its two inputs.
+ const Type* SubHFNode::sub(const Type* t1, const Type* t2) const {
+-  // no folding if one of operands is infinity or NaN, do not do constant folding
+-  if(g_isfinite(t1->getf()) && g_isfinite(t2->getf())) {
++  // Half precision floating point subtraction follows the rules of IEEE 754
++  // applicable to other floating point types.
++  // There are no known undefined, unspecified or implimentation specific
++  // behaviors w.r.t to floating point non-pointer subtraction.
++  if (t1->isa_half_float_constant() &&
++      t2->isa_half_float_constant())  {
+     return TypeH::make(t1->getf() - t2->getf());
+-  }
+-  else if(g_isnan(t1->getf())) {
+-    return t1;
+-  }
+-  else if(g_isnan(t2->getf())) {
+-    return t2;
+-  }
+-  else {
++  } else {
+     return Type::HALF_FLOAT;
+   }
+ }
+diff --git a/src/hotspot/share/opto/type.hpp b/src/hotspot/share/opto/type.hpp
+index 9c40e1ab3cd..2c0a7a267e5 100644
+--- a/src/hotspot/share/opto/type.hpp
++++ b/src/hotspot/share/opto/type.hpp
+@@ -293,9 +293,9 @@ class Type {
+   const TypeD      *isa_double() const;          // Returns null if not a Double{Top,Con,Bot}
+   const TypeD      *is_double_constant() const;  // Asserts it is a DoubleCon
+   const TypeD      *isa_double_constant() const; // Returns null if not a DoubleCon
+-  const TypeH      *isa_half_float() const;          // Returns null if not a Float{Top,Con,Bot}
+-  const TypeH      *is_half_float_constant() const;  // Asserts it is a FloatCon
+-  const TypeH      *isa_half_float_constant() const; // Returns null if not a FloatCon
++  const TypeH      *isa_half_float() const;          // Returns null if not a HalfFloat{Top,Con,Bot}
++  const TypeH      *is_half_float_constant() const;  // Asserts it is a HalfFloatCon
++  const TypeH      *isa_half_float_constant() const; // Returns null if not a HalfFloatCon
+   const TypeF      *isa_float() const;           // Returns null if not a Float{Top,Con,Bot}
+   const TypeF      *is_float_constant() const;   // Asserts it is a FloatCon
+   const TypeF      *isa_float_constant() const;  // Returns null if not a FloatCon
+diff --git a/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java b/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+index 6d857e9fe2a..678a8a71c70 100644
+--- a/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
++++ b/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+@@ -450,8 +450,8 @@ public void testSubConstantFolding() {
+         assertResult(subtract(Float16.NEGATIVE_INFINITY, Float16.NEGATIVE_INFINITY).floatValue(), Float.NaN, "testSubConstantFolding");
+ 
+         // The difference of an infinity and a finite value is equal to the infinite operand.
+-        //assertResult(subtract(Float16.POSITIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.POSITIVE_INFINITY, "testSubConstantFolding");
+-        //assertResult(subtract(Float16.NEGATIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.NEGATIVE_INFINITY, "testSubConstantFolding");
++        assertResult(subtract(Float16.POSITIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.POSITIVE_INFINITY, "testSubConstantFolding");
++        assertResult(subtract(Float16.NEGATIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.NEGATIVE_INFINITY, "testSubConstantFolding");
+ 
+         // The difference of two zeros of opposite sign is positive zero.
+         assertResult(subtract(NEGATIVE_ZERO, POSITIVE_ZERO).floatValue(), 0.0f, "testSubConstantFolding");
+@@ -538,8 +538,8 @@ public void testDivConstantFolding() {
+ 
+         // Division of a nonzero finite value by a zero results in a signed infinity. The sign
+         // is determined by the rule stated above
+-        //assertResult(divide(valueOf(2.0f), NEGATIVE_ZERO).floatValue(), Float.NEGATIVE_INFINITY, "testDivConstantFolding");
+-        //assertResult(divide(valueOf(2.0f), POSITIVE_ZERO).floatValue(), Float.POSITIVE_INFINITY, "testDivConstantFolding");
++        assertResult(divide(valueOf(2.0f), NEGATIVE_ZERO).floatValue(), Float.NEGATIVE_INFINITY, "testDivConstantFolding");
++        assertResult(divide(valueOf(2.0f), POSITIVE_ZERO).floatValue(), Float.POSITIVE_INFINITY, "testDivConstantFolding");
+ 
+         // If the magnitude of the quotient is too large to represent, we say the operation
+         // overflows; the result is then an infinity of appropriate sign.

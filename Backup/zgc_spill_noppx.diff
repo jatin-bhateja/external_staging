@@ -1,0 +1,54 @@
+diff --git a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
+index 4a956b450bd..8cef9b4f677 100644
+--- a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
+@@ -87,6 +87,24 @@ class ZRuntimeCallSpill {
+     __ push(r9);
+     __ push(r10);
+     __ push(r11);
++    if (VM_Version::supports_apx_f()) {
++      __ push(r16);
++      __ push(r17);
++      __ push(r18);
++      __ push(r19);
++      __ push(r20);
++      __ push(r21);
++      __ push(r22);
++      __ push(r23);
++      __ push(r24);
++      __ push(r25);
++      __ push(r26);
++      __ push(r27);
++      __ push(r28);
++      __ push(r29);
++      __ push(r30);
++      __ push(r31);
++    }
+ 
+     if (_xmm_spill_size != 0) {
+       __ subptr(rsp, _xmm_spill_size);
+@@ -139,6 +157,24 @@ class ZRuntimeCallSpill {
+       __ addptr(rsp, _xmm_spill_size);
+     }
+ 
++    if (VM_Version::supports_apx_f()) {
++      __ pop(r31);
++      __ pop(r30);
++      __ pop(r29);
++      __ pop(r28);
++      __ pop(r27);
++      __ pop(r26);
++      __ pop(r25);
++      __ pop(r24);
++      __ pop(r23);
++      __ pop(r22);
++      __ pop(r21);
++      __ pop(r20);
++      __ pop(r19);
++      __ pop(r18);
++      __ pop(r17);
++      __ pop(r16);
++    }
+     __ pop(r11);
+     __ pop(r10);
+     __ pop(r9);

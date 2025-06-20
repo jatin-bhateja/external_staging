@@ -1,0 +1,121 @@
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 56f480bd1fe..66b1b300693 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -5368,3 +5368,63 @@ void C2_MacroAssembler::udivmodL(Register rax, Register divisor, Register rdx, R
+ }
+ #endif
+ 
++void C2_MacroAssembler::rearrange_bytes(XMMRegister dst, XMMRegister shuffle, XMMRegister src, XMMRegister xtmp1,
++                                        XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5,
++                                        Register rtmp, KRegister ktmp1, KRegister ktmp2, int vlen_enc) {
++  assert(VM_Version::supports_avx512bw(), "");
++  // Shuffles are inlane operations and indices are determined using
++  // lower 4 bit of each shuffle lane, thus all shuffle indices are
++  // normalized to index range 0-15. This makes sure that all the multiples
++  // of an index value are placed at same relative position in 128 bit
++  // lane i.e. elements corresponding to shuffle indices 16, 32 and 64
++  // will be 16th element in their respective 128 bit lanes.
++  vpshufb(xtmp1, src, shuffle, vlen_enc);
++  movl(rtmp, 16);
++  evpbroadcastb(xtmp2, rtmp, vlen_enc);
++
++  // Compute MASK for INDEX >= 0 && INDEX < 16
++  // Broadcast first 128 bit shuffled lane across entire vector and
++  // move lanes corresponding to true mask to destination vector.
++  evpcmpb(ktmp2, k0, shuffle, xtmp2, Assembler::lt, true, vlen_enc);
++  vpermq(xtmp3, xtmp1, 0x44, vlen_enc);
++  vinserti64x4(xtmp3, xtmp3, xtmp3, 0x1);
++  evmovdqub(dst, ktmp2, xtmp3, false, vlen_enc);
++
++  // Compute MASK for INDEX >= 16 && INDEX < 31
++  // Broadcast second 128 bit shuffled lane across entire vector and
++  // merge the lanes corresponding to true mask with destination vector.
++  evpcmpb(ktmp1, k0, shuffle,  xtmp2, Assembler::nlt, true, vlen_enc);
++  vpsllq(xtmp5, xtmp2, 0x1, vlen_enc);
++  evpcmpb(ktmp2, k0, shuffle, xtmp5, Assembler::lt, true, vlen_enc);
++  kandql(ktmp2, ktmp1, ktmp2);
++  vpermq(xtmp3, xtmp1,  0xEE, vlen_enc);
++  vinserti64x4(xtmp3, xtmp3, xtmp3, 0x1);
++  evmovdqub(xtmp4, ktmp2, xtmp3, false, vlen_enc);
++  vporq(dst, dst, xtmp4, vlen_enc);
++
++  // Compute MASK for INDEX >= 32 && INDEX < 47
++  // Broadcast third 128 bit shuffled lane across entire vector and
++  // merge the lanes corresponding to true mask with destination vector.
++  evpcmpb(ktmp1, k0, shuffle,  xtmp5, Assembler::nlt, true, vlen_enc);
++  vpaddb(xtmp5, xtmp2, xtmp5, vlen_enc);
++  evpcmpb(ktmp2, k0, shuffle,  xtmp5, Assembler::lt, true, vlen_enc);
++  kandql(ktmp2, ktmp1 , ktmp2);
++  vpermq(xtmp3, xtmp1,  0x44, vlen_enc);
++  vextracti64x4_high(xtmp3, xtmp3);
++  vinserti64x4(xtmp3, xtmp3, xtmp3, 0x1);
++  evmovdqub(xtmp4, ktmp2, xtmp3, false, vlen_enc);
++  vporq(dst, dst, xtmp4, vlen_enc);
++
++  // Compute MASK for INDEX >= 48 && INDEX < 63
++  // Broadcast fourth 128 bit shuffled lane across entire vector and
++  // merge the lanes corresponding to true mask with destination vector.
++  evpcmpb(ktmp1, k0, shuffle,  xtmp5, Assembler::nlt, true, vlen_enc);
++  vpsllq(xtmp5, xtmp2, 0x2, vlen_enc);
++  evpcmpb(ktmp2, k0, shuffle,  xtmp5, Assembler::lt, true, vlen_enc);
++  kandql(ktmp2, ktmp1 , ktmp2);
++  vpermq(xtmp3, xtmp1,  0xEE, vlen_enc);
++  vextracti64x4_high(xtmp3, xtmp3);
++  vinserti64x4(xtmp3, xtmp3, xtmp3, 0x1);
++  evmovdqub(xtmp4, ktmp2, xtmp3, false, vlen_enc);
++  vporq(dst, dst, xtmp4, vlen_enc);
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 7fe02ce27ce..1af536f23d0 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -442,4 +442,8 @@ public:
+ 
+   void vector_signum_evex(int opcode, XMMRegister dst, XMMRegister src, XMMRegister zero, XMMRegister one,
+                           KRegister ktmp1, int vec_enc);
++
++  void rearrange_bytes(XMMRegister dst, XMMRegister shuffle, XMMRegister src, XMMRegister xtmp1,
++                       XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5,
++                       Register rtmp, KRegister ktmp1, KRegister ktmp2, int vlen_enc);
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index c79a64f6557..73d694fa29f 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1846,9 +1846,7 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+         return false; // Implementation limitation due to how shuffle is loaded
+       } else if (size_in_bits == 256 && UseAVX < 2) {
+         return false; // Implementation limitation
+-      } else if (bt == T_BYTE && size_in_bits > 256 && !VM_Version::supports_avx512_vbmi())  {
+-        return false; // Implementation limitation
+-      } else if (bt == T_SHORT && size_in_bits > 256 && !VM_Version::supports_avx512bw())  {
++      } else if (is_subword_type(bt) && size_in_bits > 256 && !VM_Version::supports_avx512bw()) {
+         return false; // Implementation limitation
+       }
+       break;
+@@ -8523,7 +8521,23 @@ instruct rearrangeB_avx(legVec dst, legVec src, vec shuffle, legVec vtmp1, legVe
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct rearrangeB_evex(vec dst, vec src, vec shuffle) %{
++
++instruct rearrangeB_evex(vec dst, vec src, vec shuffle, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, vec xtmp5, kReg ktmp1, kReg ktmp2, rRegI rtmp) %{
++  predicate(Matcher::vector_element_basic_type(n) == T_BYTE &&
++            Matcher::vector_length(n) > 32 && !VM_Version::supports_avx512_vbmi());
++  match(Set dst (VectorRearrange src shuffle));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP xtmp5, TEMP ktmp1, TEMP ktmp2, TEMP rtmp);
++  format %{ "vector_rearrange $dst, $shuffle, $src!\t using $xtmp1, $xtmp2, $xtmp3, $xtmp4, $xtmp5, $rtmp, $ktmp1, and $ktmp2 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ rearrange_bytes($dst$$XMMRegister, $shuffle$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
++                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $xtmp4$$XMMRegister, $xtmp5$$XMMRegister,
++                       $rtmp$$Register, $ktmp1$$KRegister, $ktmp2$$KRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct rearrangeB_evex_vbmi(vec dst, vec src, vec shuffle) %{
+   predicate(Matcher::vector_element_basic_type(n) == T_BYTE &&
+             Matcher::vector_length(n) >= 32 && VM_Version::supports_avx512_vbmi());
+   match(Set dst (VectorRearrange src shuffle));

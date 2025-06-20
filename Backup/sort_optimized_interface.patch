@@ -1,0 +1,202 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index 9c1e992b52a..8a6d728151f 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -5397,7 +5397,20 @@ bool LibraryCallKit::inline_array_partition(bool is_dual_pivot) {
+   if (obj_t == nullptr || obj_t->elem() == Type::BOTTOM ) {
+     return false; // failed input validation
+   }
++  auto enc_bt = [=] () {
++     switch(bt) {
++        case T_INT: return 0;
++        case T_LONG: return 3;
++        case T_FLOAT: return 1;
++        case T_DOUBLE: return 2;
++        default : ShouldNotReachHere();
++     }
++     return -1;
++  };
+   Node* obj_adr = make_unsafe_address(obj, offset);
++  obj_adr = gvn().transform(new CastP2XNode(nullptr, obj_adr));
++  obj_adr = gvn().transform(new OrLNode(obj_adr, longcon(enc_bt())));
++  obj_adr = gvn().transform(new CastX2PNode(obj_adr));
+ 
+   // create the pivotIndices array of type int and size = 2
+   Node* pivotIndices = nullptr;
+@@ -5408,13 +5421,10 @@ bool LibraryCallKit::inline_array_partition(bool is_dual_pivot) {
+   guarantee(alloc != nullptr, "created above");
+   Node* pivotIndices_adr = basic_plus_adr(pivotIndices, arrayOopDesc::base_offset_in_bytes(T_INT));
+ 
+-  // pass the bastic type enum to the stub
+-  Node* elemType = intcon(bt);
+-
+   // Call the stub
+   make_runtime_call(RC_LEAF|RC_NO_FP, OptoRuntime::array_partition_Type(is_dual_pivot),
+                     stubAddr, stubName, TypePtr::BOTTOM,
+-                    obj_adr, elemType, fromIndex, toIndex, pivotIndices_adr, indexPivot1, indexPivot2);
++                    obj_adr, fromIndex, toIndex, pivotIndices_adr, indexPivot1, indexPivot2);
+ 
+   if (!stopped()) {
+     set_result(pivotIndices);
+@@ -5451,15 +5461,27 @@ bool LibraryCallKit::inline_arraysort() {
+   if (obj_t == nullptr || obj_t->elem() == Type::BOTTOM ) {
+     return false; // failed input validation
+   }
++  auto enc_bt = [=] () {
++     switch(bt) {
++        case T_INT: return 0;
++        case T_LONG: return 3;
++        case T_FLOAT: return 1;
++        case T_DOUBLE: return 2;
++        default : ShouldNotReachHere();
++     }
++     return -1;
++  };
+   Node* obj_adr = make_unsafe_address(obj, offset);
++  obj_adr = gvn().transform(new CastP2XNode(nullptr, obj_adr));
++  obj_adr = gvn().transform(new OrLNode(obj_adr, longcon(enc_bt())));
++  obj_adr = gvn().transform(new CastX2PNode(obj_adr));
+ 
+   // pass the bastic type enum to the stub
+-  Node* elemType = intcon(bt);
+ 
+   // Call the stub.
+   make_runtime_call(RC_LEAF|RC_NO_FP, OptoRuntime::array_sort_Type(),
+                     stubAddr, stubName, TypePtr::BOTTOM,
+-                    obj_adr, elemType, fromIndex, toIndex);
++                    obj_adr, fromIndex, toIndex);
+ 
+   return true;
+ }
+diff --git a/src/hotspot/share/opto/runtime.cpp b/src/hotspot/share/opto/runtime.cpp
+index 7a57b755555..e6d8c956a5e 100644
+--- a/src/hotspot/share/opto/runtime.cpp
++++ b/src/hotspot/share/opto/runtime.cpp
+@@ -859,12 +859,11 @@ const TypeFunc* OptoRuntime::array_fill_Type() {
+ 
+ const TypeFunc* OptoRuntime::array_partition_Type(bool is_dual_pivot) {
+   // create input type (domain)
+-  int num_args = is_dual_pivot ? 7 : 6;
++  int num_args = is_dual_pivot ? 6 : 5;
+   int argcnt = num_args;
+   const Type** fields = TypeTuple::fields(argcnt);
+   int argp = TypeFunc::Parms;
+   fields[argp++] = TypePtr::NOTNULL;  // array
+-  fields[argp++] = TypeInt::INT;      // element type
+   fields[argp++] = TypeInt::INT;      // low
+   fields[argp++] = TypeInt::INT;      // end
+   fields[argp++] = TypePtr::NOTNULL;  // pivot_indices (int array)
+@@ -884,12 +883,11 @@ const TypeFunc* OptoRuntime::array_partition_Type(bool is_dual_pivot) {
+ 
+ const TypeFunc* OptoRuntime::array_sort_Type() {
+   // create input type (domain)
+-  int num_args      = 4;
++  int num_args      = 3;
+   int argcnt = num_args;
+   const Type** fields = TypeTuple::fields(argcnt);
+   int argp = TypeFunc::Parms;
+   fields[argp++] = TypePtr::NOTNULL;    // array
+-  fields[argp++] = TypeInt::INT;    // element type
+   fields[argp++] = TypeInt::INT;    // fromIndex
+   fields[argp++] = TypeInt::INT;    // toIndex
+   assert(argp == TypeFunc::Parms+argcnt, "correct decoding");
+diff --git a/src/java.base/linux/native/libsimdsort/avxsort_linux_x86.cpp b/src/java.base/linux/native/libsimdsort/avxsort_linux_x86.cpp
+index 555be741a4f..4d1d968ffcd 100644
+--- a/src/java.base/linux/native/libsimdsort/avxsort_linux_x86.cpp
++++ b/src/java.base/linux/native/libsimdsort/avxsort_linux_x86.cpp
+@@ -28,6 +28,7 @@
+ #include "avx512-32bit-qsort.hpp"
+ #include "avx512-64bit-qsort.hpp"
+ #include "classfile_constants.h"
++#include <assert.h>
+ 
+ #define DLL_PUBLIC __attribute__((visibility("default")))
+ #define INSERTION_SORT_THRESHOLD_32BIT 16
+@@ -35,54 +36,69 @@
+ 
+ extern "C" {
+ 
+-    DLL_PUBLIC void avx512_sort(void *array, int elem_type, int32_t from_index, int32_t to_index) {
++    DLL_PUBLIC void avx512_sort(void *array, int32_t from_index, int32_t to_index) {
++        int elem_type = (reinterpret_cast<uint64_t>(array) & 0x3) + 1;
++        array = reinterpret_cast<void*>(reinterpret_cast<uint64_t>(array) & ~0x3);
+         switch(elem_type) {
+-            case JVM_T_INT:
++            case JVM_ITEM_Integer:
+                 avx512_fastsort<int32_t>((int32_t*)array, from_index, to_index, INSERTION_SORT_THRESHOLD_32BIT);
+                 break;
+-            case JVM_T_LONG:
++            case JVM_ITEM_Long:
+                 avx512_fastsort<int64_t>((int64_t*)array, from_index, to_index, INSERTION_SORT_THRESHOLD_64BIT);
+                 break;
+-            case JVM_T_FLOAT:
++            case JVM_ITEM_Float:
+                 avx512_fastsort<float>((float*)array, from_index, to_index, INSERTION_SORT_THRESHOLD_32BIT);
+                 break;
+-            case JVM_T_DOUBLE:
++            case JVM_ITEM_Double:
+                 avx512_fastsort<double>((double*)array, from_index, to_index, INSERTION_SORT_THRESHOLD_64BIT);
+                 break;
++            default:
++                assert(false && "Unhandled type");
++                break;
+         }
+     }
+ 
+-    DLL_PUBLIC void avx512_partition_single(void *array, int elem_type, int32_t from_index, int32_t to_index, int32_t *pivot_indices, int32_t index_pivot) {
++    DLL_PUBLIC void avx512_partition_single(void *array, int32_t from_index, int32_t to_index, int32_t *pivot_indices, int32_t index_pivot) {
++        int elem_type = (reinterpret_cast<uint64_t>(array) & 0x3) + 1;
++        array = reinterpret_cast<void*>(reinterpret_cast<uint64_t>(array) & ~0x3);
+         switch(elem_type) {
+-            case JVM_T_INT:
++            case JVM_ITEM_Integer:
+                 avx512_single_pivot_partition<int32_t>((int32_t*)array, from_index, to_index, pivot_indices, index_pivot);
+                 break;
+-            case JVM_T_LONG:
++            case JVM_ITEM_Long:
+                 avx512_single_pivot_partition<int64_t>((int64_t*)array, from_index, to_index, pivot_indices, index_pivot);
+                 break;
+-            case JVM_T_FLOAT:
++            case JVM_ITEM_Float:
+                  avx512_single_pivot_partition<float>((float*)array, from_index, to_index, pivot_indices, index_pivot);
+                 break;
+-            case JVM_T_DOUBLE:
++            case JVM_ITEM_Double:
+                 avx512_single_pivot_partition<double>((double*)array, from_index, to_index, pivot_indices, index_pivot);
+                 break;
++            default:
++                assert(false && "Unhandled type");
++                break;
+         }
+     }
+ 
+-    DLL_PUBLIC void avx512_partition_dual(void *array, int elem_type, int32_t from_index, int32_t to_index, int32_t *pivot_indices, int32_t index_pivot1, int32_t index_pivot2) {
++    DLL_PUBLIC void avx512_partition_dual(void *array, int32_t from_index, int32_t to_index, int32_t *pivot_indices, int32_t index_pivot1, int32_t index_pivot2) {
++        int elem_type = (reinterpret_cast<uint64_t>(array) & 0x3) + 1;
++        array = reinterpret_cast<void*>(reinterpret_cast<uint64_t>(array) & ~0x3);
+         switch(elem_type) {
+-            case JVM_T_INT:
++            case JVM_ITEM_Integer:
+                 avx512_dual_pivot_partition<int32_t>((int32_t*)array, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
+                 break;
+-            case JVM_T_LONG:
++            case JVM_ITEM_Long:
+                 avx512_dual_pivot_partition<int64_t>((int64_t*)array, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
+                 break;
+-            case JVM_T_FLOAT:
++            case JVM_ITEM_Float:
+                 avx512_dual_pivot_partition<float>((float*)array, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
+                 break;
+-            case JVM_T_DOUBLE:
++            case JVM_ITEM_Double:
+                 avx512_dual_pivot_partition<double>((double*)array, from_index, to_index, pivot_indices, index_pivot1, index_pivot2);
+                 break;
++            default:
++                assert(false && "Unhandled type");
++                break;
+         }
+     }
+ 
