@@ -1,0 +1,66 @@
+	.text
+	.file	"dep.c"
+	.globl	workload
+	.p2align	4, 0x90
+	.type	workload,@function
+workload:
+	.cfi_startproc
+	pushq	%rbp                    # encoding: [0x55]
+	.cfi_def_cfa_offset 16
+
+	.cfi_offset %rbp, -16
+
+	movq	%rsp, %rbp              # encoding: [0x48,0x89,0xe5]
+	.cfi_def_cfa_register %rbp
+
+	vmovd	%edi, %xmm0             # encoding: [0xc5,0xf9,0x6e,0xc7]
+	vpbroadcastd	%xmm0, %xmm0    # encoding: [0xc4,0xe2,0x79,0x58,0xc0]
+	movq	$-536384, %rax          # encoding: [0x48,0xc7,0xc0,0xc0,0xd0,0xf7,0xff]
+                                        # imm = 0xFFF7D0C0
+	.p2align	4, 0x90
+.LBB0_1:
+	vpaddd	arr+536384(%rax), %xmm0, %xmm1 # encoding: [0xc5,0xf9,0xfe,0x88,A,A,A,A]
+                                        #   fixup A - offset: 4, value: arr+536384, kind: reloc_signed_4byte
+	vpaddd	arr+536400(%rax), %xmm0, %xmm2 # encoding: [0xc5,0xf9,0xfe,0x90,A,A,A,A]
+                                        #   fixup A - offset: 4, value: arr+536400, kind: reloc_signed_4byte
+	vmovdqa	%xmm1, arr+536384(%rax) # encoding: [0xc5,0xf9,0x7f,0x88,A,A,A,A]
+                                        #   fixup A - offset: 4, value: arr+536384, kind: reloc_signed_4byte
+	vmovdqa	%xmm2, arr+536400(%rax) # encoding: [0xc5,0xf9,0x7f,0x90,A,A,A,A]
+                                        #   fixup A - offset: 4, value: arr+536400, kind: reloc_signed_4byte
+	vpaddd	arr+536416(%rax), %xmm0, %xmm1 # encoding: [0xc5,0xf9,0xfe,0x88,A,A,A,A]
+                                        #   fixup A - offset: 4, value: arr+536416, kind: reloc_signed_4byte
+	vpaddd	arr+536432(%rax), %xmm0, %xmm2 # encoding: [0xc5,0xf9,0xfe,0x90,A,A,A,A]
+                                        #   fixup A - offset: 4, value: arr+536432, kind: reloc_signed_4byte
+	vmovdqa	%xmm1, arr+536416(%rax) # encoding: [0xc5,0xf9,0x7f,0x88,A,A,A,A]
+                                        #   fixup A - offset: 4, value: arr+536416, kind: reloc_signed_4byte
+	vmovdqa	%xmm2, arr+536432(%rax) # encoding: [0xc5,0xf9,0x7f,0x90,A,A,A,A]
+                                        #   fixup A - offset: 4, value: arr+536432, kind: reloc_signed_4byte
+	addq	$64, %rax               # encoding: [0x48,0x83,0xc0,0x40]
+	jne	.LBB0_1                 # encoding: [0x75,A]
+                                        #   fixup A - offset: 1, value: .LBB0_1-1, kind: FK_PCRel_1
+	addl	%edi, arr+536384(%rip)  # encoding: [0x01,0x3d,A,A,A,A]
+                                        #   fixup A - offset: 2, value: (arr+536384)-4, kind: reloc_riprel_4byte
+	addl	%edi, arr+536388(%rip)  # encoding: [0x01,0x3d,A,A,A,A]
+                                        #   fixup A - offset: 2, value: (arr+536388)-4, kind: reloc_riprel_4byte
+	movl	arr+28(%rip), %eax      # encoding: [0x8b,0x05,A,A,A,A]
+                                        #   fixup A - offset: 2, value: (arr+28)-4, kind: reloc_riprel_4byte
+	popq	%rbp                    # encoding: [0x5d]
+	.cfi_def_cfa %rsp, 8
+
+	retq                            # encoding: [0xc3]
+.Lfunc_end0:
+	.size	workload, .Lfunc_end0-workload
+	.cfi_endproc
+
+	.type	arr,@object
+	.data
+	.globl	arr
+	.p2align	4
+arr:
+	.long	1
+	.zero	536388
+	.size	arr, 536392
+
+
+	.ident	"clang version 10.0.0 (http://github.com/llvm-mirror/clang.git 3441aaff8506ac0252f9bba9d1ce117cf35906ce) (http://github.com/llvm-mirror/llvm.git 2e6b938e4e31a2fdd8a5b3ec969bee9dcf9806a7)"
+	.section	".note.GNU-stack","",@progbits

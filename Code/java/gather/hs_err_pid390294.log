@@ -1,0 +1,63 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  Internal Error (/home/jatinbha/sandboxes/jdk/src/hotspot/share/opto/matcher.cpp:1848), pid=390294, tid=390315
+#  assert(m->adr_type() == mach_at) failed: matcher should not change adr type
+#
+# JRE version: OpenJDK Runtime Environment (22.0) (slowdebug build 22-internal-adhoc.root.jdk)
+# Java VM: OpenJDK 64-Bit Server VM (slowdebug 22-internal-adhoc.root.jdk, mixed mode, sharing, tiered, compressed oops, compressed class ptrs, g1 gc, linux-amd64)
+# Problematic frame:
+# V  [libjvm.so+0x1168c4f]  Matcher::ReduceInst(State*, int, Node*&)+0x5ad
+#
+# Core dump will be written. Default location: Core dumps may be processed with "/usr/share/apport/apport %p %s %c %d %P %E" (or dumping to /home/jatinbha/code/java/gather/core.390294)
+#
+# If you would like to submit a bug report, please visit:
+#   https://bugreport.java.com/bugreport/crash.jsp
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: --add-modules=jdk.incubator.vector -XX:CompileOnly=gather::micro -XX:+PauseAtStartup gather
+
+Host: intel-S2600WFT, Intel(R) Xeon(R) Platinum 8280 CPU @ 2.70GHz, 112 cores, 754G, Ubuntu 20.04.2 LTS
+Time: Thu Oct 19 15:18:29 2023 IST elapsed time: 532.741451 seconds (0d 0h 8m 52s)
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x00007fbf40376b30):  JavaThread "C2 CompilerThread0" daemon [_thread_in_native, id=390315, stack(0x00007fbeec721000,0x00007fbeec822000) (1028K)]
+
+
+Current CompileTask:
+C2: 532741   82       4       gather::micro (19 bytes)
+
+Stack: [0x00007fbeec721000,0x00007fbeec822000],  sp=0x00007fbeec81dc90,  free space=1011k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+V  [libjvm.so+0x1168c4f]  Matcher::ReduceInst(State*, int, Node*&)+0x5ad  (matcher.cpp:1848)
+V  [libjvm.so+0x1167be9]  Matcher::match_tree(Node const*)+0x379  (matcher.cpp:1541)
+V  [libjvm.so+0x1165cb1]  Matcher::xform(Node*, int)+0x1f7  (matcher.cpp:1133)
+V  [libjvm.so+0x1160968]  Matcher::match()+0xe7c  (matcher.cpp:359)
+V  [libjvm.so+0x967a3f]  Compile::Code_Gen()+0x99  (compile.cpp:2908)
+V  [libjvm.so+0x95e357]  Compile::Compile(ciEnv*, ciMethod*, int, Options, DirectiveSet*)+0x17d1  (compile.cpp:887)
+V  [libjvm.so+0x82afd1]  C2Compiler::compile_method(ciEnv*, ciMethod*, int, bool, DirectiveSet*)+0x20f  (c2compiler.cpp:119)
+V  [libjvm.so+0x97f0b2]  CompileBroker::invoke_compiler_on_method(CompileTask*)+0x9cc  (compileBroker.cpp:2282)
+V  [libjvm.so+0x97dbc3]  CompileBroker::compiler_thread_loop()+0x411  (compileBroker.cpp:1943)
+V  [libjvm.so+0x9a114e]  CompilerThread::thread_entry(JavaThread*, JavaThread*)+0x84  (compilerThread.cpp:58)
+V  [libjvm.so+0xd76e1c]  JavaThread::thread_main_inner()+0x15a  (javaThread.cpp:720)
+V  [libjvm.so+0xd76cbe]  JavaThread::run()+0x1c0  (javaThread.cpp:705)
+V  [libjvm.so+0x15858ce]  Thread::call_run()+0x1a8  (thread.cpp:220)
+V  [libjvm.so+0x126b98c]  thread_native_entry(Thread*)+0x1c5  (os_linux.cpp:786)
+Registers:
+RAX=0x00007fbf488a4000, RBX=0x00007fbe740cd350, RCX=0x2bad4b0bbaadbabe, RDX=0x00007fbe74001b10
+RSP=0x00007fbeec81dc90, RBP=0x00007fbeec81dd00, RSI=0x00007fbe74100ea8, RDI=0x00007fbe74001b10
+R8 =0x0000000000000000, R9 =0x00007fbeec81d040, R10=0x00007fbf46f63948, R11=0x0000000000000000
+R12=0x00007fbf46513c04, R13=0x00007fbeec81fb18, R14=0x0000000000000008, R15=0x00007fbeec81df40
+RIP=0x00007fbf46e45c4f, EFLAGS=0x0000000000010202, CSGSFS=0x002b000000000033, ERR=0x0000000000000000
+  TRAPNO=0x0000000000000001
+
+
+Register to memory mapping:
+
+RAX=0x00007fbf488a4000 in mmap'd memory region [0x00007fbf488a4000 - 0x00007fbf488a5000], tag mtInternal
+RBX=0x00007fbe740cd350 points into unknown readable memory: 0x00007fbf4846f778 | 78 f7 46 48 bf 7f 00 00
+RCX=
+------ Timeout during error reporting after 457 s. ------

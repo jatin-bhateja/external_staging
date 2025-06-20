@@ -1,0 +1,95 @@
+CompileCommand: print test.compute_pi bool print = true
+
+============================= C2-compiled nmethod ==============================
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)      33    1             test::compute_pi (58 bytes)
+ total in heap  [0x00007fcb84983510,0x00007fcb849837e8] = 728
+ relocation     [0x00007fcb84983668,0x00007fcb84983688] = 32
+ constants      [0x00007fcb849836a0,0x00007fcb849836c0] = 32
+ main code      [0x00007fcb849836c0,0x00007fcb84983770] = 176
+ stub code      [0x00007fcb84983770,0x00007fcb84983788] = 24
+ oops           [0x00007fcb84983788,0x00007fcb84983790] = 8
+ metadata       [0x00007fcb84983790,0x00007fcb84983798] = 8
+ scopes data    [0x00007fcb84983798,0x00007fcb849837b0] = 24
+ scopes pcs     [0x00007fcb849837b0,0x00007fcb849837e0] = 48
+ dependencies   [0x00007fcb849837e0,0x00007fcb849837e8] = 8
+
+[Disassembly]
+--------------------------------------------------------------------------------
+
+[Constant Pool]
+             Address          hex4                    hex8      
+  0x00007fcb849836a0:   0x00000000      0x4010000000000000      
+  0x00007fcb849836a4:   0x40100000                              
+  0x00007fcb849836a8:   0x55555555      0x3ff5555555555555      
+  0x00007fcb849836ac:   0x3ff55555                              
+  0x00007fcb849836b0:   0xf4f4f4f4      0xf4f4f4f4f4f4f4f4      
+  0x00007fcb849836b4:   0xf4f4f4f4                              
+  0x00007fcb849836b8:   0xf4f4f4f4      0xf4f4f4f4f4f4f4f4      
+  0x00007fcb849836bc:   0xf4f4f4f4                              
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007fcaf64003d8} 'compute_pi' '()D' in 'test'
+  #           [sp+0x20]  (sp of caller)
+  0x00007fcb849836c0:   sub    $0x18,%rsp                   ;   {no_reloc}
+  0x00007fcb849836c7:   mov    %rbp,0x10(%rsp)
+  0x00007fcb849836cc:   cmpl   $0x1,0x20(%r15)
+  0x00007fcb849836d4:   jne    0x00007fcb84983760
+  0x00007fcb849836da:   mov    $0x3,%r9d
+  0x00007fcb849836e0:   vmovsd -0x48(%rip),%xmm1        # 0x00007fcb849836a0
+                                                            ;   {section_word}
+  0x00007fcb849836e8:   vmovsd -0x48(%rip),%xmm2        # 0x00007fcb849836a8
+                                                            ;   {section_word}
+  0x00007fcb849836f0:   xor    %r11d,%r11d
+  0x00007fcb849836f3:   vmovapd %xmm1,%xmm0
+  0x00007fcb849836f7:   jmp    0x00007fcb8498371e
+  0x00007fcb849836f9:   nopl   0x0(%rax)
+  0x00007fcb84983700:   vsubsd %xmm2,%xmm0,%xmm0
+  0x00007fcb84983704:   xor    $0x1,%r11d
+  0x00007fcb84983708:   add    $0x2,%r9d
+  0x00007fcb8498370c:   cmp    $0x3e8,%r9d
+  0x00007fcb84983713:   jge    0x00007fcb8498372b
+  0x00007fcb84983715:   vcvtsi2sd %r9d,%xmm2,%xmm2
+  0x00007fcb8498371a:   vdivsd %xmm2,%xmm1,%xmm2
+  0x00007fcb8498371e:   xchg   %ax,%ax
+  0x00007fcb84983720:   test   %r11d,%r11d
+  0x00007fcb84983723:   je     0x00007fcb84983700
+  0x00007fcb84983725:   vaddsd %xmm2,%xmm0,%xmm0
+  0x00007fcb84983729:   jmp    0x00007fcb84983704
+  0x00007fcb8498372b:   mov    0x460(%r15),%rcx
+  0x00007fcb84983732:   mov    %r11d,%r8d                   ; ImmutableOopMap {}
+                                                            ;*goto {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) test::compute_pi@53 (line 7)
+  0x00007fcb84983735:   test   %eax,(%rcx)                  ;   {poll}
+  0x00007fcb84983737:   add    $0x10,%rsp
+  0x00007fcb8498373b:   pop    %rbp
+  0x00007fcb8498373c:   cmp    0x458(%r15),%rsp             ;   {poll_return}
+  0x00007fcb84983743:   ja     0x00007fcb8498374a
+  0x00007fcb84983749:   retq   
+  0x00007fcb8498374a:   movabs $0x7fcb8498373c,%r10         ;   {internal_word}
+  0x00007fcb84983754:   mov    %r10,0x470(%r15)
+  0x00007fcb8498375b:   jmpq   0x00007fcb8494e000           ;   {runtime_call SafepointBlob}
+  0x00007fcb84983760:   callq  Stub::nmethod_entry_barrier  ;   {runtime_call StubRoutines (final stubs)}
+  0x00007fcb84983765:   jmpq   0x00007fcb849836da
+  0x00007fcb8498376a:   hlt    
+  0x00007fcb8498376b:   hlt    
+  0x00007fcb8498376c:   hlt    
+  0x00007fcb8498376d:   hlt    
+  0x00007fcb8498376e:   hlt    
+  0x00007fcb8498376f:   hlt    
+[Exception Handler]
+  0x00007fcb84983770:   jmpq   0x00007fcb8497b400           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007fcb84983775:   callq  0x00007fcb8498377a
+  0x00007fcb8498377a:   subq   $0x5,(%rsp)
+  0x00007fcb8498377f:   jmpq   0x00007fcb8494d2a0           ;   {runtime_call DeoptimizationBlob}
+  0x00007fcb84983784:   hlt    
+  0x00007fcb84983785:   hlt    
+  0x00007fcb84983786:   hlt    
+  0x00007fcb84983787:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+[time] 259 ms  [res] 627918.5311171506

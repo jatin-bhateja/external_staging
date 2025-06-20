@@ -1,0 +1,130 @@
+--- |
+  ; ModuleID = 'ext.ll'
+  source_filename = "ext.ll"
+  target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+  
+  define <8 x i32> @doOper(<16 x i32> %a, <16 x i32> %b) #0 {
+    %add = add <16 x i32> %a, %b
+    %ret = shufflevector <16 x i32> %add, <16 x i32> undef, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+    %add1 = add <8 x i32> %ret, <i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1>
+    ret <8 x i32> %add1
+  }
+  
+  define <8 x i32> @doOper1(<8 x i32> %a, <8 x i32> %b) #0 {
+    %add = add <8 x i32> %a, %b
+    ret <8 x i32> %add
+  }
+  
+  attributes #0 = { "target-cpu"="skx" }
+
+...
+---
+name:            doOper
+alignment:       4
+exposesReturnsTwice: false
+legalized:       false
+regBankSelected: false
+selected:        false
+failedISel:      false
+tracksRegLiveness: true
+hasWinCFI:       false
+registers:       
+  - { id: 0, class: vr512, preferred-register: '' }
+  - { id: 1, class: vr512, preferred-register: '' }
+  - { id: 2, class: vr256x, preferred-register: '' }
+  - { id: 3, class: vr256x, preferred-register: '' }
+  - { id: 4, class: vr256x, preferred-register: '' }
+  - { id: 5, class: vr256, preferred-register: '' }
+  - { id: 6, class: vr256x, preferred-register: '' }
+liveins:         
+  - { reg: '$zmm31', virtual-reg: '%0' }
+  - { reg: '$zmm30', virtual-reg: '%1' }
+frameInfo:       
+  isFrameAddressTaken: false
+  isReturnAddressTaken: false
+  hasStackMap:     false
+  hasPatchPoint:   false
+  stackSize:       0
+  offsetAdjustment: 0
+  maxAlignment:    0
+  adjustsStack:    false
+  hasCalls:        false
+  stackProtector:  ''
+  maxCallFrameSize: 4294967295
+  cvBytesOfCalleeSavedRegisters: 0
+  hasOpaqueSPAdjustment: false
+  hasVAStart:      false
+  hasMustTailInVarArgFunc: false
+  localFrameSize:  0
+  savePoint:       ''
+  restorePoint:    ''
+fixedStack:      []
+stack:           []
+constants:       []
+machineFunctionInfo: {}
+body:             |
+  bb.0 (%ir-block.0):
+    liveins: $zmm31, $zmm30
+  
+    %1:vr512 = COPY $zmm30
+    %0:vr512 = COPY $zmm31
+    %2:vr256x = COPY %1.sub_ymm
+    %3:vr256x = COPY %0.sub_ymm
+    %4:vr256x = VPADDDZ256rr killed %3, killed %2
+    %5:vr256 = AVX2_SETALLONES
+    %6:vr256x = VPSUBDZ256rr killed %4, killed %5
+    $ymm0 = COPY %6
+    RET 0, $ymm0
+
+...
+---
+name:            doOper1
+alignment:       4
+exposesReturnsTwice: false
+legalized:       false
+regBankSelected: false
+selected:        false
+failedISel:      false
+tracksRegLiveness: true
+hasWinCFI:       false
+registers:       
+  - { id: 0, class: vr256x, preferred-register: '' }
+  - { id: 1, class: vr256x, preferred-register: '' }
+  - { id: 2, class: vr256x, preferred-register: '' }
+liveins:         
+  - { reg: '$ymm0', virtual-reg: '%0' }
+  - { reg: '$ymm1', virtual-reg: '%1' }
+frameInfo:       
+  isFrameAddressTaken: false
+  isReturnAddressTaken: false
+  hasStackMap:     false
+  hasPatchPoint:   false
+  stackSize:       0
+  offsetAdjustment: 0
+  maxAlignment:    0
+  adjustsStack:    false
+  hasCalls:        false
+  stackProtector:  ''
+  maxCallFrameSize: 4294967295
+  cvBytesOfCalleeSavedRegisters: 0
+  hasOpaqueSPAdjustment: false
+  hasVAStart:      false
+  hasMustTailInVarArgFunc: false
+  localFrameSize:  0
+  savePoint:       ''
+  restorePoint:    ''
+fixedStack:      []
+stack:           []
+constants:       []
+machineFunctionInfo: {}
+body:             |
+  bb.0 (%ir-block.0):
+    liveins: $ymm0, $ymm1
+  
+    %1:vr256x = COPY $ymm1
+    %0:vr256x = COPY $ymm0
+    %2:vr256x = VPADDDZ256rr %0, %1
+    $ymm0 = COPY %2
+    RET 0, $ymm0
+
+...

@@ -1,0 +1,40 @@
+import java.util.Arrays;
+import jdk.incubator.vector.*;
+
+public class slice {
+  public static final VectorSpecies<Short> SPECIES256 = ShortVector.SPECIES_256;
+  public static final VectorSpecies<Short> SPECIES128 = ShortVector.SPECIES_128;
+
+  public static void micro(int origin, ShortVector vec1, ShortVector vec2, short [] res) {
+     vec1.slice(origin, vec2).intoArray(res, 0);
+  }
+
+  public static void main(String [] args) {
+     int origin =  Integer.parseInt(args[0]);
+     var res = new short[32];
+     var src1 = new short[32];
+     var src2 = new short[32];
+     Arrays.fill(src1, (short)10);
+     Arrays.fill(src2, (short)20);
+
+     // Warming up profile for multiple receiver types (128 and 256 bit vectors).
+     for (int i = 0; i < 20000; i++) {
+        VectorSpecies<Short> SPECIES = (i & 1) == 1 ? SPECIES128 : SPECIES256;
+        var vec1 = ShortVector.fromArray(SPECIES, src1, 0);
+        var vec2 = ShortVector.fromArray(SPECIES, src2, 0);
+        vec1.slice(origin, vec2).intoArray(res, 0);
+     }
+
+     // Main measurement loop operates over 256 bit vector.
+     long t1 = System.currentTimeMillis();
+     for (int i = 0; i < 10000; i++) {
+        VectorSpecies<Short> SPECIES = SPECIES256; 
+        var vec1 = ShortVector.fromArray(SPECIES, src1, 0);
+        var vec2 = ShortVector.fromArray(SPECIES, src2, 0);
+        micro(origin, vec1, vec2, res);
+     }
+     long t2 = System.currentTimeMillis();
+     System.out.println("[time] " + (t2-t1) + " ms");
+     System.out.println(Arrays.toString(res));
+  }
+}

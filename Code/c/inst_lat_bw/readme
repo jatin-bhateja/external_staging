@@ -1,0 +1,69 @@
+instlat micro allows one to measure the latency and/or B/W of several different instructions. 
+The test can be configured to run on a single core or on multiple cores. Works on both Linux and Windows
+
+Usage:
+./instlat -xn [-bn] [-cn] [-in] [-nn] [-kn] [-Jn] [-F] [-L]
+        -x : specifies the type of instruction to be executed
+                1 - Temporal loads (movdqa to load cache lines)
+                2 - Temporal stores (movdqa to store cache lines)
+                3 - Non Temporal stores (using movnti)
+                4 - REP STOSB
+                5 - PAUSE
+                6 - LOCK
+        -b : buffer size in bytes - can use k,m,g to specify in KB/MB/GB (e.g -b200m)
+        -c : specifies cpu# to pin the thread in case only one thread is used
+        -i : specifies cpu# to pin where memory is allocated - used only if -c is specified
+        -n : total number of cache lines accessed by each thread before the test ends
+        -k : Use this to specify a list of cpus if more than one is used
+                specify a list of cpu# (use '-' for range) e.g 3-6,9-13,19,20
+        -J : specifies DCPMEM persistent memory file system path from where memory will be allocated
+        -F : CLFLUSHOPT will be executed after every load or store
+                can only be used in conjunction with -x1 or -x2
+        -L : enable large pages
+
+Details on each operation (-x values)
+==============
+-x1:
+    a) Measure b/w to memory with loads from a single thread
+	./instlat -x1 -c2 -i10 -b2g -n100m
+	This will allocate 2GB of memory pinned to thread 10 and then run the b/w tests from
+	thread 2. This allows initialization code to be run on thread 10 and the actual b/w test
+	to run on thread 2. This facilitates cleaner capture of EMON data on each thread without mixing
+	up initialization code. 
+	The test will access cache lines in the 2GB buffer in sequence multiple times and once 100 million
+	lines (-n100m) are accessed, the average b/w over that time would be reported
+
+	b) Measure b/w to memory with loads from multiple threads
+	./instlat -x1 -k2-5,7-9 -b2g -n100m
+	This will create multiple threads and pin them on cpu# 2 to 5 and 7 to 9. After pinning
+	each of them will allocate 2GB of memory and then run the b/w tests from each of those
+	simulatenously. Each thread will access cache lines in the 2GB buffer (that it allocated) in sequence 
+	multiple times and once 100 million
+	lines (-n100m) are accessed, each thread will stop. Once all threads are stopped,
+	the average b/w from each thread and the total from all threads will be reported.
+	
+	c) Flush cache line after each load or store
+	./instlat -x1 -c0 -b256 -n100k -F
+	CLFLUSHOPT option with -F is very powerful as it allows one to understand how memory interleaving works.
+	For example, when -b256 is used, only a 256 byte buffer is allocated and after every load it is flushed 
+	which results in memory access but only the same 256 bytes (4 cache lines) are accessed repeatedly. 
+	Consecutive 256 byte addresses are mapped to the same channel and when EMON data is collected, one can 
+	see only one channel events firing. If -b512 is used, 2 such channels will be firing. This can also be used to
+	access the same location (row hammer) on DRAM and DCPMEM
+	
+3. Allocating memory from DCPMEM
+	./instlat -x1 -c0 -b2g -n100m -J/mnt/pmem1
+	By default, the memory is allocated from DRAM. However, with -J option
+	you can specify DCPMEM mount point. With this setting, memory will be allocated
+	from DCPMEM and b/w to those devices will be measured. You can also use -F option
+	to clflushopt cache lines and measure impact of measuring the same address from the DCPMEM device
+	
+	This will create multiple threads and pin them on cpu# 2 to 5 and 7 to 9. After pinning
+	
+As mentioned in the usage above, the tool can be used to measure the b/w with loads or stores
+
+1. b/w of loads and stores - With various buffer sizes, and # of threads, one can measure
+the b/w to any cache level or memory. This functionality is similar to what is available in
+Intel Memory Latency Checker (MLC) but very limited in the types of traffic supported. Also, it is
+much li
+ght weight compared to MLC

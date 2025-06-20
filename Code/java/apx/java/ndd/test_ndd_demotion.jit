@@ -1,0 +1,46 @@
+#
+#  int ( int, int, int, int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact * )
+#
+000     N1: #   out( B1 ) <- in( B5 B4 B3 )  Freq: 1
+
+000     B1: #   out( B5 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (152 bytes)
+        pushq   rbp     # Save rbp
+        subq    rsp, #32        # Create frame
+
+01a     movl    R17, [R8 + #12 (8-bit)] # range
+01f     NullCheck R8
+
+01f     B2: #   out( B4 B3 ) <- in( B1 )  Freq: 0.999999
+01f     eaddl    R16, RSI, RDX  # int ndd
+025     eaddl    R18, RCX, R16  # int ndd
+02b     testl   R17, R17        # unsigned
+02f     jbe,us  B4  P=0.000001 C=-1.000000
+
+031     B3: #   out( N1 ) <- in( B2 )  Freq: 0.999998
+031     movl    R17, R18        # spill
+035     eaddl    R17, R17, [R8 + #16 (8-bit)]   # int ndd
+03a     movl    RAX, R17        # spill
+03e     addq    rsp, 32 # Destroy frame
+        popq    rbp
+        cmpq    rsp, poll_offset[r15_thread]
+        ja      #safepoint_stub # Safepoint: poll for GC
+
+04d     ret
+
+04e     B4: #   out( N1 ) <- in( B2 )  Freq: 9.99999e-07
+04e     movl    RSI, #-28       # int
+053     movq    RBP, R8 # spill
+056     movl    [rsp + #0], R18 # spill
+05b     call,static  wrapper for: uncommon_trap(reason='range_check' action='make_not_entrant' debug_id='0')
+        # test_add_demotion::micro @ bci:7 (line 9) L[0]=_ L[1]=_ L[2]=_ L[3]=_ STK[0]=rsp + #0 STK[1]=RBP STK[2]=#0
+        # OopMap {rbp=Oop off=96/0x60}
+068     stop    # ShouldNotReachHere
+
+07c     B5: #   out( N1 ) <- in( B1 )  Freq: 1.01328e-06
+07c     movl    RSI, #-10       # int
+        nop     # 2 bytes pad for loops and calls
+083     call,static  wrapper for: uncommon_trap(reason='null_check' action='maybe_recompile' debug_id='0')
+        # test_add_demotion::micro @ bci:7 (line 9) L[0]=_ L[1]=_ L[2]=_ L[3]=_ STK[0]=_ STK[1]=#null STK[2]=#0
+        # OopMap {off=136/0x88}
+090     stop    # ShouldNotReachHere

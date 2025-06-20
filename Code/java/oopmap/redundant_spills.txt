@@ -1,0 +1,396 @@
+
+/*
+class MyClass {
+  private int i;
+  private short j;
+  public MyClass(int x, short y) {
+    this.i = x;
+    this.j = y;
+  }
+  public int sum() {
+    return this.i * this.j + 1000;
+  }
+}
+
+public class jit1 {
+  public int micro(int a , short b) {
+     int Res = 0;
+     MyClass obj = new MyClass(a,b);
+     Res += obj.sum();
+     return Res;   
+  }
+
+  public int callee(int a, short b) {
+     int t1 = a + b + 40;
+     int t3 = micro(t1, b);
+     int t2 = a + b + 40;
+     return  t1 + t2 + t3; 
+  }
+
+  public static void main (String [] args) { 
+    int Res = 0 ;
+    jit1 obj = new jit1(); 
+    for ( int i = 0 ; i < 10000000 ; i++)  {
+      Res += obj.callee(i%72, (short)i);
+    }
+    System.out.println("Res =  " + Res);
+  }
+}
+
+*/
+
+// javad  -XX:+PreserveFramePointer -XX:-Inline -XX:CompileCommand=Print,jit1::callee -XX:ObjectAlignmentInBytes=32 -XX:-EliminateAllocations -cp . jit1
+
+============================= C2-compiled nmethod ==============================
+----------------------- MetaData before Compile_id = 127 ------------------------
+{method}
+ - this oop:          0x00007fdf004114d8
+ - method holder:     'jit1'
+ - constants:         0x00007fdf00411048 constant pool [65]/operands[5] {0x00007fdf00411048} for 'jit1' cache=0x00007fdf00411658
+ - access:            0x81000001  public 
+ - name:              'callee'
+ - signature:         '(IS)I'
+ - max stack:         4
+ - max locals:        6
+ - size of params:    3
+ - method size:       13
+ - vtable index:      6
+ - i2i entry:         0x00007fdf3d00dc00
+ - adapters:          AHE@0x00007fdf403b9010: 0xbaa i2c: 0x00007fdf3d0a8de0 c2i: 0x00007fdf3d0a8ec6 c2iUV: 0x00007fdf3d0a8e90 c2iNCI: 0x00007fdf3d0a8f03
+ - compiled entry     0x00007fdf3d0a8ec6
+ - code size:         31
+ - code start:        0x00007fdf004114b0
+ - code end (excl):   0x00007fdf004114cf
+ - method data:       0x00007fdf00411cb8
+ - checked ex length: 0
+ - linenumber start:  0x00007fdf004114cf
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 127 -----------------------
+#
+#  int ( jit1:NotNull *, int, int )
+#
+#r018 rsi:rsi   : parm 0: jit1:NotNull *
+#r016 rdx   : parm 1: int
+#r010 rcx   : parm 2: int
+# -- Old rsp -- Framesize: 48 --
+#r591 rsp+44: in_preserve
+#r590 rsp+40: return address
+#r589 rsp+36: in_preserve
+#r588 rsp+32: saved fp register
+#r587 rsp+28: pad2, stack alignment
+#r586 rsp+24: pad2, stack alignment
+#r585 rsp+20: Fixed slot 1
+#r584 rsp+16: Fixed slot 0
+#r595 rsp+12: spill
+#r594 rsp+ 8: spill
+#r593 rsp+ 4: spill
+#r592 rsp+ 0: spill
+#
+000     N55: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     movl    rscratch1, [j_rarg0 + oopDesc::klass_offset_in_bytes()]	# compressed klass
+	decode_klass_not_null rscratch1, rscratch1
+	cmpq    rax, rscratch1	 # Inline cache check
+	jne     SharedRuntime::_ic_miss_stub
+	nop	# nops to align entry point
+
+        nop 	# 4 bytes pad for loops and calls
+
+020     B1: #	out( B3 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+020     # stack bang (168 bytes)
+	pushq   rbp	# Save rbp
+	movq    rbp, rsp	# Save the caller's SP into rbp
+	subq    rsp, #32	# Create frame
+
+02f     movl    [rsp + #0], RDX	# spill
+032     addl    RDX, RCX	# int
+034     movl    [rsp + #12], RDX	# spill
+038     addl    RDX, #40	# int
+03b     movl    [rsp + #4], RCX	# spill
+03f     movl    [rsp + #8], RDX	# spill
+043     call,static  jit1::micro
+        # jit1::callee @ bci:10 (line 29) L[0]=_ L[1]=rsp + #0 L[2]=rsp + #4 L[3]=rsp + #8 L[4]=_ L[5]=_
+        # OopMap {off=72/0x48}
+
+048     B2: #	out( N55 ) <- in( B1 )  Freq: 0.99998
+        # Block is sole successor of call
+048     movl    R11, [rsp + #12]	# spill
+04d     addl    R11, [RSP + #12 (32-bit)]	# int
+052     addl    RAX, R11	# int
+055     addl    RAX, #80	# int
+058     addq    rsp, 32	# Destroy frame
+	popq    rbp
+	cmpq     rsp, poll_offset[r15_thread] 
+	ja       #safepoint_stub	# Safepoint: poll for GC
+
+06a     ret
+
+06b     B3: #	out( N55 ) <- in( B1 )  Freq: 1e-05
+06b     # exception oop is in rax; no code emitted
+06b     movq    RSI, RAX	# spill
+06e     addq    rsp, 32	# Destroy frame
+	popq    rbp
+
+073     jmp     rethrow_stub
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)  127             jit1::callee (31 bytes)
+ total in heap  [0x00007fdf3d044390,0x00007fdf3d0446e0] = 848
+ relocation     [0x00007fdf3d044500,0x00007fdf3d044520] = 32
+ main code      [0x00007fdf3d044520,0x00007fdf3d0445c0] = 160
+ stub code      [0x00007fdf3d0445c0,0x00007fdf3d0445e8] = 40
+ oops           [0x00007fdf3d0445e8,0x00007fdf3d0445f0] = 8
+ metadata       [0x00007fdf3d0445f0,0x00007fdf3d044608] = 24
+ scopes data    [0x00007fdf3d044608,0x00007fdf3d044640] = 56
+ scopes pcs     [0x00007fdf3d044640,0x00007fdf3d0446c0] = 128
+ dependencies   [0x00007fdf3d0446c0,0x00007fdf3d0446c8] = 8
+ handler table  [0x00007fdf3d0446c8,0x00007fdf3d0446e0] = 24
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Entry Point]
+  # {method} {0x00007fdf004114d8} 'callee' '(IS)I' in 'jit1'
+  # this:     rsi:rsi   = 'jit1'
+  # parm0:    rdx       = int
+  # parm1:    rcx       = short
+  #           [sp+0x30]  (sp of caller)
+ ;; N55: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007fdf3d044520:   mov    0x8(%rsi),%r10d
+  0x00007fdf3d044524:   movabs $0x2000000000,%r11
+  0x00007fdf3d04452e:   add    %r11,%r10
+  0x00007fdf3d044531:   cmp    %r10,%rax
+  0x00007fdf3d044534:   jne    0x00007fdf3d115e20           ;   {runtime_call ic_miss_stub}
+  0x00007fdf3d04453a:   nop
+  0x00007fdf3d04453b:   nop
+  0x00007fdf3d04453c:   nop
+  0x00007fdf3d04453d:   nop
+  0x00007fdf3d04453e:   nop
+  0x00007fdf3d04453f:   nop
+[Verified Entry Point]
+ ;; B1: #	out( B3 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007fdf3d044540:   mov    %eax,-0x16000(%rsp)
+  0x00007fdf3d044547:   push   %rbp
+  0x00007fdf3d044548:   mov    %rsp,%rbp
+  0x00007fdf3d04454b:   sub    $0x20,%rsp                   ;*synchronization entry
+                                                            ; - jit1::callee@-1 (line 28)
+  0x00007fdf3d04454f:   mov    %edx,(%rsp)
+  0x00007fdf3d044552:   add    %ecx,%edx                    ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - jit1::callee@2 (line 28)
+  0x00007fdf3d044554:   mov    %edx,0xc(%rsp)
+  0x00007fdf3d044558:   add    $0x28,%edx                   ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - jit1::callee@5 (line 28)
+  0x00007fdf3d04455b:   mov    %ecx,0x4(%rsp)
+  0x00007fdf3d04455f:   mov    %edx,0x8(%rsp)
+  0x00007fdf3d044563:   callq  0x00007fdf3d033f60           ; ImmutableOopMap {}
+                                                            ;*invokevirtual micro {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - jit1::callee@10 (line 29)
+                                                            ;   {optimized virtual_call}
+ ;; B2: #	out( N55 ) <- in( B1 )  Freq: 0.99998
+  0x00007fdf3d044568:   mov    0xc(%rsp),%r11d
+  0x00007fdf3d04456d:   add    0xc(%rsp),%r11d
+  0x00007fdf3d044572:   add    %r11d,%eax
+  0x00007fdf3d044575:   add    $0x50,%eax                   ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - jit1::callee@29 (line 31)
+  0x00007fdf3d044578:   add    $0x20,%rsp
+  0x00007fdf3d04457c:   pop    %rbp
+  0x00007fdf3d04457d:   cmp    0x388(%r15),%rsp             ;   {poll_return}
+  0x00007fdf3d044584:   ja     0x00007fdf3d044598
+  0x00007fdf3d04458a:   retq                                ;*invokevirtual micro {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - jit1::callee@10 (line 29)
+ ;; B3: #	out( N55 ) <- in( B1 )  Freq: 1e-05
+  0x00007fdf3d04458b:   mov    %rax,%rsi
+  0x00007fdf3d04458e:   add    $0x20,%rsp
+  0x00007fdf3d044592:   pop    %rbp
+  0x00007fdf3d044593:   jmpq   0x00007fdf3d07c4a0           ;   {runtime_call _rethrow_Java}
+  0x00007fdf3d044598:   movabs $0x7fdf3d04457d,%r10         ;   {internal_word}
+  0x00007fdf3d0445a2:   mov    %r10,0x3a0(%r15)
+  0x00007fdf3d0445a9:   jmpq   0x00007fdf3d11d6a0           ;   {runtime_call SafepointBlob}
+  0x00007fdf3d0445ae:   hlt    
+  0x00007fdf3d0445af:   hlt    
+  0x00007fdf3d0445b0:   hlt    
+  0x00007fdf3d0445b1:   hlt    
+  0x00007fdf3d0445b2:   hlt    
+  0x00007fdf3d0445b3:   hlt    
+  0x00007fdf3d0445b4:   hlt    
+  0x00007fdf3d0445b5:   hlt    
+  0x00007fdf3d0445b6:   hlt    
+  0x00007fdf3d0445b7:   hlt    
+  0x00007fdf3d0445b8:   hlt    
+  0x00007fdf3d0445b9:   hlt    
+  0x00007fdf3d0445ba:   hlt    
+  0x00007fdf3d0445bb:   hlt    
+  0x00007fdf3d0445bc:   hlt    
+  0x00007fdf3d0445bd:   hlt    
+  0x00007fdf3d0445be:   hlt    
+  0x00007fdf3d0445bf:   hlt    
+[Stub Code]
+  0x00007fdf3d0445c0:   movabs $0x0,%rbx                    ;   {no_reloc}
+  0x00007fdf3d0445ca:   jmpq   0x00007fdf3d0445ca           ;   {runtime_call}
+[Exception Handler]
+  0x00007fdf3d0445cf:   jmpq   0x00007fdf3d081320           ;   {runtime_call ExceptionBlob}
+[Deopt Handler Code]
+  0x00007fdf3d0445d4:   callq  0x00007fdf3d0445d9
+  0x00007fdf3d0445d9:   subq   $0x5,(%rsp)
+  0x00007fdf3d0445de:   jmpq   0x00007fdf3d11ec60           ;   {runtime_call DeoptimizationBlob}
+  0x00007fdf3d0445e3:   hlt    
+  0x00007fdf3d0445e4:   hlt    
+  0x00007fdf3d0445e5:   hlt    
+  0x00007fdf3d0445e6:   hlt    
+  0x00007fdf3d0445e7:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007fdf3d0445e8:   0x000000187f555820 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000187f555820}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007fdf3d0445f0:   0x00007fdf004114d8 {method} {0x00007fdf004114d8} 'callee' '(IS)I' in 'jit1'
+  0x00007fdf3d0445f8:   0x0000002000080800 'jit1'
+  0x00007fdf3d044600:   0x00007fdf00411418 {method} {0x00007fdf00411418} 'micro' '(IS)I' in 'jit1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007fdf3d04451f offset=ffffffff bits=0):
+PcDesc(pc=0x00007fdf3d04454f offset=2f bits=0):
+   jit1::callee@-1 (line 28)
+PcDesc(pc=0x00007fdf3d044554 offset=34 bits=0):
+   jit1::callee@2 (line 28)
+PcDesc(pc=0x00007fdf3d04455b offset=3b bits=0):
+   jit1::callee@5 (line 28)
+PcDesc(pc=0x00007fdf3d044568 offset=48 bits=0):
+   jit1::callee@10 (line 29)
+   Locals
+    - l0: empty
+    - l1: stack[0]
+    - l2: stack[4]
+    - l3: stack[8]
+    - l4: empty
+    - l5: empty
+PcDesc(pc=0x00007fdf3d044578 offset=58 bits=0):
+   jit1::callee@29 (line 31)
+PcDesc(pc=0x00007fdf3d04458b offset=6b bits=0):
+   jit1::callee@10 (line 29)
+PcDesc(pc=0x00007fdf3d0445e9 offset=c9 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 1 OopMaps
+
+ImmutableOopMap {} pc offsets: 72 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007fdf3d04454f offset=2f):
+   jit1::callee@-1 (line 28)
+ScopeDesc(pc=0x00007fdf3d044554 offset=34):
+   jit1::callee@2 (line 28)
+ScopeDesc(pc=0x00007fdf3d04455b offset=3b):
+   jit1::callee@5 (line 28)
+ScopeDesc(pc=0x00007fdf3d044568 offset=48):
+   jit1::callee@10 (line 29)
+   Locals
+    - l0: empty
+    - l1: stack[0]
+    - l2: stack[4]
+    - l3: stack[8]
+    - l4: empty
+    - l5: empty
+ScopeDesc(pc=0x00007fdf3d044578 offset=58):
+   jit1::callee@29 (line 31)
+ScopeDesc(pc=0x00007fdf3d04458b offset=6b):
+   jit1::callee@10 (line 29)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007fdf3d044500: 6014
+relocInfo@0x00007fdf3d044500 [type=6(runtime_call) addr=0x00007fdf3d044534 offset=20] | [destination=0x00007fdf3d115e20]
+         @0x00007fdf3d044502: 342f
+relocInfo@0x00007fdf3d044502 [type=3(opt_virtual_call) addr=0x00007fdf3d044563 offset=47 format=1] | [destination=0x00007fdf3d033f60 metadata=0x0000000000000000]
+         @0x00007fdf3d044504: b01a
+relocInfo@0x00007fdf3d044504 [type=11(poll_return) addr=0x00007fdf3d04457d offset=26]
+         @0x00007fdf3d044506: 6416
+relocInfo@0x00007fdf3d044506 [type=6(runtime_call) addr=0x00007fdf3d044593 offset=22 format=1] | [destination=0x00007fdf3d07c4a0]
+         @0x00007fdf3d044508: f01b8005
+relocInfo@0x00007fdf3d04450a [type=8(internal_word) addr=0x00007fdf3d044598 offset=5 data=27] | [target=0x00007fdf3d04457d]
+         @0x00007fdf3d04450c: 6411
+relocInfo@0x00007fdf3d04450c [type=6(runtime_call) addr=0x00007fdf3d0445a9 offset=17 format=1] | [destination=0x00007fdf3d11d6a0]
+         @0x00007fdf3d04450e: 0017
+relocInfo@0x00007fdf3d04450e [type=0(none) addr=0x00007fdf3d0445c0 offset=23]
+         @0x00007fdf3d044510: f801ffbd5000
+relocInfo@0x00007fdf3d044514 [type=5(static_stub) addr=0x00007fdf3d0445c0 offset=0 data=-67] | [static_call=0x00007fdf3d044563]
+         @0x00007fdf3d044516: c000
+relocInfo@0x00007fdf3d044516 [type=12(metadata) addr=0x00007fdf3d0445c0 offset=0] | [metadata_addr=0x00007fdf3d0445c2 *=0x0000000000000000 offset=0]
+         @0x00007fdf3d044518: 640a
+relocInfo@0x00007fdf3d044518 [type=6(runtime_call) addr=0x00007fdf3d0445ca offset=10 format=1] | [destination=0xffffffffffffffff]
+         @0x00007fdf3d04451a: 6405
+relocInfo@0x00007fdf3d04451a [type=6(runtime_call) addr=0x00007fdf3d0445cf offset=5 format=1] | [destination=0x00007fdf3d081320]
+         @0x00007fdf3d04451c: 640f
+relocInfo@0x00007fdf3d04451c [type=6(runtime_call) addr=0x00007fdf3d0445de offset=15 format=1] | [destination=0x00007fdf3d11ec60]
+         @0x00007fdf3d04451e: 0000
+relocInfo@0x00007fdf3d04451e [type=0(none) addr=0x00007fdf3d0445de offset=0]
+         @0x00007fdf3d044520: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+Dependency of type leaf_type
+  context = jit1
+   [nmethod<=klass]jit1
+Dependency of type unique_concrete_method_4
+  context = jit1
+  method  = {method} {0x00007fdf00411418} 'micro' '(IS)I' in 'jit1'
+  class   = jit1
+  method  = {method} {0x00007fdf00411418} 'micro' '(IS)I' in 'jit1'
+   [nmethod<=klass]jit1
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 24 bytes)
+catch_pco = 72 (pc=0x00007fdf3d044568, 1 entries)
+  bci -1 at scope depth 0 -> pco 107 (pc=0x00007fdf3d04458b)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable is empty
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x000000187f555820 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000187f555820}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x00007fdf004114d8 {method} {0x00007fdf004114d8} 'callee' '(IS)I' in 'jit1'
+#2: 0x0000002000080800 'jit1'
+#3: 0x00007fdf00411418 {method} {0x00007fdf00411418} 'micro' '(IS)I' in 'jit1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Res =  589397504
+------------------------------------------------------------------------
+jit1::callee(IS)I
+  interpreter_invocation_count:       40064
+  invocation_counter:                 40064
+  backedge_counter:                       0
+  decompile_count:                        0
+  mdo size: 504 bytes
+
+0 iload_1
+1 iload_2
+2 iadd
+3 bipush 40
+5 iadd
+6 istore_3
+7 fast_aload_0
+8 iload_3
+9 iload_2
+10 invokevirtual 16 <jit1.micro(IS)I> 
+  0   bci: 10   VirtualCallData     count(0) nonprofiled_count(0) entries(1)
+                                    'jit1'(38401 1.00)
+13 istore #4
+15 iload_1
+16 iload_2
+17 iadd
+18 bipush 40
+20 iadd
+21 istore #5
+23 iload_3
+24 fast_iload #5
+26 iadd
+27 fast_iload #4
+29 iadd
+30 ireturn
+------------------------------------------------------------------------
+Total MDO size: 504 bytes

@@ -1,0 +1,109 @@
+
+
+import jdk.incubator.vector.*;
+
+class Test {
+  public static int DATA_LEN;  
+
+  public final int MOD_ADLER = 65521;
+
+  public LongVector Multiplier;
+
+  public final VectorSpecies<Byte> DATA_SPECIES;
+
+  public final VectorSpecies<Long> MULT_SPECIES;
+
+  public Test(int len) {
+     DATA_SPECIES = ByteVector.SPECIES_64;
+     MULT_SPECIES = LongVector.SPECIES_512;
+     long [] arr = new long[MULT_SPECIES.length()];
+     for (int i = 0 ; i < arr.length; i++)
+        arr[i] = len - i;
+     Multiplier = LongVector.fromArray(MULT_SPECIES, arr ,0);
+  }
+
+  /* 
+    where data is the location of the data in physical memory and 
+    len is the length of the data in bytes 
+  */
+  public int  adler32(byte [] data) {
+    int a = 1, b = 0;
+    
+    // True cross iteration data dependency will inhebit 
+    // loop vectorization.
+    for (int index = 0; index < data.length; ++index) {
+        a = (a + data[index]) % MOD_ADLER;
+        b = (b + a) % MOD_ADLER;
+    }
+
+    System.out.println("b = " + b );
+    System.out.println("a = " + a );
+    
+    return (b << 16) | a;
+  }
+
+
+  public int  adler32_vector(byte [] data) {
+    int ctr = 0;
+    int a = 1, b = 0;
+    
+    int addened_for_A = 0;
+    int addened_for_B = 0;
+
+    for (int index = 0; index < data.length; index += MULT_SPECIES.length())  {
+        ByteVector data_BV = ByteVector.fromArray(DATA_SPECIES, data, index);
+        ByteVector data_for_B = (ByteVector)(((LongVector)(data_BV
+                                  .convertShape(VectorOperators.B2L, MULT_SPECIES, 0))
+                                  .mul(Multiplier))
+                                  .convertShape(VectorOperators.L2B, DATA_SPECIES,0));
+
+        System.out.println("\nIter [" + ctr++ + "]: \n" +   data_BV);
+        System.out.println(data_for_B);
+
+        addened_for_A +=  (int)data_BV.reduceLanes(VectorOperators.ADD);
+        addened_for_B +=  (int)data_for_B.reduceLanes(VectorOperators.ADD);
+        
+        addened_for_A = addened_for_A % MOD_ADLER;
+        addened_for_B = addened_for_B % MOD_ADLER;
+
+        System.out.println("addened_for_A = " + addened_for_A);
+        System.out.println("addened_for_B = " + addened_for_B);
+                
+        Multiplier = Multiplier.sub(MULT_SPECIES.length());
+    }
+
+    b = (b + a*MULT_SPECIES.length() + addened_for_B) % MOD_ADLER;
+    a = a + addened_for_A % MOD_ADLER;
+
+    System.out.println("\nb = " + b + " a = " + a + " mult = " + MULT_SPECIES.length() + " addened_for_B = " + addened_for_B );
+    System.out.println("a = " + a + " addened_for_A = " + addened_for_A );
+    
+    return (b << 16) | a;
+  }
+
+  public static void main(String [] args) {
+     int chksum = 0;
+     DATA_LEN = Integer.parseInt(args[0]);
+
+     Test obj = new Test(DATA_LEN);
+     byte [] data = new byte[DATA_LEN];
+     for(int i = 0 ; i < data.length ; i++) 
+        data[i] = (byte)i;     
+         
+     long t1 = System.nanoTime();
+     //for (int i = 0;  i < 100000; i++)
+     for (int i = 0;  i < 1; i++)
+      chksum += obj.adler32(data);
+     long t2 = System.nanoTime();
+     System.out.println("Time : " + ((t2-t1)/1000000) + " Check sum (adler32) = " + chksum);
+        
+     chksum = 0;
+     t1 = System.nanoTime();
+     //for (int i = 0;  i < 100000; i++)
+     for (int i = 0;  i < 1; i++)
+       chksum += obj.adler32_vector(data);
+     t2 = System.nanoTime();
+     System.out.println("Time : " + ((t2-t1)/1000000) + " Check sum (adler32_vector) = " + chksum);
+  }
+
+}
