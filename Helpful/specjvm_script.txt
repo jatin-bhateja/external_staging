@@ -1,0 +1,16 @@
+#!/bin/sh
+
+if [ $# != 0 ] ; then
+export JAVA_HOME=/workloads/JVM/jdk-13.0.0nalignjcc
+export PATH=$JAVA_HOME/bin:$PATH
+
+echo "Running SPECjvm benchmakr $1.."
+
+perf stat -e cycles,instructions,uops_retired.retire_slots,idq.dsb_uops,idq.mite_uops,dsb2mite_switches.penalty_cycles,br_inst_retired.all_branches_pebs,br_inst_retired.all_branches numactl --cpunodebind=0 --membind=0  java -Xmx20g -XX:UseAVX=2 -Xms20g -Xmn12g -XX:+UseParallelOldGC -XX:ParallelGCThreads=28 -XX:-StackTraceInThrowable -XX:-UseBiasedLocking -XX:+UseLargePages -XX:-TieredCompilation -jar SPECjvm2008.jar -coe -ict -ikv -wt 30 -it 30 -ctf true $*
+
+#perf stat -e cycles,instructions,idq.dsb_uops,idq.mite_uops,dsb2mite_switches.penalty_cycles numactl --cpunodebind=0 --membind=0 /workloads/JVM/jdk-13.0.0nalignjcc/bin/java -XX:UseAVX=2 -Xmx29g -Xms29g -Xmn15g -XX:+UseParallelOldGC -XX:ParallelGCThreads=28 -XX:-StackTraceInThrowable -XX:-UseBiasedLocking -XX:+UseLargePages -XX:-TieredCompilation -XX:-AlignJcc -jar SPECjvm2008.jar scimark.monte_carlo -ict -ikv -wt 30 -it 30
+
+else
+  echo "No benchmark provided"
+fi
+

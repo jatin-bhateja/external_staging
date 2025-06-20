@@ -1,0 +1,372 @@
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index b991b217bd6..a39a2bb5cf9 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -858,7 +858,7 @@ void VM_Version::get_processor_features() {
+ 
+   if (cpu_family() > 4) { // it supports CPUID
+     _cpuid_info.feature_flags(); // These can be changed by VM settings
+-    memcpy(_dynamic_cpu_features_vector, _dynamic_features_vector, sizeof(uint64_t) * _dynamic_features_vector_size);   // Preserve features
++    Abstract_VM_Version::sync_cpu_features(); // Preserve features
+     // Logical processors are only available on P4s and above,
+     // and only if hyperthreading is available.
+     _logical_processors_per_package = logical_processor_count();
+@@ -1097,8 +1097,8 @@ void VM_Version::get_processor_features() {
+               cores_per_cpu(), threads_per_core(),
+               cpu_family(), _model, _stepping, os::cpu_microcode_revision());
+   assert(cpu_info_size > 0, "not enough temporary space allocated");
+-  for (uint64_t i = 0; i < _dynamic_features_vector_size; i++) {
+-    insert_features_names(_dynamic_features_vector[i], buf + cpu_info_size, sizeof(buf) - cpu_info_size, _features_names, 64 * i);
++  for (uint64_t i = 0; i < dynamic_features_vector_size(); i++) {
++    insert_features_names(dynamic_features_vector_elem(i), buf + cpu_info_size, sizeof(buf) - cpu_info_size, _features_names, 64 * i);
+     cpu_info_size = strlen(buf);
+   }
+ 
+@@ -2101,12 +2101,7 @@ void VM_Version::clear_apx_test_state() {
+ static bool _vm_version_initialized = false;
+ 
+ void VM_Version::pre_initialize() {
+-  _dynamic_features_element_shift_count = 6;
+-  _dynamic_features_vector_size =  (MAX_CPU_FEATURES >> _dynamic_features_element_shift_count) + 1;
+-  _dynamic_features_vector = NEW_C_HEAP_ARRAY(uint64_t, _dynamic_features_vector_size, mtInternal);
+-  _dynamic_cpu_features_vector = NEW_C_HEAP_ARRAY(uint64_t, _dynamic_features_vector_size, mtInternal);
+-  memset(_dynamic_features_vector, 0, sizeof(uint64_t) * _dynamic_features_vector_size);
+-  memset(_dynamic_cpu_features_vector, 0, sizeof(uint64_t) * _dynamic_features_vector_size);
++  Abstract_VM_Version::init_vm_features((MAX_CPU_FEATURES >> 6) + 1, 6);
+ }
+ 
+ void VM_Version::initialize() {
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.hpp b/src/hotspot/cpu/x86/vm_version_x86.hpp
+index 5559d45bf44..ed8c621f886 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.hpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.hpp
+@@ -674,7 +674,9 @@ class VM_Version : public Abstract_VM_Version {
+ 
+   static void clear_apx_test_state();
+ 
+-  static void clean_cpuFeatures()   { memset(_dynamic_features_vector, 0, sizeof(uint64_t) * _dynamic_features_vector_size); }
++  static void clean_cpuFeatures()   {
++    Abstract_VM_Version::clear_cpu_features();
++  }
+   static void set_avx_cpuFeatures() {
+     SET_CPU_FEATURE(CPU_SSE);
+     SET_CPU_FEATURE(CPU_SSE2);
+@@ -750,7 +752,7 @@ class VM_Version : public Abstract_VM_Version {
+   //
+   // Feature identification which can be affected by VM settings
+   //
+-  static bool supports_cpuid()        { return _dynamic_features_vector  != nullptr; }
++  static bool supports_cpuid()        { return Abstract_VM_Version::vm_features_exist(); }
+   static bool supports_cmov()         { return SUPPORTS_CPU_FEATURE(CPU_CMOV); }
+   static bool supports_fxsr()         { return SUPPORTS_CPU_FEATURE(CPU_FXSR); }
+   static bool supports_ht()           { return SUPPORTS_CPU_FEATURE(CPU_HT); }
+diff --git a/src/hotspot/share/jvmci/jvmciCompilerToVMInit.cpp b/src/hotspot/share/jvmci/jvmciCompilerToVMInit.cpp
+index a729e34a279..005728db1d7 100644
+--- a/src/hotspot/share/jvmci/jvmciCompilerToVMInit.cpp
++++ b/src/hotspot/share/jvmci/jvmciCompilerToVMInit.cpp
+@@ -449,6 +449,7 @@ jobjectArray readConfiguration0(JNIEnv *env, JVMCI_TRAPS) {
+                  strcmp(vmField.typeString, "intptr_t") == 0 ||
+                  strcmp(vmField.typeString, "uintptr_t") == 0 ||
+                  strcmp(vmField.typeString, "OopHandle") == 0 ||
++                 strcmp(vmField.typeString, "VM_Features") == 0 ||
+                  strcmp(vmField.typeString, "size_t") == 0 ||
+                  // All foo* types are addresses.
+                  vmField.typeString[strlen(vmField.typeString) - 1] == '*') {
+diff --git a/src/hotspot/share/jvmci/vmStructs_jvmci.cpp b/src/hotspot/share/jvmci/vmStructs_jvmci.cpp
+index a99221ce6f2..7c1d06d2675 100644
+--- a/src/hotspot/share/jvmci/vmStructs_jvmci.cpp
++++ b/src/hotspot/share/jvmci/vmStructs_jvmci.cpp
+@@ -147,9 +147,11 @@
+   JVMTI_ONLY(static_field(CompilerToVM::Data,  _should_notify_object_alloc,            int*))                                        \
+                                                                                                                                      \
+   static_field(Abstract_VM_Version,            _features,                              uint64_t)                                     \
+-  static_field(Abstract_VM_Version,            _dynamic_features_vector,               uint64_t*)                                    \
+-  static_field(Abstract_VM_Version,            _dynamic_features_vector_size,          uint64_t)                                     \
+-  static_field(Abstract_VM_Version,            _dynamic_features_element_shift_count,  uint64_t)                                     \
++  static_field(Abstract_VM_Version,            _dynamic_features,                      VM_Features)                                  \
++                                                                                                                                     \
++  nonstatic_field(VM_Features,                 _dynamic_features_vector,               uint64_t*)                                    \
++  nonstatic_field(VM_Features,                 _dynamic_features_vector_size,          uint32_t)                                     \
++  nonstatic_field(VM_Features,                 _dynamic_features_element_shift_count,  uint32_t)                                     \
+                                                                                                                                      \
+   nonstatic_field(Annotations,                 _class_annotations,                     AnnotationArray*)                             \
+   nonstatic_field(Annotations,                 _fields_annotations,                    Array<AnnotationArray*>*)                     \
+diff --git a/src/hotspot/share/runtime/abstract_vm_version.cpp b/src/hotspot/share/runtime/abstract_vm_version.cpp
+index 44af6f428ab..e1daedf64c5 100644
+--- a/src/hotspot/share/runtime/abstract_vm_version.cpp
++++ b/src/hotspot/share/runtime/abstract_vm_version.cpp
+@@ -37,10 +37,8 @@ const char* Abstract_VM_Version::_features_string = "";
+ const char* Abstract_VM_Version::_cpu_info_string = "";
+ uint64_t Abstract_VM_Version::_cpu_features = 0;
+ 
+-uint64_t* Abstract_VM_Version::_dynamic_features_vector = nullptr;
+-uint64_t Abstract_VM_Version::_dynamic_features_vector_size = 0;
+-uint64_t Abstract_VM_Version::_dynamic_features_element_shift_count = 0;
+-uint64_t* Abstract_VM_Version::_dynamic_cpu_features_vector = nullptr;
++VM_Features Abstract_VM_Version::_dynamic_features = {nullptr, 0, 0};
++VM_Features Abstract_VM_Version::_dynamic_cpu_features = {nullptr, 0, 0};
+ 
+ #ifndef SUPPORTS_NATIVE_CX8
+ bool Abstract_VM_Version::_supports_cx8 = false;
+diff --git a/src/hotspot/share/runtime/abstract_vm_version.hpp b/src/hotspot/share/runtime/abstract_vm_version.hpp
+index 1b4818f680a..d21e5ea934d 100644
+--- a/src/hotspot/share/runtime/abstract_vm_version.hpp
++++ b/src/hotspot/share/runtime/abstract_vm_version.hpp
+@@ -44,6 +44,45 @@ typedef enum {
+ class outputStream;
+ enum class vmIntrinsicID;
+ 
++class VM_Features {
++ public:
++  // Dynamically sized feature flags currently only used by x86 backend,
++  // can be affected by VM settings.
++  uint64_t* _dynamic_features_vector;
++  uint32_t _dynamic_features_vector_size;
++  uint32_t _dynamic_features_element_shift_count;
++
++  void init_vm_features(uint32_t size, uint32_t elem_shift_count) {
++    _dynamic_features_vector_size = size;
++    _dynamic_features_element_shift_count = elem_shift_count;
++
++    uint64_t* features_memory = NEW_C_HEAP_ARRAY(uint64_t, size, mtInternal);
++    memset(features_memory, 0, sizeof(uint64_t*) * size);
++    _dynamic_features_vector = features_memory;
++  }
++
++  void set_feature(uint32_t feature) {
++    uint32_t index = feature >> _dynamic_features_element_shift_count;
++    uint32_t index_mask = (1 << _dynamic_features_element_shift_count) - 1;
++    assert(index < _dynamic_features_vector_size, "Features array index out of bounds");
++    _dynamic_features_vector[index] |= (1ULL << (feature & index_mask));
++  }
++
++  void clear_feature(uint32_t feature) {
++    uint32_t index = feature >> _dynamic_features_element_shift_count;
++    uint32_t index_mask = (1 << _dynamic_features_element_shift_count) - 1;
++    assert(index < _dynamic_features_vector_size, "Features array index out of bounds");
++    _dynamic_features_vector[index] &= ~(1ULL << (feature & index_mask));
++  }
++
++  bool supports_feature(uint32_t feature) {
++    uint32_t index = feature >> _dynamic_features_element_shift_count;
++    uint32_t index_mask = (1 << _dynamic_features_element_shift_count) - 1;
++    assert(index < _dynamic_features_vector_size, "Features array index out of bounds");
++    return (_dynamic_features_vector[index] & (1ULL << (feature & index_mask))) != 0;
++  }
++};
++
+ // Abstract_VM_Version provides information about the VM.
+ 
+ class Abstract_VM_Version: AllStatic {
+@@ -64,12 +103,50 @@ class Abstract_VM_Version: AllStatic {
+   // Original CPU feature flags, not affected by VM settings.
+   static uint64_t _cpu_features;
+ 
+-  // Dynamically sized feature flags currently only used by x86 backend,
+-  // can be affected by VM settings.
+-  static uint64_t* _dynamic_features_vector;
+-  static uint64_t _dynamic_features_vector_size;
+-  static uint64_t _dynamic_features_element_shift_count;
+-  static uint64_t* _dynamic_cpu_features_vector;
++  static VM_Features _dynamic_features;
++
++  static VM_Features _dynamic_cpu_features;
++
++#define SET_CPU_FEATURE(feature) \
++  _dynamic_features.set_feature(feature)
++
++#define CLEAR_CPU_FEATURE(feature) \
++  _dynamic_features.clear_feature(feature)
++
++#define SUPPORTS_CPU_FEATURE(feature) \
++  _dynamic_features.supports_feature(feature)
++
++#define SUPPORTS_CPU_FEATURE_AUX(feature) \
++  _dynamic_cpu_features.supports_feature(feature)
++
++  static void init_vm_features(uint32_t size, uint32_t elem_shift_count) {
++    _dynamic_features.init_vm_features(size, elem_shift_count);
++    _dynamic_cpu_features.init_vm_features(size, elem_shift_count);
++  }
++
++  static void sync_cpu_features() {
++    assert(_dynamic_cpu_features._dynamic_features_vector_size == _dynamic_features._dynamic_features_vector_size, "");
++    memcpy(_dynamic_cpu_features._dynamic_features_vector, _dynamic_features._dynamic_features_vector,
++           sizeof(uint64_t) * _dynamic_features._dynamic_features_vector_size);
++  }
++
++  static void clear_cpu_features() {
++    memset(_dynamic_features._dynamic_features_vector, 0, sizeof(uint64_t) * _dynamic_features._dynamic_features_vector_size);
++  }
++
++  static bool vm_features_exist() {
++    return (_dynamic_features._dynamic_features_vector_size > 0) &&
++           (_dynamic_features._dynamic_features_vector != nullptr);
++  }
++
++  static uint32_t dynamic_features_vector_size() {
++    return _dynamic_features._dynamic_features_vector_size;
++  }
++
++  static uint64_t dynamic_features_vector_elem(uint32_t elem) {
++    assert(elem < _dynamic_features._dynamic_features_vector_size, "");
++    return _dynamic_features._dynamic_features_vector[elem];
++  }
+ 
+   // These are set by machine-dependent initializations
+ #ifndef SUPPORTS_NATIVE_CX8
+@@ -140,56 +217,6 @@ class Abstract_VM_Version: AllStatic {
+     return _features;
+   }
+ 
+-  static void set_dynamic_feature(uint32_t feature) {
+-    uint32_t index = feature >> _dynamic_features_element_shift_count;
+-    uint32_t index_mask = (1 << _dynamic_features_element_shift_count) - 1;
+-    assert(index < _dynamic_features_vector_size, "Features array index out of bounds");
+-    _dynamic_features_vector[index] |= (1ULL << (feature & index_mask));
+-  }
+-
+-  static void clear_dynamic_feature(uint32_t feature) {
+-    uint32_t index = feature >> _dynamic_features_element_shift_count;
+-    uint32_t index_mask = (1 << _dynamic_features_element_shift_count) - 1;
+-    assert(index < _dynamic_features_vector_size, "Features array index out of bounds");
+-    _dynamic_features_vector[index] &= ~(1ULL << (feature & index_mask));
+-  }
+-
+-  static bool supports_dynamic_feature(uint32_t feature) {
+-    uint32_t index = feature >> _dynamic_features_element_shift_count;
+-    uint32_t index_mask = (1 << _dynamic_features_element_shift_count) - 1;
+-    assert(index < _dynamic_features_vector_size, "Features array index out of bounds");
+-    return (_dynamic_features_vector[index] & (1ULL << (feature & index_mask))) != 0;
+-  }
+-
+-  static void set_cpu_feature_aux(uint32_t feature) {
+-    uint32_t index = feature >> _dynamic_features_element_shift_count;
+-    uint32_t index_mask = (1 << _dynamic_features_element_shift_count) - 1;
+-    assert(index < _dynamic_features_vector_size, "Features array index out of bounds");
+-    _dynamic_cpu_features_vector[index] |= (1ULL << (feature & index_mask));
+-  }
+-
+-  static bool supports_cpu_feature_aux(uint32_t feature) {
+-    uint32_t index = feature >> _dynamic_features_element_shift_count;
+-    uint32_t index_mask = (1 << _dynamic_features_element_shift_count) - 1;
+-    assert(index < _dynamic_features_vector_size, "Features array index out of bounds");
+-    return (_dynamic_cpu_features_vector[index] & (1ULL << (feature & index_mask))) != 0;
+-  }
+-
+-#define SET_CPU_FEATURE(feature) \
+-  Abstract_VM_Version::set_dynamic_feature(feature)
+-
+-#define CLEAR_CPU_FEATURE(feature) \
+-  Abstract_VM_Version::clear_dynamic_feature(feature)
+-
+-#define SUPPORTS_CPU_FEATURE(feature) \
+-  Abstract_VM_Version::supports_dynamic_feature(feature)
+-
+-#define SET_CPU_FEATURE_AUX(feature) \
+-  Abstract_VM_Version::set_cpu_feature_aux(feature)
+-
+-#define SUPPORTS_CPU_FEATURE_AUX(feature) \
+-  Abstract_VM_Version::supports_cpu_feature_aux(feature)
+-
+   static const char* features_string() { return _features_string; }
+ 
+   static void insert_features_names(uint64_t features, char* buf, size_t buflen, const char* features_names[], uint features_names_index = 0);
+diff --git a/src/hotspot/share/runtime/vmStructs.cpp b/src/hotspot/share/runtime/vmStructs.cpp
+index a6d3648f1d7..cb9d77ce1a1 100644
+--- a/src/hotspot/share/runtime/vmStructs.cpp
++++ b/src/hotspot/share/runtime/vmStructs.cpp
+@@ -703,13 +703,15 @@
+      static_field(Abstract_VM_Version,         _features,                                     uint64_t)                              \
+      static_field(Abstract_VM_Version,         _features_string,                              const char*)                           \
+      static_field(Abstract_VM_Version,         _cpu_info_string,                              const char*)                           \
+-     static_field(Abstract_VM_Version,         _dynamic_features_vector,                      uint64_t*)                             \
+-     static_field(Abstract_VM_Version,         _dynamic_features_vector_size,                 uint64_t)                              \
+-     static_field(Abstract_VM_Version,         _dynamic_features_element_shift_count,         uint64_t)                              \
+      static_field(Abstract_VM_Version,         _vm_major_version,                             int)                                   \
+      static_field(Abstract_VM_Version,         _vm_minor_version,                             int)                                   \
+      static_field(Abstract_VM_Version,         _vm_security_version,                          int)                                   \
+      static_field(Abstract_VM_Version,         _vm_build_number,                              int)                                   \
++     static_field(Abstract_VM_Version,         _dynamic_features,                             VM_Features)                           \
++                                                                                                                                     \
++     nonstatic_field(VM_Features,              _dynamic_features_vector,                      uint64_t*)                             \
++     nonstatic_field(VM_Features,              _dynamic_features_vector_size,                 uint32_t)                              \
++     nonstatic_field(VM_Features,              _dynamic_features_element_shift_count,         uint32_t)                              \
+                                                                                                                                      \
+   /*************************/                                                                                                        \
+   /* JVMTI */                                                                                                                        \
+@@ -1167,6 +1169,7 @@
+   /********************/                                                  \
+                                                                           \
+   declare_toplevel_type(Abstract_VM_Version)                              \
++  declare_toplevel_type(VM_Features)                                      \
+                                                                           \
+   /*************/                                                         \
+   /* Arguments */                                                         \
+diff --git a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/HotSpotJVMCIBackendFactory.java b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/HotSpotJVMCIBackendFactory.java
+index 44c2e21bd66..a47d365e886 100644
+--- a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/HotSpotJVMCIBackendFactory.java
++++ b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/HotSpotJVMCIBackendFactory.java
+@@ -100,12 +100,18 @@
+     static <CPUFeatureType extends Enum<CPUFeatureType>> EnumSet<CPUFeatureType> convertDynamicFeaturesVector(
+                     Class<CPUFeatureType> enumType,
+                     Map<String, Long> constants,
+-                    long dynamic_features_vector_pointer,
+-                    long dynamic_features_vector_size,
+-                    long dynamic_features_element_shift_count,
++                    long dynamic_features_pointer,
++                    long dynamic_features_vector_offset,
++                    long dynamic_features_vector_size_offset,
++                    long dynamic_features_element_shift_count_offset,
+                     Map<String, String> renaming) {
+         EnumSet<CPUFeatureType> outFeatures = EnumSet.noneOf(enumType);
+         List<String> missing = new ArrayList<>();
++
++        long dynamic_features_vector_pointer = UNSAFE.getLong(dynamic_features_pointer + dynamic_features_vector_offset);
++        long dynamic_features_vector_size = UNSAFE.getLong(dynamic_features_pointer + dynamic_features_vector_size_offset);
++        long dynamic_features_element_shift_count = UNSAFE.getLong(dynamic_features_pointer + dynamic_features_element_shift_count_offset);
++
+         for (Entry<String, Long> e : constants.entrySet()) {
+             String key = e.getKey();
+             long bitIndex = e.getValue();
+diff --git a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/amd64/AMD64HotSpotJVMCIBackendFactory.java b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/amd64/AMD64HotSpotJVMCIBackendFactory.java
+index 39dc95feb89..3a5501f5b18 100644
+--- a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/amd64/AMD64HotSpotJVMCIBackendFactory.java
++++ b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/amd64/AMD64HotSpotJVMCIBackendFactory.java
+@@ -51,9 +51,10 @@
+         Map<String, String> renaming = Map.of("3DNOW_PREFETCH", "AMD_3DNOW_PREFETCH");
+         assert config.useSSE >= 2 : "minimum config for x64";
+         EnumSet<CPUFeature> features = HotSpotJVMCIBackendFactory.convertDynamicFeaturesVector(CPUFeature.class, constants,
+-                                                                                               config.vmVersionFeaturesVector,
+-                                                                                               config.vmVersionFeaturesVectorSize,
+-                                                                                               config.vmVersionFeaturesElemShiftCnt,
++                                                                                               config.vmVersionDynFeatures,
++                                                                                               config.vmFeaturesDynFeaturesVecOffset,
++                                                                                               config.vmFeaturesDynFeaturesVecSizeOffset,
++                                                                                               config.vmFeaturesDynFeaturesElemShiftCntOffset,
+                                                                                                renaming);
+         features.add(AMD64.CPUFeature.SSE);
+         features.add(AMD64.CPUFeature.SSE2);
+diff --git a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/amd64/AMD64HotSpotVMConfig.java b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/amd64/AMD64HotSpotVMConfig.java
+index e4204f5e1c8..f8107155902 100644
+--- a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/amd64/AMD64HotSpotVMConfig.java
++++ b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/hotspot/amd64/AMD64HotSpotVMConfig.java
+@@ -42,13 +42,15 @@
+     final boolean useCountTrailingZerosInstruction = getFlag("UseCountTrailingZerosInstruction", Boolean.class);
+     final boolean useCompressedOops = getFlag("UseCompressedOops", Boolean.class);
+ 
++
+     // CPU capabilities
+     final int useSSE = getFlag("UseSSE", Integer.class);
+     final int useAVX = getFlag("UseAVX", Integer.class);
+ 
+-    final long vmVersionFeaturesVector = getFieldAddress("Abstract_VM_Version::_dynamic_features_vector", "uint64_t*");
+-    final long vmVersionFeaturesVectorSize = getFieldValue("Abstract_VM_Version::_dynamic_features_vector_size", Long.class, "uint64_t");
+-    final long vmVersionFeaturesElemShiftCnt = getFieldValue("Abstract_VM_Version::_dynamic_features_element_shift_count", Long.class, "uint64_t");
++    final long vmFeaturesDynFeaturesVecOffset = getFieldOffset("VM_Features::_dynamic_features_vector", Long.class, "uint64_t*");
++    final long vmFeaturesDynFeaturesVecSizeOffset = getFieldOffset("VM_Features::_dynamic_features_vector_size", Long.class, "uint32_t");
++    final long vmFeaturesDynFeaturesElemShiftCntOffset = getFieldOffset("VM_Features::_dynamic_features_element_shift_count", Long.class, "uint32_t");
++    final long vmVersionDynFeatures = getFieldAddress("Abstract_VM_Version::_dynamic_features", "VM_Features");
+ 
+     // CPU feature flags
+     final long amd64CX8 = getConstant("VM_Version::CPU_CX8", Long.class);

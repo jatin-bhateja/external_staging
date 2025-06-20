@@ -1,0 +1,30 @@
+
+1) Setup JVM :  setupojdk2
+2) java -agentpath:/home/intel/workloads/libjvmtisym.so=ofile=agent.jsym
+3) sep -start -d 10000  -ec "CPU_CLK_UNHALTED.THREAD,INST_RETIRED.ANY" -app "java" -args "-agentpath:/home/intel/workloads/libjvmtisym.so -cp . MeasureTimeMax" -out data_intrin
+4) Copy to windows agent.jsym  data_intrin.tb7  jvmtisym.txt
+5) Run fs2xl.exe to generate excel.xls
+
+
+Latest:
+
+ 2035  jar xf fs2xl.exe jvmtisym
+ 2057  cp ~/softwares/fs2xl/jvmtisym/lin.em64T/libjvmtisym.so .
+ 2059  sep -start -app /home/intel/sandboxes/jdk-release/jdk/jdk/build/linux-x86_64-server-slowdebug/jdk/bin/java -args "-agentpath:libjvmtisym.so -Xmx7g -XX:UseAVX=2 -Xms7g -Xmn12g -XX:+UseParallelOldGC -XX:ParallelGCThreads=28 -XX:-StackTraceInThrowable -XX:-UseBiasedLocking -XX:+UseLargePages -XX:+TieredCompilation -jar SPECjvm2008.jar -coe -ict -ikv -wt 30 -it 30 -ctf true scimark.monte_carlo"
+ 2061  tar cvf sep_data.tar jvmtisym.txt tbs633788391.tb7 libjvmtisym.so 
+
+BKM to generate profiles using run SEP.
+
+1)      jar xf fs2xl.exe jvmtisym
+2)      cp ~/jvmtisym/lin.em64T/libjvmtisym.so .
+3)      SHELL1 : java -agentpath:./libjvmtisym.so=ofile=PERF.jsym --add-modules=jdk.incubator.vector -jar jvector-tests/target/jvector-tests-3.0.0-alpha.8-SNAPSHOT-test-jar-with-dependencies.jar -f 0 -wi 1 -w 30 -i 2 io.github.jbellis.jvector.microbench.GraphIndexBench.testGraphBuild  
+4)      SHELL2 : sep -start -d 10 -out PERF.sep 
+5)      tar cvf sep_data.tar *.tb7 PERF.jsym libjvm.so and other symbol files for .so dependencies e.g. /boot/System.map-*
+6)      Bring tar to windows, extract contents in a directory and run fs2xl.exe
+7)      You should see excel.xls file with profiles.
+
+Fs2xl.exe : \\sotc-javalab-01\PersonalDirectories\vivanov1\transfer\fs2xl.exe
+
+[root@ICX-RH8-103 fill_opt]# sep -start -d 20 -ec CPU_CLK_UNHALTED.THREAD,INST_RETIRED.ANY,MEM_INST_RETIRED.ALL_STORES,MEM_INST_RETIRED.SPLIT_STORES,BR_INST_RETIRED.NEAR_CALL -out PERF.sep
+
+numactl --cpunodebind=0 --membind=0 java -Xms28g -XX:+UseParallelGC -agentpath:$PWD/libjvmtisym.so=ofile=PERF.jsym -XX:-TieredCompilation -cp . jit 1024

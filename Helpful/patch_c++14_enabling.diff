@@ -1,0 +1,264 @@
+changeset:   60262:3a436b65fd0a
+user:        kbarrett
+date:        Wed Jul 22 00:13:53 2020 -0400
+files:       doc/building.html doc/building.md make/autoconf/flags-cflags.m4 make/autoconf/flags-ldflags.m4 make/autoconf/lib-std.m4 make/autoconf/spec.gmk.in make/autoconf/toolchain.m4 make/autoconf/toolchain_windows.m4 make/hotspot/gensrc/GensrcAdlc.gmk make/modules/jdk.hotspot.agent/Lib.gmk
+description:
+8246032: Implementation of JEP 347: Enable C++14 Language Features
+Summary: Update build configuration to use C++14
+Reviewed-by: jlaskey, mdoerr, ihse, erikj
+
+
+diff -r 11aac2721a67 -r 3a436b65fd0a doc/building.html
+--- a/doc/building.html	Tue Jul 21 10:32:52 2020 -0400
++++ b/doc/building.html	Wed Jul 22 00:13:53 2020 -0400
+@@ -283,7 +283,7 @@
+ <p>The JDK is currently known to be able to compile with at least version 9.2 of gcc.</p>
+ <p>In general, any version between these two should be usable.</p>
+ <h3 id="clang">clang</h3>
+-<p>The minimum accepted version of clang is 3.2. Older versions will not be accepted by <code>configure</code>.</p>
++<p>The minimum accepted version of clang is 3.5. Older versions will not be accepted by <code>configure</code>.</p>
+ <p>To use clang instead of gcc on Linux, use <code>--with-toolchain-type=clang</code>.</p>
+ <h3 id="apple-xcode">Apple Xcode</h3>
+ <p>The oldest supported version of Xcode is 8.</p>
+@@ -292,9 +292,8 @@
+ <p>It is advisable to keep an older version of Xcode for building the JDK when updating Xcode. This <a href="http://iosdevelopertips.com/xcode/install-multiple-versions-of-xcode.html">blog page</a> has good suggestions on managing multiple Xcode versions. To use a specific version of Xcode, use <code>xcode-select -s</code> before running <code>configure</code>, or use <code>--with-toolchain-path</code> to point to the version of Xcode to use, e.g. <code>configure --with-toolchain-path=/Applications/Xcode8.app/Contents/Developer/usr/bin</code></p>
+ <p>If you have recently (inadvertently) updated your OS and/or Xcode version, and the JDK can no longer be built, please see the section on <a href="#problems-with-the-build-environment">Problems with the Build Environment</a>, and <a href="#getting-help">Getting Help</a> to find out if there are any recent, non-merged patches available for this update.</p>
+ <h3 id="microsoft-visual-studio">Microsoft Visual Studio</h3>
+-<p>The minimum accepted version of Visual Studio is 2010. Older versions will not be accepted by <code>configure</code>. The maximum accepted version of Visual Studio is 2019. Versions older than 2017 are unlikely to continue working for long.</p>
+-<p>If you have multiple versions of Visual Studio installed, <code>configure</code> will by default pick the latest. You can request a specific version to be used by setting <code>--with-toolchain-version</code>, e.g. <code>--with-toolchain-version=2015</code>.</p>
+-<p>If you get <code>LINK: fatal error LNK1123: failure during conversion to COFF: file invalid</code> when building using Visual Studio 2010, you have encountered <a href="http://support.microsoft.com/kb/2757355">KB2757355</a>, a bug triggered by a specific installation order. However, the solution suggested by the KB article does not always resolve the problem. See <a href="https://stackoverflow.com/questions/10888391">this stackoverflow discussion</a> for other suggestions.</p>
++<p>The minimum accepted version of Visual Studio is 2017. Older versions will not be accepted by <code>configure</code> and will not work. The maximum accepted version of Visual Studio is 2019.</p>
++<p>If you have multiple versions of Visual Studio installed, <code>configure</code> will by default pick the latest. You can request a specific version to be used by setting <code>--with-toolchain-version</code>, e.g. <code>--with-toolchain-version=2017</code>.</p>
+ <h3 id="ibm-xl-cc">IBM XL C/C++</h3>
+ <p>Please consult the AIX section of the <a href="https://wiki.openjdk.java.net/display/Build/Supported+Build+Platforms">Supported Build Platforms</a> OpenJDK Build Wiki page for details about which versions of XLC are supported.</p>
+ <h2 id="boot-jdk-requirements">Boot JDK Requirements</h2>
+diff -r 11aac2721a67 -r 3a436b65fd0a doc/building.md
+--- a/doc/building.md	Tue Jul 21 10:32:52 2020 -0400
++++ b/doc/building.md	Wed Jul 22 00:13:53 2020 -0400
+@@ -323,7 +323,7 @@
+ 
+ ### clang
+ 
+-The minimum accepted version of clang is 3.2. Older versions will not be
++The minimum accepted version of clang is 3.5. Older versions will not be
+ accepted by `configure`.
+ 
+ To use clang instead of gcc on Linux, use `--with-toolchain-type=clang`.
+@@ -355,20 +355,13 @@
+ 
+ ### Microsoft Visual Studio
+ 
+-The minimum accepted version of Visual Studio is 2010. Older versions will not
+-be accepted by `configure`. The maximum accepted version of Visual Studio is
+-2019. Versions older than 2017 are unlikely to continue working for long.
++The minimum accepted version of Visual Studio is 2017. Older versions will not
++be accepted by `configure` and will not work. The maximum accepted
++version of Visual Studio is 2019.
+ 
+ If you have multiple versions of Visual Studio installed, `configure` will by
+ default pick the latest. You can request a specific version to be used by
+-setting `--with-toolchain-version`, e.g. `--with-toolchain-version=2015`.
+-
+-If you get `LINK: fatal error LNK1123: failure during conversion to COFF: file
+-invalid` when building using Visual Studio 2010, you have encountered
+-[KB2757355](http://support.microsoft.com/kb/2757355), a bug triggered by a
+-specific installation order. However, the solution suggested by the KB article
+-does not always resolve the problem. See [this stackoverflow discussion](
+-https://stackoverflow.com/questions/10888391) for other suggestions.
++setting `--with-toolchain-version`, e.g. `--with-toolchain-version=2017`.
+ 
+ ### IBM XL C/C++
+ 
+diff -r 11aac2721a67 -r 3a436b65fd0a make/autoconf/flags-cflags.m4
+--- a/make/autoconf/flags-cflags.m4	Tue Jul 21 10:32:52 2020 -0400
++++ b/make/autoconf/flags-cflags.m4	Wed Jul 22 00:13:53 2020 -0400
+@@ -512,6 +512,18 @@
+   fi
+   TOOLCHAIN_CFLAGS_JDK_CONLY="$LANGSTD_CFLAGS $TOOLCHAIN_CFLAGS_JDK_CONLY"
+ 
++  # CXXFLAGS C++ language level for all of JDK, including Hotspot.
++  if test "x$TOOLCHAIN_TYPE" = xgcc || test "x$TOOLCHAIN_TYPE" = xclang || test "x$TOOLCHAIN_TYPE" = xxlc; then
++    LANGSTD_CXXFLAGS="-std=c++14"
++  elif test "x$TOOLCHAIN_TYPE" = xmicrosoft; then
++    LANGSTD_CXXFLAGS="-std:c++14"
++  else
++    AC_MSG_ERROR([Don't know how to enable C++14 for this toolchain])
++  fi
++  TOOLCHAIN_CFLAGS_JDK_CXXONLY="$TOOLCHAIN_CFLAGS_JDK_CXXONLY $LANGSTD_CXXFLAGS"
++  TOOLCHAIN_CFLAGS_JVM="$TOOLCHAIN_CFLAGS_JVM $LANGSTD_CXXFLAGS"
++  ADLC_LANGSTD_CXXFLAGS="$LANGSTD_CXXFLAGS"
++
+   # CFLAGS WARNINGS STUFF
+   # Set JVM_CFLAGS warning handling
+   if test "x$TOOLCHAIN_TYPE" = xgcc; then
+@@ -694,13 +706,6 @@
+       $1_CFLAGS_CPU_JDK="${$1_CFLAGS_CPU_JDK} -fno-omit-frame-pointer"
+     fi
+ 
+-    $1_CXXSTD_CXXFLAG="-std=gnu++98"
+-    FLAGS_CXX_COMPILER_CHECK_ARGUMENTS(ARGUMENT: [${$1_CXXSTD_CXXFLAG}],
+-        PREFIX: $3, IF_FALSE: [$1_CXXSTD_CXXFLAG=""])
+-    $1_TOOLCHAIN_CFLAGS_JDK_CXXONLY="${$1_CXXSTD_CXXFLAG}"
+-    $1_TOOLCHAIN_CFLAGS_JVM="${$1_TOOLCHAIN_CFLAGS_JVM} ${$1_CXXSTD_CXXFLAG}"
+-    $2ADLC_CXXFLAG="${$1_CXXSTD_CXXFLAG}"
+-
+   elif test "x$TOOLCHAIN_TYPE" = xclang; then
+     if test "x$FLAGS_OS" = xlinux; then
+       # ppc test not really needed for clang
+@@ -795,7 +800,7 @@
+   AC_SUBST($2CFLAGS_JDKEXE)
+   AC_SUBST($2CXXFLAGS_JDKLIB)
+   AC_SUBST($2CXXFLAGS_JDKEXE)
+-  AC_SUBST($2ADLC_CXXFLAG)
++  AC_SUBST($2ADLC_LANGSTD_CXXFLAGS)
+ 
+   COMPILER_FP_CONTRACT_OFF_FLAG="-ffp-contract=off"
+   # Check that the compiler supports -ffp-contract=off flag
+diff -r 11aac2721a67 -r 3a436b65fd0a make/autoconf/flags-ldflags.m4
+--- a/make/autoconf/flags-ldflags.m4	Tue Jul 21 10:32:52 2020 -0400
++++ b/make/autoconf/flags-ldflags.m4	Wed Jul 22 00:13:53 2020 -0400
+@@ -53,6 +53,7 @@
+ 
+   LDFLAGS_TESTEXE="${TARGET_LDFLAGS_JDK_LIBPATH}"
+   AC_SUBST(LDFLAGS_TESTEXE)
++  AC_SUBST(ADLC_LDFLAGS)
+ ])
+ 
+ ################################################################################
+diff -r 11aac2721a67 -r 3a436b65fd0a make/autoconf/lib-std.m4
+--- a/make/autoconf/lib-std.m4	Tue Jul 21 10:32:52 2020 -0400
++++ b/make/autoconf/lib-std.m4	Wed Jul 22 00:13:53 2020 -0400
+@@ -70,6 +70,7 @@
+     else
+       LIBCXX="$LIBCXX $STATIC_STDCXX_FLAGS"
+       JVM_LDFLAGS="$JVM_LDFLAGS $STATIC_STDCXX_FLAGS"
++      ADLC_LDFLAGS="$ADLC_LDFLAGS $STATIC_STDCXX_FLAGS"
+       # Ideally, we should test stdc++ for the BUILD toolchain separately. For now
+       # just use the same setting as for the TARGET toolchain.
+       OPENJDK_BUILD_JVM_LDFLAGS="$OPENJDK_BUILD_JVM_LDFLAGS $STATIC_STDCXX_FLAGS"
+diff -r 11aac2721a67 -r 3a436b65fd0a make/autoconf/spec.gmk.in
+--- a/make/autoconf/spec.gmk.in	Tue Jul 21 10:32:52 2020 -0400
++++ b/make/autoconf/spec.gmk.in	Wed Jul 22 00:13:53 2020 -0400
+@@ -476,7 +476,8 @@
+ WARNINGS_AS_ERRORS := @WARNINGS_AS_ERRORS@
+ 
+ CFLAGS_CCACHE:=@CFLAGS_CCACHE@
+-ADLC_CXXFLAG=@ADLC_CXXFLAG@
++ADLC_LANGSTD_CXXFLAGS=@ADLC_LANGSTD_CXXFLAGS@
++ADLC_LDFLAGS=@ADLC_LDFLAGS@
+ 
+ # Tools that potentially need to be cross compilation aware.
+ CC:=@FIXPATH@ @CCACHE@ @ICECC@ @CC@
+diff -r 11aac2721a67 -r 3a436b65fd0a make/autoconf/toolchain.m4
+--- a/make/autoconf/toolchain.m4	Tue Jul 21 10:32:52 2020 -0400
++++ b/make/autoconf/toolchain.m4	Wed Jul 22 00:13:53 2020 -0400
+@@ -50,9 +50,9 @@
+ TOOLCHAIN_DESCRIPTION_xlc="IBM XL C/C++"
+ 
+ # Minimum supported versions, empty means unspecified
+-TOOLCHAIN_MINIMUM_VERSION_clang="3.2"
++TOOLCHAIN_MINIMUM_VERSION_clang="3.5"
+ TOOLCHAIN_MINIMUM_VERSION_gcc="5.0"
+-TOOLCHAIN_MINIMUM_VERSION_microsoft="16.00.30319.01" # VS2010
++TOOLCHAIN_MINIMUM_VERSION_microsoft="19.10.0.0" # VS2017
+ TOOLCHAIN_MINIMUM_VERSION_xlc=""
+ 
+ # Minimum supported linker versions, empty means unspecified
+diff -r 11aac2721a67 -r 3a436b65fd0a make/autoconf/toolchain_windows.m4
+--- a/make/autoconf/toolchain_windows.m4	Tue Jul 21 10:32:52 2020 -0400
++++ b/make/autoconf/toolchain_windows.m4	Wed Jul 22 00:13:53 2020 -0400
+@@ -25,55 +25,7 @@
+ 
+ ################################################################################
+ # The order of these defines the priority by which we try to find them.
+-VALID_VS_VERSIONS="2019 2017 2013 2015 2012 2010"
+-
+-VS_DESCRIPTION_2010="Microsoft Visual Studio 2010"
+-VS_VERSION_INTERNAL_2010=100
+-VS_MSVCR_2010=msvcr100.dll
+-# We don't use msvcp on Visual Studio 2010
+-#VS_MSVCP_2010=msvcp100.dll
+-VS_ENVVAR_2010="VS100COMNTOOLS"
+-VS_VS_INSTALLDIR_2010="Microsoft Visual Studio 10.0"
+-VS_SDK_INSTALLDIR_2010="Microsoft SDKs/Windows/v7.1"
+-VS_VS_PLATFORM_NAME_2010="v100"
+-VS_SDK_PLATFORM_NAME_2010="Windows7.1SDK"
+-VS_SUPPORTED_2010=false
+-
+-VS_DESCRIPTION_2012="Microsoft Visual Studio 2012"
+-VS_VERSION_INTERNAL_2012=110
+-VS_MSVCR_2012=msvcr110.dll
+-VS_MSVCP_2012=msvcp110.dll
+-VS_ENVVAR_2012="VS110COMNTOOLS"
+-VS_VS_INSTALLDIR_2012="Microsoft Visual Studio 11.0"
+-VS_SDK_INSTALLDIR_2012=
+-VS_VS_PLATFORM_NAME_2012="v110"
+-VS_SDK_PLATFORM_NAME_2012=
+-VS_SUPPORTED_2012=false
+-
+-VS_DESCRIPTION_2013="Microsoft Visual Studio 2013"
+-VS_VERSION_INTERNAL_2013=120
+-VS_MSVCR_2013=msvcr120.dll
+-VS_MSVCP_2013=msvcp120.dll
+-VS_ENVVAR_2013="VS120COMNTOOLS"
+-VS_VS_INSTALLDIR_2013="Microsoft Visual Studio 12.0"
+-VS_SDK_INSTALLDIR_2013=
+-VS_VS_PLATFORM_NAME_2013="v120"
+-VS_SDK_PLATFORM_NAME_2013=
+-VS_SUPPORTED_2013=false
+-
+-VS_DESCRIPTION_2015="Microsoft Visual Studio 2015"
+-VS_VERSION_INTERNAL_2015=140
+-VS_MSVCR_2015=vcruntime140.dll
+-VS_MSVCP_2015=msvcp140.dll
+-VS_ENVVAR_2015="VS140COMNTOOLS"
+-VS_VS_INSTALLDIR_2015="Microsoft Visual Studio 14.0"
+-VS_SDK_INSTALLDIR_2015=
+-VS_VS_PLATFORM_NAME_2015="v140"
+-VS_SDK_PLATFORM_NAME_2015=
+-# The vcvars of 2015 breaks if 2017 is also installed. Work around this by
+-# explicitly specifying Windows Kit 8.1 to be used.
+-VS_ENV_ARGS_2015="8.1"
+-VS_SUPPORTED_2015=false
++VALID_VS_VERSIONS="2019 2017"
+ 
+ VS_DESCRIPTION_2017="Microsoft Visual Studio 2017"
+ VS_VERSION_INTERNAL_2017=141
+diff -r 11aac2721a67 -r 3a436b65fd0a make/hotspot/gensrc/GensrcAdlc.gmk
+--- a/make/hotspot/gensrc/GensrcAdlc.gmk	Tue Jul 21 10:32:52 2020 -0400
++++ b/make/hotspot/gensrc/GensrcAdlc.gmk	Wed Jul 22 00:13:53 2020 -0400
+@@ -37,18 +37,18 @@
+   ifeq ($(call isBuildOs, linux), true)
+     ADLC_CFLAGS := -fno-exceptions -DLINUX
+   else ifeq ($(call isBuildOs, aix), true)
+-    ADLC_LDFLAGS := -q64
++    ADLC_LDFLAGS += -q64
+     ADLC_CFLAGS := -qnortti -qeh -q64 -DAIX
+   else ifeq ($(call isBuildOs, windows), true)
+-    ADLC_LDFLAGS := -nologo
++    ADLC_LDFLAGS += -nologo
+     ADLC_CFLAGS := -nologo -EHsc
+     # NOTE: The old build also have -D_CRT_SECURE_NO_DEPRECATE but it doesn't
+     # seem needed any more.
+     ADLC_CFLAGS_WARNINGS := -W3 -D_CRT_SECURE_NO_WARNINGS
+   endif
+ 
+-  # Set the C++ standard if supported
+-  ADLC_CFLAGS += $(ADLC_CXXFLAG)
++  # Set the C++ standard
++  ADLC_CFLAGS += $(ADLC_LANGSTD_CXXFLAG)
+ 
+   # NOTE: The old build didn't set -DASSERT for windows but it doesn't seem to
+   # hurt.
+diff -r 11aac2721a67 -r 3a436b65fd0a make/modules/jdk.hotspot.agent/Lib.gmk
+--- a/make/modules/jdk.hotspot.agent/Lib.gmk	Tue Jul 21 10:32:52 2020 -0400
++++ b/make/modules/jdk.hotspot.agent/Lib.gmk	Wed Jul 22 00:13:53 2020 -0400
+@@ -66,6 +66,7 @@
+     CXXFLAGS := $(CXXFLAGS_JDKLIB) $(SA_CFLAGS) $(SA_CXXFLAGS), \
+     EXTRA_SRC := $(LIBSA_EXTRA_SRC), \
+     LDFLAGS := $(LDFLAGS_JDKLIB), \
++    LIBS := $(LIBCXX), \
+     LIBS_linux := $(LIBDL), \
+     LIBS_macosx := -framework Foundation -framework JavaNativeFoundation \
+         -framework JavaRuntimeSupport -framework Security -framework CoreFoundation, \
+

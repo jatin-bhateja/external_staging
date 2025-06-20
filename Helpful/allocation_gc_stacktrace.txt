@@ -1,0 +1,218 @@
+Allocation triggered GC:
+
+(gdb) bt
+#0  VM_Operation::VM_Operation (this=0x7fcdb041a400)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/runtime/vmOperations.hpp:142
+#1  0x00007fcdad88692b in VM_GC_Operation::VM_GC_Operation (this=0x7fcdb041a400, gc_count_before=4, 
+    _cause=GCCause::_g1_inc_collection_pause, full_gc_count_before=0, full=false)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/shared/gcVMOperations.hpp:86
+#2  0x00007fcdadd3d72b in VM_CollectForAllocation::VM_CollectForAllocation (this=0x7fcdb041a400, word_size=514, gc_count_before=4, 
+    cause=GCCause::_g1_inc_collection_pause)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/shared/gcVMOperations.cpp:276
+#3  0x00007fcdadd27131 in VM_G1CollectForAllocation::VM_G1CollectForAllocation (this=0x7fcdb041a400, word_size=514, gc_count_before=4, 
+    gc_cause=GCCause::_g1_inc_collection_pause, target_pause_time_ms=200)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1VMOperations.cpp:112
+#4  0x00007fcdadc884bb in G1CollectedHeap::do_collection_pause (this=0x7fcda8044e30, word_size=514, gc_count_before=4, 
+    succeeded=0x7fcdb041a4b0, gc_cause=GCCause::_g1_inc_collection_pause)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:2756
+#5  0x00007fcdadc8021e in G1CollectedHeap::attempt_allocation_slow (this=0x7fcda8044e30, word_size=514)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:448
+#6  0x00007fcdadc9304a in G1CollectedHeap::attempt_allocation (this=0x7fcda8044e30, min_word_size=514, desired_word_size=514, 
+    actual_word_size=0x7fcdb041a5a8) at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:728
+#7  0x00007fcdadc7ff77 in G1CollectedHeap::mem_allocate (this=0x7fcda8044e30, word_size=514, gc_overhead_limit_was_exceeded=0x7fcdb041a670)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:396
+#8  0x00007fcdae1e2757 in MemAllocator::allocate_outside_tlab (this=0x7fcdb041a6d0, allocation=...)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/shared/memAllocator.cpp:256
+#9  0x00007fcdae1e2b5b in MemAllocator::mem_allocate (this=0x7fcdb041a6d0, allocation=...)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/shared/memAllocator.cpp:356
+#10 0x00007fcdae1e2b9c in MemAllocator::allocate (this=0x7fcdb041a6d0)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/shared/memAllocator.cpp:363
+#11 0x00007fcdadaca96d in CollectedHeap::array_allocate (this=0x7fcda8044e30, klass=0x800000c40, size=514, length=1024, do_zero=true, 
+    __the_thread__=0x7fcda8033120) at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/shared/collectedHeap.inline.hpp:77
+#12 0x00007fcdae5d4d55 in TypeArrayKlass::allocate_common (this=0x800000c40, length=1024, do_zero=true, __the_thread__=0x7fcda8033120)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/oops/typeArrayKlass.cpp:95
+#13 0x00007fcdadb4b5f0 in TypeArrayKlass::allocate (this=0x800000c40, length=1024, __the_thread__=0x7fcda8033120)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/oops/typeArrayKlass.hpp:67
+#14 0x00007fcdae2b3e95 in oopFactory::new_typeArray (type=T_INT, length=1024, __the_thread__=0x7fcda8033120)
+---Type <return> to continue, or q <return> to quit---
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/memory/oopFactory.cpp:98
+#15 0x00007fcdae39d77f in OptoRuntime::new_array_C (array_type=0x800000c40, len=1024, thread=0x7fcda8033120)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/opto/runtime.cpp:248
+
+
+Collection:
+
+#0  G1CollectedHeap::calculate_collection_set (this=0x7fcda8044e30, evacuation_info=..., target_pause_time_ms=200)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:2901
+#1  0x00007fcdadc89886 in G1CollectedHeap::do_collection_pause_at_safepoint_helper (this=0x7fcda8044e30, target_pause_time_ms=200)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:3087
+#2  0x00007fcdadc8920b in G1CollectedHeap::do_collection_pause_at_safepoint (this=0x7fcda8044e30, target_pause_time_ms=200)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:2981
+#3  0x00007fcdadd27256 in VM_G1CollectForAllocation::doit (this=0x7fcdb041a400)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1VMOperations.cpp:137
+#4  0x00007fcdae63e930 in VM_Operation::evaluate (this=0x7fcdb041a400)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/runtime/vmOperations.cpp:67
+#5  0x00007fcdae678a1c in VMThread::evaluate_operation (this=0x7fcda82d0ec0, op=0x7fcdb041a400)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/runtime/vmThread.cpp:374
+#6  0x00007fcdae678fe8 in VMThread::loop (this=0x7fcda82d0ec0)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/runtime/vmThread.cpp:512
+#7  0x00007fcdae678596 in VMThread::run (this=0x7fcda82d0ec0)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/runtime/vmThread.cpp:273
+#8  0x00007fcdae59e004 in Thread::call_run (this=0x7fcda82d0ec0)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/runtime/thread.cpp:399
+#9  0x00007fcdae2c8d5c in thread_native_entry (thread=0x7fcda82d0ec0)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/os/linux/os_linux.cpp:790
+#10 0x00007fcdaf5e16db in start_thread (arg=0x7fcd984af700) at pthread_create.c:463
+#11 0x00007fcdafd3b88f in clone () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:95
+
+
+
+   │160                                                                                                                                    │
+   │161       uint update_active_workers(uint v) {                                                                                         │
+   │162         assert(v <= _total_workers,                                                                                                │
+   │163                "Trying to set more workers active than there are");                                                                │
+   │164         _active_workers = MIN2(v, _total_workers);                                                                                 │
+   │165         add_workers(false /* exit_on_failure */);                                                                                  │
+  >│166         assert(v != 0, "Trying to set active workers to 0");                                                                       │
+   │167         log_trace(gc, task)("%s: using %d out of %d workers", name(), _active_workers, _total_workers);                            │
+   │168         return _active_workers;                                                                                                    │
+   │169       }                                                                                                                            │
+   │170                                                                                                                                    │
+   │171       // Add GC workers as needed.                                                                                                 │
+   │172       void add_workers(bool initializing);                                                                                         │
+   └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+multi-thre Thread 0x7f02e967c7 In: AbstractWorkGang::update_active_workers                                         L166  PC: 0x7f030aeb8303 
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/g1/g1CollectedHeap.hpp:550
+(gdb) s
+AbstractWorkGang::update_active_workers (this=0x7f0304089750, v=6)
+    at /home/intel/sandboxes/jdk-vectorapi/dev/dev/src/hotspot/share/gc/shared/workgroup.hpp:162
+(gdb) n
+[New Thread 0x7f02c3cfb700 (LWP 25241)]
+[New Thread 0x7f02c3bf9700 (LWP 25242)]
+[New Thread 0x7f02c3af7700 (LWP 25243)]
+[New Thread 0x7f02c39f5700 (LWP 25244)]
+[New Thread 0x7f02c38f3700 (LWP 25245)]
+
+
+
+Parallel GC: disjoint copy during scavenging:
+javad -XX:-EliminateAllocations -XX:+PauseAtStartup -Xms3m -Xmx3m -Xlog:gc -XX:CompileCommand='compileonly,test::doOper' -XX:-UseTLAB -XX:+UseParallelGC -XX:+UseXMMForObjInit -XX:CompileCommand='print,test::doOper' -cp . test
+
+#0  Copy::aligned_disjoint_words (from=0xffe80010, to=0xfff00000, count=14)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/utilities/copy.hpp:118
+#1  0x00007f958e595043 in PSPromotionManager::copy_to_survivor_space<false> (this=0x7f95881aa900, o=0xffe80010)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/parallel/psPromotionManager.inline.hpp:238
+#2  0x00007f958e59472d in PSPromotionManager::copy_and_push_safe_barrier<false, oopDesc*> (this=0x7f95881aa900, 
+    p=0x7f958f6dae60 <Universe::_int_mirror>)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/parallel/psPromotionManager.inline.hpp:310
+#3  0x00007f958e599169 in PSRootsClosure<false>::do_oop_work<oopDesc*> (this=0x7f957deedca0, p=0x7f958f6dae60 <Universe::_int_mirror>)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/parallel/psClosure.inline.hpp:43
+#4  0x00007f958e59912f in PSRootsClosure<false>::do_oop (this=0x7f957deedca0, p=0x7f958f6dae60 <Universe::_int_mirror>)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/parallel/psClosure.inline.hpp:48
+#5  0x00007f958e7ca0ae in Universe::oops_do (f=0x7f957deedca0)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/memory/universe.cpp:181
+#6  0x00007f958e595654 in scavenge_roots_work (root_type=ParallelRootType::universe, worker_id=0)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/parallel/psScavenge.cpp:96
+#7  0x00007f958e598aee in ScavengeRootsTask::work (this=0x7f957f4f35e0, worker_id=0)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/parallel/psScavenge.cpp:369
+#8  0x00007f958e88cd23 in GangWorker::run_task (this=0x7f9578000e40, data=...)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/shared/workgroup.cpp:339
+#9  0x00007f958e88cddb in GangWorker::loop (this=0x7f9578000e40)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/shared/workgroup.cpp:349
+#10 0x00007f958e88ca32 in AbstractGangWorker::run (this=0x7f9578000e40)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/shared/workgroup.cpp:300
+#11 0x00007f958e7914dc in Thread::call_run (this=0x7f9578000e40)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/thread.cpp:393
+#12 0x00007f958e4fee14 in thread_native_entry (thread=0x7f9578000e40)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/os/linux/os_linux.cpp:791
+#13 0x00007f958f6ef6db in start_thread (arg=0x7f957deee700) at pthread_create.c:463
+#14 0x00007f958fe4988f in clone () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:95
+
+   ┌──/home/intel/sandboxes/jdk-release3/jdk/src/hotspot/os_cpu/linux_x86/copy_linux_x86.inline.hpp────────────────────────────────────────┐
+   │70      #endif // AMD64                                                                                                                │
+   │71      }                                                                                                                              │
+   │72                                                                                                                                     │
+   │73      static void pd_disjoint_words(const HeapWord* from, HeapWord* to, size_t count) {                                              │
+   │74      #ifdef AMD64                                                                                                                   │
+   │75        switch (count) {                                                                                                             │
+   │76        case 8:  to[7] = from[7];                                                                                                    │
+   │77        case 7:  to[6] = from[6];                                                                                                    │
+   │78        case 6:  to[5] = from[5];                                                                                                    │
+   │79        case 5:  to[4] = from[4];                                                                                                    │
+   │80        case 4:  to[3] = from[3];                                                                                                    │
+   │81        case 3:  to[2] = from[2];                                                                                                    │
+   │82        case 2:  to[1] = from[1];                                                                                                    │
+   │83        case 1:  to[0] = from[0];                                                                                                    │
+   │84        case 0:  break;                                                                                                              │
+   │85        default:                                                                                                                     │
+   │86          (void)memcpy(to, from, count * HeapWordSize);                                                                              │
+  >│87          break;                                                                                                                     │
+   │88        }                                                                                                                            │
+   │89      #else                                                                                                                          │
+   └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+multi-thre Thread 0x7f957deee7 In: Copy::pd_disjoint_words                                                         L87   PC: 0x7f958d8d386e 
+
+    -121581636718489710126950301130817522, 0}}
+$5 = {v8_float = {1.96181785e-44, 0, 0, -nan(0x689590), 0, 0, 0, 0}, v4_double = {6.9169190417774516e-323, -1.3810905883882952e+308, 0, 
+    0}, v32_int8 = {14, 0 <repeats 11 times>, -112, -107, -24, -1, 0 <repeats 16 times>}, v16_int16 = {14, 0, 0, 0, 0, 0, -27248, -24, 0, 
+    0, 0, 0, 0, 0, 0, 0}, v8_int32 = {14, 0, 0, -1534576, 0, 0, 0, 0}, v4_int64 = {14, -6590953733226496, 0, 0}, v2_int128 = {
+    -121581636718489710126950301130817522, 0}}
+(gdb) si
+__memmove_avx_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:361
+Copy::pd_disjoint_words (from=0xffe80010, to=0xfff00000, count=14)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/os_cpu/linux_x86/copy_linux_x86.inline.hpp:87
+
+
+
+G1 GC:
+
+Thread 3 "GC Thread#0" hit Breakpoint 1, Copy::aligned_disjoint_words (from=0xfff0b508, to=0xffe04000, count=46)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/utilities/copy.hpp:118
+118         assert_params_aligned(from, to);
+(gdb) ssl
+(gdb) bt
+#0  Copy::aligned_disjoint_words (from=0xfff0b508, to=0xffe04000, count=46)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/utilities/copy.hpp:118
+#1  0x00007fb54b50aee4 in G1ParScanThreadState::copy_to_survivor_space (this=0x7fb53c000bc0, region_attr=..., old=0xfff0b508, old_mark=...)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/g1/g1ParScanThreadState.cpp:286
+#2  0x00007fb54b535da5 in G1ParCopyClosure<(G1Barrier)0, (G1Mark)0>::do_oop_work<oopDesc*> (this=0x7fb53c001208, p=0x7fb544229b50)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/g1/g1OopClosures.inline.hpp:238
+#3  0x00007fb54b533e13 in G1ParCopyClosure<(G1Barrier)0, (G1Mark)0>::do_oop (this=0x7fb53c001208, p=0x7fb544229b50)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/g1/g1OopClosures.hpp:172
+#4  0x00007fb54b58a453 in chunk_oops_do (f=0x7fb53c001208, chunk=0x7fb544229b30, chunk_top=0x7fb544229b58 "p\034\360\377")
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/handles.cpp:99
+#5  0x00007fb54b58a493 in HandleArea::oops_do (this=0x7fb544229ab0, f=0x7fb53c001208)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/handles.cpp:107
+#6  0x00007fb54bd731ca in Thread::oops_do (this=0x7fb544229050, f=0x7fb53c001208, cf=0x7fb53c0012b0)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/thread.cpp:889
+#7  0x00007fb54bd7957a in JavaThread::oops_do (this=0x7fb544229050, f=0x7fb53c001208, cf=0x7fb53c0012b0)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/thread.cpp:2956
+#8  0x00007fb54bd807ff in ParallelOopsDoThreadClosure::do_thread (this=0x7fb5495e9900, t=0x7fb544229050)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/thread.cpp:4644
+#9  0x00007fb54bd7b7b9 in Threads::possibly_parallel_threads_do (is_par=true, tc=0x7fb5495e9900)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/thread.cpp:3605
+#10 0x00007fb54bd7dcb0 in Threads::possibly_parallel_oops_do (is_par=true, f=0x7fb53c001208, cf=0x7fb53c0012b0)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/thread.cpp:4650
+#11 0x00007fb54b53660b in G1RootProcessor::process_java_roots (this=0x7fb5481b8e30, closures=0x7fb53c001200, phase_times=0x7fb54404e9c0, 
+    worker_id=1) at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/g1/g1RootProcessor.cpp:166
+#12 0x00007fb54b536310 in G1RootProcessor::evacuate_roots (this=0x7fb5481b8e30, pss=0x7fb53c000bc0, worker_id=1)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/g1/g1RootProcessor.cpp:61
+#13 0x00007fb54b4ae8d2 in G1EvacuateRegionsTask::scan_roots (this=0x7fb5481b8e70, pss=0x7fb53c000bc0, worker_id=1)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:3878
+#14 0x00007fb54b4ae837 in G1EvacuateRegionsBaseTask::work (this=0x7fb5481b8e70, worker_id=1)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/g1/g1CollectedHeap.cpp:3866
+#15 0x00007fb54be6dd23 in GangWorker::run_task (this=0x7fb54405a810, data=...)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/shared/workgroup.cpp:339
+#16 0x00007fb54be6dddb in GangWorker::loop (this=0x7fb54405a810)
+---Type <return> to continue, or q <return> to quit---
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/shared/workgroup.cpp:349
+#17 0x00007fb54be6da32 in AbstractGangWorker::run (this=0x7fb54405a810)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/gc/shared/workgroup.cpp:300
+#18 0x00007fb54bd724dc in Thread::call_run (this=0x7fb54405a810)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/share/runtime/thread.cpp:393
+#19 0x00007fb54badfe14 in thread_native_entry (thread=0x7fb54405a810)
+    at /home/intel/sandboxes/jdk-release3/jdk/src/hotspot/os/linux/os_linux.cpp:791
+#20 0x00007fb54ccd06db in start_thread (arg=0x7fb5495ea700) at pthread_create.c:463
+#21 0x00007fb54d42a88f in clone () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:95
+(gdb) 
+

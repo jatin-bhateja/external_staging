@@ -1,0 +1,23 @@
+
+SRC: 
+  VAL >> 10
+
+ASM:
+  sar  $0xa,%eax 
+
+IF SAR: 
+  C1 /7 ib	SAR r/m32, imm8	MI	Valid	Valid	Signed divide* r/m32 by 2, imm8 times
+
+DECODE:
+ 604:   c1 f8 0a                sar    $0xa,%eax
+
+    -> c1 : opcode (anything before primary opcode is instruction prefix)
+    -> f8 : 11 111 000
+          : Mod        = 11
+          : R/M        = 000 (EAX)
+          : Reg/Opcode = 111 (3 bit secondary opcode to be interpreted with primary opcode, since primary opcode is same for SAR and SHL)
+    -> 0a -> 
+
+IF SHL:
+    C1 /4 ib	SHL r/m32, imm8	MI	Valid	Valid	Multiply r/m32 by 2, imm8 times.
+

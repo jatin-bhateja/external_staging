@@ -1,0 +1,15 @@
+8248830: C2: Optimize Rotate API on x86.
+Summary: Improved existing scalar rotate operations, added support for vector rotate operations using new AVX512 instructions.
+[X86] Optimizing arraycopy operations using AVX512 masked moves:-
+    -  Adding new AVX512 optimized stubs with special handling for small copy blocks upto 192 bytes and a destination 
+       aligned PRE-MAIN-POST loop for copy sizes greater than 192 bytes.
+    -  All the special cases and aligned loop  use 32 byte [masked] vectors.
+    -  For copy sizes above AVX3Threshold (4096 bytes default), special cases and aligned loop use 64 byte [masked] vectors.
+    -  For MaxVectorSize = 32, REP MOVS are use for copy sizes above 4096 bytes.
+    -  Partial inlining is done for copy block size less than 32 bytes (default). This makes sure we do not incur the
+       call overhead for small sized copy operations. Inline size is configurable through new runtime flag 
+       ArrayCopyPartialInlineSize=(32/64).   
+
+
+Reviewed-by: vlivanov, kvn
+

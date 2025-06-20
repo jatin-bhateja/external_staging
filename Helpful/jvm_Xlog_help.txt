@@ -1,0 +1,59 @@
+-Xlog Usage: -Xlog[:[selections][:[output][:[decorators][:output-options]]]]
+	 where 'selections' are combinations of tags and levels of the form tag1[+tag2...][*][=level][,...]
+	 NOTE: Unless wildcard (*) is specified, only log messages tagged with exactly the tags specified will be matched.
+
+Available log levels:
+ off, trace, debug, info, warning, error
+
+Available log decorators: 
+ time (t), utctime (utc), uptime (u), timemillis (tm), uptimemillis (um), timenanos (tn), uptimenanos (un), hostname (hn), pid (p), tid (ti), level (l), tags (tg)
+ Decorators can also be specified as 'none' for no decoration.
+
+Available log tags:
+ add, age, alloc, annotation, aot, arguments, attach, barrier, biasedlocking, blocks, bot, breakpoint, bytecode, cds, census, class, classhisto, cleanup, codecache, compaction, compilation, constantpool, constraints, container, coops, cpu, cset, data, datacreation, dcmd, decoder, defaultmethods, director, dump, ergo, event, exceptions, exit, fingerprint, free, freelist, gc, handshake, hashtables, heap, humongous, ihop, iklass, init, inlining, interpreter, itables, jfr, jit, jni, jvmti, liveness, load, loader, logging, malloc, mark, marking, membername, memops, metadata, metaspace, methodcomparator, mirror, mmu, module, monitorinflation, monitormismatch, nestmates, nmethod, normalize, objecttagging, obsolete, oldobject, oom, oopmap, oops, oopstorage, os, pagesize, parser, patch, path, perf, periodic, phases, plab, preorder, preview, promotion, protectiondomain, ptrqueue, purge, redefine, ref, refine, region, reloc, remset, resolve, safepoint, sampling, scavenge, setting, smr, stackmap, stacktrace, stackwalk, start, startuptime, state, stats, stringdedup, stringtable, subclass, survivor, sweep, symboltable, system, table, task, test, thread, time, timer, tlab, tracking, unload, unshareable, update, verification, verify, vmoperation, vmthread, vtables, vtablestubs, workgang
+ Specifying 'all' instead of a tag combination matches all tag combinations.
+
+Described tag sets:
+ logging: Logging for the log framework itself
+
+Available log outputs:
+ stdout/stderr
+ file=<filename>
+  If the filename contains %p and/or %t, they will expand to the JVM's PID and startup timestamp, respectively.
+  Additional output-options for file outputs:
+   filesize=..  - Target byte size for log rotation (supports K/M/G suffix). If set to 0, log rotation will not trigger automatically, but can be performed manually (see the VM.log DCMD).
+   filecount=.. - Number of files to keep in rotation (not counting the active file). If set to 0, log rotation is disabled. This will cause existing log files to be overwritten.
+
+Some examples:
+ -Xlog
+	 Log all messages up to 'info' level to stdout with 'uptime', 'levels' and 'tags' decorations.
+	 (Equivalent to -Xlog:all=info:stdout:uptime,levels,tags).
+
+ -Xlog:gc
+	 Log messages tagged with 'gc' tag up to 'info' level to stdout, with default decorations.
+
+ -Xlog:gc,safepoint
+	 Log messages tagged either with 'gc' or 'safepoint' tags, both up to 'info' level, to stdout, with default decorations.
+	 (Messages tagged with both 'gc' and 'safepoint' will not be logged.)
+
+ -Xlog:gc+ref=debug
+	 Log messages tagged with both 'gc' and 'ref' tags, up to 'debug' level, to stdout, with default decorations.
+	 (Messages tagged only with one of the two tags will not be logged.)
+
+ -Xlog:gc=debug:file=gc.txt:none
+	 Log messages tagged with 'gc' tag up to 'debug' level to file 'gc.txt' with no decorations.
+
+ -Xlog:gc=trace:file=gctrace.txt:uptimemillis,pid:filecount=5,filesize=1m
+	 Log messages tagged with 'gc' tag up to 'trace' level to a rotating fileset of 5 files of size 1MB,
+	 using the base name 'gctrace.txt', with 'uptimemillis' and 'pid' decorations.
+
+ -Xlog:gc::uptime,tid
+	 Log messages tagged with 'gc' tag up to 'info' level to output 'stdout', using 'uptime' and 'tid' decorations.
+
+ -Xlog:gc*=info,safepoint*=off
+	 Log messages tagged with at least 'gc' up to 'info' level, but turn off logging of messages tagged with 'safepoint'.
+	 (Messages tagged with both 'gc' and 'safepoint' will not be logged.)
+
+ -Xlog:disable -Xlog:safepoint=trace:safepointtrace.txt
+	 Turn off all logging, including warnings and errors,
+	 and then enable messages tagged with 'safepoint' up to 'trace' level to file 'safepointtrace.txt'.

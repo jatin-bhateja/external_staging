@@ -1,0 +1,236 @@
+make/BuildStatic.gmk =======> 
+default: all
+all: $(TARGETS)
+make/Bundles.gmk =======> 
+default: all
+product-bundles: $(PRODUCT_TARGETS)
+legacy-bundles: $(LEGACY_TARGETS)
+test-bundles: $(TEST_TARGETS)
+docs-jdk-bundles: $(DOCS_JDK_TARGETS)
+docs-javase-bundles: $(DOCS_JAVASE_TARGETS)
+docs-reference-bundles: $(DOCS_REFERENCE_TARGETS)
+static-libs-bundles: $(STATIC_LIBS_TARGETS)
+static-libs-graal-bundles: $(STATIC_LIBS_GRAAL_TARGETS)
+jcov-bundles: $(JCOV_TARGETS)
+make/CompileCommands.gmk =======> 
+default: all
+all: $(TARGETS)
+make/CompileDemos.gmk =======> 
+default: all
+all: $(TARGETS)
+images: $(IMAGES_TARGETS)
+make/CompileInterimLangtools.gmk =======> 
+default: all
+java.compiler.interim_EXTRA_FILES := \
+all: $(TARGETS)
+make/CompileJavaModules.gmk =======> 
+default: all
+all: $(TARGETS)
+make/CompileModuleTools.gmk =======> 
+default: all
+all: $(TARGETS)
+make/CompileToolsHotspot.gmk =======> 
+default: all
+all: $(TARGETS)
+make/CompileToolsJdk.gmk =======> 
+default: all
+all: $(TARGETS)
+make/CopyImportModules.gmk =======> 
+default: all
+all: $(TARGETS)
+make/CopyInterimTZDB.gmk =======> 
+default: all
+all: $(COPY_INTERIM_TZDB)
+make/Coverage.gmk =======> 
+jcov-image: $(JCOV_IMAGE_DIR)/release
+make/CreateJmods.gmk =======> 
+default: all
+all: $(TARGETS)
+make/Docs.gmk =======> 
+default: all
+specs_bottom_rel_path := ../
+docs-jdk-api-javadoc: $(JDK_API_JAVADOC_TARGETS) $(JDK_API_CUSTOM_TARGETS)
+docs-jdk-api-graphs: $(JDK_API_GRAPHS_TARGETS)
+docs-javase-api-javadoc: $(JAVASE_API_JAVADOC_TARGETS) $(JAVASE_API_CUSTOM_TARGETS)
+docs-javase-api-graphs: $(JAVASE_API_GRAPHS_TARGETS)
+docs-reference-api-javadoc: $(REFERENCE_API_JAVADOC_TARGETS) $(REFERENCE_API_CUSTOM_TARGETS)
+docs-reference-api-graphs: $(REFERENCE_API_GRAPHS_TARGETS)
+docs-jdk-specs: $(JDK_SPECS_TARGETS)
+docs-jdk-index: $(JDK_INDEX_TARGETS)
+docs-zip: $(ZIP_TARGETS)
+docs-specs-zip: $(SPECS_ZIP_TARGETS)
+all: docs-jdk-api-javadoc docs-jdk-api-graphs docs-javase-api-javadoc \
+make/Doctor.gmk =======> 
+default: all
+prologue:
+check-git: prologue
+check-autocrlf: check-git
+check-configure-warnings: check-autocrlf
+check-core-files: check-configure-warnings
+check-bad-file-names: check-core-files
+epilogue: check-bad-file-names
+doctor: $(TARGETS)
+all: doctor
+make/ExplodedImageOptimize.gmk =======> 
+default: all
+all: $(TARGETS)
+make/GenerateLinkOptData.gmk =======> 
+default: all
+all: $(TARGETS)
+make/GenerateModuleSummary.gmk =======> 
+default: all
+all: $(GENGRAPHS_DIR)/jdk.dot $(GENGRAPHS_DIR)/module-summary.html $(SPEC_DOTFILES_DIR)/java.se.dot
+make/Global.gmk =======> 
+help:
+print-configurations:
+test-prebuilt:
+test-prebuilt-with-exit-code:
+run-test-prebuilt: test-prebuilt
+make/GraalBuilderImage.gmk =======> 
+default: all
+all: $(TARGETS)
+make/Hsdis.gmk =======> 
+default: all
+build: $(BUILD_HSDIS) $(BUILT_HSDIS_LIB)
+all: $(TARGETS)
+make/Images.gmk =======> 
+default: all
+jdk: $(JLINK_JDK_TARGETS) $(JDK_TARGETS)
+jre: $(JLINK_JRE_TARGETS) $(JRE_TARGETS)
+symbols: $(SYMBOLS_TARGETS)
+all: jdk jre symbols
+make/Init.gmk =======> 
+default:
+make/InitSupport.gmk =======> 
+make/InterimImage.gmk =======> 
+default: all
+all: $(TARGETS)
+make/JrtfsJar.gmk =======> 
+default: all
+all: $(BUILD_JRTFS_JAR)
+make/MacBundles.gmk =======> 
+default: bundles
+make/Main.gmk =======> 
+default:
+bootcycle-images:
+buildtools: buildtools-langtools interim-langtools \
+hotspot: $(HOTSPOT_VARIANT_TARGETS)
+gensrc: $(GENSRC_TARGETS)
+gendata: $(GENDATA_TARGETS)
+copy: $(ALL_COPY_TARGETS)
+java: $(JAVA_TARGETS)
+libs: $(LIBS_TARGETS)
+static-libs: $(STATIC_LIBS_TARGETS)
+launchers: $(LAUNCHER_TARGETS)
+jmods: $(JMOD_TARGETS)
+jdk.jdwp.agent-gensrc: jdk.jdi-gensrc
+java.base: $(JVM_MAIN_TARGETS)
+demos: demos-jdk
+exploded-image-base: $(ALL_MODULES)
+exploded-image: exploded-image-base release-file
+runnable-buildjdk:
+create-buildjdk: create-buildjdk-interim-image
+docs-jdk-api: docs-jdk-api-javadoc
+docs-javase-api: docs-javase-api-javadoc
+docs-reference-api: docs-reference-api-javadoc
+docs-jdk: docs-jdk-api docs-jdk-specs docs-jdk-index
+docs-javase: docs-javase-api
+docs-reference: docs-reference-api
+docs-javadoc: docs-jdk-api
+mac-bundles: mac-jdk-bundle
+product-images: jdk-image symbols-image exploded-image
+legacy-images: legacy-jre-image
+product-images: zip-security
+docs-jdk-image: docs-jdk
+docs-javase-image: docs-javase
+docs-reference-image: docs-reference
+docs-image: docs-jdk-image
+all-docs-images: docs-jdk-image docs-javase-image docs-reference-image
+docs-bundles: docs-jdk-bundles
+all-docs-bundles: docs-jdk-bundles docs-javase-bundles docs-reference-bundles
+test-image: prepare-test-image test-image-jdk-jtreg-native \
+all-images: product-images test-image all-docs-images
+all-bundles: product-bundles test-bundles docs-bundles static-libs-bundles
+default: $(DEFAULT_MAKE_TARGET)
+jdk: exploded-image
+images: product-images
+docs: docs-image
+bundles: all-bundles
+all: all-images
+run-test: test
+exploded-run-test: exploded-test
+check: test-tier1
+test-hotspot-jtreg: test-hotspot_all
+test-hotspot-jtreg-native: test-hotspot_native_sanity
+test-hotspot-gtest: exploded-test-gtest
+test-jdk-jtreg-native: test-jdk_native_sanity
+clean: $(CLEAN_DIR_TARGETS)
+clean-docs:
+clean-compile-commands:
+clean-support: clean-jdk
+clean-test: clean-test-results clean-test-support
+clean-images: clean-support/images
+dist-clean: clean
+print-targets:
+print-modules:
+print-tests:
+create-main-targets-include:
+make/MainSupport.gmk =======> 
+make/ModuleTools.gmk =======> 
+make/ModuleWrapper.gmk =======> 
+default: all
+make/ReleaseFile.gmk =======> 
+default: all
+all: $(TARGETS)
+make/RunTests.gmk =======> 
+default: all
+hotspot_JTREG_MAX_MEM := 0
+hotspot_JTREG_ASSERT := false
+hotspot_JTREG_NATIVEPATH := $(TEST_IMAGE_DIR)/hotspot/jtreg/native
+jdk_JTREG_NATIVEPATH := $(TEST_IMAGE_DIR)/jdk/jtreg/native
+lib-test_JTREG_NATIVEPATH := $(TEST_IMAGE_DIR)/lib-test/jtreg/native
+run-all-tests: $(TEST_TARGETS)
+pre-run-test:
+post-run-test: run-all-tests
+run-test-report: post-run-test
+run-test: run-test-report
+all: run-test
+make/RunTestsPrebuilt.gmk =======> 
+ifneq ($(findstring :, $(MAKE)), )
+default: all
+test-prebuilt:
+test-prebuilt-with-exit-code: test-prebuilt
+all: test-prebuilt
+make/RunTestsPrebuiltSpec.gmk =======> 
+export LC_ALL := C
+make/SourceRevision.gmk =======> 
+store-source-revision: $(STORE_SOURCE_REVISION_TARGET)
+create-source-revision-tracker: $(CREATE_SOURCE_REVISION_TRACKER_TARGET)
+make/StaticLibsImage.gmk =======> 
+default: all
+static-libs-image: $(HOTSPOT_VARIANT_STATIC_LIBS_TARGETS) $(STATIC_LIBS_TARGETS)
+static-libs-graal-image: $(STATIC_LIBS_TARGETS)
+all: $(TARGETS)
+make/TestImage.gmk =======> 
+default: all
+prepare-test-image: $(TARGETS)
+all: prepare-test-image
+make/ToolsHotspot.gmk =======> 
+make/ToolsJdk.gmk =======> 
+make/ToolsLangtools.gmk =======> 
+default: all
+all: $(BUILD_TOOLS_LANGTOOLS)
+make/UpdateBuildDocs.gmk =======> 
+default: all
+all: $(TARGETS)
+make/UpdateX11Wrappers.gmk =======> 
+default: all
+wrapper-information: $(run_wrappergen)
+all: $(TARGETS)
+make/ZipSecurity.gmk =======> 
+default: all
+all: $(TARGETS)
+make/ZipSource.gmk =======> 
+default: all
+zip: $(SRC_ZIP_SRCS)
+all: $(TARGETS)

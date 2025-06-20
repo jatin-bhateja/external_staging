@@ -1,0 +1,29 @@
+#!/bin/sh
+
+for run in 1 2 3
+do
+  for i in compress crypto.aes crypto.rsa crypto.signverify derby mpegaudio scimark.fft.large scimark.fft.small scimark.lu.large scimark.lu.small scimark.monte scimark.sor.large scimark.sor.small  scimark.sparse.large scimark.sparse.small serial sunflow xml.transform xml.validation
+  do
+    export _JAVA_OPTIONS="-XX:-TieredCompilation -XX:+CITime"
+    export JAVA_HOME=/home/intel/sandboxes/jdk-release/jdk/build/linux-x86_64-server-release/jdk
+    export PATH=$JAVA_HOME/bin/:$PATH
+    export DISPLAY=10.252.91.242:0
+	
+    echo "Run $i[$run]: Mainline : $JAVA_HOME" 
+	
+    numactl --localalloc taskset -c 1 java -XX:-TieredCompilation -XX:+CITime -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe -bt 1 -ict -ikv  -wt 15 -i 3 -it 5 -ctf true $i >& ./log_${run}_10_9_orig_${i}.txt
+done
+
+  for i in compress crypto.aes crypto.rsa crypto.signverify derby mpegaudio scimark.fft.large scimark.fft.small scimark.lu.large scimark.lu.small scimark.monte scimark.sor.large scimark.sor.small  scimark.sparse.large scimark.sparse.small serial sunflow xml.transform xml.validation
+  do
+    export _JAVA_OPTIONS="-XX:-TieredCompilation -XX:+CITime"
+    export JAVA_HOME=/home/intel/sandboxes/jdk-release2/jdk/build/linux-x86_64-server-release/jdk
+    export PATH=$JAVA_HOME/bin/:$PATH
+    export DISPLAY=10.252.91.242:0
+	
+    echo "Run $i[$run]: Mainline-generic-oper : $JAVA_HOME " 
+	
+    numactl --localalloc taskset -c 1 java -XX:-TieredCompilation -XX:+CITime -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe -bt 1 -ict -ikv  -wt 15 -i 3 -it 5 -ctf true $i >& ./log_${run}_10_9_${i}.txt
+  done
+done
+

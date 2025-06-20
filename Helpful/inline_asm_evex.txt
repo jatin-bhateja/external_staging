@@ -1,0 +1,48 @@
+1) Predicated instructions:
+
+#include "stdio.h"
+
+int main() {
+  int res[16];
+  int src1[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+  int src2[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+  asm volatile(
+    "mov $15 , %%rax \t\n"
+    "kmovq %%rax , %%k1 \t\n"
+    "vmovdqu64 %1 , %%zmm1 \t\n"
+    "vpaddd %2 , %%zmm1, %%zmm1 %{%%k1} %{z}  \t\n"
+    "vmovdqu64 %%zmm1 , %0 \t\n"
+   : "=m"(*res)
+   : "m"(*src1) , "m"(*src2)
+   : "%rax" , "%zmm1" , "%k1", "cc"
+  );
+  for(int i = 0 ; i < 16; i++) {
+    fprintf(stdout, "%d\n" , res[i]);
+  }
+  return 0;
+}
+
+2) Embedded broadcast.
+#include "stdio.h"
+
+int main() {
+  int res[16];
+  int src1[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+  int src2[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+  asm volatile(
+    "mov $15 , %%rax \t\n"
+    "kmovq %%rax , %%k1 \t\n"
+    "vmovdqu64 %1 , %%zmm1 \t\n"
+    "vpaddd %2%{1to16} , %%zmm1, %%zmm1 %{%%k1} %{z}   \t\n"
+    "vmovdqu64 %%zmm1 , %0 \t\n"
+   : "=m"(*res)
+   : "m"(*src1) , "m"(*src2)
+   : "%rax" , "%zmm1" , "%k1", "cc"
+  );
+  for(int i = 0 ; i < 16; i++) {
+    fprintf(stdout, "%d\n" , res[i]);
+  }
+  return 0;
+}
+
+
