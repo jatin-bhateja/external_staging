@@ -1,0 +1,214 @@
+Disassembling copysign::main:
+-----------
+0x30023a60: ff f0                             pushq    %rax                         
+0x30023a62: 65 83 3c 25 68 00 00 00 00        cmpl    $0, %gs:104                   ; thread:[104] = _please_self_suspend
+0x30023a6b: 74 0c                             je    12                              ; 0x30023a79
+0x30023a6d: 48 b8 00 5f 01 30 00 00 00 00     movabsq    $805396224, %rax           ; 0x30015f00 = StubRoutines::safepoint_handler
+0x30023a77: ff d0                             callq    *%rax                        ; 0x30015f00 = StubRoutines::safepoint_handler
+0x30023a79: 48 b8 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rax           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023a83: 41 bb 07 00 00 00                 movl    $7, %r11d                     
+0x30023a89: ff d0                             callq    *%rax                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+-----------
+Disassembling copysign::micro:
+-----------
+0x30023c60: 48 83 ec 18                       subq    $24, %rsp                     
+0x30023c64: 65 83 3c 25 68 00 00 00 00        cmpl    $0, %gs:104                   ; thread:[104] = _please_self_suspend
+0x30023c6d: 75 48                             jne    72                             ; 0x30023cb7
+0x30023c6f: 39 57 08                          cmpl    %edx, 8(%rdi)                 
+0x30023c72: 76 63                             jbe    99                             ; 0x30023cd7
+0x30023c74: 39 56 08                          cmpl    %edx, 8(%rsi)                 
+0x30023c77: 89 d0                             movl    %edx, %eax                    
+0x30023c79: 2e c5 fa 7e 44 c7 10              vmovq    %cs:16(%rdi,%rax,8), %xmm0   
+0x30023c80: 0f 86 89 00 00 00                 jbe    137                            ; 0x30023d0f
+0x30023c86: 48 b9 ff ff ff ff ff ff ff 7f     movabsq    $9223372036854775807, %rcx  ; 0x7fffffffffffffff = 
+0x30023c90: 48 ff c1                          incq    %rcx                          
+0x30023c93: 48 23 4c c6 10                    andq    16(%rsi,%rax,8), %rcx         
+0x30023c98: c4 e1 f9 7e c2                    vmovq    %xmm0, %rdx                  
+0x30023c9d: 40 b6 3f                          movb    $63, %sil                     
+0x30023ca0: c4 e2 c8 f5 d2                    bzhiq    %rsi, %rdx, %rdx             
+0x30023ca5: 48 09 ca                          orq    %rcx, %rdx                     
+0x30023ca8: c4 e1 f9 6e c2                    vmovq    %rdx, %xmm0                  
+0x30023cad: 48 89 54 c7 10                    movq    %rdx, 16(%rdi,%rax,8)         
+0x30023cb2: 48 83 c4 18                       addq    $24, %rsp                     
+0x30023cb6: c3                                retq                                  
+0x30023cb7: 48 b8 00 5f 01 30 00 00 00 00     movabsq    $805396224, %rax           Res =  -5.11487712E9
+; 0x30015f00 = StubRoutines::safepoint_handler
+0x30023cc1: ff d0                             callq    *%rax                        ; 0x30015f00 = StubRoutines::safepoint_handler
+0x30023cc3: eb aa                             jmp    -86                            ; 0x30023c6f
+0x30023cc5: 48 b8 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rax           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023ccf: 41 bb 0a 00 00 00                 movl    $10, %r11d                    
+0x30023cd5: ff d0                             callq    *%rax                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023cd7: 48 b8 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rax           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023ce1: 41 bb 0c 00 00 00                 movl    $12, %r11d                    
+0x30023ce7: 48 89 7c 24 08                    movq    %rdi, 8(%rsp)                 
+0x30023cec: 48 89 74 24 10                    movq    %rsi, 16(%rsp)                
+0x30023cf1: ff d0                             callq    *%rax                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023cf3: 48 8b 7c 24 08                    movq    8(%rsp), %rdi                 
+0x30023cf8: 48 8b 74 24 10                    movq    16(%rsp), %rsi                
+0x30023cfd: 48 b8 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rax           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023d07: 41 bb 0a 00 00 00                 movl    $10, %r11d                    
+0x30023d0d: ff d0                             callq    *%rax                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023d0f: 48 b8 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rax           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023d19: 41 bb 0c 00 00 00                 movl    $12, %r11d                    
+0x30023d1f: 48 89 7c 24 08                    movq    %rdi, 8(%rsp)                 
+0x30023d24: 48 89 74 24 10                    movq    %rsi, 16(%rsp)                
+0x30023d29: ff d0                             callq    *%rax                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30023d2b: 48 8b 7c 24 08                    movq    8(%rsp), %rdi                 
+0x30023d30: 48 8b 74 24 10                    movq    16(%rsp), %rsi                
+-----------
+Disassembling copysign::main:
+-----------
+0x30023e60: ff f5                             pushq    %rbp                         
+0x30023e62: 53                                pushq    %rbx                         
+0x30023e63: 48 83 ec 18                       subq    $24, %rsp                     
+0x30023e67: c5 fb 10 4f 10                    vmovsd    16(%rdi), %xmm1             
+0x30023e6c: 4c 8b 4f 18                       movq    24(%rdi), %r9                 
+0x30023e70: 48 8b 47 20                       movq    32(%rdi), %rax                
+0x30023e74: 8b 77 28                          movl    40(%rdi), %esi                
+0x30023e77: c6 44 24 0f 01                    movb    $1, 15(%rsp)                  
+0x30023e7c: 8a 4c 24 0f                       movb    15(%rsp), %cl                 
+0x30023e80: 80 f9 01                          cmpb    $1, %cl                       
+0x30023e83: 0f 85 f1 01 00 00                 jne    497                            ; 0x3002407a
+0x30023e89: 4d 85 c9                          testq    %r9, %r9                     
+0x30023e8c: 74 1b                             je    27                              ; 0x30023ea9
+0x30023e8e: 41 8b 49 04                       movl    4(%r9), %ecx                  
+0x30023e92: 2e 2e 2e 2e 2e 2e 2e 2e 81 e1     andl    $33554431, %ecx               
+0x30023ea0: 83 f9 07                          cmpl    $7, %ecx                      
+0x30023ea3: 0f 85 3c 02 00 00                 jne    572                            ; 0x300240e5
+0x30023ea9: 48 85 c0                          testq    %rax, %rax                   
+0x30023eac: 0f 84 d7 01 00 00                 je    471                             ; 0x30024089
+0x30023eb2: 8b 48 04                          movl    4(%rax), %ecx                 
+0x30023eb5: 2e 2e 2e 2e 2e 81 e1 ff ff ff     andl    $33554431, %ecx               
+0x30023ec0: 83 f9 07                          cmpl    $7, %ecx                      
+0x30023ec3: 0f 85 de 01 00 00                 jne    478                            ; 0x300240a7
+0x30023ec9: 81 fe 7f 96 98 00                 cmpl    $9999999, %esi                
+0x30023ecf: 0f 8f 11 01 00 00                 jg    273                             ; 0x30023fe6
+0x30023ed5: 44 8b 58 08                       movl    8(%rax), %r11d                
+0x30023ed9: 2e 2e 2e 45 8d 53 ff              leal    %cs:-1(%r11), %r10d           
+0x30023ee0: 4d 85 c9                          testq    %r9, %r9                     
+0x30023ee3: 0f 84 e2 01 00 00                 je    482                             ; 0x300240cb
+0x30023ee9: 49 b8 ff ff ff ff ff ff ff 7f     movabsq    $9223372036854775807, %r8  ; 0x7fffffffffffffff = 
+0x30023ef3: 41 8b 69 08                       movl    8(%r9), %ebp                  
+0x30023ef7: 40 f6 c6 01                       testb    $1, %sil                     
+0x30023efb: 75 05                             jne    5                              ; 0x30023f02
+0x30023efd: 2e 89 f2                          movl    %esi, %edx                    
+0x30023f00: eb 3b                             jmp    59                             ; 0x30023f3d
+0x30023f02: 89 f3                             movl    %esi, %ebx                    
+0x30023f04: 44 21 d3                          andl    %r10d, %ebx                   
+0x30023f07: 41 39 db                          cmpl    %ebx, %r11d                   
+0x30023f0a: 0f 86 46 01 00 00                 jbe    326                            ; 0x30024056
+0x30023f10: 39 dd                             cmpl    %ebx, %ebp                    
+0x30023f12: 0f 86 3e 01 00 00                 jbe    318                            ; 0x30024056
+0x30023f18: 49 8d 50 01                       leaq    1(%r8), %rdx                  
+0x30023f1c: 49 23 54 d9 10                    andq    16(%r9,%rbx,8), %rdx          
+0x30023f21: 48 8b 7c d8 10                    movq    16(%rax,%rbx,8), %rdi         
+0x30023f26: 4c 21 c7                          andq    %r8, %rdi                     
+0x30023f29: 48 09 d7                          orq    %rdx, %rdi                     
+0x30023f2c: c4 e1 f9 6e c7                    vmovq    %rdi, %xmm0                  
+0x30023f31: 48 89 7c d8 10                    movq    %rdi, 16(%rax,%rbx,8)         
+0x30023f36: c5 f3 58 c8                       vaddsd    %xmm0, %xmm1, %xmm1         
+0x30023f3a: 8d 56 01                          leal    1(%rsi), %edx                 
+0x30023f3d: 0f 1f 00                          nopl    (%rax)                        
+0x30023f40: 81 fe 7f 96 98 00                 cmpl    $9999999, %esi                
+0x30023f46: 0f 84 9a 00 00 00                 je    154                             ; 0x30023fe6
+0x30023f4c: 49 8d 78 01                       leaq    1(%r8), %rdi                  
+0x30023f50: 66 66 66 66 66 66 2e 0f 1f 84     nopw    %cs:(%rax,%rax)               
+0x30023f5f: 90                                nop                                   
+0x30023f60: 89 d3                             movl    %edx, %ebx                    
+0x30023f62: 44 21 d3                          andl    %r10d, %ebx                   
+0x30023f65: 41 39 db                          cmpl    %ebx, %r11d                   
+0x30023f68: 0f 86 e6 00 00 00                 jbe    230                            ; 0x30024054
+0x30023f6e: 39 dd                             cmpl    %ebx, %ebp                    
+0x30023f70: 0f 86 de 00 00 00                 jbe    222                            ; 0x30024054
+0x30023f76: 89 de                             movl    %ebx, %esi                    
+0x30023f78: 49 8b 5c f1 10                    movq    16(%r9,%rsi,8), %rbx          
+0x30023f7d: 48 21 fb                          andq    %rdi, %rbx                    
+0x30023f80: 48 8b 4c f0 10                    movq    16(%rax,%rsi,8), %rcx         
+0x30023f85: 4c 21 c1                          andq    %r8, %rcx                     
+0x30023f88: 48 09 d9                          orq    %rbx, %rcx                     
+0x30023f8b: c4 e1 f9 6e c1                    vmovq    %rcx, %xmm0                  
+0x30023f90: 48 89 4c f0 10                    movq    %rcx, 16(%rax,%rsi,8)         
+0x30023f95: c5 f3 58 c8                       vaddsd    %xmm0, %xmm1, %xmm1         
+0x30023f99: 8d 72 01                          leal    1(%rdx), %esi                 
+0x30023f9c: 89 f3                             movl    %esi, %ebx                    
+0x30023f9e: 44 21 d3                          andl    %r10d, %ebx                   
+0x30023fa1: 41 39 db                          cmpl    %ebx, %r11d                   
+0x30023fa4: 0f 86 ac 00 00 00                 jbe    172                            ; 0x30024056
+0x30023faa: 39 dd                             cmpl    %ebx, %ebp                    
+0x30023fac: 0f 86 a4 00 00 00                 jbe    164                            ; 0x30024056
+0x30023fb2: 89 d9                             movl    %ebx, %ecx                    
+0x30023fb4: 49 8b 74 c9 10                    movq    16(%r9,%rcx,8), %rsi          
+0x30023fb9: 48 21 fe                          andq    %rdi, %rsi                    
+0x30023fbc: 48 8b 5c c8 10                    movq    16(%rax,%rcx,8), %rbx         
+0x30023fc1: 4c 21 c3                          andq    %r8, %rbx                     
+0x30023fc4: 48 09 f3                          orq    %rsi, %rbx                     
+0x30023fc7: c4 e1 f9 6e c3                    vmovq    %rbx, %xmm0                  
+0x30023fcc: 48 89 5c c8 10                    movq    %rbx, 16(%rax,%rcx,8)         
+0x30023fd1: c5 f3 58 c8                       vaddsd    %xmm0, %xmm1, %xmm1         
+0x30023fd5: 8d 4a 02                          leal    2(%rdx), %ecx                 
+0x30023fd8: 81 fa 7d 96 98 00                 cmpl    $9999997, %edx                
+0x30023fde: 89 ca                             movl    %ecx, %edx                    
+0x30023fe0: 0f 8e 7a ff ff ff                 jle    -134                           ; 0x30023f60
+0x30023fe6: 48 b8 80 01 00 2d 00 00 00 00     movabsq    $754975104, %rax           ; 0x2d000180 = 
+0x30023ff0: 48 8b 00                          movq    (%rax), %rax                  
+0x30023ff3: 48 b9 48 00 f8 2f 00 00 00 00     movabsq    $804782152, %rcx           ; 0x2ff80048 = 
+                                                                             ; 804782152 = clearable_gc_phase_trap_mask
+0x30023ffd: 48 8b 09                          movq    (%rcx), %rcx                  
+0x30024000: 48 85 c1                          testq    %rax, %rcx                   
+0x30024003: 74 19                             je    25                              ; 0x3002401e
+0x30024005: 48 be 80 01 00 2d 00 00 00 00     movabsq    $754975104, %rsi           ; 0x2d000180 = 
+0x3002400f: 48 ba 80 b4 00 30 00 00 00 00     movabsq    $805352576, %rdx           ; 0x3000b480 = StubRoutines::lvb_handler_for_call
+0x30024019: 48 89 c7                          movq    %rax, %rdi                    
+0x3002401c: ff d2                             callq    *%rdx                        ; 0x3000b480 = StubRoutines::lvb_handler_for_call
+0x3002401e: 48 8b b8 50 03 00 00              movq    848(%rax), %rdi               
+0x30024025: 48 85 f9                          testq    %rdi, %rcx                   
+0x30024028: 74 18                             je    24                              ; 0x30024042
+0x3002402a: 48 05 50 03 00 00                 addq    $848, %rax                    
+0x30024030: 48 b9 80 b4 00 30 00 00 00 00     movabsq    $805352576, %rcx           ; 0x3000b480 = StubRoutines::lvb_handler_for_call
+0x3002403a: 48 89 c6                          movq    %rax, %rsi                    
+0x3002403d: ff d1                             callq    *%rcx                        ; 0x3000b480 = StubRoutines::lvb_handler_for_call
+0x3002403f: 48 89 c7                          movq    %rax, %rdi                    
+0x30024042: 48 b8 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rax           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x3002404c: 41 bb ed ff ff ff                 movl    $4294967277, %r11d            
+0x30024052: ff d0                             callq    *%rax                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30024054: 89 d6                             movl    %edx, %esi                    
+0x30024056: 48 b9 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rcx           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30024060: 41 bb 0c 00 00 00                 movl    $12, %r11d                    
+0x30024066: 4c 89 0c 24                       movq    %r9, (%rsp)                   
+0x3002406a: 48 89 44 24 10                    movq    %rax, 16(%rsp)                
+0x3002406f: ff d1                             callq    *%rcx                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30024071: 4c 8b 0c 24                       movq    (%rsp), %r9                   
+0x30024075: 48 8b 44 24 10                    movq    16(%rsp), %rax                
+0x3002407a: 48 b9 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rcx           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30024084: 45 31 db                          xorl    %r11d, %r11d                  
+0x30024087: ff d1                             callq    *%rcx                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30024089: 81 fe 7f 96 98 00                 cmpl    $9999999, %esi                
+0x3002408f: 0f 8f 51 ff ff ff                 jg    -175                            ; 0x30023fe6
+0x30024095: 48 b8 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rax           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x3002409f: 41 bb 0a 00 00 00                 movl    $10, %r11d                    
+0x300240a5: ff d0                             callq    *%rax                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x300240a7: 48 b9 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rcx           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x300240b1: 41 bb 08 00 00 00                 movl    $8, %r11d                     
+0x300240b7: 4c 89 0c 24                       movq    %r9, (%rsp)                   
+0x300240bb: 48 89 44 24 10                    movq    %rax, 16(%rsp)                
+0x300240c0: ff d1                             callq    *%rcx                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x300240c2: 4c 8b 0c 24                       movq    (%rsp), %r9                   
+0x300240c6: 48 8b 44 24 10                    movq    16(%rsp), %rax                
+0x300240cb: 41 21 f2                          andl    %esi, %r10d                   
+0x300240ce: 48 b9 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rcx           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x300240d8: 45 39 d3                          cmpl    %r10d, %r11d                  
+0x300240db: 76 2c                             jbe    44                             ; 0x30024109
+0x300240dd: 41 bb 0a 00 00 00                 movl    $10, %r11d                    
+0x300240e3: ff d1                             callq    *%rcx                        
+0x300240e5: 48 b9 00 c7 00 30 00 00 00 00     movabsq    $805357312, %rcx           ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x300240ef: 41 bb 08 00 00 00                 movl    $8, %r11d                     
+0x300240f5: 4c 89 0c 24                       movq    %r9, (%rsp)                   
+0x300240f9: 48 89 44 24 10                    movq    %rax, 16(%rsp)                
+0x300240fe: ff d1                             callq    *%rcx                        ; 0x3000c700 = StubRoutines::uncommon_trap_for_falcon
+0x30024100: 4c 8b 0c 24                       movq    (%rsp), %r9                   
+0x30024104: 48 8b 44 24 10                    movq    16(%rsp), %rax                
+0x30024109: 41 bb 0c 00 00 00                 movl    $12, %r11d                    
+0x3002410f: 48 89 04 24                       movq    %rax, (%rsp)                  
+0x30024113: ff d1                             callq    *%rcx                        
+0x30024115: 48 8b 04 24                       movq    (%rsp), %rax                  
+-----------

@@ -1,0 +1,127 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index d135c7bacfa..2f4b843f33d 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1468,6 +1468,8 @@ bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
++    case Op_IsFiniteF:
++    case Op_IsFiniteD:
+     case Op_IsInfiniteF:
+     case Op_IsInfiniteD:
+       if (!VM_Version::supports_avx512dq()) {
+@@ -10564,11 +10566,11 @@ instruct castVVLeg(legVec dst)
+   ins_pipe(empty);
+ %}
+ 
+-instruct FloatClassCheck_reg_reg_vfpclass(rRegI dst, regF src, kReg ktmp, rFlagsReg cr)
++instruct fpclass_isInfiniteF_reg(rRegI dst, regF src, kReg ktmp)
+ %{
+   match(Set dst (IsInfiniteF src));
+-  effect(TEMP ktmp, KILL cr);
+-  format %{ "float_class_check $dst, $src" %}
++  effect(TEMP ktmp);
++  format %{ "is_infinite_float $dst, $src\t! using $ktmp as TEMP" %}
+   ins_encode %{
+     __ vfpclassss($ktmp$$KRegister, $src$$XMMRegister, 0x18);
+     __ kmovbl($dst$$Register, $ktmp$$KRegister);
+@@ -10576,11 +10578,11 @@ instruct FloatClassCheck_reg_reg_vfpclass(rRegI dst, regF src, kReg ktmp, rFlags
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct DoubleClassCheck_reg_reg_vfpclass(rRegI dst, regD src, kReg ktmp, rFlagsReg cr)
++instruct fpclass_isInfiniteD_reg(rRegI dst, regD src, kReg ktmp)
+ %{
+   match(Set dst (IsInfiniteD src));
+-  effect(TEMP ktmp, KILL cr);
+-  format %{ "double_class_check $dst, $src" %}
++  effect(TEMP ktmp);
++  format %{ "is_infinite_double $dst, $src\t! using $ktmp as TEMP" %}
+   ins_encode %{
+     __ vfpclasssd($ktmp$$KRegister, $src$$XMMRegister, 0x18);
+     __ kmovbl($dst$$Register, $ktmp$$KRegister);
+@@ -10588,6 +10590,34 @@ instruct DoubleClassCheck_reg_reg_vfpclass(rRegI dst, regD src, kReg ktmp, rFlag
+   ins_pipe(pipe_slow);
+ %}
+ 
++instruct fpclass_isFiniteF_reg(rRegI dst, regF src, kReg ktmp)
++%{
++  match(Set dst (IsFiniteF src));
++  effect(TEMP ktmp);
++  format %{ "is_finite_float $dst, $src\t! using $ktmp as TEMP" %}
++  ins_encode %{
++    // isFinite = ~(NaN | +Inf | -Inf)
++    __ vfpclassss($ktmp$$KRegister, $src$$XMMRegister, 0x99);
++    __ kmovbl($dst$$Register, $ktmp$$KRegister);
++    __ xorl($dst$$Register, 0x1);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct fpclass_isFiniteD_reg(rRegI dst, regD src, kReg ktmp)
++%{
++  match(Set dst (IsFiniteD src));
++  effect(TEMP ktmp);
++  format %{ "is_finite_double $dst, $src\t! using $ktmp as TEMP" %}
++  ins_encode %{
++    // isFinite = ~(NaN | +Inf | -Inf)
++    __ vfpclasssd($ktmp$$KRegister, $src$$XMMRegister, 0x99);
++    __ kmovbl($dst$$Register, $ktmp$$KRegister);
++    __ xorl($dst$$Register, 0x1);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
+ instruct vector_addsub_saturating_subword_reg(vec dst, vec src1, vec src2)
+ %{
+   predicate(is_subword_type(Matcher::vector_element_basic_type(n)) &&
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/TestDoubleIsFinite.java b/test/hotspot/jtreg/compiler/intrinsics/TestDoubleIsFinite.java
+index ab06e07a482..ae3b3012460 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/TestDoubleIsFinite.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/TestDoubleIsFinite.java
+@@ -25,7 +25,6 @@
+ /**
+ * @test
+ * @summary Test intrinsic for Double.isFinite.
+-* @requires os.arch == "riscv64"
+ * @library /test/lib /
+ * @run driver compiler.intrinsics.TestDoubleIsFinite
+ */
+@@ -40,7 +39,9 @@ public static void main(String args[]) {
+ 
+     @Test // needs to be run in (fast) debug mode
+     @Warmup(10000)
+-    @IR(counts = {IRNode.IS_FINITE_D, ">= 1"}) // At least one IsFiniteD node is generated if intrinsic is used
++    // At least one IsFiniteD node is generated
++    @IR(applyIfPlatform = {"riscv64", "true"}, counts = {IRNode.IS_FINITE_D, ">= 1"})
++    @IR(applyIfPlatform = {"x64", "true"}, applyIfCPUFeature = {"avx512dq", "true"}, counts = {IRNode.IS_FINITE_D, ">= 1"})
+     public void testIsFinite() {
+         for (int i = 0; i < BUFFER_SIZE; i++) {
+             outputs[i] = Double.isFinite(inputs[i]);
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/TestFloatIsFinite.java b/test/hotspot/jtreg/compiler/intrinsics/TestFloatIsFinite.java
+index 7fb0bebc516..61b19e3b3af 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/TestFloatIsFinite.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/TestFloatIsFinite.java
+@@ -25,7 +25,6 @@
+ /**
+ * @test
+ * @summary Test intrinsics for Float.isFinite.
+-* @requires os.arch == "riscv64"
+ * @library /test/lib /
+ * @run driver compiler.intrinsics.TestFloatIsFinite
+ */
+@@ -40,7 +39,9 @@ public static void main(String args[]) {
+ 
+     @Test // needs to be run in (fast) debug mode
+     @Warmup(10000)
+-    @IR(counts = {IRNode.IS_FINITE_F, ">= 1"}) // At least one IsFiniteF node is generated if intrinsic is used
++    // At least one IsFiniteD node is generated
++    @IR(applyIfPlatform = {"riscv64", "true"}, counts = {IRNode.IS_FINITE_F, ">= 1"})
++    @IR(applyIfPlatform = {"x64", "true"}, applyIfCPUFeature = {"avx512dq", "true"}, counts = {IRNode.IS_FINITE_F, ">= 1"})
+     public void testIsFinite() {
+         for (int i = 0; i < BUFFER_SIZE; i++) {
+             outputs[i] = Float.isFinite(inputs[i]);

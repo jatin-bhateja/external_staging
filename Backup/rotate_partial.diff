@@ -1,0 +1,151 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 26c19ee6f1d..35469bdd789 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -1211,6 +1211,54 @@ void C2_MacroAssembler::vextendwd(bool sign, XMMRegister dst, XMMRegister src, i
+   }
+ }
+ 
++void C2_MacroAssembler::vprotate_byte_lanes_imm(int opcode, XMMRegister dst, XMMRegister src,
++                                              XMMRegister tmp, int lshift, int rshift, int vector_len) {
++  assert(VectorNode::is_vector_rotate(opcode), "");
++  vextendbw(true, tmp, src, vector_len);
++  vpsllw(dst, tmp, lshift, vector_len);
++  vpsraw(tmp, tmp, rshift, vector_len);
++  vpor(tmp, dst, tmp, vector_len);
++}
++
++void C2_MacroAssembler::vprotate_byte_imm_avx(int opcode, XMMRegister dst, XMMRegister src, XMMRegister tmp1,
++                                              XMMRegister tmp2, XMMRegister tmp3, int shift, int vector_len) {
++  assert(shift < 8, "");
++  if (opcode == Op_RotateLeftV) {
++    if (vector_len == Assembler::AVX_128bit) {
++      vprotate_byte_lanes_imm(opcode, dst, src, tmp1, shift, 8 - shift, Assembler::AVX_256bit);
++      vpand(dst, dst, ExternalAddress(StubRoutines::x86::vector_short_to_byte_mask()), Assembler::AVX_256bit, noreg);
++      vextracti128_high(tmp1, dst);
++      vpackuswb(dst, dst, tmp1, vector_len);
++    } else if (vector_len == Assembler::AVX_256bit) {
++      vprotate_byte_lanes_imm(opcode, dst, src, tmp1, shift, 8 - shift, vector_len);
++      vpand(dst, dst, ExternalAddress(StubRoutines::x86::vector_short_to_byte_mask()), vector_len, noreg);
++      vextracti128_high(tmp1, dst);
++      vpackuswb(dst, dst, tmp1, vector_len);
++      vextracti128_high(tmp1, src);
++      vprotate_byte_lanes_imm(opcode, tmp3, tmp1, tmp2, shift, 8 - shift, vector_len);
++      vpand(tmp3, tmp3, ExternalAddress(StubRoutines::x86::vector_short_to_byte_mask()), vector_len, noreg);
++      vextracti128_high(tmp1, tmp3);
++      vpackuswb(tmp3, tmp3, tmp1, vector_len);
++      vinserti128(dst, dst, tmp3, 1);
++    } else if (vector_len == Assembler::AVX_512bit) {
++      vprotate_byte_lanes_imm(opcode, dst, src, tmp1, shift, 8 - shift, vector_len);
++      vpand(dst, dst, ExternalAddress(StubRoutines::x86::vector_short_to_byte_mask()), vector_len, noreg);
++      vpermq(dst, dst, 0xd8, vector_len);
++      vextracti64x4_high(tmp1, dst);
++      vpackuswb(dst, dst, tmp1, vector_len);
++      vextracti64x4_high(tmp1, src);
++      vprotate_byte_lanes_imm(opcode, tmp3, tmp1, tmp2, shift, 8 - shift, vector_len);
++      vpand(tmp3, tmp3, ExternalAddress(StubRoutines::x86::vector_short_to_byte_mask()), vector_len, noreg);
++      vpermq(tmp3, tmp3, 0xd8, vector_len);
++      vextracti64x4_high(tmp1, tmp3);
++      vpackuswb(tmp3, tmp3, tmp1, vector_len);
++      vinserti64x4(dst, dst, tmp3, 1);
++    }
++  } else {
++    assert(opcode == Op_RotateRightV, "");
++  }
++}
++
+ void C2_MacroAssembler::vprotate_imm(int opcode, BasicType etype, XMMRegister dst, XMMRegister src,
+                                      int shift, int vector_len) {
+   if (opcode == Op_RotateLeftV) {
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 029918a4f36..67fa2c69963 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -115,6 +115,11 @@ public:
+ 
+   void vprotate_imm(int opcode, BasicType etype, XMMRegister dst, XMMRegister src, int shift, int vector_len);
+   void vprotate_var(int opcode, BasicType etype, XMMRegister dst, XMMRegister src, XMMRegister shift, int vector_len);
++  void vprotate_byte_lanes_imm(int opcode, XMMRegister dst, XMMRegister src,
++                               XMMRegister tmp, int lshift, int rshift, int vector_len);
++  void vprotate_byte_imm_avx(int opcode, XMMRegister dst, XMMRegister src, XMMRegister tmp1, XMMRegister tmp2,
++                             XMMRegister tmp3, int shift, int vector_len);
++
+ 
+   void varshiftd(int opcode, XMMRegister dst, XMMRegister src, XMMRegister shift, int vlen_enc);
+   void varshiftw(int opcode, XMMRegister dst, XMMRegister src, XMMRegister shift, int vlen_enc);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index a6f2adabb28..0e8d16ff521 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1743,11 +1743,6 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+         return false; // implementation limitation (only vcmov8F_reg is present)
+       }
+       break;
+-    case Op_RotateRightV:
+-    case Op_RotateLeftV:
+-      if (bt != T_INT && bt != T_LONG) {
+-        return false;
+-      } // fallthrough
+     case Op_MacroLogicV:
+       if (!VM_Version::supports_evex() ||
+           ((size_in_bits != 512) && !VM_Version::supports_avx512vl())) {
+@@ -2059,8 +2054,6 @@ const bool Matcher::match_rule_supported_vector_masked(int opcode, int vlen, Bas
+     case Op_AndV:
+     case Op_OrV:
+     case Op_XorV:
+-    case Op_RotateRightV:
+-    case Op_RotateLeftV:
+       if (bt != T_INT && bt != T_LONG) {
+         return false; // Implementation limitation
+       }
+@@ -9035,7 +9028,39 @@ instruct vpternlog_mem(vec dst, vec src2, memory src3, immU8 func) %{
+ %}
+ 
+ // --------------------------------- Rotation Operations ----------------------------------
++
++instruct vprotate_byte_immI8_16B(vec dst, vec src, immI8 shift, vec tmp) %{
++  predicate(Matcher::vector_element_basic_type(n) == T_BYTE &&
++            Matcher::vector_length_in_bytes(n) <= 16);
++  match(Set dst (RotateLeftV src shift));
++  effect(TEMP tmp);
++  format %{ "vprotate_byte_imm8 $dst,$src,$shift\t! using $tmp as TEMP" %}
++  ins_encode %{
++    int opcode      = this->ideal_Opcode();
++    int vector_len  = vector_length_encoding(this);
++    __ vprotate_byte_imm_avx(opcode, $dst$$XMMRegister, $src$$XMMRegister,
++                             $tmp$$XMMRegister, xnoreg, xnoreg, $shift$$constant, vector_len);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vprotate_byte_immI8_GT16B(vec dst, vec src, immI8 shift, vec tmp1, vec tmp2, vec tmp3) %{
++  predicate(Matcher::vector_element_basic_type(n) == T_BYTE &&
++            Matcher::vector_length_in_bytes(n) > 16);
++  match(Set dst (RotateLeftV src shift));
++  effect(TEMP tmp1, TEMP tmp2, TEMP tmp3);
++  format %{ "vprotate_byte_imm8 $dst,$src,$shift\t! using $tmp1, $tmp2 and $tmp3 as TEMP" %}
++  ins_encode %{
++    int opcode      = this->ideal_Opcode();
++    int vector_len  = vector_length_encoding(this);
++    __ vprotate_byte_imm_avx(opcode, $dst$$XMMRegister, $src$$XMMRegister, $tmp1$$XMMRegister,
++                             $tmp2$$XMMRegister, $tmp3$$XMMRegister, $shift$$constant, vector_len);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct vprotate_immI8(vec dst, vec src, immI8 shift) %{
++  predicate(is_non_subword_integral_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (RotateLeftV src shift));
+   match(Set dst (RotateRightV src shift));
+   format %{ "vprotate_imm8 $dst,$src,$shift\t! vector rotate" %}
+@@ -9049,6 +9074,7 @@ instruct vprotate_immI8(vec dst, vec src, immI8 shift) %{
+ %}
+ 
+ instruct vprorate(vec dst, vec src, vec shift) %{
++  predicate(is_non_subword_integral_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (RotateLeftV src shift));
+   match(Set dst (RotateRightV src shift));
+   format %{ "vprotate $dst,$src,$shift\t! vector rotate" %}

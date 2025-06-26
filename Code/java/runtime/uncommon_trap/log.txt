@@ -1,0 +1,440 @@
+CompileCommand: print test.micro bool print = true
+[I@1dbd16a6
+[I@1dbd16a6
+[I@1dbd16a6
+[I@1dbd16a6
+[I@1dbd16a6
+[I@1dbd16a6
+[I@1dbd16a6
+[I@1dbd16a6
+[I@1dbd16a6
+[I@1dbd16a6
+
+============================= C2-compiled nmethod ==============================
+#r032 rsi:rsi   : parm 0: int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact *
+#r034 rdx   : parm 1: int
+# -- Old rsp -- Framesize: 48 --
+#r623 rsp+44: in_preserve
+#r622 rsp+40: return address
+#r621 rsp+36: in_preserve
+#r620 rsp+32: saved fp register
+#r619 rsp+28: pad2, stack alignment
+#r618 rsp+24: pad2, stack alignment
+#r617 rsp+20: Fixed slot 1
+#r616 rsp+16: Fixed slot 0
+#r627 rsp+12: spill
+#r626 rsp+ 8: spill
+#r625 rsp+ 4: spill
+#r624 rsp+ 0: spill
+#
+----------------------- MetaData before Compile_id = 12 ------------------------
+{method}
+ - this oop:          0x00007ff3f4400438
+ - method holder:     'test'
+ - constants:         0x00007ff3f4400050 constant pool [66]/operands[5] {0x00007ff3f4400050} for 'test' cache=0x00007ff3f4400720
+ - access:            0x9  public static 
+ - flags:             0x4080  queued_for_compilation has_loops_flag_init 
+ - name:              'micro'
+ - signature:         '([II)I'
+ - max stack:         4
+ - max locals:        3
+ - size of params:    2
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007ff49848ff60
+ - adapters:          AHE@0x00007ff4a42c6f40: 0xba i2c: 0x00007ff4984f1680 c2i: 0x00007ff4984f175f c2iUV: 0x00007ff4984f173e c2iNCI: 0x00007ff4984f179a
+ - compiled entry     0x00007ff4984f175f
+ - code size:         27
+ - code start:        0x00007ff3f4400410
+ - code end (excl):   0x00007ff3f440042b
+ - method data:       0x00007ff3f4400bb0
+ - checked ex length: 0
+ - linenumber start:  0x00007ff3f440042b
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 12 -----------------------
+#
+#  int ( int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact *, int )
+#
+000     N1: #	out( B1 ) <- in( B7 B4 B8 )  Freq: 1
+
+000     B1: #	out( B5 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (144 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #32	# Create frame
+
+01a     movl    [rsp + #0], RDX	# spill
+01d     movq    RBP, RSI	# spill
+020     # TLS is in R15
+020     movq    RAX, [R15 + #464 (32-bit)]	# ptr
+027     movq    RSI, RAX	# spill
+02a     addq    RSI, #24	# ptr
+02e     cmpq    RSI, [R15 + #480 (32-bit)]	# raw ptr
+035     jae,us  B5  P=0.000100 C=-1.000000
+
+037     B2: #	out( B3 ) <- in( B1 )  Freq: 0.9999
+037     movq    [R15 + #464 (32-bit)], RSI	# ptr
+03e     PREFETCHW [RSI + #192 (32-bit)]	# Prefetch allocation into level 1 cache and mark modified
+045     movq    [RAX], #1	# long
+04c     movl    [RAX + #8 (8-bit)], narrowklass: precise ABC: 0x00007ff3f00497a0:Constant:exact *	# compressed klass ptr
+053     movl    [RAX + #20 (8-bit)], R12	# int (R12_heapbase==0)
+
+057     B3: #	out( B7 B4 ) <- in( B6 B2 )  Freq: 1
+057     movl    RCX, [rsp + #0]	# spill
+05a     movl    [RAX + #12 (8-bit)], RCX	# int
+05d     leal    RSI, [RCX + #10]
+060     movl    [RAX + #16 (8-bit)], RSI	# int
+063     
+063     # checkcastPP of RAX
+063     cmpl    RCX, #10
+066     jl,s   B7  P=0.000000 C=2016.000000
+
+068     B4: #	out( N1 ) <- in( B3 )  Freq: 1
+068     addl    RCX, RCX	# int
+06a     leal    RAX, [RCX + #10]
+06d     addq    rsp, 32	# Destroy frame
+	popq    rbp
+	cmpq    rsp, poll_offset[r15_thread] 
+	ja      #safepoint_stub	# Safepoint: poll for GC
+
+07c     ret
+
+07d     B5: #	out( B8 B6 ) <- in( B1 )  Freq: 0.000100017
+07d     movq    RSI, precise ABC: 0x00007ff3f00497a0:Constant:exact *	# ptr
+087     call,static  wrapper for: C2 Runtime new_instance
+        # test::micro @ bci:0 (line 17) L[0]=RBP L[1]=rsp + #0 L[2]=_
+        # OopMap {rbp=Oop off=140/0x8c}
+
+094     B6: #	out( B3 ) <- in( B5 )  Freq: 0.000100015
+        # Block is sole successor of call
+094     jmp,s   B3
+
+096     B7: #	out( N1 ) <- in( B3 )  Freq: 4.76837e-07
+096     movl    RSI, #-179	# int
+09b     movq    [rsp + #0], RAX	# spill
+09f     movl    [rsp + #8], RCX	# spill
+0a3     call,static  wrapper for: uncommon_trap(reason='unstable_if' action='reinterpret' debug_id='0')
+        # test::micro @ bci:12 (line 18) L[0]=RBP L[1]=_ L[2]=rsp + #0 STK[0]=rsp + #8 STK[1]=#10
+        # OopMap {rbp=Oop [0]=Oop off=168/0xa8}
+0b0     stop	# ShouldNotReachHere
+
+0c4     B8: #	out( N1 ) <- in( B5 )  Freq: 1.00017e-09
+0c4     # exception oop is in rax; no code emitted
+0c4     movq    RSI, RAX	# spill
+0c7     addq    rsp, 32	# Destroy frame
+	popq    rbp
+
+0cc     jmp     rethrow_stub
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2) 413   12             test::micro (27 bytes)
+ total in heap  [0x00007ff4985c1608,0x00007ff4985c1860] = 600
+ relocation     [0x00007ff4985c16e8,0x00007ff4985c1710] = 40
+ main code      [0x00007ff4985c1720,0x00007ff4985c1818] = 248
+ stub code      [0x00007ff4985c1818,0x00007ff4985c1830] = 24
+ oops           [0x00007ff4985c1830,0x00007ff4985c1838] = 8
+ metadata       [0x00007ff4985c1838,0x00007ff4985c1860] = 40
+ immutable data [0x00007ff3f0087d90,0x00007ff3f0087eb8] = 296
+ dependencies   [0x00007ff3f0087d90,0x00007ff3f0087da0] = 16
+ handler table  [0x00007ff3f0087da0,0x00007ff3f0087db8] = 24
+ scopes pcs     [0x00007ff3f0087db8,0x00007ff3f0087e78] = 192
+ scopes data    [0x00007ff3f0087e78,0x00007ff3f0087eb8] = 64
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007ff3f4400438} 'micro' '([II)I' in 'test'
+  # parm0:    rsi:rsi   = '[I'
+  # parm1:    rdx       = int
+  #           [sp+0x30]  (sp of caller)
+ ;; N1: #	out( B1 ) <- in( B7 B4 B8 )  Freq: 1
+ ;; B1: #	out( B5 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007ff4985c1720:   mov    %eax,-0x18000(%rsp)
+  0x00007ff4985c1727:   push   %rbp
+  0x00007ff4985c1728:   sub    $0x20,%rsp
+  0x00007ff4985c172c:   cmpl   $0x0,0x20(%r15)
+  0x00007ff4985c1734:   jne    0x00007ff4985c1807           ;*synchronization entry
+                                                            ; - test::micro@-1 (line 17)
+  0x00007ff4985c173a:   mov    %edx,(%rsp)
+  0x00007ff4985c173d:   mov    %rsi,%rbp
+  0x00007ff4985c1740:   mov    0x1d0(%r15),%rax
+  0x00007ff4985c1747:   mov    %rax,%rsi
+  0x00007ff4985c174a:   add    $0x18,%rsi
+  0x00007ff4985c174e:   cmp    0x1e0(%r15),%rsi
+  0x00007ff4985c1755:   jae    0x00007ff4985c179d
+ ;; B2: #	out( B3 ) <- in( B1 )  Freq: 0.9999
+  0x00007ff4985c1757:   mov    %rsi,0x1d0(%r15)
+  0x00007ff4985c175e:   prefetchw 0xc0(%rsi)
+  0x00007ff4985c1765:   movq   $0x1,(%rax)
+  0x00007ff4985c176c:   movl   $0x1000a18,0x8(%rax)         ;   {metadata('ABC')}
+  0x00007ff4985c1773:   mov    %r12d,0x14(%rax)             ;*new {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::micro@0 (line 17)
+ ;; B3: #	out( B7 B4 ) <- in( B6 B2 )  Freq: 1
+  0x00007ff4985c1777:   mov    (%rsp),%ecx
+  0x00007ff4985c177a:   mov    %ecx,0xc(%rax)               ;*putfield field1 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ABC::<init>@6 (line 9)
+                                                            ; - test::micro@5 (line 17)
+  0x00007ff4985c177d:   lea    0xa(%rcx),%esi
+  0x00007ff4985c1780:   mov    %esi,0x10(%rax)              ;*new {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::micro@0 (line 17)
+  0x00007ff4985c1783:   cmp    $0xa,%ecx
+  0x00007ff4985c1786:   jl     0x00007ff4985c17b6           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::micro@12 (line 18)
+ ;; B4: #	out( N1 ) <- in( B3 )  Freq: 1
+  0x00007ff4985c1788:   add    %ecx,%ecx
+  0x00007ff4985c178a:   lea    0xa(%rcx),%eax
+  0x00007ff4985c178d:   add    $0x20,%rsp
+  0x00007ff4985c1791:   pop    %rbp
+  0x00007ff4985c1792:   cmp    0x28(%r15),%rsp              ;   {poll_return}
+  0x00007ff4985c1796:   ja     0x00007ff4985c17f1
+  0x00007ff4985c179c:   retq   
+ ;; B5: #	out( B8 B6 ) <- in( B1 )  Freq: 0.000100017
+  0x00007ff4985c179d:   movabs $0x7ff40f000a18,%rsi         ;   {metadata('ABC')}
+  0x00007ff4985c17a7:   callq  0x00007ff4984ad060           ; ImmutableOopMap {rbp=Oop }
+                                                            ;*new {reexecute=0 rethrow=0 return_oop=1}
+                                                            ; - test::micro@0 (line 17)
+                                                            ;   {runtime_call C2 Runtime new_instance}
+  0x00007ff4985c17ac:   nopl   0x1a4(%rax,%rax,1)           ;*new {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::micro@0 (line 17)
+                                                            ;   {post_call_nop}
+ ;; B6: #	out( B3 ) <- in( B5 )  Freq: 0.000100015
+  0x00007ff4985c17b4:   jmp    0x00007ff4985c1777           ;*invokespecial <init> {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::micro@5 (line 17)
+ ;; B7: #	out( N1 ) <- in( B3 )  Freq: 4.76837e-07
+  0x00007ff4985c17b6:   mov    $0xffffff4d,%esi
+  0x00007ff4985c17bb:   mov    %rax,(%rsp)
+  0x00007ff4985c17bf:   mov    %ecx,0x8(%rsp)
+  0x00007ff4985c17c3:   callq  0x00007ff4985a3c60           ; ImmutableOopMap {rbp=Oop [0]=Oop }
+                                                            ;*if_icmpge {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) test::micro@12 (line 18)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007ff4985c17c8:   nopl   0x10001c0(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007ff4985c17d0:   movabs $0x7ff4abd95690,%rdi         ;   {external_word}
+  0x00007ff4985c17da:   and    $0xfffffffffffffff0,%rsp
+  0x00007ff4985c17de:   callq  0x00007ff4ab2033ba           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007ff4985c17e3:   hlt                                 ;*new {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::micro@0 (line 17)
+ ;; B8: #	out( N1 ) <- in( B5 )  Freq: 1.00017e-09
+  0x00007ff4985c17e4:   mov    %rax,%rsi
+  0x00007ff4985c17e7:   add    $0x20,%rsp
+  0x00007ff4985c17eb:   pop    %rbp
+  0x00007ff4985c17ec:   jmpq   0x00007ff4985bf360           ;   {runtime_call C2 Runtime rethrow}
+  0x00007ff4985c17f1:   movabs $0x7ff4985c1792,%r10         ;   {internal_word}
+  0x00007ff4985c17fb:   mov    %r10,0x498(%r15)
+  0x00007ff4985c1802:   jmpq   0x00007ff4985a3760           ;   {runtime_call SafepointBlob}
+  0x00007ff4985c1807:   callq  Stub::method_entry_barrier   ;   {runtime_call StubRoutines (finalstubs)}
+  0x00007ff4985c180c:   jmpq   0x00007ff4985c173a
+  0x00007ff4985c1811:   hlt    
+  0x00007ff4985c1812:   hlt    
+  0x00007ff4985c1813:   hlt    
+  0x00007ff4985c1814:   hlt    
+  0x00007ff4985c1815:   hlt    
+  0x00007ff4985c1816:   hlt    
+  0x00007ff4985c1817:   hlt    
+[Exception Handler]
+  0x00007ff4985c1818:   jmpq   0x00007ff4984b0960           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007ff4985c181d:   callq  0x00007ff4985c1822
+  0x00007ff4985c1822:   subq   $0x5,(%rsp)
+  0x00007ff4985c1827:   jmpq   0x00007ff4985a1ea0           ;   {runtime_call DeoptimizationBlob}
+  0x00007ff4985c182c:   hlt    
+  0x00007ff4985c182d:   hlt    
+  0x00007ff4985c182e:   hlt    
+  0x00007ff4985c182f:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007ff4985c1830:   0x00000007ff01ef98 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff01ef98}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007ff4985c1838:   0x00007ff40f000a18 'ABC'
+  0x00007ff4985c1840:   0x00007ff3f4400438 {method} {0x00007ff3f4400438} 'micro' '([II)I' in 'test'
+  0x00007ff4985c1848:   0x00007ff3f4400970 {method} {0x00007ff3f4400970} '<init>' '(I)V' in 'ABC'
+  0x00007ff4985c1850:   0x00007ff3f4400a28 {method} {0x00007ff3f4400a28} 'getAccum' '()I' in 'ABC'
+  0x00007ff4985c1858:   0x00007ff40e5478b8 {method} {0x00007ff40e5478b8} '<init>' '()V' in 'java/lang/Object'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007ff4985c171f offset=ffffffff bits=0):
+PcDesc(pc=0x00007ff4985c173a offset=1a bits=0):
+   test::micro@-1 (line 17)
+PcDesc(pc=0x00007ff4985c1777 offset=57 bits=0):
+   test::micro@0 (line 17)
+PcDesc(pc=0x00007ff4985c177d offset=5d bits=0):
+   ABC::<init>@6 (line 9)
+   test::micro@5 (line 17)
+PcDesc(pc=0x00007ff4985c1783 offset=63 bits=0):
+   test::micro@0 (line 17)
+PcDesc(pc=0x00007ff4985c1788 offset=68 bits=0):
+   test::micro@12 (line 18)
+PcDesc(pc=0x00007ff4985c17ac offset=8c bits=4):
+   test::micro@0 (line 17)
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0]
+    - l2: empty
+PcDesc(pc=0x00007ff4985c17b4 offset=94 bits=0):
+   test::micro@0 (line 17)
+PcDesc(pc=0x00007ff4985c17b6 offset=96 bits=0):
+   test::micro@5 (line 17)
+PcDesc(pc=0x00007ff4985c17c8 offset=a8 bits=1):
+   test::micro@12 (line 18)  reexecute=true
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: empty
+    - l2: stack[0],oop
+   Expression stack
+    - @0: stack[8]
+    - @1: 10
+PcDesc(pc=0x00007ff4985c17e4 offset=c4 bits=0):
+   test::micro@0 (line 17)
+PcDesc(pc=0x00007ff4985c1831 offset=111 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 2 OopMaps
+
+ImmutableOopMap {rbp=Oop } pc offsets: 140 
+ImmutableOopMap {rbp=Oop [0]=Oop } pc offsets: 168 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007ff4985c173a offset=1a):
+   test::micro@-1 (line 17)
+ScopeDesc(pc=0x00007ff4985c1777 offset=57):
+   test::micro@0 (line 17)
+ScopeDesc(pc=0x00007ff4985c177d offset=5d):
+   ABC::<init>@6 (line 9)
+ScopeDesc(pc=0x00007ff4985c177d offset=5d):
+   test::micro@5 (line 17)
+ScopeDesc(pc=0x00007ff4985c1783 offset=63):
+   test::micro@0 (line 17)
+ScopeDesc(pc=0x00007ff4985c1788 offset=68):
+   test::micro@12 (line 18)
+ScopeDesc(pc=0x00007ff4985c17ac offset=8c):
+   test::micro@0 (line 17)
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0]
+    - l2: empty
+ScopeDesc(pc=0x00007ff4985c17b4 offset=94):
+   test::micro@0 (line 17)
+ScopeDesc(pc=0x00007ff4985c17b6 offset=96):
+   test::micro@5 (line 17)
+ScopeDesc(pc=0x00007ff4985c17c8 offset=a8):
+   test::micro@12 (line 18)  reexecute=true
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: empty
+    - l2: stack[0],oop
+   Expression stack
+    - @0: stack[8]
+    - @1: 10
+ScopeDesc(pc=0x00007ff4985c17e4 offset=c4):
+   test::micro@0 (line 17)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007ff4985c16e8: 7801634c
+relocInfo@0x00007ff4985c16ea [type=12(metadata) addr=0x00007ff4985c176c offset=76 format=3 data=1] | [metadata_addr=0x00007ff4985c1838 *=0x00007ff40f000a18]metadata_value=0x00007ff40f000a18: 'ABC'
+         @0x00007ff4985c16ec: 5826
+relocInfo@0x00007ff4985c16ec [type=11(poll_return) addr=0x00007ff4985c1792 offset=38]
+         @0x00007ff4985c16ee: 600b
+relocInfo@0x00007ff4985c16ee [type=12(metadata) addr=0x00007ff4985c179d offset=11] | [metadata_addr=0x00007ff4985c179f *=0x00007ff40f000a18]metadata_value=0x00007ff40f000a18: 'ABC'
+         @0x00007ff4985c16f0: 310a
+relocInfo@0x00007ff4985c16f0 [type=6(runtime_call) addr=0x00007ff4985c17a7 offset=10 format=1] | [destination=0x00007ff4984ad060]
+         @0x00007ff4985c16f2: 8005
+relocInfo@0x00007ff4985c16f2 [type=16(post_call_nop) addr=0x00007ff4985c17ac offset=5]
+         @0x00007ff4985c16f4: 3117
+relocInfo@0x00007ff4985c16f4 [type=6(runtime_call) addr=0x00007ff4985c17c3 offset=23 format=1] | [destination=0x00007ff4985a3c60]
+         @0x00007ff4985c16f6: 8005
+relocInfo@0x00007ff4985c16f6 [type=16(post_call_nop) addr=0x00007ff4985c17c8 offset=5]
+         @0x00007ff4985c16f8: 780d3808
+relocInfo@0x00007ff4985c16fa [type=7(external_word) addr=0x00007ff4985c17d0 offset=8 data=13] | [target=0x00007ff4abd95690]
+         @0x00007ff4985c16fc: 310e
+relocInfo@0x00007ff4985c16fc [type=6(runtime_call) addr=0x00007ff4985c17de offset=14 format=1] | [destination=0x00007ff4ab2033ba]
+         @0x00007ff4985c16fe: 310e
+relocInfo@0x00007ff4985c16fe [type=6(runtime_call) addr=0x00007ff4985c17ec offset=14 format=1] | [destination=0x00007ff4985bf360]
+         @0x00007ff4985c1700: 785f4005
+relocInfo@0x00007ff4985c1702 [type=8(internal_word) addr=0x00007ff4985c17f1 offset=5 data=95] | [target=0x00007ff4985c1792]
+         @0x00007ff4985c1704: 3111
+relocInfo@0x00007ff4985c1704 [type=6(runtime_call) addr=0x00007ff4985c1802 offset=17 format=1] | [destination=0x00007ff4985a3760]
+         @0x00007ff4985c1706: 3105
+relocInfo@0x00007ff4985c1706 [type=6(runtime_call) addr=0x00007ff4985c1807 offset=5 format=1] | [destination=0x00007ff498501100]
+         @0x00007ff4985c1708: 0011
+relocInfo@0x00007ff4985c1708 [type=0(none) addr=0x00007ff4985c1818 offset=17]
+         @0x00007ff4985c170a: 3100
+relocInfo@0x00007ff4985c170a [type=6(runtime_call) addr=0x00007ff4985c1818 offset=0 format=1] | [destination=0x00007ff4984b0960]
+         @0x00007ff4985c170c: 310f
+relocInfo@0x00007ff4985c170c [type=6(runtime_call) addr=0x00007ff4985c1827 offset=15 format=1] | [destination=0x00007ff4985a1ea0]
+         @0x00007ff4985c170e: 0000
+relocInfo@0x00007ff4985c170e [type=0(none) addr=0x00007ff4985c1827 offset=0]
+         @0x00007ff4985c1710: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+Dependency of type evol_method
+  method  = *{method} {0x00007ff3f4400438} 'micro' '([II)I' in 'test'
+Dependency of type evol_method
+  method  = {method} {0x00007ff3f4400970} '<init>' '(I)V' in 'ABC'
+Dependency of type evol_method
+  method  = {method} {0x00007ff3f4400a28} 'getAccum' '()I' in 'ABC'
+Dependency of type evol_method
+  method  = {method} {0x00007ff40e5478b8} '<init>' '()V' in 'java/lang/Object'
+Dependency of type unique_concrete_method_4
+  context = ABC
+  method  = {method} {0x00007ff3f4400a28} 'getAccum' '()I' in 'ABC'
+  class   = ABC
+  method  = {method} {0x00007ff3f4400a28} 'getAccum' '()I' in 'ABC'
+   [nmethod<=klass]ABC
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 24 bytes)
+catch_pco = 140 (pc=0x00007ff4985c17ac, 1 entries)
+  bci -1 at scope depth 0 -> pco 196 (pc=0x00007ff4985c17e4)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable is empty
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00000007ff01ef98 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff01ef98}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00007ff40f000a18 'ABC'
+#2: 0x00007ff3f4400438 {method} {0x00007ff3f4400438} 'micro' '([II)I' in 'test'
+#3: 0x00007ff3f4400970 {method} {0x00007ff3f4400970} '<init>' '(I)V' in 'ABC'
+#4: 0x00007ff3f4400a28 {method} {0x00007ff3f4400a28} 'getAccum' '()I' in 'ABC'
+#5: 0x00007ff40e5478b8 {method} {0x00007ff40e5478b8} '<init>' '()V' in 'java/lang/Object'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+[res] -718379968
+------------------------------------------------------------------------
+static test::micro([II)I
+  interpreter_invocation_count:        2016
+  invocation_counter:                  2016
+  backedge_counter:                       0
+  decompile_count:                        0
+  mdo size: 568 bytes
+
+   0 new 7 <ABC>
+   3 dup
+   4 iload_1
+   5 invokespecial 9 <ABC.<init>(I)V> 
+  0    bci: 5    CounterData        count(1505)
+   8 astore_2
+   9 iload_1
+  10 bipush 10
+  12 if_icmpge 22
+  16   bci: 12   BranchData         taken(1505) displacement(80)
+                                    not taken(0)
+  15 getstatic 12 <java/lang/System.out:Ljava/io/PrintStream;> 
+  18 fast_aload_0
+  19 invokevirtual 18 <java/io/PrintStream.println(Ljava/lang/Object;)V> 
+  48   bci: 19   VirtualCallData    count(0) entries(0)
+  22 aload_2
+  23 invokevirtual 24 <ABC.getAccum()I> 
+  96   bci: 23   VirtualCallData    count(0) entries(1)
+                                    'ABC'(1505 1.00)
+  26 ireturn
+------------------------------------------------------------------------
+Total MDO size: 568 bytes

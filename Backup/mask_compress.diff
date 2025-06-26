@@ -1,0 +1,3632 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index a2c1559ef26..b044b1e0bf7 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -4111,49 +4111,6 @@ void C2_MacroAssembler::vector_mask_operation(int opc, Register dst, XMMRegister
+   }
+ }
+ 
+-void C2_MacroAssembler::vector_mask_compress(XMMRegister dst, XMMRegister src, Register rtmp1,
+-                                             Register rtmp2, XMMRegister xtmp, int mask_len,
+-                                             int vec_enc) {
+-  int index = 0;
+-  int vindex = 0;
+-  vpxor(xtmp, xtmp, xtmp, vec_enc);
+-  vpsubb(xtmp, xtmp, src, vec_enc);
+-  vpmovmskb(rtmp1, xtmp, vec_enc);
+-  andq(rtmp1, (0xFFFFFFFFFFFFFFFFUL >> (64 - mask_len)));
+-  mov64(rtmp2, -1L);
+-  pext(rtmp2, rtmp2, rtmp1);
+-  mov64(rtmp1, 0x0101010101010101L);
+-  pdep(rtmp1, rtmp2, rtmp1);
+-  if (mask_len > 8) {
+-    movq(xtmp, rtmp1);
+-  }
+-  movq(dst, rtmp1);
+-
+-  mask_len -= 8;
+-  while (mask_len > 0) {
+-    assert ((mask_len & 0x7) == 0, "mask must be multiple of 8");
+-    index++;
+-    if ((index % 2) == 0) {
+-      pxor(xtmp, xtmp);
+-    }
+-    mov64(rtmp1, 0x0101010101010101L);
+-    shrq(rtmp2, 8);
+-    pdep(rtmp1, rtmp2, rtmp1);
+-    pinsrq(xtmp, rtmp1, index % 2);
+-    vindex = index / 2;
+-    if (vindex) {
+-      // Write entire 16 byte vector when both 64 bit
+-      // lanes are update to save redundant instructions.
+-      if (index % 2) {
+-        vinsertf128(dst, dst, xtmp, vindex);
+-      }
+-    } else {
+-      vmovdqu(dst, xtmp);
+-    }
+-    mask_len -= 8;
+-  }
+-}
+-
+ void C2_MacroAssembler::vector_mask_compress(KRegister dst, KRegister src, Register rtmp1,
+                                              Register rtmp2, int mask_len) {
+   kmov(rtmp1, src);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 5ecef655153..352c9fc18e5 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -95,9 +95,6 @@ public:
+   void vector_compress_expand(int opcode, XMMRegister dst, XMMRegister src, KRegister mask,
+                               bool merge, BasicType bt, int vec_enc);
+ 
+-  void vector_mask_compress(XMMRegister dst, XMMRegister src, Register rtmp1, Register rtmp2,
+-                            XMMRegister xtmp, int mask_len, int vec_enc);
+-
+   void vector_mask_compress(KRegister dst, KRegister src, Register rtmp1, Register rtmp2, int mask_len);
+ 
+   void vextendbw(bool sign, XMMRegister dst, XMMRegister src, int vector_len);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 57e919b9bca..6b0609e60d8 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1599,6 +1599,17 @@ const bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
++    case Op_CompressM:
++      if (UseAVX < 3 || !VM_Version::supports_bmi2()) {
++        return false;
++      }
++      break;
++    case Op_CompressV:
++    case Op_ExpandV:
++      if (UseAVX < 3) {
++        return false;
++      }
++      break;
+   }
+   return true;  // Match rules are supported by default.
+ }
+@@ -1835,7 +1846,7 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+       }
+       break;
+     case Op_CompressM:
+-      if (UseAVX < 1 || !VM_Version::supports_bmi2()) {
++      if (UseAVX < 3 || !VM_Version::supports_bmi2()) {
+         return false;
+       }
+       break;
+@@ -1947,8 +1958,6 @@ const bool Matcher::match_rule_supported_vector_masked(int opcode, int vlen, Bas
+     case Op_RShiftVL:
+     case Op_URShiftVI:
+     case Op_URShiftVL:
+-    case Op_CompressV:
+-    case Op_ExpandV:
+     case Op_LoadVectorMasked:
+     case Op_StoreVectorMasked:
+     case Op_LoadVectorGatherMasked:
+@@ -8793,32 +8802,17 @@ instruct vcompress_expand_reg_evex(vec dst, vec src, kReg mask) %{
+ %}
+ 
+ instruct vcompress_mask_reg_evex(kReg dst, kReg mask, rRegL rtmp1, rRegL rtmp2, rFlagsReg cr) %{
+-  predicate(n->in(1)->bottom_type()->isa_vectmask());
+   match(Set dst (CompressM mask));
+   effect(TEMP rtmp1, TEMP rtmp2, KILL cr);
+   format %{ "mask_compress_evex $dst, $mask\t! using $rtmp1 and $rtmp2 as TEMP" %}
+   ins_encode %{
++    assert(this->in(1)->bottom_type()->isa_vectmask(), "");
+     int mask_len = Matcher::vector_length(this);
+     __ vector_mask_compress($dst$$KRegister, $mask$$KRegister, $rtmp1$$Register, $rtmp2$$Register, mask_len);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vcompress_mask_reg_avx(vec dst, vec mask, rRegL rtmp1, rRegL rtmp2, vec xtmp, rFlagsReg cr) %{
+-  predicate(n->in(1)->bottom_type()->isa_vectmask() == NULL);
+-  match(Set dst (CompressM mask));
+-  effect(TEMP dst, TEMP rtmp1, TEMP rtmp2, TEMP xtmp, KILL cr);
+-  format %{ "mask_compress_avx $dst, $mask\t! using $rtmp1, $rtmp2 and $xtmp as TEMP" %}
+-  ins_encode %{
+-    assert(Matcher::vector_element_basic_type(this, $mask) == T_BOOLEAN, "");
+-    int mask_len = Matcher::vector_length(this, $mask);
+-    int vec_enc = vector_length_encoding(this);
+-    __ vector_mask_compress($dst$$XMMRegister, $mask$$XMMRegister, $rtmp1$$Register,
+-                            $rtmp2$$Register, $xtmp$$XMMRegister, mask_len, vec_enc);
+-  %}
+-  ins_pipe( pipe_slow );
+-%}
+-
+ #endif // _LP64
+ 
+ // ---------------------------------- Vector Masked Operations ------------------------------------
+diff --git a/src/hotspot/share/opto/c2compiler.cpp b/src/hotspot/share/opto/c2compiler.cpp
+index 1692476149b..34bafa20974 100644
+--- a/src/hotspot/share/opto/c2compiler.cpp
++++ b/src/hotspot/share/opto/c2compiler.cpp
+@@ -488,6 +488,10 @@ bool C2Compiler::is_intrinsic_supported(const methodHandle& method, bool is_virt
+   case vmIntrinsics::_fsignum:
+     if (!Matcher::match_rule_supported(Op_SignumF)) return false;
+     break;
++  case vmIntrinsics::_VectorComExp:
++    if (!Matcher::match_rule_supported(Op_CompressM)) return false;
++    if (!Matcher::match_rule_supported(Op_CompressV)) return false;
++    break;
+   case vmIntrinsics::_hashCode:
+   case vmIntrinsics::_identityHashCode:
+   case vmIntrinsics::_getClass:
+@@ -697,7 +701,6 @@ bool C2Compiler::is_intrinsic_supported(const methodHandle& method, bool is_virt
+   case vmIntrinsics::_VectorInsert:
+   case vmIntrinsics::_VectorExtract:
+   case vmIntrinsics::_VectorMaskOp:
+-  case vmIntrinsics::_VectorComExp:
+     return EnableVectorSupport;
+   case vmIntrinsics::_blackhole:
+     break;
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index f1f1e6a172f..7a6b175b55a 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -2750,15 +2750,7 @@ bool LibraryCallKit::inline_vector_compress_expand() {
+   BasicType elem_bt = elem_type->basic_type();
+   int opc = VectorSupport::vop2ideal(opr->get_con(), elem_bt);
+ 
+-  VectorMaskUseType checkFlags = VecMaskNotUsed;
+-  if (opc == Op_CompressM) {
+-     checkFlags = VecMaskUseAll;
+-  } else {
+-     assert(opc == Op_ExpandV || opc == Op_CompressV, "");
+-     checkFlags = VecMaskUseLoad;
+-  }
+-
+-  if (!arch_supports_vector(opc, num_elem, elem_bt, checkFlags)) {
++  if (!arch_supports_vector(opc, num_elem, elem_bt, VecMaskUseLoad)) {
+     if (C->print_intrinsics()) {
+       tty->print_cr("  ** not supported: opc=%d vlen=%d etype=%s ismask=useload",
+                     opc, num_elem, type2name(elem_bt));
+@@ -2794,16 +2786,8 @@ bool LibraryCallKit::inline_vector_compress_expand() {
+     return false;
+   }
+ 
+-  Node* operation = NULL;
+   const TypeVect* vt = TypeVect::make(elem_bt, num_elem, opc == Op_CompressM);
+-  if (opc == Op_CompressM && vt->isa_vectmask() == NULL) {
+-    mask = gvn().transform(VectorStoreMaskNode::make(gvn(), mask, elem_bt, num_elem));
+-    const TypeVect* ivt = TypeVect::make(T_BOOLEAN, num_elem);
+-    operation = gvn().transform(VectorNode::make(opc, opd1, mask, ivt));
+-    operation = gvn().transform(new VectorLoadMaskNode(operation, vt));
+-  } else {
+-    operation = gvn().transform(VectorNode::make(opc, opd1, mask, vt));
+-  }
++  Node* operation = gvn().transform(VectorNode::make(opc, opd1, mask, vt));
+ 
+   // Wrap it up in VectorBox to keep object type information.
+   const TypeInstPtr* box_type = opc == Op_CompressM ? mbox_type : vbox_type;
+diff --git a/test/jdk/jdk/incubator/vector/Byte128VectorTests.java b/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
+index 5320ed59931..857d5e7a0e2 100644
+--- a/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
+@@ -4275,7 +4275,7 @@ public class Byte128VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void compressMaskedByte128VectorTests(IntFunction<byte[]> fa,
++    static void compressByte128VectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4292,9 +4292,8 @@ public class Byte128VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void expandMaskedByte128VectorTests(IntFunction<byte[]> fa,
++    static void expandByte128VectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4310,7 +4309,6 @@ public class Byte128VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "byteUnaryOpProvider")
+     static void getByte128VectorTests(IntFunction<byte[]> fa) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Byte256VectorTests.java b/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
+index 7f79083390d..c240cca4697 100644
+--- a/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
+@@ -4275,7 +4275,7 @@ public class Byte256VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void compressMaskedByte256VectorTests(IntFunction<byte[]> fa,
++    static void compressByte256VectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4292,9 +4292,8 @@ public class Byte256VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void expandMaskedByte256VectorTests(IntFunction<byte[]> fa,
++    static void expandByte256VectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4310,7 +4309,6 @@ public class Byte256VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "byteUnaryOpProvider")
+     static void getByte256VectorTests(IntFunction<byte[]> fa) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Byte512VectorTests.java b/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
+index e7688a2f076..8391f582619 100644
+--- a/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
+@@ -4275,7 +4275,7 @@ public class Byte512VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void compressMaskedByte512VectorTests(IntFunction<byte[]> fa,
++    static void compressByte512VectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4292,9 +4292,8 @@ public class Byte512VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void expandMaskedByte512VectorTests(IntFunction<byte[]> fa,
++    static void expandByte512VectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4310,7 +4309,6 @@ public class Byte512VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "byteUnaryOpProvider")
+     static void getByte512VectorTests(IntFunction<byte[]> fa) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Byte64VectorTests.java b/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
+index cbf2a6ec347..f6508a1e7fe 100644
+--- a/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
+@@ -4275,7 +4275,7 @@ public class Byte64VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void compressMaskedByte64VectorTests(IntFunction<byte[]> fa,
++    static void compressByte64VectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4292,9 +4292,8 @@ public class Byte64VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void expandMaskedByte64VectorTests(IntFunction<byte[]> fa,
++    static void expandByte64VectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4310,7 +4309,6 @@ public class Byte64VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "byteUnaryOpProvider")
+     static void getByte64VectorTests(IntFunction<byte[]> fa) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java b/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
+index b9497844379..876d7594ca4 100644
+--- a/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
+@@ -4280,7 +4280,7 @@ public class ByteMaxVectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void compressMaskedByteMaxVectorTests(IntFunction<byte[]> fa,
++    static void compressByteMaxVectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4297,9 +4297,8 @@ public class ByteMaxVectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "byteUnaryOpMaskProvider")
+-    static void expandMaskedByteMaxVectorTests(IntFunction<byte[]> fa,
++    static void expandByteMaxVectorTests(IntFunction<byte[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         byte[] a = fa.apply(SPECIES.length());
+         byte[] r = fr.apply(SPECIES.length());
+@@ -4315,7 +4314,6 @@ public class ByteMaxVectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "byteUnaryOpProvider")
+     static void getByteMaxVectorTests(IntFunction<byte[]> fa) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Double128VectorTests.java b/test/jdk/jdk/incubator/vector/Double128VectorTests.java
+index a682b644164..ec371f10074 100644
+--- a/test/jdk/jdk/incubator/vector/Double128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double128VectorTests.java
+@@ -3225,7 +3225,7 @@ public class Double128VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void compressMaskedDouble128VectorTests(IntFunction<double[]> fa,
++    static void compressDouble128VectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3242,9 +3242,8 @@ public class Double128VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void expandMaskedDouble128VectorTests(IntFunction<double[]> fa,
++    static void expandDouble128VectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3260,7 +3259,6 @@ public class Double128VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "doubleUnaryOpProvider")
+     static void getDouble128VectorTests(IntFunction<double[]> fa) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Double256VectorTests.java b/test/jdk/jdk/incubator/vector/Double256VectorTests.java
+index ab7e2a7c210..6d692100ae4 100644
+--- a/test/jdk/jdk/incubator/vector/Double256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double256VectorTests.java
+@@ -3225,7 +3225,7 @@ public class Double256VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void compressMaskedDouble256VectorTests(IntFunction<double[]> fa,
++    static void compressDouble256VectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3242,9 +3242,8 @@ public class Double256VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void expandMaskedDouble256VectorTests(IntFunction<double[]> fa,
++    static void expandDouble256VectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3260,7 +3259,6 @@ public class Double256VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "doubleUnaryOpProvider")
+     static void getDouble256VectorTests(IntFunction<double[]> fa) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Double512VectorTests.java b/test/jdk/jdk/incubator/vector/Double512VectorTests.java
+index 122ac93a69a..52a62a43d38 100644
+--- a/test/jdk/jdk/incubator/vector/Double512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double512VectorTests.java
+@@ -3225,7 +3225,7 @@ public class Double512VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void compressMaskedDouble512VectorTests(IntFunction<double[]> fa,
++    static void compressDouble512VectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3242,9 +3242,8 @@ public class Double512VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void expandMaskedDouble512VectorTests(IntFunction<double[]> fa,
++    static void expandDouble512VectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3260,7 +3259,6 @@ public class Double512VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "doubleUnaryOpProvider")
+     static void getDouble512VectorTests(IntFunction<double[]> fa) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Double64VectorTests.java b/test/jdk/jdk/incubator/vector/Double64VectorTests.java
+index 1a242da3759..cbfa33ffac1 100644
+--- a/test/jdk/jdk/incubator/vector/Double64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double64VectorTests.java
+@@ -3225,7 +3225,7 @@ public class Double64VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void compressMaskedDouble64VectorTests(IntFunction<double[]> fa,
++    static void compressDouble64VectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3242,9 +3242,8 @@ public class Double64VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void expandMaskedDouble64VectorTests(IntFunction<double[]> fa,
++    static void expandDouble64VectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3260,7 +3259,6 @@ public class Double64VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "doubleUnaryOpProvider")
+     static void getDouble64VectorTests(IntFunction<double[]> fa) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java b/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
+index d446cc9419b..71984553bc8 100644
+--- a/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
+@@ -3230,7 +3230,7 @@ public class DoubleMaxVectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void compressMaskedDoubleMaxVectorTests(IntFunction<double[]> fa,
++    static void compressDoubleMaxVectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3247,9 +3247,8 @@ public class DoubleMaxVectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "doubleUnaryOpMaskProvider")
+-    static void expandMaskedDoubleMaxVectorTests(IntFunction<double[]> fa,
++    static void expandDoubleMaxVectorTests(IntFunction<double[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         double[] a = fa.apply(SPECIES.length());
+         double[] r = fr.apply(SPECIES.length());
+@@ -3265,7 +3264,6 @@ public class DoubleMaxVectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "doubleUnaryOpProvider")
+     static void getDoubleMaxVectorTests(IntFunction<double[]> fa) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Float128VectorTests.java b/test/jdk/jdk/incubator/vector/Float128VectorTests.java
+index 4362266fe2a..1ca62082f0d 100644
+--- a/test/jdk/jdk/incubator/vector/Float128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float128VectorTests.java
+@@ -3235,7 +3235,7 @@ public class Float128VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void compressMaskedFloat128VectorTests(IntFunction<float[]> fa,
++    static void compressFloat128VectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3252,9 +3252,8 @@ public class Float128VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void expandMaskedFloat128VectorTests(IntFunction<float[]> fa,
++    static void expandFloat128VectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3270,7 +3269,6 @@ public class Float128VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "floatUnaryOpProvider")
+     static void getFloat128VectorTests(IntFunction<float[]> fa) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Float256VectorTests.java b/test/jdk/jdk/incubator/vector/Float256VectorTests.java
+index d37f805182a..c702859754c 100644
+--- a/test/jdk/jdk/incubator/vector/Float256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float256VectorTests.java
+@@ -3235,7 +3235,7 @@ public class Float256VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void compressMaskedFloat256VectorTests(IntFunction<float[]> fa,
++    static void compressFloat256VectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3252,9 +3252,8 @@ public class Float256VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void expandMaskedFloat256VectorTests(IntFunction<float[]> fa,
++    static void expandFloat256VectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3270,7 +3269,6 @@ public class Float256VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "floatUnaryOpProvider")
+     static void getFloat256VectorTests(IntFunction<float[]> fa) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Float512VectorTests.java b/test/jdk/jdk/incubator/vector/Float512VectorTests.java
+index 44b0bdd5eef..807709f5eb0 100644
+--- a/test/jdk/jdk/incubator/vector/Float512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float512VectorTests.java
+@@ -3235,7 +3235,7 @@ public class Float512VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void compressMaskedFloat512VectorTests(IntFunction<float[]> fa,
++    static void compressFloat512VectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3252,9 +3252,8 @@ public class Float512VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void expandMaskedFloat512VectorTests(IntFunction<float[]> fa,
++    static void expandFloat512VectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3270,7 +3269,6 @@ public class Float512VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "floatUnaryOpProvider")
+     static void getFloat512VectorTests(IntFunction<float[]> fa) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Float64VectorTests.java b/test/jdk/jdk/incubator/vector/Float64VectorTests.java
+index 66b96ceb243..f45c734e63e 100644
+--- a/test/jdk/jdk/incubator/vector/Float64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float64VectorTests.java
+@@ -3235,7 +3235,7 @@ public class Float64VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void compressMaskedFloat64VectorTests(IntFunction<float[]> fa,
++    static void compressFloat64VectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3252,9 +3252,8 @@ public class Float64VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void expandMaskedFloat64VectorTests(IntFunction<float[]> fa,
++    static void expandFloat64VectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3270,7 +3269,6 @@ public class Float64VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "floatUnaryOpProvider")
+     static void getFloat64VectorTests(IntFunction<float[]> fa) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java b/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
+index 1affa26d1fd..ca8f347456a 100644
+--- a/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
+@@ -3240,7 +3240,7 @@ public class FloatMaxVectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void compressMaskedFloatMaxVectorTests(IntFunction<float[]> fa,
++    static void compressFloatMaxVectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3257,9 +3257,8 @@ public class FloatMaxVectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "floatUnaryOpMaskProvider")
+-    static void expandMaskedFloatMaxVectorTests(IntFunction<float[]> fa,
++    static void expandFloatMaxVectorTests(IntFunction<float[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         float[] a = fa.apply(SPECIES.length());
+         float[] r = fr.apply(SPECIES.length());
+@@ -3275,7 +3274,6 @@ public class FloatMaxVectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "floatUnaryOpProvider")
+     static void getFloatMaxVectorTests(IntFunction<float[]> fa) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Int128VectorTests.java b/test/jdk/jdk/incubator/vector/Int128VectorTests.java
+index 828dfe53a2f..1ff5f3301ff 100644
+--- a/test/jdk/jdk/incubator/vector/Int128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int128VectorTests.java
+@@ -4240,7 +4240,7 @@ public class Int128VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void compressMaskedInt128VectorTests(IntFunction<int[]> fa,
++    static void compressInt128VectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4257,9 +4257,8 @@ public class Int128VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void expandMaskedInt128VectorTests(IntFunction<int[]> fa,
++    static void expandInt128VectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4275,7 +4274,6 @@ public class Int128VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "intUnaryOpProvider")
+     static void getInt128VectorTests(IntFunction<int[]> fa) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Int256VectorTests.java b/test/jdk/jdk/incubator/vector/Int256VectorTests.java
+index ae853fb0576..f67a32732eb 100644
+--- a/test/jdk/jdk/incubator/vector/Int256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int256VectorTests.java
+@@ -4240,7 +4240,7 @@ public class Int256VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void compressMaskedInt256VectorTests(IntFunction<int[]> fa,
++    static void compressInt256VectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4257,9 +4257,8 @@ public class Int256VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void expandMaskedInt256VectorTests(IntFunction<int[]> fa,
++    static void expandInt256VectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4275,7 +4274,6 @@ public class Int256VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "intUnaryOpProvider")
+     static void getInt256VectorTests(IntFunction<int[]> fa) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Int512VectorTests.java b/test/jdk/jdk/incubator/vector/Int512VectorTests.java
+index d5be277dc6a..3a1d1b9ec60 100644
+--- a/test/jdk/jdk/incubator/vector/Int512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int512VectorTests.java
+@@ -4240,7 +4240,7 @@ public class Int512VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void compressMaskedInt512VectorTests(IntFunction<int[]> fa,
++    static void compressInt512VectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4257,9 +4257,8 @@ public class Int512VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void expandMaskedInt512VectorTests(IntFunction<int[]> fa,
++    static void expandInt512VectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4275,7 +4274,6 @@ public class Int512VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "intUnaryOpProvider")
+     static void getInt512VectorTests(IntFunction<int[]> fa) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Int64VectorTests.java b/test/jdk/jdk/incubator/vector/Int64VectorTests.java
+index a75a5662cc0..7c15e2a3781 100644
+--- a/test/jdk/jdk/incubator/vector/Int64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int64VectorTests.java
+@@ -4240,7 +4240,7 @@ public class Int64VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void compressMaskedInt64VectorTests(IntFunction<int[]> fa,
++    static void compressInt64VectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4257,9 +4257,8 @@ public class Int64VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void expandMaskedInt64VectorTests(IntFunction<int[]> fa,
++    static void expandInt64VectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4275,7 +4274,6 @@ public class Int64VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "intUnaryOpProvider")
+     static void getInt64VectorTests(IntFunction<int[]> fa) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java b/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
+index 18f2b517d87..7d21510dc1e 100644
+--- a/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
+@@ -4245,7 +4245,7 @@ public class IntMaxVectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void compressMaskedIntMaxVectorTests(IntFunction<int[]> fa,
++    static void compressIntMaxVectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4262,9 +4262,8 @@ public class IntMaxVectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "intUnaryOpMaskProvider")
+-    static void expandMaskedIntMaxVectorTests(IntFunction<int[]> fa,
++    static void expandIntMaxVectorTests(IntFunction<int[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         int[] a = fa.apply(SPECIES.length());
+         int[] r = fr.apply(SPECIES.length());
+@@ -4280,7 +4279,6 @@ public class IntMaxVectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "intUnaryOpProvider")
+     static void getIntMaxVectorTests(IntFunction<int[]> fa) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Long128VectorTests.java b/test/jdk/jdk/incubator/vector/Long128VectorTests.java
+index ca0eac7c664..993c5c3936b 100644
+--- a/test/jdk/jdk/incubator/vector/Long128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long128VectorTests.java
+@@ -4190,7 +4190,7 @@ public class Long128VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void compressMaskedLong128VectorTests(IntFunction<long[]> fa,
++    static void compressLong128VectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4207,9 +4207,8 @@ public class Long128VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void expandMaskedLong128VectorTests(IntFunction<long[]> fa,
++    static void expandLong128VectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4225,7 +4224,6 @@ public class Long128VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "longUnaryOpProvider")
+     static void getLong128VectorTests(IntFunction<long[]> fa) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Long256VectorTests.java b/test/jdk/jdk/incubator/vector/Long256VectorTests.java
+index dc7d1d21684..b3228ea9067 100644
+--- a/test/jdk/jdk/incubator/vector/Long256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long256VectorTests.java
+@@ -4190,7 +4190,7 @@ public class Long256VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void compressMaskedLong256VectorTests(IntFunction<long[]> fa,
++    static void compressLong256VectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4207,9 +4207,8 @@ public class Long256VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void expandMaskedLong256VectorTests(IntFunction<long[]> fa,
++    static void expandLong256VectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4225,7 +4224,6 @@ public class Long256VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "longUnaryOpProvider")
+     static void getLong256VectorTests(IntFunction<long[]> fa) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Long512VectorTests.java b/test/jdk/jdk/incubator/vector/Long512VectorTests.java
+index fe6eb0bb185..f8dba5b73c4 100644
+--- a/test/jdk/jdk/incubator/vector/Long512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long512VectorTests.java
+@@ -4190,7 +4190,7 @@ public class Long512VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void compressMaskedLong512VectorTests(IntFunction<long[]> fa,
++    static void compressLong512VectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4207,9 +4207,8 @@ public class Long512VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void expandMaskedLong512VectorTests(IntFunction<long[]> fa,
++    static void expandLong512VectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4225,7 +4224,6 @@ public class Long512VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "longUnaryOpProvider")
+     static void getLong512VectorTests(IntFunction<long[]> fa) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Long64VectorTests.java b/test/jdk/jdk/incubator/vector/Long64VectorTests.java
+index eca0c754e2a..58f2db86c4f 100644
+--- a/test/jdk/jdk/incubator/vector/Long64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long64VectorTests.java
+@@ -4190,7 +4190,7 @@ public class Long64VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void compressMaskedLong64VectorTests(IntFunction<long[]> fa,
++    static void compressLong64VectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4207,9 +4207,8 @@ public class Long64VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void expandMaskedLong64VectorTests(IntFunction<long[]> fa,
++    static void expandLong64VectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4225,7 +4224,6 @@ public class Long64VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "longUnaryOpProvider")
+     static void getLong64VectorTests(IntFunction<long[]> fa) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/LongMaxVectorTests.java b/test/jdk/jdk/incubator/vector/LongMaxVectorTests.java
+index 159b7328646..a67238ff654 100644
+--- a/test/jdk/jdk/incubator/vector/LongMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/LongMaxVectorTests.java
+@@ -4195,7 +4195,7 @@ public class LongMaxVectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void compressMaskedLongMaxVectorTests(IntFunction<long[]> fa,
++    static void compressLongMaxVectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4212,9 +4212,8 @@ public class LongMaxVectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "longUnaryOpMaskProvider")
+-    static void expandMaskedLongMaxVectorTests(IntFunction<long[]> fa,
++    static void expandLongMaxVectorTests(IntFunction<long[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         long[] a = fa.apply(SPECIES.length());
+         long[] r = fr.apply(SPECIES.length());
+@@ -4230,7 +4229,6 @@ public class LongMaxVectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "longUnaryOpProvider")
+     static void getLongMaxVectorTests(IntFunction<long[]> fa) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Short128VectorTests.java b/test/jdk/jdk/incubator/vector/Short128VectorTests.java
+index e2532c7bd8a..254fa96e891 100644
+--- a/test/jdk/jdk/incubator/vector/Short128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short128VectorTests.java
+@@ -4265,7 +4265,7 @@ public class Short128VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void compressMaskedShort128VectorTests(IntFunction<short[]> fa,
++    static void compressShort128VectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4282,9 +4282,8 @@ public class Short128VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void expandMaskedShort128VectorTests(IntFunction<short[]> fa,
++    static void expandShort128VectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4300,7 +4299,6 @@ public class Short128VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "shortUnaryOpProvider")
+     static void getShort128VectorTests(IntFunction<short[]> fa) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Short256VectorTests.java b/test/jdk/jdk/incubator/vector/Short256VectorTests.java
+index 05cea5314b7..0303d23a5a2 100644
+--- a/test/jdk/jdk/incubator/vector/Short256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short256VectorTests.java
+@@ -4265,7 +4265,7 @@ public class Short256VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void compressMaskedShort256VectorTests(IntFunction<short[]> fa,
++    static void compressShort256VectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4282,9 +4282,8 @@ public class Short256VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void expandMaskedShort256VectorTests(IntFunction<short[]> fa,
++    static void expandShort256VectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4300,7 +4299,6 @@ public class Short256VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "shortUnaryOpProvider")
+     static void getShort256VectorTests(IntFunction<short[]> fa) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Short512VectorTests.java b/test/jdk/jdk/incubator/vector/Short512VectorTests.java
+index 0b8367b4ae9..2db87cafdc2 100644
+--- a/test/jdk/jdk/incubator/vector/Short512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short512VectorTests.java
+@@ -4265,7 +4265,7 @@ public class Short512VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void compressMaskedShort512VectorTests(IntFunction<short[]> fa,
++    static void compressShort512VectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4282,9 +4282,8 @@ public class Short512VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void expandMaskedShort512VectorTests(IntFunction<short[]> fa,
++    static void expandShort512VectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4300,7 +4299,6 @@ public class Short512VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "shortUnaryOpProvider")
+     static void getShort512VectorTests(IntFunction<short[]> fa) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/Short64VectorTests.java b/test/jdk/jdk/incubator/vector/Short64VectorTests.java
+index 99005e80110..a7981f81f38 100644
+--- a/test/jdk/jdk/incubator/vector/Short64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short64VectorTests.java
+@@ -4265,7 +4265,7 @@ public class Short64VectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void compressMaskedShort64VectorTests(IntFunction<short[]> fa,
++    static void compressShort64VectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4282,9 +4282,8 @@ public class Short64VectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void expandMaskedShort64VectorTests(IntFunction<short[]> fa,
++    static void expandShort64VectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4300,7 +4299,6 @@ public class Short64VectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "shortUnaryOpProvider")
+     static void getShort64VectorTests(IntFunction<short[]> fa) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java b/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
+index 38d8de6d94c..4481648554f 100644
+--- a/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
+@@ -4270,7 +4270,7 @@ public class ShortMaxVectorTests extends AbstractVectorTest {
+     }
+ 
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void compressMaskedShortMaxVectorTests(IntFunction<short[]> fa,
++    static void compressShortMaxVectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4287,9 +4287,8 @@ public class ShortMaxVectorTests extends AbstractVectorTest {
+         assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
+-
+     @Test(dataProvider = "shortUnaryOpMaskProvider")
+-    static void expandMaskedShortMaxVectorTests(IntFunction<short[]> fa,
++    static void expandShortMaxVectorTests(IntFunction<short[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         short[] a = fa.apply(SPECIES.length());
+         short[] r = fr.apply(SPECIES.length());
+@@ -4305,7 +4304,6 @@ public class ShortMaxVectorTests extends AbstractVectorTest {
+ 
+         assertexpandArraysEquals(r, a, mask, SPECIES.length());
+     }
+-
+     @Test(dataProvider = "shortUnaryOpProvider")
+     static void getShortMaxVectorTests(IntFunction<short[]> fa) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/jdk/jdk/incubator/vector/gen-template.sh b/test/jdk/jdk/incubator/vector/gen-template.sh
+index 1e00a22952d..1f2ab2fbc1b 100644
+--- a/test/jdk/jdk/incubator/vector/gen-template.sh
++++ b/test/jdk/jdk/incubator/vector/gen-template.sh
+@@ -505,8 +505,7 @@ gen_op_tmpl $blend "blend" ""
+ gen_op_tmpl $rearrange_template "rearrange" ""
+ 
+ # Compress/Expand
+-gen_op_tmpl $compressexpand_template "compress" ""
+-gen_op_tmpl $compressexpand_template "expand" ""
++gen_op_tmpl $compressexpand_template "compress_expand" ""
+ 
+ # Get
+ gen_get_op "lane" ""
+diff --git a/test/jdk/jdk/incubator/vector/gen-tests.sh b/test/jdk/jdk/incubator/vector/gen-tests.sh
+old mode 100644
+new mode 100755
+diff --git a/test/jdk/jdk/incubator/vector/templates/Unit-CompressExpand.template b/test/jdk/jdk/incubator/vector/templates/Unit-CompressExpand.template
+index 4e400088308..84de5ad1b81 100644
+--- a/test/jdk/jdk/incubator/vector/templates/Unit-CompressExpand.template
++++ b/test/jdk/jdk/incubator/vector/templates/Unit-CompressExpand.template
+@@ -1,6 +1,6 @@
+ 
+     @Test(dataProvider = "$type$UnaryOpMaskProvider")
+-    static void [[TEST]]Masked$vectorteststype$(IntFunction<$type$[]> fa,
++    static void compress$vectorteststype$(IntFunction<$type$[]> fa,
+                                                 IntFunction<boolean[]> fm) {
+         $type$[] a = fa.apply(SPECIES.length());
+         $type$[] r = fr.apply(SPECIES.length());
+@@ -10,10 +10,27 @@
+         for (int ic = 0; ic < INVOC_COUNT; ic++) {
+             for (int i = 0; i < a.length; i += SPECIES.length()) {
+                 $abstractvectortype$ av = $abstractvectortype$.fromArray(SPECIES, a, i);
+-                av.[[TEST]](vmask).intoArray(r, i);
++                av.compress(vmask).intoArray(r, i);
+             }
+         }
+ 
+-        assert[[TEST]]ArraysEquals(r, a, mask, SPECIES.length());
++        assertcompressArraysEquals(r, a, mask, SPECIES.length());
+     }
+ 
++    @Test(dataProvider = "$type$UnaryOpMaskProvider")
++    static void expand$vectorteststype$(IntFunction<$type$[]> fa,
++                                                IntFunction<boolean[]> fm) {
++        $type$[] a = fa.apply(SPECIES.length());
++        $type$[] r = fr.apply(SPECIES.length());
++        boolean[] mask = fm.apply(SPECIES.length());
++        VectorMask<$Wideboxtype$> vmask = VectorMask.fromArray(SPECIES, mask, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                $abstractvectortype$ av = $abstractvectortype$.fromArray(SPECIES, a, i);
++                av.expand(vmask).intoArray(r, i);
++            }
++        }
++
++        assertexpandArraysEquals(r, a, mask, SPECIES.length());
++    }
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte128Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte128Vector.java
+index 1c5b07c4c12..85390b52cb2 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte128Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte128Vector.java
+@@ -1317,6 +1473,57 @@ public class Byte128Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte256Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte256Vector.java
+index 2baff5c6cd1..68a99f98b9e 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte256Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte256Vector.java
+@@ -1317,6 +1473,57 @@ public class Byte256Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte512Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte512Vector.java
+index 025c4395093..b3afe4f7274 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte512Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte512Vector.java
+@@ -1317,6 +1473,57 @@ public class Byte512Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte64Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte64Vector.java
+index 5def012f601..59a98d817d2 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte64Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Byte64Vector.java
+@@ -1317,6 +1473,57 @@ public class Byte64Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ByteMaxVector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ByteMaxVector.java
+index 02528a14a23..f5a46d333cf 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ByteMaxVector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ByteMaxVector.java
+@@ -1317,6 +1473,57 @@ public class ByteMaxVector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        byte[] a = fa.apply(size);
++        byte[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ByteVector av = ByteVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Byte> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         byte[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ByteScalar.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ByteScalar.java
+index 6e52a8da642..7450ce45537 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ByteScalar.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ByteScalar.java
+@@ -1235,6 +1399,56 @@ public class ByteScalar extends AbstractVectorBenchmark {
+         int window = 512 / Byte.SIZE;
+         rearrangeShared(window, bh);
+     }
++
++    @Benchmark
++    public void compressScalar(Blackhole bh) {
++        byte[] as = fa.apply(size);
++        byte[] rs = new byte[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[j++] = as[i];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void expandScalar(Blackhole bh) {
++        byte[] as = fa.apply(size);
++        byte[] rs = new byte[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[i++] = as[j++];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void maskCompressScalar(Blackhole bh) {
++        boolean[] im = fmt.apply(size);
++        boolean[] rm = new boolean[size];
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < im.length; i++) {
++                if (im[i]) {
++                    rm[j++] = im[i];
++                }
++            }
++        }
++
++        bh.consume(rm);
++    }
+     void broadcastShared(int window, Blackhole bh) {
+         byte[] as = fa.apply(size);
+         byte[] rs = fr.apply(size);
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double128Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double128Vector.java
+index 94c4cccece2..5ae392cfcdf 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double128Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double128Vector.java
+@@ -314,6 +314,14 @@ public class Double128Vector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class Double128Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double256Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double256Vector.java
+index 454078eace9..84b373e7c36 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double256Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double256Vector.java
+@@ -314,6 +314,14 @@ public class Double256Vector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class Double256Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double512Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double512Vector.java
+index adade9cf6b8..bbbdba8c8b2 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double512Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double512Vector.java
+@@ -314,6 +314,14 @@ public class Double512Vector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class Double512Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double64Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double64Vector.java
+index ea21c366cb6..d19457c4c5b 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double64Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Double64Vector.java
+@@ -314,6 +314,14 @@ public class Double64Vector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class Double64Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/DoubleMaxVector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/DoubleMaxVector.java
+index 36256fb84df..f8190e578cb 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/DoubleMaxVector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/DoubleMaxVector.java
+@@ -314,6 +314,14 @@ public class DoubleMaxVector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class DoubleMaxVector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        double[] a = fa.apply(size);
++        double[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                DoubleVector av = DoubleVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Double> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         double[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/DoubleScalar.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/DoubleScalar.java
+index 537431d5b49..6397e14cd37 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/DoubleScalar.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/DoubleScalar.java
+@@ -335,6 +335,14 @@ public class DoubleScalar extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -732,6 +740,56 @@ public class DoubleScalar extends AbstractVectorBenchmark {
+         int window = 512 / Double.SIZE;
+         rearrangeShared(window, bh);
+     }
++
++    @Benchmark
++    public void compressScalar(Blackhole bh) {
++        double[] as = fa.apply(size);
++        double[] rs = new double[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[j++] = as[i];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void expandScalar(Blackhole bh) {
++        double[] as = fa.apply(size);
++        double[] rs = new double[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[i++] = as[j++];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void maskCompressScalar(Blackhole bh) {
++        boolean[] im = fmt.apply(size);
++        boolean[] rm = new boolean[size];
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < im.length; i++) {
++                if (im[i]) {
++                    rm[j++] = im[i];
++                }
++            }
++        }
++
++        bh.consume(rm);
++    }
+     void broadcastShared(int window, Blackhole bh) {
+         double[] as = fa.apply(size);
+         double[] rs = fr.apply(size);
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float128Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float128Vector.java
+index 5bf054addcd..dc7a1087c15 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float128Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float128Vector.java
+@@ -314,6 +314,14 @@ public class Float128Vector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class Float128Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float256Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float256Vector.java
+index 5afc7349afc..81e1f892b77 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float256Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float256Vector.java
+@@ -314,6 +314,14 @@ public class Float256Vector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class Float256Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float512Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float512Vector.java
+index adba35f072b..11591f2b206 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float512Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float512Vector.java
+@@ -314,6 +314,14 @@ public class Float512Vector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class Float512Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float64Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float64Vector.java
+index 6515a189071..22a50da8850 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float64Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Float64Vector.java
+@@ -314,6 +314,14 @@ public class Float64Vector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class Float64Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/FloatMaxVector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/FloatMaxVector.java
+index 0d3e5a99a93..afcd11e85d6 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/FloatMaxVector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/FloatMaxVector.java
+@@ -314,6 +314,14 @@ public class FloatMaxVector extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -763,6 +771,57 @@ public class FloatMaxVector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        float[] a = fa.apply(size);
++        float[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                FloatVector av = FloatVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Float> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         float[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/FloatScalar.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/FloatScalar.java
+index c9ee97aeb54..4f07960fd5d 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/FloatScalar.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/FloatScalar.java
+@@ -335,6 +335,14 @@ public class FloatScalar extends AbstractVectorBenchmark {
+ 
+ 
+ 
++
++
++
++
++
++
++
++
+ 
+ 
+ 
+@@ -732,6 +740,56 @@ public class FloatScalar extends AbstractVectorBenchmark {
+         int window = 512 / Float.SIZE;
+         rearrangeShared(window, bh);
+     }
++
++    @Benchmark
++    public void compressScalar(Blackhole bh) {
++        float[] as = fa.apply(size);
++        float[] rs = new float[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[j++] = as[i];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void expandScalar(Blackhole bh) {
++        float[] as = fa.apply(size);
++        float[] rs = new float[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[i++] = as[j++];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void maskCompressScalar(Blackhole bh) {
++        boolean[] im = fmt.apply(size);
++        boolean[] rm = new boolean[size];
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < im.length; i++) {
++                if (im[i]) {
++                    rm[j++] = im[i];
++                }
++            }
++        }
++
++        bh.consume(rm);
++    }
+     void broadcastShared(int window, Blackhole bh) {
+         float[] as = fa.apply(size);
+         float[] rs = fr.apply(size);
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int128Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int128Vector.java
+index b20916c8fd9..1595a327696 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int128Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int128Vector.java
+@@ -1317,6 +1473,57 @@ public class Int128Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int256Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int256Vector.java
+index f03d22138b2..b2d92605892 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int256Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int256Vector.java
+@@ -1317,6 +1473,57 @@ public class Int256Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int512Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int512Vector.java
+index 801f005254f..183919bfed6 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int512Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int512Vector.java
+@@ -1317,6 +1473,57 @@ public class Int512Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int64Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int64Vector.java
+index a43b20238b7..59233fa4845 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int64Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Int64Vector.java
+@@ -1317,6 +1473,57 @@ public class Int64Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/IntMaxVector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/IntMaxVector.java
+index ced372012a1..5bbfc445f15 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/IntMaxVector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/IntMaxVector.java
+@@ -1317,6 +1473,57 @@ public class IntMaxVector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        int[] a = fa.apply(size);
++        int[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                IntVector av = IntVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Integer> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         int[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/IntScalar.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/IntScalar.java
+index 8dfec573dfe..aee8e1635f2 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/IntScalar.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/IntScalar.java
+@@ -1235,6 +1399,56 @@ public class IntScalar extends AbstractVectorBenchmark {
+         int window = 512 / Integer.SIZE;
+         rearrangeShared(window, bh);
+     }
++
++    @Benchmark
++    public void compressScalar(Blackhole bh) {
++        int[] as = fa.apply(size);
++        int[] rs = new int[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[j++] = as[i];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void expandScalar(Blackhole bh) {
++        int[] as = fa.apply(size);
++        int[] rs = new int[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[i++] = as[j++];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void maskCompressScalar(Blackhole bh) {
++        boolean[] im = fmt.apply(size);
++        boolean[] rm = new boolean[size];
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < im.length; i++) {
++                if (im[i]) {
++                    rm[j++] = im[i];
++                }
++            }
++        }
++
++        bh.consume(rm);
++    }
+     void broadcastShared(int window, Blackhole bh) {
+         int[] as = fa.apply(size);
+         int[] rs = fr.apply(size);
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long128Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long128Vector.java
+index 53620102aba..92108556266 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long128Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long128Vector.java
+@@ -1317,6 +1473,57 @@ public class Long128Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long256Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long256Vector.java
+index f73cbe5fea4..5d027a9bc21 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long256Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long256Vector.java
+@@ -1317,6 +1473,57 @@ public class Long256Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long512Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long512Vector.java
+index 12f3df6cb92..68b18d5bc95 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long512Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long512Vector.java
+@@ -1317,6 +1473,57 @@ public class Long512Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long64Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long64Vector.java
+index 89a29ebc125..46e5a2f6a5c 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long64Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Long64Vector.java
+@@ -1317,6 +1473,57 @@ public class Long64Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/LongMaxVector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/LongMaxVector.java
+index 950635e6263..979a13479f1 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/LongMaxVector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/LongMaxVector.java
+@@ -1317,6 +1473,57 @@ public class LongMaxVector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        long[] a = fa.apply(size);
++        long[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                LongVector av = LongVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Long> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         long[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/LongScalar.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/LongScalar.java
+index 6328e3872dd..2b8c2e1f3f4 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/LongScalar.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/LongScalar.java
+@@ -1235,6 +1399,56 @@ public class LongScalar extends AbstractVectorBenchmark {
+         int window = 512 / Long.SIZE;
+         rearrangeShared(window, bh);
+     }
++
++    @Benchmark
++    public void compressScalar(Blackhole bh) {
++        long[] as = fa.apply(size);
++        long[] rs = new long[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[j++] = as[i];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void expandScalar(Blackhole bh) {
++        long[] as = fa.apply(size);
++        long[] rs = new long[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[i++] = as[j++];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void maskCompressScalar(Blackhole bh) {
++        boolean[] im = fmt.apply(size);
++        boolean[] rm = new boolean[size];
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < im.length; i++) {
++                if (im[i]) {
++                    rm[j++] = im[i];
++                }
++            }
++        }
++
++        bh.consume(rm);
++    }
+     void broadcastShared(int window, Blackhole bh) {
+         long[] as = fa.apply(size);
+         long[] rs = fr.apply(size);
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short128Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short128Vector.java
+index 64bc30194c1..1e4ba97ba01 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short128Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short128Vector.java
+@@ -1317,6 +1473,57 @@ public class Short128Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short256Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short256Vector.java
+index 3b629f37b65..e5f52a58622 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short256Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short256Vector.java
+@@ -1317,6 +1473,57 @@ public class Short256Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short512Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short512Vector.java
+index 9225a063571..7f7773cfbfb 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short512Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short512Vector.java
+@@ -1317,6 +1473,57 @@ public class Short512Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short64Vector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short64Vector.java
+index 507ddefdd97..ec7e0cd99da 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short64Vector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/Short64Vector.java
+@@ -1317,6 +1473,57 @@ public class Short64Vector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ShortMaxVector.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ShortMaxVector.java
+index 2d6ee43f05a..ff81877ee80 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ShortMaxVector.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ShortMaxVector.java
+@@ -1317,6 +1473,57 @@ public class ShortMaxVector extends AbstractVectorBenchmark {
+         bh.consume(r);
+     }
+ 
++    @Benchmark
++    public Object compress() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.compress(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object expand() {
++        short[] a = fa.apply(size);
++        short[] r = fb.apply(size);
++        boolean[] ms = fmt.apply(size);
++        VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, 0);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0; i < a.length; i += SPECIES.length()) {
++                ShortVector av = ShortVector.fromArray(SPECIES, a, i);
++                av.expand(m).intoArray(r, i);
++            }
++        }
++
++        return r;
++    }
++
++    @Benchmark
++    public Object maskCompress() {
++        boolean[] ms = fmt.apply(size);
++        boolean[] rs = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < ms.length; i += SPECIES.length()) {
++                VectorMask<Short> m = VectorMask.fromArray(SPECIES, ms, i);
++                m.compress().intoArray(rs, j);
++                j += m.trueCount();
++            }
++        }
++
++        return rs;
++    }
++
++
+     @Benchmark
+     public void laneextract(Blackhole bh) {
+         short[] a = fa.apply(SPECIES.length());
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ShortScalar.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ShortScalar.java
+index 5d6e09d4238..7fa71540d07 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ShortScalar.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/operation/ShortScalar.java
+@@ -1235,6 +1399,56 @@ public class ShortScalar extends AbstractVectorBenchmark {
+         int window = 512 / Short.SIZE;
+         rearrangeShared(window, bh);
+     }
++
++    @Benchmark
++    public void compressScalar(Blackhole bh) {
++        short[] as = fa.apply(size);
++        short[] rs = new short[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[j++] = as[i];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void expandScalar(Blackhole bh) {
++        short[] as = fa.apply(size);
++        short[] rs = new short[size];
++        boolean[] im = fmt.apply(size);
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < as.length; i++) {
++                if (im[i]) {
++                    rs[i++] = as[j++];
++                }
++            }
++        }
++
++        bh.consume(rs);
++    }
++
++    @Benchmark
++    public void maskCompressScalar(Blackhole bh) {
++        boolean[] im = fmt.apply(size);
++        boolean[] rm = new boolean[size];
++
++        for (int ic = 0; ic < INVOC_COUNT; ic++) {
++            for (int i = 0, j = 0; i < im.length; i++) {
++                if (im[i]) {
++                    rm[j++] = im[i];
++                }
++            }
++        }
++
++        bh.consume(rm);
++    }
+     void broadcastShared(int window, Blackhole bh) {
+         short[] as = fa.apply(size);
+         short[] rs = fr.apply(size);

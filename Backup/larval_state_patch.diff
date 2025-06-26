@@ -1,0 +1,345 @@
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.cpp b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+index 327103c170f..16120c5ebd3 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+@@ -6214,6 +6214,38 @@ int MacroAssembler::extend_stack_for_inline_args(int args_on_stack) {
+   return sp_inc;
+ }
+ 
++void MacroAssembler::check_params_in_larval_state(BasicType* sig_bt, VMRegPair* regs, int args_passed) {
++  for (int i = 0; i < args_passed; i++) {
++    if (sig_bt[i] == T_OBJECT) {
++      Label not_larval;
++      VMReg first = regs[i].first();
++      if (first->is_reg()) {
++        Register oop_reg  = first->as_Register();
++        push(rbx);
++        movptr(rbx, Address(oop_reg, oopDesc::mark_offset_in_bytes()));
++        andptr(rbx, 1 << markWord::larval_shift);
++        pop(rbx);
++        jccb(Assembler::equal, not_larval);
++        movl(c_rarg0, Deoptimization::make_trap_request(Deoptimization::Reason_lraval_state_param, Deoptimization::Action_none));
++        call(RuntimeAddress(CAST_FROM_FN_PTR(address, SharedRuntime::uncommon_trap_blob()->entry_point())));
++      } else {
++        assert(first->is_stack(), "");
++        int oop_st_off = first->reg2stack() * VMRegImpl::stack_slot_size + wordSize;
++        push(rbx);
++        movptr(rbx, Address(rsp, oop_st_off));
++        movptr(rbx, Address(rax, oopDesc::mark_offset_in_bytes()));
++        andptr(rbx, 1 << markWord::larval_shift);
++        pop(rbx);
++        jccb(Assembler::equal, not_larval);
++        movl(c_rarg0, Deoptimization::make_trap_request(Deoptimization::Reason_lraval_state_param, Deoptimization::Action_none));
++        call(RuntimeAddress(CAST_FROM_FN_PTR(address, SharedRuntime::uncommon_trap_blob()->entry_point())));
++      }
++      bind(not_larval);
++    }
++  }
++}
++
++
+ // Read all fields from an inline type buffer and store the field values in registers/stack slots.
+ bool MacroAssembler::unpack_inline_helper(const GrowableArray<SigEntry>* sig, int& sig_index,
+                                           VMReg from, int& from_index, VMRegPair* to, int to_count, int& to_index,
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.hpp b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+index 5ff79cf68ac..06df78a359f 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+@@ -137,6 +137,8 @@ class MacroAssembler: public Assembler {
+   void test_null_free_array_layout(Register lh, Label& is_null_free_array);
+   void test_non_null_free_array_layout(Register lh, Label& is_non_null_free_array);
+ 
++  void check_params_in_larval_state(BasicType* sig_bt, VMRegPair* regs, int args_passed);
++
+   // Required platform-specific helpers for Label::patch_instructions.
+   // They _shadow_ the declarations in AbstractAssembler, which are undefined.
+   void pd_patch_instruction(address branch, address target, const char* file, int line) {
+diff --git a/src/hotspot/share/asm/macroAssembler_common.cpp b/src/hotspot/share/asm/macroAssembler_common.cpp
+index 97fd91785b3..bef3444fe3b 100644
+--- a/src/hotspot/share/asm/macroAssembler_common.cpp
++++ b/src/hotspot/share/asm/macroAssembler_common.cpp
+@@ -124,6 +124,8 @@ int MacroAssembler::unpack_inline_args(Compile* C, bool receiver_only) {
+   VMRegPair* regs = NEW_RESOURCE_ARRAY(VMRegPair, args_passed);
+   int args_on_stack = SharedRuntime::java_calling_convention(sig_bt, regs, args_passed);
+ 
++  check_params_in_larval_state(sig_bt, regs, args_passed);
++
+   // Get scalarized calling convention
+   int args_passed_cc = SigEntry::fill_sig_bt(sig, sig_bt);
+   VMRegPair* regs_cc = NEW_RESOURCE_ARRAY(VMRegPair, sig->length());
+diff --git a/src/hotspot/share/opto/callGenerator.cpp b/src/hotspot/share/opto/callGenerator.cpp
+index 6963a2b303f..2be1d47e2a2 100644
+--- a/src/hotspot/share/opto/callGenerator.cpp
++++ b/src/hotspot/share/opto/callGenerator.cpp
+@@ -154,9 +154,22 @@ JVMState* DirectCallGenerator::generate(JVMState* jvms) {
+   GraphKit kit(jvms);
+   kit.C->print_inlining_update(this);
+   PhaseGVN& gvn = kit.gvn();
++  bool is_larval_args = kit.check_larval_arguments_for_java_call(tf());
+   bool is_static = method()->is_static();
+-  address target = is_static ? SharedRuntime::get_resolve_static_call_stub()
+-                             : SharedRuntime::get_resolve_opt_virtual_call_stub();
++  address target = nullptr;
++  if (is_static) {
++    if (is_larval_args) {
++      target = SharedRuntime::get_resolve_static_call_larval_args_stub();
++    } else {
++      target = SharedRuntime::get_resolve_static_call_stub();
++    }
++  } else {
++    if (is_larval_args) {
++      target = SharedRuntime::get_resolve_opt_virtual_call_larval_args_stub();
++    } else {
++      target = SharedRuntime::get_resolve_opt_virtual_call_stub();
++    }
++  }
+ 
+   if (kit.C->log() != nullptr) {
+     kit.C->log()->elem("direct_call bci='%d'", jvms->bci());
+diff --git a/src/hotspot/share/opto/graphKit.cpp b/src/hotspot/share/opto/graphKit.cpp
+index b622710812a..79b40f1b758 100644
+--- a/src/hotspot/share/opto/graphKit.cpp
++++ b/src/hotspot/share/opto/graphKit.cpp
+@@ -1827,6 +1827,22 @@ Node* GraphKit::array_element_address(Node* ary, Node* idx, BasicType elembt,
+   return basic_plus_adr(ary, base, scale);
+ }
+ 
++bool GraphKit::check_larval_arguments_for_java_call(const TypeFunc* tf) {
++  const TypeTuple* domain = tf->domain_sig();
++  int nargs = domain->cnt();
++  for (int i = TypeFunc::Parms, idx = TypeFunc::Parms; i < nargs; i++) {
++    Node* arg = argument(i-TypeFunc::Parms);
++    const Type* t = domain->field_at(i);
++    if (t->is_inlinetypeptr()) {
++      AllocateNode* alloc = AllocateNode::Ideal_allocation(arg);
++      if (alloc && alloc->_larval) {
++        return true;
++      }
++    }
++  }
++  return false;
++}
++
+ //-------------------------load_array_element-------------------------
+ Node* GraphKit::load_array_element(Node* ary, Node* idx, const TypeAryPtr* arytype, bool set_ctrl) {
+   const Type* elemtype = arytype->elem();
+@@ -3089,7 +3105,25 @@ Node* GraphKit::type_check_receiver(Node* receiver, ciKlass* klass,
+       // recv_xtype, since now we know what the type will be.
+       Node* cast = new CheckCastPPNode(control(), receiver, recv_xtype);
+       Node* res = _gvn.transform(cast);
++      
+       if (recv_xtype->is_inlinetypeptr()) {
++        // De-optimize if receiver is a value object in larval state.
++        Node* mark_addr = basic_plus_adr(res, oopDesc::mark_offset_in_bytes());
++        Node* mark = make_load(nullptr, mark_addr, TypeX_X, TypeX_X->basic_type(), MemNode::unordered);
++        mark = _gvn.transform(new AndXNode(mark, kit->MakeConX(markWord::larval_bit_in_place)));
++        Node* cmp = _gvn.transform(new CmpXNode(and_node, MakeConX(0));
++        Node* bol = _gvn.transform(new BoolNode(cmp, BoolTest::ne));
++
++        IfNode* iff = _gvn.transform(new IfNode(control(), bol, PROB_MIN, COUNT_UNKNOWN ));
++        Node* larval_path = _gvn.transform(new IfFalseNode(iff));
++        Node* scalarize_path = transform_later(new IfTrueNode(iff));
++
++
++        set_control(larval_path);
++        uncommon_trap(Deoptimization::Reason_class_check,
++                      Deoptimization::Action_none);
++        
++        set_control(scalarize_path);
+         assert(!gvn().type(res)->maybe_null(), "receiver should never be null");
+         res = InlineTypeNode::make_from_oop(this, res, recv_xtype->inline_klass());
+       }
+diff --git a/src/hotspot/share/opto/graphKit.hpp b/src/hotspot/share/opto/graphKit.hpp
+index 1ca1395bb55..26d634ea934 100644
+--- a/src/hotspot/share/opto/graphKit.hpp
++++ b/src/hotspot/share/opto/graphKit.hpp
+@@ -717,6 +717,9 @@ class GraphKit : public Phase {
+   // (The next step is to call set_edges_for_java_call.)
+   void  set_arguments_for_java_call(CallJavaNode* call, bool is_late_inline = false);
+ 
++  // Checks if any argument passed to method call is a value object in larval state.
++  bool check_larval_arguments_for_java_call(const TypeFunc* tf);
++
+   // Fill in non-argument edges for the call.
+   // Transform the call, and update the basics: control, i_o, memory.
+   // (The next step is usually to call set_results_for_java_call.)
+diff --git a/src/hotspot/share/runtime/deoptimization.cpp b/src/hotspot/share/runtime/deoptimization.cpp
+index 90ab937e33f..09c667dbdbe 100644
+--- a/src/hotspot/share/runtime/deoptimization.cpp
++++ b/src/hotspot/share/runtime/deoptimization.cpp
+@@ -2778,6 +2778,7 @@ const char* Deoptimization::_trap_reason_name[] = {
+   "unresolved",
+   "jsr_mismatch",
+ #endif
++  "lraval_state_param",
+   "tenured"
+ };
+ const char* Deoptimization::_trap_action_name[] = {
+diff --git a/src/hotspot/share/runtime/deoptimization.hpp b/src/hotspot/share/runtime/deoptimization.hpp
+index 228d8642f9f..cbd34b08576 100644
+--- a/src/hotspot/share/runtime/deoptimization.hpp
++++ b/src/hotspot/share/runtime/deoptimization.hpp
+@@ -124,6 +124,7 @@ class Deoptimization : AllStatic {
+     Reason_unresolved,
+     Reason_jsr_mismatch,
+ #endif
++    Reason_lraval_state_param,   // suppress scalarization for incoming larval parameters.
+ 
+     // Used to define MethodData::_trap_hist_limit where Reason_tenured isn't included
+     Reason_TRAP_HISTORY_LENGTH,
+@@ -152,7 +153,7 @@ class Deoptimization : AllStatic {
+ 
+   enum {
+     _action_bits = 3,
+-    _reason_bits = 5,
++    _reason_bits = 6,
+     _debug_id_bits = 23,
+     _action_shift = 0,
+     _reason_shift = _action_shift+_action_bits,
+diff --git a/src/hotspot/share/runtime/sharedRuntime.cpp b/src/hotspot/share/runtime/sharedRuntime.cpp
+index 8efb815e2c4..979b964ba14 100644
+--- a/src/hotspot/share/runtime/sharedRuntime.cpp
++++ b/src/hotspot/share/runtime/sharedRuntime.cpp
+@@ -94,6 +94,9 @@ RuntimeStub*        SharedRuntime::_ic_miss_blob;
+ RuntimeStub*        SharedRuntime::_resolve_opt_virtual_call_blob;
+ RuntimeStub*        SharedRuntime::_resolve_virtual_call_blob;
+ RuntimeStub*        SharedRuntime::_resolve_static_call_blob;
++RuntimeStub*        SharedRuntime::_resolve_opt_virtual_call_larval_args_blob;
++RuntimeStub*        SharedRuntime::_resolve_virtual_call_larval_args_blob;
++RuntimeStub*        SharedRuntime::_resolve_static_call_larval_args_blob;
+ 
+ DeoptimizationBlob* SharedRuntime::_deopt_blob;
+ SafepointBlob*      SharedRuntime::_polling_page_vectors_safepoint_handler_blob;
+@@ -114,6 +117,9 @@ void SharedRuntime::generate_stubs() {
+   _resolve_opt_virtual_call_blob       = generate_resolve_blob(CAST_FROM_FN_PTR(address, SharedRuntime::resolve_opt_virtual_call_C),   "resolve_opt_virtual_call");
+   _resolve_virtual_call_blob           = generate_resolve_blob(CAST_FROM_FN_PTR(address, SharedRuntime::resolve_virtual_call_C),       "resolve_virtual_call");
+   _resolve_static_call_blob            = generate_resolve_blob(CAST_FROM_FN_PTR(address, SharedRuntime::resolve_static_call_C),        "resolve_static_call");
++  _resolve_opt_virtual_call_larval_args_blob = generate_resolve_blob(CAST_FROM_FN_PTR(address, SharedRuntime::resolve_opt_virtual_call_larval_args_C), "resolve_opt_virtual_call_larval_args_C");
++  _resolve_virtual_call_larval_args_blob = generate_resolve_blob(CAST_FROM_FN_PTR(address, SharedRuntime::resolve_virtual_call_larval_args_C), "resolve_virtual_call");
++  _resolve_static_call_larval_args_blob  = generate_resolve_blob(CAST_FROM_FN_PTR(address, SharedRuntime::resolve_static_call_larval_args_C), "resolve_static_call");
+ 
+   AdapterHandlerLibrary::initialize();
+ 
+@@ -1653,9 +1659,78 @@ JRT_BLOCK_ENTRY(address, SharedRuntime::handle_wrong_method_abstract(JavaThread*
+   return res;
+ JRT_END
+ 
++// resolve a static call and patch code
++JRT_BLOCK_ENTRY(address, SharedRuntime::resolve_static_call_larval_args_C(JavaThread* current))
++  methodHandle callee_method;
++  bool caller_is_c1 = false;
++  bool enter_special = false;
++  JRT_BLOCK
++    callee_method = SharedRuntime::resolve_helper(false, false, caller_is_c1, CHECK_NULL);
++    current->set_vm_result_2(callee_method());
++
++    if (current->is_interp_only_mode()) {
++      RegisterMap reg_map(current,
++                          RegisterMap::UpdateMap::skip,
++                          RegisterMap::ProcessFrames::include,
++                          RegisterMap::WalkContinuation::skip);
++      frame stub_frame = current->last_frame();
++      assert(stub_frame.is_runtime_frame(), "must be a runtimeStub");
++      frame caller = stub_frame.sender(&reg_map);
++      enter_special = caller.cb() != nullptr && caller.cb()->is_compiled()
++        && caller.cb()->as_compiled_method()->method()->is_continuation_enter_intrinsic();
++    }
++  JRT_BLOCK_END
++
++  if (current->is_interp_only_mode() && enter_special) {
++    // enterSpecial is compiled and calls this method to resolve the call to Continuation::enter
++    // but in interp_only_mode we need to go to the interpreted entry
++    // The c2i won't patch in this mode -- see fixup_callers_callsite
++    //
++    // This should probably be done in all cases, not just enterSpecial (see JDK-8218403),
++    // but that's part of a larger fix, and the situation is worse for enterSpecial, as it has no
++    // interpreted version.
++    return callee_method->get_c2i_entry();
++  }
++
++  // return compiled code entry point after potential safepoints
++  address entry = callee_method->verified_inline_code_entry();
++  assert(entry != nullptr, "Jump to zero!");
++  return entry;
++JRT_END
++
++
++// resolve virtual call and update inline cache to monomorphic
++JRT_BLOCK_ENTRY(address, SharedRuntime::resolve_virtual_call_larval_args_C(JavaThread* current))
++  methodHandle callee_method;
++  bool caller_is_c1 = false;
++  JRT_BLOCK
++    callee_method = SharedRuntime::resolve_helper(true, false, caller_is_c1, CHECK_NULL);
++    current->set_vm_result_2(callee_method());
++  JRT_BLOCK_END
++  // return compiled code entry point after potential safepoints
++  address entry = callee_method->verified_inline_code_entry();
++  assert(entry != nullptr, "Jump to zero!");
++  return entry;
++JRT_END
++
++
++// Resolve a virtual call that can be statically bound (e.g., always
++// monomorphic, so it has no inline cache).  Patch code to resolved target.
++JRT_BLOCK_ENTRY(address, SharedRuntime::resolve_opt_virtual_call_larval_args_C(JavaThread* current))
++  methodHandle callee_method;
++  bool caller_is_c1 = false;
++  JRT_BLOCK
++    callee_method = SharedRuntime::resolve_helper(true, true, caller_is_c1, CHECK_NULL);
++    current->set_vm_result_2(callee_method());
++  JRT_BLOCK_END
++  // return compiled code entry point after potential safepoints
++  address entry = callee_method->verified_inline_code_entry();
++  assert(entry != nullptr, "Jump to zero!");
++  return entry;
++JRT_END
+ 
+ // resolve a static call and patch code
+-JRT_BLOCK_ENTRY(address, SharedRuntime::resolve_static_call_C(JavaThread* current ))
++JRT_BLOCK_ENTRY(address, SharedRuntime::resolve_static_call_C(JavaThread* current))
+   methodHandle callee_method;
+   bool caller_is_c1 = false;
+   bool enter_special = false;
+diff --git a/src/hotspot/share/runtime/sharedRuntime.hpp b/src/hotspot/share/runtime/sharedRuntime.hpp
+index ec1dc7d73b8..3b61b95e690 100644
+--- a/src/hotspot/share/runtime/sharedRuntime.hpp
++++ b/src/hotspot/share/runtime/sharedRuntime.hpp
+@@ -62,6 +62,9 @@ class SharedRuntime: AllStatic {
+   static RuntimeStub*        _resolve_opt_virtual_call_blob;
+   static RuntimeStub*        _resolve_virtual_call_blob;
+   static RuntimeStub*        _resolve_static_call_blob;
++  static RuntimeStub*        _resolve_opt_virtual_call_larval_args_blob;
++  static RuntimeStub*        _resolve_virtual_call_larval_args_blob;
++  static RuntimeStub*        _resolve_static_call_larval_args_blob;
+ 
+   static DeoptimizationBlob* _deopt_blob;
+ 
+@@ -246,6 +249,18 @@ class SharedRuntime: AllStatic {
+     assert(_resolve_static_call_blob != nullptr, "oops");
+     return _resolve_static_call_blob->entry_point();
+   }
++  static address get_resolve_opt_virtual_call_larval_args_stub() {
++    assert(_resolve_opt_virtual_call_larval_args_blob != nullptr, "oops");
++    return _resolve_opt_virtual_call_larval_args_blob->entry_point();
++  }
++  static address get_resolve_virtual_call_larval_args_stub() {
++    assert(_resolve_virtual_call_larval_args_blob != nullptr, "oops");
++    return _resolve_virtual_call_larval_args_blob->entry_point();
++  }
++  static address get_resolve_static_call_larval_args_stub() {
++    assert(_resolve_static_call_larval_args_blob != nullptr, "oops");
++    return _resolve_static_call_larval_args_blob->entry_point();
++  }
+ 
+   static SafepointBlob* polling_page_return_handler_blob()     { return _polling_page_return_handler_blob; }
+   static SafepointBlob* polling_page_safepoint_handler_blob()  { return _polling_page_safepoint_handler_blob; }
+@@ -529,6 +544,9 @@ class SharedRuntime: AllStatic {
+   static address resolve_static_call_C     (JavaThread* current);
+   static address resolve_virtual_call_C    (JavaThread* current);
+   static address resolve_opt_virtual_call_C(JavaThread* current);
++  static address resolve_static_call_larval_args_C       (JavaThread* current);
++  static address resolve_virtual_call_larval_args_C      (JavaThread* current);
++  static address resolve_opt_virtual_call_larval_args_C  (JavaThread* current);
+ 
+   static void load_inline_type_fields_in_regs(JavaThread* current, oopDesc* res);
+   static void store_inline_type_fields_to_buf(JavaThread* current, intptr_t res);

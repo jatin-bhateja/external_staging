@@ -1,0 +1,83 @@
+warning: found a return instruction in the input assembly sequence.
+note: program counter updates are ignored.
+Iterations:        100
+Instructions:      2000
+Total Cycles:      1538
+Total uOps:        3300
+
+Dispatch Width:    6
+uOps Per Cycle:    2.15
+IPC:               1.30
+Block RThroughput: 5.5
+
+
+Instruction Info:
+[1]: #uOps
+[2]: Latency
+[3]: RThroughput
+[4]: MayLoad
+[5]: MayStore
+[6]: HasSideEffects (U)
+
+[1]    [2]    [3]    [4]    [5]    [6]    Instructions:
+ 3      2     1.00           *            pushq	%rbp
+ 1      1     0.25                        movq	%rsp, %rbp
+ 1      1     0.25                        andq	$-64, %rsp
+ 1      1     0.25                        subq	$192, %rsp
+ 1      1     0.50                        leaq	80(%rbp), %rax
+ 1      1     0.50                        leaq	16(%rbp), %rcx
+ 2      8     0.50    *                   vmovdqa64	(%rcx), %zmm0
+ 2      8     0.50    *                   vmovdqa64	(%rax), %zmm1
+ 1      1     0.33                        vmovdqa64	%zmm1, %zmm2
+ 1      1     0.33                        vmovdqa64	%zmm2, %zmm1
+ 2      1     1.00           *            vmovdqa64	%zmm0, (%rsp)
+ 2      1     1.00           *            vmovdqa64	%zmm1, 64(%rsp)
+ 2      8     0.50    *                   vmovdqa64	64(%rsp), %zmm0
+ 2      8     0.50    *                   vpbroadcastd	.LCPI0_0(%rip), %zmm1
+ 1      1     0.33                        vpaddd	%zmm1, %zmm0, %zmm0
+ 2      1     1.00           *            vmovdqa64	%zmm0, (%rsp)
+ 2      8     0.50    *                   vmovdqa64	(%rsp), %zmm0
+ 1      1     0.25                        movq	%rbp, %rsp
+ 2      6     0.50    *                   popq	%rbp
+ 3      7     1.00                  U     retq
+
+
+Resources:
+[0]   - SKXDivider
+[1]   - SKXFPDivider
+[2]   - SKXPort0
+[3]   - SKXPort1
+[4]   - SKXPort2
+[5]   - SKXPort3
+[6]   - SKXPort4
+[7]   - SKXPort5
+[8]   - SKXPort6
+[9]   - SKXPort7
+
+
+Resource pressure per iteration:
+[0]    [1]    [2]    [3]    [4]    [5]    [6]    [7]    [8]    [9]    
+ -      -     4.66   4.66   4.00   4.02   4.00   4.67   4.01   2.98   
+
+Resource pressure by instruction:
+[0]    [1]    [2]    [3]    [4]    [5]    [6]    [7]    [8]    [9]    Instructions:
+ -      -     0.32   0.32   0.02    -     1.00    -     0.36   0.98   pushq	%rbp
+ -      -     0.33   0.01    -      -      -     0.34   0.32    -     movq	%rsp, %rbp
+ -      -     0.01   0.34    -      -      -     0.33   0.32    -     andq	$-64, %rsp
+ -      -     0.34   0.33    -      -      -     0.32   0.01    -     subq	$192, %rsp
+ -      -      -     0.32    -      -      -     0.68    -      -     leaq	80(%rbp), %rax
+ -      -      -     0.68    -      -      -     0.32    -      -     leaq	16(%rbp), %rcx
+ -      -     0.68   0.32   0.66   0.34    -      -      -      -     vmovdqa64	(%rcx), %zmm0
+ -      -     0.65    -     0.34   0.66    -     0.35    -      -     vmovdqa64	(%rax), %zmm1
+ -      -     0.31   0.35    -      -      -     0.34    -      -     vmovdqa64	%zmm1, %zmm2
+ -      -     0.35   0.33    -      -      -     0.32    -      -     vmovdqa64	%zmm2, %zmm1
+ -      -      -      -      -      -     1.00    -      -     1.00   vmovdqa64	%zmm0, (%rsp)
+ -      -      -      -      -      -     1.00    -      -     1.00   vmovdqa64	%zmm1, 64(%rsp)
+ -      -     0.32   0.35   0.01   0.99    -     0.33    -      -     vmovdqa64	64(%rsp), %zmm0
+ -      -     0.35   0.33   1.00    -      -     0.32    -      -     vpbroadcastd	.LCPI0_0(%rip), %zmm1
+ -      -     0.33   0.33    -      -      -     0.34    -      -     vpaddd	%zmm1, %zmm0, %zmm0
+ -      -      -      -     0.96   0.04   1.00    -      -      -     vmovdqa64	%zmm0, (%rsp)
+ -      -     0.34   0.33   0.98   0.02    -     0.33    -      -     vmovdqa64	(%rsp), %zmm0
+ -      -      -      -      -      -      -      -     1.00    -     movq	%rbp, %rsp
+ -      -      -      -     0.02   0.98    -      -     1.00    -     popq	%rbp
+ -      -     0.33   0.32   0.01   0.99    -     0.35   1.00    -     retq

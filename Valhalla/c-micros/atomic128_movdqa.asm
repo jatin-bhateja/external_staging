@@ -1,0 +1,15 @@
+vmovd  %xmm0,%r10d
+vmovd  %xmm1,%r11d
+movslq %r11d,%r11
+shl    $0x20,%r11
+or     %r10,%r11
+mov    %r11,%rbx
+vmovd  %xmm2,%r10d
+vmovd  %xmm3,%r11d
+movslq %r11d,%r11
+shl    $0x20,%r11
+or     %r10,%r11
+mov    %r11,%rcx
+vpinsrq $0x0,%rbx,%xmm0,%xmm0
+vpinsrq $0x1,%rcx,%xmm0,%xmm0
+movdqa %xmm0,(%rsi)

@@ -1,0 +1,23 @@
+avx512 at maxvector less than 64 will take fallback route in java
+
+      } else if (vlen_enc == Assembler::AVX_256bit) {
+        // Case to handle MaxVectorSize=32 on AVX512 target.
+        if (j > 3) {
+          vextractf128_high(xtmp3, dst);
+          vpermq(xtmp3, xtmp3, xtmp2, j & 3, vlen_enc);
+          vinserti32x4(dst, dst, xtmp3, 1);
+        } else if (i > 0) {
+          vpermq(dst, dst, xtmp2, j, vlen_enc);
+        }
+      } else if (vlen_enc == Assembler::AVX_128bit) {
+        // Case to handle MaxVectorSize=16 on AVX512 target.
+        if (j > 7) {
+          vextractf128_high(xtmp3, dst);
+          vpermd(xtmp3, xtmp3, xtmp2, j & 7, vlen_enc);
+          vinserti32x4(dst, dst, xtmp3, 1);
+        } else if (i > 0) {
+          vpermd(dst, dst, xtmp2, j, vlen_enc);
+        }
+      }
+    }
+

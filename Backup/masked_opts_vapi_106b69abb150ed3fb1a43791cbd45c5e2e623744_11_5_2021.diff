@@ -1,0 +1,3815 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 58dca67a76c..f0e9cd73d5f 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -2415,6 +2415,13 @@ void Assembler::movddup(XMMRegister dst, XMMRegister src) {
+   emit_int16(0x12, 0xC0 | encode);
+ }
+ 
++void Assembler::kmovbl(KRegister dst, KRegister src) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0x90, (0xC0 | encode));
++}
++
+ void Assembler::kmovbl(KRegister dst, Register src) {
+   assert(VM_Version::supports_avx512dq(), "");
+   InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
+@@ -2528,6 +2535,90 @@ void Assembler::knotwl(KRegister dst, KRegister src) {
+   emit_int16(0x44, (0xC0 | encode));
+ }
+ 
++void Assembler::korbl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x45, (0xC0 | encode));
++}
++
++void Assembler::korwl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x45, (0xC0 | encode));
++}
++
++void Assembler::kordl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x45, (0xC0 | encode));
++}
++
++void Assembler::korql(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x45, (0xC0 | encode));
++}
++
++void Assembler::kxorbl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x47, (0xC0 | encode));
++}
++
++void Assembler::kxorwl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x47, (0xC0 | encode));
++}
++
++void Assembler::kxordl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x47, (0xC0 | encode));
++}
++
++void Assembler::kxorql(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x47, (0xC0 | encode));
++}
++
++void Assembler::kandbl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x41, (0xC0 | encode));
++}
++
++void Assembler::kandwl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x41, (0xC0 | encode));
++}
++
++void Assembler::kanddl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x41, (0xC0 | encode));
++}
++
++void Assembler::kandql(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x41, (0xC0 | encode));
++}
++
+ // This instruction produces ZF or CF flags
+ void Assembler::kortestbl(KRegister src1, KRegister src2) {
+   assert(VM_Version::supports_avx512dq(), "");
+@@ -2568,6 +2659,27 @@ void Assembler::ktestql(KRegister src1, KRegister src2) {
+   emit_int16((unsigned char)0x99, (0xC0 | encode));
+ }
+ 
++void Assembler::ktestdl(KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_128bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(src1->encoding(), 0, src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0x99, (0xC0 | encode));
++}
++
++void Assembler::ktestwl(KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(src1->encoding(), 0, src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0x99, (0xC0 | encode));
++}
++
++void Assembler::ktestbl(KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(src1->encoding(), 0, src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0x99, (0xC0 | encode));
++}
++
+ void Assembler::ktestq(KRegister src1, KRegister src2) {
+   assert(VM_Version::supports_avx512bw(), "");
+   InstructionAttr attributes(AVX_128bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
+@@ -2582,6 +2694,29 @@ void Assembler::ktestd(KRegister src1, KRegister src2) {
+   emit_int16((unsigned char)0x99, (0xC0 | encode));
+ }
+ 
++void Assembler::kxnorbl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x46, (0xC0 | encode));
++}
++
++void Assembler::kshiftlbl(KRegister dst, KRegister src, int imm8) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), 0 , src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int16(0x32, (0xC0 | encode));
++  emit_int8(imm8);
++}
++
++void Assembler::kshiftrbl(KRegister dst, KRegister src, int imm8) {
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), 0 , src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int16(0x30, (0xC0 | encode));
++  emit_int8(imm8);
++}
++
+ void Assembler::movb(Address dst, int imm8) {
+   InstructionMark im(this);
+    prefix(dst);
+@@ -7719,6 +7854,1247 @@ void Assembler::vpbroadcastw(XMMRegister dst, Address src, int vector_len) {
+ 
+ // xmm/mem sourced byte/word/dword/qword replicate
+ 
++void Assembler::evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xFC, (0xC0 | encode));
++}
++
++void Assembler::evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xFC);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpaddw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xFD, (0xC0 | encode));
++}
++
++void Assembler::evpaddw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xFD);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpaddd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xFE, (0xC0 | encode));
++}
++
++void Assembler::evpaddd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xFE);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpaddq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD4, (0xC0 | encode));
++}
++
++void Assembler::evpaddq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xD4);
++  emit_operand(dst, src);
++}
++
++void Assembler::evaddps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x58, (0xC0 | encode));
++}
++
++void Assembler::evaddps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int8(0x58);
++  emit_operand(dst, src);
++}
++
++void Assembler::evaddpd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x58, (0xC0 | encode));
++}
++
++void Assembler::evaddpd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8(0x58);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpsubb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xF8, (0xC0 | encode));
++}
++
++void Assembler::evpsubb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xF8);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpsubw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xF9, (0xC0 | encode));
++}
++
++void Assembler::evpsubw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xF9);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpsubd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xFA, (0xC0 | encode));
++}
++
++void Assembler::evpsubd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xFA);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpsubq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xFB, (0xC0 | encode));
++}
++
++void Assembler::evpsubq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xFB);
++  emit_operand(dst, src);
++}
++
++void Assembler::evsubps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x5C, (0xC0 | encode));
++}
++
++void Assembler::evsubps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int8(0x5C);
++  emit_operand(dst, src);
++}
++
++void Assembler::evsubpd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x5C, (0xC0 | encode));
++}
++
++void Assembler::evsubpd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8(0x5C);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpmulw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD5, (0xC0 | encode));
++}
++
++void Assembler::evpmulw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8((unsigned char)0xD5);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpmuld(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x40, (0xC0 | encode));
++}
++
++void Assembler::evpmuld(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x40);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpmulq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x40, (0xC0 | encode));
++}
++
++void Assembler::evpmulq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512dq(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x40);
++  emit_operand(dst, src);
++}
++
++void Assembler::evmulps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x59, (0xC0 | encode));
++}
++
++void Assembler::evmulps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int8(0x59);
++  emit_operand(dst, src);
++}
++
++void Assembler::evmulpd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x59, (0xC0 | encode));
++}
++
++void Assembler::evmulpd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8(0x59);
++  emit_operand(dst, src);
++}
++
++void Assembler::evdivps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len,/* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x5E, (0xC0 | encode));
++}
++
++void Assembler::evdivps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int8(0x5E);
++  emit_operand(dst, src);
++}
++
++void Assembler::evdivpd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len,/* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x5E, (0xC0 | encode));
++}
++
++void Assembler::evdivpd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int8(0x5E);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpabsb(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x1C, (0xC0 | encode));
++}
++
++
++void Assembler::evpabsb(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, 0, dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x1C);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpabsw(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x1D, (0xC0 | encode));
++}
++
++
++void Assembler::evpabsw(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, 0, dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x1D);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpabsd(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x1E, (0xC0 | encode));
++}
++
++
++void Assembler::evpabsd(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, 0, dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x1E);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpabsq(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x1F, (0xC0 | encode));
++}
++
++
++void Assembler::evpabsq(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, 0, dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x1F);
++  emit_operand(dst, src);
++}
++
++void Assembler::evfmaps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16((unsigned char)0xA8, (0xC0 | encode));
++}
++
++void Assembler::evfmaps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8((unsigned char)0xA8);
++  emit_operand(dst, src);
++}
++
++void Assembler::evfmapd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16((unsigned char)0xA8, (0xC0 | encode));
++}
++
++void Assembler::evfmapd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  InstructionMark im(this);
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true,/* legacy_mode */ false, /* no_mask_reg */ false,/* uses_vl */ true);
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV,/* input_size_in_bits */ EVEX_32bit);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8((unsigned char)0xA8);
++  emit_operand(dst, src);
++}
++
++void Assembler::evppermb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512_vbmi(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* rex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16((unsigned char)0x8D, (0xC0 | encode));
++}
++
++void Assembler::evppermb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512_vbmi(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8((unsigned char)0x8D);
++  emit_operand(dst, src);
++}
++
++void Assembler::evppermw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16((unsigned char)0x8D, (0xC0 | encode));
++}
++
++void Assembler::evppermw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8((unsigned char)0x8D);
++  emit_operand(dst, src);
++}
++
++void Assembler::evppermd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex() && vector_len > AVX_128bit, "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x36, (0xC0 | encode));
++}
++
++void Assembler::evppermd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex() && vector_len > AVX_128bit, "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x36);
++  emit_operand(dst, src);
++}
++
++void Assembler::evppermq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex() && vector_len > AVX_128bit, "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x36, (0xC0 | encode));
++}
++
++void Assembler::evppermq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex() && vector_len > AVX_128bit, "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x36);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpsllw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xF1, (0xC0 | encode));
++}
++
++void Assembler::evpslld(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xF2, (0xC0 | encode));
++}
++
++void Assembler::evpsllq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xF3, (0xC0 | encode));
++}
++
++void Assembler::evpsrlw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD1, (0xC0 | encode));
++}
++
++void Assembler::evpsrld(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD2, (0xC0 | encode));
++}
++
++void Assembler::evpsrlq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xD3, (0xC0 | encode));
++}
++
++void Assembler::evpsraw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xE1, (0xC0 | encode));
++}
++
++void Assembler::evpsrad(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xE2, (0xC0 | encode));
++}
++
++void Assembler::evpsraq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xE2, (0xC0 | encode));
++}
++
++void Assembler::evpsllvw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x12, (0xC0 | encode));
++}
++
++void Assembler::evpsllvd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x47, (0xC0 | encode));
++}
++
++void Assembler::evpsllvq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x47, (0xC0 | encode));
++}
++
++void Assembler::evpsrlvw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x10, (0xC0 | encode));
++}
++
++void Assembler::evpsrlvd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x45, (0xC0 | encode));
++}
++
++void Assembler::evpsrlvq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x45, (0xC0 | encode));
++}
++
++void Assembler::evpsravw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x11, (0xC0 | encode));
++}
++
++void Assembler::evpsravd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x46, (0xC0 | encode));
++}
++
++void Assembler::evpsravq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x46, (0xC0 | encode));
++}
++
++void Assembler::evpminsb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x38, (0xC0 | encode));
++}
++
++void Assembler::evpminsb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x38);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpminsw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16((unsigned char)0xEA, (0xC0 | encode));
++}
++
++void Assembler::evpminsw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8((unsigned char)0xEA);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpminsd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x39, (0xC0 | encode));
++}
++
++void Assembler::evpminsd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x39);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpminsq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x39, (0xC0 | encode));
++}
++
++void Assembler::evpminsq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x39);
++  emit_operand(dst, src);
++}
++
++
++void Assembler::evpmaxsb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x3C, (0xC0 | encode));
++}
++
++void Assembler::evpmaxsb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x3C);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpmaxsw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16((unsigned char)0xEE, (0xC0 | encode));
++}
++
++void Assembler::evpmaxsw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8((unsigned char)0xEE);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpmaxsd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x3D, (0xC0 | encode));
++}
++
++void Assembler::evpmaxsd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x3D);
++  emit_operand(dst, src);
++}
++
++void Assembler::evpmaxsq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x3D, (0xC0 | encode));
++}
++
++void Assembler::evpmaxsq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_embedded_opmask_register_specifier(mask);
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int8(0x3D);
++  emit_operand(dst, src);
++}
++
+ // duplicate 4-byte integer data from src into programmed locations in dest : requires AVX512VL
+ void Assembler::vpbroadcastd(XMMRegister dst, XMMRegister src, int vector_len) {
+   assert(UseAVX >= 2, "");
+@@ -8629,7 +10005,7 @@ void Assembler::evex_prefix(bool vex_r, bool vex_b, bool vex_x, bool evex_r, boo
+   // EVEX.b is not currently used for broadcast of single element or data rounding modes
+   _attributes->set_evex_encoding(evex_encoding);
+ 
+-  // P0: byte 2, initialized to RXBR`00mm
++  // P0: byte 2, initialized to RXBR00mm
+   // instead of not'd
+   int byte2 = (vex_r ? VEX_R : 0) | (vex_x ? VEX_X : 0) | (vex_b ? VEX_B : 0) | (evex_r ? EVEX_Rb : 0);
+   byte2 = (~byte2) & 0xF0;
+@@ -8651,7 +10027,7 @@ void Assembler::evex_prefix(bool vex_r, bool vex_b, bool vex_x, bool evex_r, boo
+   int byte4 = (_attributes->is_no_reg_mask()) ?
+               0 :
+               _attributes->get_embedded_opmask_register_specifier();
+-  // EVEX.v` for extending EVEX.vvvv or VIDX
++  // EVEX.v for extending EVEX.vvvv or VIDX
+   byte4 |= (evex_v ? 0: EVEX_V);
+   // third EXEC.b for broadcast actions
+   byte4 |= (_attributes->is_extended_context() ? EVEX_Rb : 0);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 6fc8cf1395c..0ebc6fbb3c5 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1454,8 +1454,23 @@ private:
+ 
+   void movddup(XMMRegister dst, XMMRegister src);
+ 
++  void kandbl(KRegister dst, KRegister src1, KRegister src2);
++  void kandwl(KRegister dst, KRegister src1, KRegister src2);
++  void kanddl(KRegister dst, KRegister src1, KRegister src2);
++  void kandql(KRegister dst, KRegister src1, KRegister src2);
++
++  void korbl(KRegister dst, KRegister src1, KRegister src2);
++  void korwl(KRegister dst, KRegister src1, KRegister src2);
++  void kordl(KRegister dst, KRegister src1, KRegister src2);
++  void korql(KRegister dst, KRegister src1, KRegister src2);
++
++  void kxorbl(KRegister dst, KRegister src1, KRegister src2);
++  void kxorwl(KRegister dst, KRegister src1, KRegister src2);
++  void kxordl(KRegister dst, KRegister src1, KRegister src2);
++  void kxorql(KRegister dst, KRegister src1, KRegister src2);
+   void kmovbl(KRegister dst, Register src);
+   void kmovbl(Register dst, KRegister src);
++  void kmovbl(KRegister dst, KRegister src);
+   void kmovwl(KRegister dst, Register src);
+   void kmovwl(KRegister dst, Address src);
+   void kmovwl(Register dst, KRegister src);
+@@ -1476,10 +1491,16 @@ private:
+   void kortestdl(KRegister dst, KRegister src);
+   void kortestql(KRegister dst, KRegister src);
+ 
++  void kxnorbl(KRegister dst, KRegister src1, KRegister src2);
++  void kshiftlbl(KRegister dst, KRegister src, int imm8);
++  void kshiftrbl(KRegister dst, KRegister src, int imm8);
+   void ktestq(KRegister src1, KRegister src2);
+   void ktestd(KRegister src1, KRegister src2);
+ 
+   void ktestql(KRegister dst, KRegister src);
++  void ktestdl(KRegister dst, KRegister src);
++  void ktestwl(KRegister dst, KRegister src);
++  void ktestbl(KRegister dst, KRegister src);
+ 
+   void movdl(XMMRegister dst, Register src);
+   void movdl(Register dst, XMMRegister src);
+@@ -2190,6 +2211,100 @@ private:
+   void vpaddd(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+ 
++  // Leaf level assembler routines for masked operations.
++  void evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpaddw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpaddw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpaddd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpaddd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpaddq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpaddq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evaddps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evaddps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evaddpd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evaddpd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpsubb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsubb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpsubw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsubw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpsubd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsubd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpsubq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsubq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evsubps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evsubps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evsubpd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evsubpd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpmulw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmulw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpmuld(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmuld(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpmulq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmulq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evmulps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evmulps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evmulpd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evmulpd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evdivps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evdivps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evdivpd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evdivpd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpabsb(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len);
++  void evpabsb(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len);
++  void evpabsw(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len);
++  void evpabsw(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len);
++  void evpabsd(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len);
++  void evpabsd(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len);
++  void evpabsq(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len);
++  void evpabsq(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len);
++  void evfmaps(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evfmaps(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evfmapd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evfmapd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evppermb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evppermb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evppermw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evppermw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evppermd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evppermd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evppermq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evppermq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpsllw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpslld(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsllq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsrlw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsrld(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsrlq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsraw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsrad(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsraq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsllvw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsllvd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsllvq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsrlvw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsrlvd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsrlvq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsravw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsravd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpsravq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmaxsb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmaxsw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmaxsd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmaxsq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpminsb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpminsw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpminsd(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpminsq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmaxsb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpmaxsw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpmaxsd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpmaxsq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpminsb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpminsw(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpminsd(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpminsq(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++
+   // Sub packed integers
+   void psubb(XMMRegister dst, XMMRegister src);
+   void psubw(XMMRegister dst, XMMRegister src);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index f5fd0b1c569..c26edc72d84 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -3799,3 +3799,166 @@ void C2_MacroAssembler::arrays_equals(bool is_array_equ, Register ary1, Register
+     vpxor(vec2, vec2);
+   }
+ }
++
++void C2_MacroAssembler::evmasked_op(int ideal_opc, BasicType eType, KRegister mask, XMMRegister dst,
++                                    XMMRegister src1, XMMRegister src2, bool merge, int vlen_enc,
++                                    bool is_varshift) {
++  switch (ideal_opc) {
++    case Op_AddVB:
++      evpaddb(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVS:
++      evpaddw(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVI:
++      evpaddd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVL:
++      evpaddq(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVF:
++      evaddps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVD:
++      evaddpd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVB:
++      evpsubb(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVS:
++      evpsubw(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVI:
++      evpsubd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVL:
++      evpsubq(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVF:
++      evsubps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVD:
++      evsubpd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVS:
++      evpmulw(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVI:
++      evpmuld(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVL:
++      evpmulq(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVF:
++      evmulps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVD:
++      evmulpd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_DivVF:
++      evdivps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_DivVD:
++      evdivpd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AbsVB:
++      evpabsb(dst, mask, src2, merge, vlen_enc); break;
++    case Op_AbsVS:
++      evpabsw(dst, mask, src2, merge, vlen_enc); break;
++    case Op_AbsVI:
++      evpabsd(dst, mask, src2, merge, vlen_enc); break;
++    case Op_AbsVL:
++      evpabsq(dst, mask, src2, merge, vlen_enc); break;
++    case Op_FmaVF:
++      evfmaps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_FmaVD:
++      evfmapd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_VectorRearrange:
++      evpperm(eType, dst, mask, src2, src1, merge, vlen_enc); break;
++    case Op_LShiftVS:
++      evpsllw(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_LShiftVI:
++      evpslld(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_LShiftVL:
++      evpsllq(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_RShiftVS:
++      evpsraw(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_RShiftVI:
++      evpsrad(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_RShiftVL:
++      evpsraq(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_URShiftVS:
++      evpsrlw(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_URShiftVI:
++      evpsrld(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_URShiftVL:
++      evpsrlq(dst, mask, src1, src2, merge, vlen_enc, is_varshift); break;
++    case Op_MaxV:
++      evpmaxs(eType, dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MinV:
++      evpmins(eType, dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AbsVD:
++    case Op_MulVB:
++    default:
++      fatal("Unsupported masked operation"); break;
++  }
++}
++
++void C2_MacroAssembler::evmasked_op(int ideal_opc, BasicType eType, KRegister mask, XMMRegister dst,
++                                    XMMRegister src1, Address src2, bool merge, int vlen_enc) {
++  switch (ideal_opc) {
++    case Op_AddVB:
++      evpaddb(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVS:
++      evpaddw(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVI:
++      evpaddd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVL:
++      evpaddq(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVF:
++      evaddps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AddVD:
++      evaddpd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVB:
++      evpsubb(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVS:
++      evpsubw(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVI:
++      evpsubd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVL:
++      evpsubq(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVF:
++      evsubps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_SubVD:
++      evsubpd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVS:
++      evpmulw(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVI:
++      evpmuld(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVL:
++      evpmulq(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVF:
++      evmulps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MulVD:
++      evmulpd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_DivVF:
++      evdivps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_DivVD:
++      evdivpd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AbsVB:
++      evpabsb(dst, mask, src2, merge, vlen_enc); break;
++    case Op_AbsVS:
++      evpabsw(dst, mask, src2, merge, vlen_enc); break;
++    case Op_AbsVI:
++      evpabsd(dst, mask, src2, merge, vlen_enc); break;
++    case Op_AbsVL:
++      evpabsq(dst, mask, src2, merge, vlen_enc); break;
++    case Op_FmaVF:
++      evfmaps(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_FmaVD:
++      evfmapd(dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MaxV:
++      evpmaxs(eType, dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_MinV:
++      evpmins(eType, dst, mask, src1, src2, merge, vlen_enc); break;
++    case Op_AbsVD:
++    case Op_MulVB:
++    default:
++      fatal("Unsupported masked operation"); break;
++  }
++}
++
++void C2_MacroAssembler::masked_op(int ideal_opc, BasicType etype, KRegister dst,
++                                  KRegister src1, KRegister src2) {
++  switch(ideal_opc) {
++    case Op_AndV:
++      kand(etype, dst, src1, src2); break;
++    case Op_OrV:
++      kor(etype, dst, src1, src2); break;
++    case Op_XorV:
++      kxor(etype, dst, src1, src2); break;
++    default:
++      fatal("Unsupported masked operation"); break;
++  }
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 5f7735acfca..6965a73dca1 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -263,4 +263,15 @@ public:
+                      Register limit, Register result, Register chr,
+                      XMMRegister vec1, XMMRegister vec2, bool is_char, KRegister mask = knoreg);
+ 
++
++  void evmasked_op(int ideal_opc, BasicType eType, KRegister mask,
++                   XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                   bool merge, int vlen_enc, bool is_varshift = false);
++
++  void evmasked_op(int ideal_opc, BasicType eType, KRegister mask,
++                   XMMRegister dst, XMMRegister src1, Address src2,
++                   bool merge, int vlen_enc);
++
++  void masked_op(int ideal_opc, BasicType eType, KRegister dst,
++                 KRegister src1, KRegister src2);
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.cpp b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+index 2919c996899..9622d0a3622 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+@@ -8202,6 +8202,246 @@ void MacroAssembler::evmovdqu(BasicType type, KRegister kmask, Address dst, XMMR
+   }
+ }
+ 
++void MacroAssembler::kand(BasicType type, KRegister dst, KRegister src1, KRegister src2) {
++  switch(type) {
++    case T_BOOLEAN:
++    case T_BYTE:
++       kandbl(dst, src1, src2);
++       break;
++    case T_CHAR:
++    case T_SHORT:
++       kandwl(dst, src1, src2);
++       break;
++    case T_INT:
++    case T_FLOAT:
++       kanddl(dst, src1, src2);
++       break;
++    case T_LONG:
++    case T_DOUBLE:
++       kandql(dst, src1, src2);
++       break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type));
++      break;
++  }
++}
++
++void MacroAssembler::kor(BasicType type, KRegister dst, KRegister src1, KRegister src2) {
++  switch(type) {
++    case T_BOOLEAN:
++    case T_BYTE:
++       korbl(dst, src1, src2);
++       break;
++    case T_CHAR:
++    case T_SHORT:
++       korwl(dst, src1, src2);
++       break;
++    case T_INT:
++    case T_FLOAT:
++       kordl(dst, src1, src2);
++       break;
++    case T_LONG:
++    case T_DOUBLE:
++       korql(dst, src1, src2);
++       break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type));
++      break;
++  }
++}
++
++void MacroAssembler::kxor(BasicType type, KRegister dst, KRegister src1, KRegister src2) {
++  switch(type) {
++    case T_BOOLEAN:
++    case T_BYTE:
++       kxorbl(dst, src1, src2);
++       break;
++    case T_CHAR:
++    case T_SHORT:
++       kxorwl(dst, src1, src2);
++       break;
++    case T_INT:
++    case T_FLOAT:
++       kxordl(dst, src1, src2);
++       break;
++    case T_LONG:
++    case T_DOUBLE:
++       kxorql(dst, src1, src2);
++       break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type));
++      break;
++  }
++}
++
++void MacroAssembler::evpperm(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  switch(type) {
++    case T_BOOLEAN:
++    case T_BYTE:
++      evppermb(dst, mask, nds, src, merge, vector_len); break;
++    case T_CHAR:
++    case T_SHORT:
++      evppermw(dst, mask, nds, src, merge, vector_len); break;
++    case T_INT:
++    case T_FLOAT:
++      evppermd(dst, mask, nds, src, merge, vector_len); break;
++    case T_LONG:
++    case T_DOUBLE:
++      evppermq(dst, mask, nds, src, merge, vector_len); break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type)); break;
++  }
++}
++
++void MacroAssembler::evpmins(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  switch(type) {
++    case T_BYTE:
++      evpminsb(dst, mask, nds, src, merge, vector_len); break;
++    case T_SHORT:
++      evpminsw(dst, mask, nds, src, merge, vector_len); break;
++    case T_INT:
++      evpminsd(dst, mask, nds, src, merge, vector_len); break;
++    case T_LONG:
++      evpminsq(dst, mask, nds, src, merge, vector_len); break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type)); break;
++  }
++}
++
++void MacroAssembler::evpmaxs(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  switch(type) {
++    case T_BYTE:
++      evpmaxsb(dst, mask, nds, src, merge, vector_len); break;
++    case T_SHORT:
++      evpmaxsw(dst, mask, nds, src, merge, vector_len); break;
++    case T_INT:
++      evpmaxsd(dst, mask, nds, src, merge, vector_len); break;
++    case T_LONG:
++      evpmaxsq(dst, mask, nds, src, merge, vector_len); break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type)); break;
++  }
++}
++
++void MacroAssembler::evpmins(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  switch(type) {
++    case T_BYTE:
++      evpminsb(dst, mask, nds, src, merge, vector_len); break;
++    case T_SHORT:
++      evpminsw(dst, mask, nds, src, merge, vector_len); break;
++    case T_INT:
++      evpminsd(dst, mask, nds, src, merge, vector_len); break;
++    case T_LONG:
++      evpminsq(dst, mask, nds, src, merge, vector_len); break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type)); break;
++  }
++}
++
++void MacroAssembler::evpmaxs(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
++  switch(type) {
++    case T_BYTE:
++      evpmaxsb(dst, mask, nds, src, merge, vector_len); break;
++    case T_SHORT:
++      evpmaxsw(dst, mask, nds, src, merge, vector_len); break;
++    case T_INT:
++      evpmaxsd(dst, mask, nds, src, merge, vector_len); break;
++    case T_LONG:
++      evpmaxsq(dst, mask, nds, src, merge, vector_len); break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type)); break;
++  }
++}
++
++void MacroAssembler::evpperm(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len) {
++  switch(type) {
++    case T_BOOLEAN:
++    case T_BYTE:
++      evppermb(dst, mask, nds, src, merge, vector_len); break;
++    case T_CHAR:
++    case T_SHORT:
++      evppermw(dst, mask, nds, src, merge, vector_len); break;
++    case T_INT:
++    case T_FLOAT:
++      evppermd(dst, mask, nds, src, merge, vector_len); break;
++    case T_LONG:
++    case T_DOUBLE:
++      evppermq(dst, mask, nds, src, merge, vector_len); break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type)); break;
++  }
++}
++
++void MacroAssembler::anytrue(Register dst, uint masklen, KRegister src, KRegister kscratch) {
++  if (masklen < 8) {
++    kxnorbl(kscratch, kscratch, kscratch);
++    kshiftrbl(kscratch, kscratch, 8-masklen);
++    kandbl(kscratch, kscratch, src);
++    ktestbl(kscratch, kscratch);
++    setb(Assembler::notZero, dst);
++    movzbl(dst, dst);
++  } else {
++    ktest(masklen, src, src);
++    setb(Assembler::notZero, dst);
++    movzbl(dst, dst);
++  }
++}
++
++void MacroAssembler::alltrue(Register dst, uint masklen, KRegister src, KRegister kscratch) {
++  if (masklen < 8) {
++    kxnorbl(kscratch, kscratch, kscratch);
++    kshiftlbl(kscratch, kscratch, masklen);
++    korbl(kscratch, kscratch, src);
++    kortestbl(kscratch, kscratch);
++    setb(Assembler::carrySet, dst);
++    movzbl(dst, dst);
++  } else {
++    kortest(masklen, src, src);
++    setb(Assembler::carrySet, dst);
++    movzbl(dst, dst);
++  }
++}
++
++void MacroAssembler::kortest(uint masklen, KRegister src1, KRegister src2) {
++  switch(masklen) {
++    case 8:
++       kortestbl(src1, src2);
++       break;
++    case 16:
++       kortestwl(src1, src2);
++       break;
++    case 32:
++       kortestdl(src1, src2);
++       break;
++    case 64:
++       kortestql(src1, src2);
++       break;
++    default:
++      fatal("Unexpected mask length %d", masklen);
++      break;
++  }
++}
++
++
++void MacroAssembler::ktest(uint masklen, KRegister src1, KRegister src2) {
++  switch(masklen)  {
++    case 8:
++       ktestbl(src1, src2);
++       break;
++    case 16:
++       ktestwl(src1, src2);
++       break;
++    case 32:
++       ktestdl(src1, src2);
++       break;
++    case 64:
++       ktestql(src1, src2);
++       break;
++    default:
++      fatal("Unexpected mask length %d", masklen);
++      break;
++  }
++}
+ #if COMPILER2_OR_JVMCI
+ 
+ 
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.hpp b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+index 33c48eeeb93..3c371951325 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+@@ -1326,6 +1326,75 @@ public:
+   void evpsraq(XMMRegister dst, XMMRegister nds, XMMRegister shift, int vector_len);
+   void evpsraq(XMMRegister dst, XMMRegister nds, int shift, int vector_len);
+ 
++  void evpsllw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpsllw(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsllvw(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++  void evpslld(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpslld(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsllvd(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++  void evpsllq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpsllq(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsllvq(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++  void evpsrlw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpsrlw(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsrlvw(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++  void evpsrld(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpsrld(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsrlvd(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++  void evpsrlq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpsrlq(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsrlvq(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++  void evpsraw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpsraw(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsravw(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++  void evpsrad(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpsrad(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsravd(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++  void evpsraq(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len, bool is_varshift) {
++    if (!is_varshift) {
++      Assembler::evpsraq(dst, mask, nds, src, merge, vector_len);
++    } else {
++      Assembler::evpsravq(dst, mask, nds, src, merge, vector_len);
++    }
++  }
++
++  void evpmins(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmaxs(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpmins(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++  void evpmaxs(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++
+   void vpsrlw(XMMRegister dst, XMMRegister nds, XMMRegister shift, int vector_len);
+   void vpsrlw(XMMRegister dst, XMMRegister nds, int shift, int vector_len);
+ 
+@@ -1615,7 +1684,19 @@ public:
+     Assembler::evpclmulqdq(dst, nds, src, 0x11, vector_len);
+   }
+ 
+-  // Data
++  // AVX-512 mask operations.
++  void kand(BasicType etype, KRegister dst, KRegister src1, KRegister src2);
++  void kor(BasicType type, KRegister dst, KRegister src1, KRegister src2);
++  void kxor(BasicType type, KRegister dst, KRegister src1, KRegister src2);
++  void kortest(uint masklen, KRegister src1, KRegister src2);
++  void ktest(uint masklen, KRegister src1, KRegister src2);
++
++  void evpperm(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
++  void evpperm(BasicType type, XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
++
++
++  void alltrue(Register dst, uint masklen, KRegister src, KRegister kscratch);
++  void anytrue(Register dst, uint masklen, KRegister src, KRegister kscratch);
+ 
+   void cmov32( Condition cc, Register dst, Address  src);
+   void cmov32( Condition cc, Register dst, Register src);
+diff --git a/src/hotspot/cpu/x86/stubGenerator_x86_32.cpp b/src/hotspot/cpu/x86/stubGenerator_x86_32.cpp
+index b4a513c1479..af4ff07de25 100644
+--- a/src/hotspot/cpu/x86/stubGenerator_x86_32.cpp
++++ b/src/hotspot/cpu/x86/stubGenerator_x86_32.cpp
+@@ -4003,6 +4003,7 @@ class StubGenerator: public StubCodeGenerator {
+     StubRoutines::x86::_vector_byte_perm_mask = generate_vector_byte_perm_mask("vector_byte_perm_mask");
+     StubRoutines::x86::_vector_long_sign_mask = generate_vector_mask_long_double("vector_long_sign_mask", 0x80000000, 0x00000000);
+     StubRoutines::x86::_vector_all_bits_set = generate_vector_mask("vector_all_bits_set", 0xFFFFFFFF);
++    StubRoutines::x86::_vector_masked_cmp_bits = generate_vector_mask("vector_masked_cmp_bits", 0x01010101);
+     StubRoutines::x86::_vector_iota_indices = generate_iota_indices("iota_indices");
+ 
+     // support for verify_oop (must happen after universe_init)
+diff --git a/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp b/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
+index 0b3f69775f4..e8b2d66421d 100644
+--- a/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
++++ b/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
+@@ -6835,6 +6835,7 @@ address generate_avx_ghash_processBlocks() {
+     StubRoutines::x86::_vector_double_sign_mask = generate_vector_mask("vector_double_sign_mask", 0x7FFFFFFFFFFFFFFF);
+     StubRoutines::x86::_vector_double_sign_flip = generate_vector_mask("vector_double_sign_flip", 0x8000000000000000);
+     StubRoutines::x86::_vector_all_bits_set = generate_vector_mask("vector_all_bits_set", 0xFFFFFFFFFFFFFFFF);
++    StubRoutines::x86::_vector_masked_cmp_bits = generate_vector_mask("vector_masked_cmp_bits", 0x0101010101010101);
+     StubRoutines::x86::_vector_short_to_byte_mask = generate_vector_mask("vector_short_to_byte_mask", 0x00ff00ff00ff00ff);
+     StubRoutines::x86::_vector_byte_perm_mask = generate_vector_byte_perm_mask("vector_byte_perm_mask");
+     StubRoutines::x86::_vector_int_to_byte_mask = generate_vector_mask("vector_int_to_byte_mask", 0x000000ff000000ff);
+diff --git a/src/hotspot/cpu/x86/stubRoutines_x86.cpp b/src/hotspot/cpu/x86/stubRoutines_x86.cpp
+index 6aa4c4eb256..a0567a7c7cf 100644
+--- a/src/hotspot/cpu/x86/stubRoutines_x86.cpp
++++ b/src/hotspot/cpu/x86/stubRoutines_x86.cpp
+@@ -48,6 +48,7 @@ address StubRoutines::x86::_vector_int_to_byte_mask = NULL;
+ address StubRoutines::x86::_vector_int_to_short_mask = NULL;
+ address StubRoutines::x86::_vector_all_bits_set = NULL;
+ address StubRoutines::x86::_vector_byte_shuffle_mask = NULL;
++address StubRoutines::x86::_vector_masked_cmp_bits = NULL;
+ address StubRoutines::x86::_vector_short_shuffle_mask = NULL;
+ address StubRoutines::x86::_vector_int_shuffle_mask = NULL;
+ address StubRoutines::x86::_vector_long_shuffle_mask = NULL;
+diff --git a/src/hotspot/cpu/x86/stubRoutines_x86.hpp b/src/hotspot/cpu/x86/stubRoutines_x86.hpp
+index 22e40b2c181..4bcabaa8187 100644
+--- a/src/hotspot/cpu/x86/stubRoutines_x86.hpp
++++ b/src/hotspot/cpu/x86/stubRoutines_x86.hpp
+@@ -143,6 +143,7 @@ class x86 {
+   static address _vector_double_sign_flip;
+   static address _vector_long_sign_mask;
+   static address _vector_all_bits_set;
++  static address _vector_masked_cmp_bits;
+   static address _vector_byte_perm_mask;
+   static address _vector_int_to_byte_mask;
+   static address _vector_int_to_short_mask;
+@@ -257,6 +258,9 @@ class x86 {
+     return _vector_all_bits_set;
+   }
+ 
++  static address vector_masked_cmp_bits() {
++    return _vector_masked_cmp_bits;
++  }
+   static address vector_byte_perm_mask() {
+     return _vector_byte_perm_mask;
+   }
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 9539146511c..38f8d81458d 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1407,6 +1407,7 @@ Assembler::Width widthForType(BasicType bt) {
+   static address vector_byte_perm_mask() { return StubRoutines::x86::vector_byte_perm_mask(); }
+   static address vector_long_sign_mask() { return StubRoutines::x86::vector_long_sign_mask(); }
+   static address vector_all_bits_set() { return StubRoutines::x86::vector_all_bits_set(); }
++  static address vector_masked_cmp_bits() { return StubRoutines::x86::vector_masked_cmp_bits(); }
+   static address vector_int_to_short_mask() { return StubRoutines::x86::vector_int_to_short_mask(); }
+   static address vector_byte_shufflemask() { return StubRoutines::x86::vector_byte_shuffle_mask(); }
+   static address vector_short_shufflemask() { return StubRoutines::x86::vector_short_shuffle_mask(); }
+@@ -1577,7 +1578,7 @@ const bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
+-
++    case Op_VectorMaskOper:
+     case Op_VectorMaskGen:
+     case Op_LoadVectorMasked:
+     case Op_StoreVectorMasked:
+@@ -3630,7 +3631,7 @@ instruct storeV(memory mem, vec src) %{
+ // Gather INT, LONG, FLOAT, DOUBLE
+ 
+ instruct gather(legVec dst, memory mem, legVec idx, rRegP tmp, legVec mask) %{
+-  predicate(vector_length_in_bytes(n) <= 32);
++  predicate(!VM_Version::supports_avx512vl() && vector_length_in_bytes(n) <= 32);
+   match(Set dst (LoadVectorGather mem idx));
+   effect(TEMP dst, TEMP tmp, TEMP mask);
+   format %{ "load_vector_gather $dst, $mem, $idx\t! using $tmp and $mask as TEMP" %}
+@@ -3655,7 +3656,7 @@ instruct gather(legVec dst, memory mem, legVec idx, rRegP tmp, legVec mask) %{
+ %}
+ 
+ instruct evgather(vec dst, memory mem, vec idx, rRegP tmp, kReg ktmp) %{
+-  predicate(vector_length_in_bytes(n) == 64);
++  predicate(VM_Version::supports_avx512vl() || vector_length_in_bytes(n) == 64);
+   match(Set dst (LoadVectorGather mem idx));
+   effect(TEMP dst, TEMP tmp, TEMP ktmp);
+   format %{ "load_vector_gather $dst, $mem, $idx\t! using $tmp and k2 as TEMP" %}
+@@ -6857,7 +6858,8 @@ instruct vcastDtoF_reg(vec dst, vec src) %{
+ // --------------------------------- VectorMaskCmp --------------------------------------
+ 
+ instruct vcmpFD(legVec dst, legVec src1, legVec src2, immI8 cond) %{
+-  predicate(vector_length_in_bytes(n->in(1)->in(1)) >=  8 && // src1
++  predicate(!VM_Version::supports_avx512vl() &&
++            vector_length_in_bytes(n->in(1)->in(1)) >=  8 && // src1
+             vector_length_in_bytes(n->in(1)->in(1)) <= 32 && // src1
+             is_floating_point_type(vector_element_basic_type(n->in(1)->in(1)))); // src1 T_FLOAT, T_DOUBLE
+   match(Set dst (VectorMaskCmp (Binary src1 src2) cond));
+@@ -6874,29 +6876,29 @@ instruct vcmpFD(legVec dst, legVec src1, legVec src2, immI8 cond) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct evcmpFD(vec dst, vec src1, vec src2, immI8 cond, rRegP scratch, kReg ktmp) %{
+-  predicate(vector_length_in_bytes(n->in(1)->in(1)) == 64 && // src1
++instruct evcmpFD(kReg dst, vec src1, vec src2, immI8 cond, rRegP scratch) %{
++  predicate(VM_Version::supports_avx512vl() &&
+             is_floating_point_type(vector_element_basic_type(n->in(1)->in(1)))); // src1 T_FLOAT, T_DOUBLE
+   match(Set dst (VectorMaskCmp (Binary src1 src2) cond));
+-  effect(TEMP scratch, TEMP ktmp);
++  effect(TEMP scratch);
+   format %{ "vector_compare $dst,$src1,$src2,$cond\t! using $scratch as TEMP" %}
+   ins_encode %{
+-    int vlen_enc = Assembler::AVX_512bit;
++    assert(bottom_type()->isa_vectmask(), "TypeVectMask expected");
++    int vlen_enc = vector_length_encoding(this, $src1);
+     Assembler::ComparisonPredicateFP cmp = booltest_pred_to_comparison_pred_fp($cond$$constant);
+     KRegister mask = k0; // The comparison itself is not being masked.
+     if (vector_element_basic_type(this, $src1) == T_FLOAT) {
+-      __ evcmpps($ktmp$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, vlen_enc);
+-      __ evmovdqul($dst$$XMMRegister, $ktmp$$KRegister, ExternalAddress(vector_all_bits_set()), false, vlen_enc, $scratch$$Register);
++      __ evcmpps($dst$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, vlen_enc);
+     } else {
+-      __ evcmppd($ktmp$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, vlen_enc);
+-      __ evmovdquq($dst$$XMMRegister, $ktmp$$KRegister, ExternalAddress(vector_all_bits_set()), false, vlen_enc, $scratch$$Register);
++      __ evcmppd($dst$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, vlen_enc);
+     }
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
++
+ instruct vcmp(legVec dst, legVec src1, legVec src2, immI8 cond, rRegP scratch) %{
+-  predicate((UseAVX <= 2 || !VM_Version::supports_avx512vl()) && 
++  predicate(!VM_Version::supports_avx512vl() && 
+             !is_unsigned_booltest_pred(n->in(2)->get_int()) &&
+             vector_length_in_bytes(n->in(1)->in(1)) >=  8 && // src1
+             vector_length_in_bytes(n->in(1)->in(1)) <= 32 && // src1
+@@ -6950,16 +6952,17 @@ instruct vcmpu32(legVec dst, legVec src1, legVec src2, immI8 cond, legVec vtmp1,
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct evcmp(vec dst, vec src1, vec src2, immI8 cond, rRegP scratch, kReg ktmp) %{
++instruct evcmp(kReg dst, vec src1, vec src2, immI8 cond, rRegP scratch) %{
+   predicate(UseAVX > 2 && 
+             (VM_Version::supports_avx512vl() ||  
+              vector_length_in_bytes(n->in(1)->in(1)) == 64) && // src1
+              is_integral_type(vector_element_basic_type(n->in(1)->in(1)))); // src1
+   match(Set dst (VectorMaskCmp (Binary src1 src2) cond));
+-  effect(TEMP scratch, TEMP ktmp);
++  effect(TEMP scratch);
+   format %{ "vector_compare $dst,$src1,$src2,$cond\t! using $scratch as TEMP" %}
+   ins_encode %{
+     assert(UseAVX > 2, "required");
++    assert(bottom_type()->isa_vectmask(), "TypeVectMask expected");
+ 
+     int vlen_enc = vector_length_encoding(this, $src1);
+     Assembler::ComparisonPredicate cmp = booltest_pred_to_comparison_pred($cond$$constant);
+@@ -6970,24 +6973,19 @@ instruct evcmp(vec dst, vec src1, vec src2, immI8 cond, rRegP scratch, kReg ktmp
+ 
+     switch (src1_elem_bt) {
+       case T_BYTE: {
+-        __ evpcmpb($ktmp$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, !is_unsigned, vlen_enc);
+-        __ evmovdqub($dst$$XMMRegister, $ktmp$$KRegister, ExternalAddress(vector_all_bits_set()), merge, vlen_enc, $scratch$$Register);
++        __ evpcmpb($dst$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, !is_unsigned, vlen_enc);
+         break;
+       }
+       case T_SHORT: {
+-        __ evpcmpw($ktmp$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, !is_unsigned, vlen_enc);
+-        __ evmovdquw($dst$$XMMRegister, $ktmp$$KRegister, ExternalAddress(vector_all_bits_set()), merge, vlen_enc, $scratch$$Register);
++        __ evpcmpw($dst$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, !is_unsigned, vlen_enc);
+         break;
+       }
+       case T_INT: {
+-        __ evpcmpd($ktmp$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, !is_unsigned, vlen_enc);
+-        __ evmovdqul($dst$$XMMRegister, $ktmp$$KRegister, ExternalAddress(vector_all_bits_set()), merge, vlen_enc, $scratch$$Register);
+-
++        __ evpcmpd($dst$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, !is_unsigned, vlen_enc);
+         break;
+       }
+       case T_LONG: {
+-        __ evpcmpq($ktmp$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, !is_unsigned, vlen_enc);
+-        __ evmovdquq($dst$$XMMRegister, $ktmp$$KRegister, ExternalAddress(vector_all_bits_set()), merge, vlen_enc, $scratch$$Register);
++        __ evpcmpq($dst$$KRegister, mask, $src1$$XMMRegister, $src2$$XMMRegister, cmp, !is_unsigned, vlen_enc);
+         break;
+       }
+       default: assert(false, "%s", type2name(src1_elem_bt));
+@@ -7140,6 +7138,7 @@ instruct blendvp(vec dst, vec src, vec mask, rxmm0 tmp) %{
+ 
+ instruct vblendvpI(legVec dst, legVec src1, legVec src2, legVec mask) %{
+   predicate(UseAVX > 0 &&
++            NULL == n->in(2)->bottom_type()->isa_vectmask() &&
+             vector_length_in_bytes(n) <= 32 &&
+             is_integral_type(vector_element_basic_type(n)));
+   match(Set dst (VectorBlend (Binary src1 src2) mask));
+@@ -7153,6 +7152,7 @@ instruct vblendvpI(legVec dst, legVec src1, legVec src2, legVec mask) %{
+ 
+ instruct vblendvpFD(legVec dst, legVec src1, legVec src2, legVec mask) %{
+   predicate(UseAVX > 0 &&
++            NULL == n->in(2)->bottom_type()->isa_vectmask() &&
+             vector_length_in_bytes(n) <= 32 &&
+             !is_integral_type(vector_element_basic_type(n)));
+   match(Set dst (VectorBlend (Binary src1 src2) mask));
+@@ -7164,16 +7164,15 @@ instruct vblendvpFD(legVec dst, legVec src1, legVec src2, legVec mask) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct evblendvp64(vec dst, vec src1, vec src2, vec mask, rRegP scratch, kReg ktmp) %{
+-  predicate(vector_length_in_bytes(n) == 64);
++instruct evblendvp64(vec dst, vec src1, vec src2, kReg mask, rRegP scratch) %{
++  predicate(UseAVX > 2 && VM_Version::supports_avx512vl());
+   match(Set dst (VectorBlend (Binary src1 src2) mask));
+   format %{ "vector_blend  $dst,$src1,$src2,$mask\t! using $scratch and k2 as TEMP" %}
+-  effect(TEMP scratch, TEMP ktmp);
++  effect(TEMP scratch);
+   ins_encode %{
+-     int vlen_enc = Assembler::AVX_512bit;
+-     BasicType elem_bt = vector_element_basic_type(this);
+-    __ evpcmp(elem_bt, $ktmp$$KRegister, k0, $mask$$XMMRegister, ExternalAddress(vector_all_bits_set()), Assembler::eq, vlen_enc, $scratch$$Register);
+-    __ evpblend(elem_bt, $dst$$XMMRegister, $ktmp$$KRegister, $src1$$XMMRegister, $src2$$XMMRegister, true, vlen_enc);
++    int vlen_enc = vector_length_encoding(this);
++    BasicType elem_bt = vector_element_basic_type(this);
++    __ evpblend(elem_bt, $dst$$XMMRegister, $mask$$KRegister, $src1$$XMMRegister, $src2$$XMMRegister, true, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -7299,7 +7298,8 @@ instruct vabsnegD(vec dst, vec src, rRegI scratch) %{
+ 
+ #ifdef _LP64
+ instruct vptest_alltrue_lt16(rRegI dst, legVec src1, legVec src2, legVec vtmp1, legVec vtmp2, rFlagsReg cr) %{
+-  predicate(vector_length_in_bytes(n->in(1)) >= 4 &&
++  predicate(!VM_Version::supports_avx512vlbwdq() &&
++            vector_length_in_bytes(n->in(1)) >= 4 &&
+             vector_length_in_bytes(n->in(1)) < 16 &&
+             static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::overflow);
+   match(Set dst (VectorTest src1 src2 ));
+@@ -7315,7 +7315,7 @@ instruct vptest_alltrue_lt16(rRegI dst, legVec src1, legVec src2, legVec vtmp1,
+ %}
+ 
+ instruct vptest_alltrue(rRegI dst, legVec src1, legVec src2, rFlagsReg cr) %{
+-  predicate(vector_length_in_bytes(n->in(1)) >= 16 &&
++  predicate(UseAVX <= 2 && vector_length_in_bytes(n->in(1)) >= 16 &&
+             vector_length_in_bytes(n->in(1)) <  64 &&
+             static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::overflow);
+   match(Set dst (VectorTest src1 src2 ));
+@@ -7330,23 +7330,45 @@ instruct vptest_alltrue(rRegI dst, legVec src1, legVec src2, rFlagsReg cr) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vptest_alltrue_evex(rRegI dst, legVec src1, legVec src2, kReg ktmp, rFlagsReg cr) %{
+-  predicate(vector_length_in_bytes(n->in(1)) == 64 &&
+-            static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::overflow);
+-  match(Set dst (VectorTest src1 src2 ));
+-  effect(KILL cr, TEMP ktmp);
+-  format %{ "vector_test $dst,$src1, $src2\t! using $cr as TEMP" %}
++instruct vptest_alltrue_lt8_evex(rRegI dst, kReg src1, kReg src2, kReg kscratch, rFlagsReg cr) %{
++  predicate(VM_Version::supports_avx512vlbw() &&
++            static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::overflow &&
++            n->in(1)->bottom_type()->isa_vectmask() &&
++            n->in(1)->bottom_type()->is_vectmask()->length() < 8);
++  match(Set dst (VectorTest src1 src2));
++  effect(KILL cr, TEMP kscratch);
++  format %{ "vector_test_any_true_evex $dst,$src1,$src2\t! using $cr as TEMP" %}
+   ins_encode %{
+-    int vlen = vector_length_in_bytes(this, $src1);
+-    __ vectortest(BoolTest::overflow, vlen, $src1$$XMMRegister, $src2$$XMMRegister, xnoreg, xnoreg, $ktmp$$KRegister);
+-    __ setb(Assembler::carrySet, $dst$$Register);
+-    __ movzbl($dst$$Register, $dst$$Register);
++    const MachNode* mask1 = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    const MachNode* mask2 = static_cast<const MachNode*>(this->in(this->operand_index($src2)));
++    assert(0 == Type::cmp(mask1->bottom_type(),mask2->bottom_type()), "");
++    uint  masklen = mask1->bottom_type()->is_vectmask()->length();
++    __ alltrue($dst$$Register, masklen, $src1$$KRegister, $kscratch$$KRegister);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct vptest_alltrue_evex(rRegI dst, kReg src1, kReg src2, rFlagsReg cr) %{
++  predicate(VM_Version::supports_avx512vlbwdq() &&
++            static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::overflow &&
++            n->in(1)->bottom_type()->isa_vectmask() &&
++            n->in(1)->bottom_type()->is_vectmask()->length() >= 8);
++  match(Set dst (VectorTest src1 src2));
++  effect(KILL cr);
++  format %{ "vector_test_any_true_evex $dst,$src1,$src2\t! using $cr as TEMP" %}
++  ins_encode %{
++    const MachNode* mask1 = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    const MachNode* mask2 = static_cast<const MachNode*>(this->in(this->operand_index($src2)));
++    assert(0 == Type::cmp(mask1->bottom_type(),mask2->bottom_type()), "");
++    uint  masklen = mask1->bottom_type()->is_vectmask()->length();
++    __ alltrue($dst$$Register, masklen, $src1$$KRegister, knoreg);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++
+ instruct vptest_anytrue_lt16(rRegI dst, legVec src1, legVec src2, legVec vtmp, rFlagsReg cr) %{
+-  predicate(vector_length_in_bytes(n->in(1)) >= 4 &&
++  predicate(UseAVX <= 2 && vector_length_in_bytes(n->in(1)) >= 4 &&
+             vector_length_in_bytes(n->in(1)) < 16 &&
+             static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::ne);
+   match(Set dst (VectorTest src1 src2 ));
+@@ -7362,7 +7384,7 @@ instruct vptest_anytrue_lt16(rRegI dst, legVec src1, legVec src2, legVec vtmp, r
+ %}
+ 
+ instruct vptest_anytrue(rRegI dst, legVec src1, legVec src2, rFlagsReg cr) %{
+-  predicate(vector_length_in_bytes(n->in(1)) >= 16 &&
++  predicate(UseAVX <= 2 && vector_length_in_bytes(n->in(1)) >= 16 &&
+             vector_length_in_bytes(n->in(1)) < 64  &&
+             static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::ne);
+   match(Set dst (VectorTest src1 src2 ));
+@@ -7377,23 +7399,43 @@ instruct vptest_anytrue(rRegI dst, legVec src1, legVec src2, rFlagsReg cr) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vptest_anytrue_evex(rRegI dst, legVec src1, legVec src2, kReg ktmp, rFlagsReg cr) %{
+-  predicate(vector_length_in_bytes(n->in(1)) == 64 &&
+-            static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::ne);
+-  match(Set dst (VectorTest src1 src2 ));
+-  effect(KILL cr, TEMP ktmp);
+-  format %{ "vector_test_any_true $dst,$src1,$src2\t! using $cr as TEMP" %}
++instruct vptest_anytrue_lt8_evex(rRegI dst, kReg src1, kReg src2, kReg kscratch, rFlagsReg cr) %{
++  predicate(VM_Version::supports_avx512vlbwdq() &&
++            static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::ne &&
++            n->in(1)->bottom_type()->is_vectmask()->length() < 8);
++  match(Set dst (VectorTest src1 src2));
++  effect(KILL cr, TEMP kscratch);
++  format %{ "vector_test_any_true_evex $dst,$src1,$src2\t! using $cr as TEMP" %}
+   ins_encode %{
+-    int vlen = vector_length_in_bytes(this, $src1);
+-    __ vectortest(BoolTest::ne, vlen, $src1$$XMMRegister, $src2$$XMMRegister, xnoreg, xnoreg, $ktmp$$KRegister);
+-    __ setb(Assembler::notZero, $dst$$Register);
+-    __ movzbl($dst$$Register, $dst$$Register);
++    const MachNode* mask1 = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    const MachNode* mask2 = static_cast<const MachNode*>(this->in(this->operand_index($src2)));
++    assert(0 == Type::cmp(mask1->bottom_type(),mask2->bottom_type()), "");
++    uint  masklen = mask1->bottom_type()->is_vectmask()->length();
++    __ anytrue($dst$$Register, masklen, $src1$$KRegister, $kscratch$$KRegister);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vptest_anytrue_evex(rRegI dst, kReg src1, kReg src2, rFlagsReg cr) %{
++  predicate(VM_Version::supports_avx512vlbwdq() &&
++            static_cast<const VectorTestNode*>(n)->get_predicate() == BoolTest::ne &&
++            n->in(1)->bottom_type()->is_vectmask()->length() >= 8);
++  match(Set dst (VectorTest src1 src2));
++  effect(KILL cr);
++  format %{ "vector_test_any_true_evex $dst,$src1,$src2\t! using $cr as TEMP" %}
++  ins_encode %{
++    const MachNode* mask1 = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    const MachNode* mask2 = static_cast<const MachNode*>(this->in(this->operand_index($src2)));
++    assert(0 == Type::cmp(mask1->bottom_type(),mask2->bottom_type()), "");
++    uint  masklen = mask1->bottom_type()->is_vectmask()->length();
++    __ anytrue($dst$$Register, masklen, $src1$$KRegister, knoreg);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+ instruct cmpvptest_anytrue_lt16(rFlagsReg cr, legVec src1, legVec src2, immI_0 zero, legVec vtmp) %{
+-  predicate(vector_length_in_bytes(n->in(1)->in(1)) >= 4 &&
++  predicate(!VM_Version::supports_avx512vlbwdq() &&
++            vector_length_in_bytes(n->in(1)->in(1)) >= 4 &&
+             vector_length_in_bytes(n->in(1)->in(1)) < 16 &&
+             static_cast<const VectorTestNode*>(n->in(1))->get_predicate() == BoolTest::ne);
+   match(Set cr (CmpI (VectorTest src1 src2) zero));
+@@ -7407,7 +7449,8 @@ instruct cmpvptest_anytrue_lt16(rFlagsReg cr, legVec src1, legVec src2, immI_0 z
+ %}
+ 
+ instruct cmpvptest_anytrue(rFlagsReg cr, legVec src1, legVec src2, immI_0 zero) %{
+-  predicate(vector_length_in_bytes(n->in(1)->in(1)) >= 16 &&
++  predicate(!VM_Version::supports_avx512vlbwdq() &&
++            vector_length_in_bytes(n->in(1)->in(1)) >= 16 &&
+             vector_length_in_bytes(n->in(1)->in(1)) <  64 &&
+             static_cast<const VectorTestNode*>(n->in(1))->get_predicate() == BoolTest::ne);
+   match(Set cr (CmpI (VectorTest src1 src2) zero));
+@@ -7419,15 +7462,38 @@ instruct cmpvptest_anytrue(rFlagsReg cr, legVec src1, legVec src2, immI_0 zero)
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct cmpvptest_anytrue_evex(rFlagsReg cr, legVec src1, legVec src2, immI_0 zero, kReg ktmp) %{
+-  predicate(vector_length_in_bytes(n->in(1)->in(1)) == 64 &&
+-            static_cast<const VectorTestNode*>(n->in(1))->get_predicate() == BoolTest::ne);
++instruct cmpvptest_anytrue_lt8_evex(rFlagsReg cr, kReg src1, kReg src2, immI_0 zero, kReg ktmp) %{
++  predicate(VM_Version::supports_avx512vlbwdq() &&
++            static_cast<const VectorTestNode*>(n->in(1))->get_predicate() == BoolTest::ne &&
++            n->in(1)->in(1)->bottom_type()->is_vectmask()->length() < 8);
+   match(Set cr (CmpI (VectorTest src1 src2) zero));
+   effect(TEMP ktmp);
+   format %{ "cmp_vector_test_any_true $src1,$src2\t!" %}
+   ins_encode %{
+-    int vlen = vector_length_in_bytes(this, $src1);
+-    __ vectortest(BoolTest::ne, vlen, $src1$$XMMRegister, $src2$$XMMRegister, xnoreg, xnoreg, $ktmp$$KRegister);
++    const MachNode* mask1 = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    const MachNode* mask2 = static_cast<const MachNode*>(this->in(this->operand_index($src2)));
++    assert(0 == Type::cmp(mask1->bottom_type(),mask2->bottom_type()), "");
++    uint  masklen = mask1->bottom_type()->is_vectmask()->length();
++    __ kxnorbl($ktmp$$KRegister, $ktmp$$KRegister, $ktmp$$KRegister);
++    __ kshiftrbl($ktmp$$KRegister, $ktmp$$KRegister, 8-masklen);
++    __ kandbl($ktmp$$KRegister, $ktmp$$KRegister, $src1$$KRegister);
++    __ ktestbl($ktmp$$KRegister, $ktmp$$KRegister);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct cmpvptest_anytrue_evex(rFlagsReg cr, kReg src1, kReg src2, immI_0 zero) %{
++  predicate(VM_Version::supports_avx512vlbwdq() &&
++            static_cast<const VectorTestNode*>(n->in(1))->get_predicate() == BoolTest::ne &&
++            n->in(1)->in(1)->bottom_type()->is_vectmask()->length() >= 8);
++  match(Set cr (CmpI (VectorTest src1 src2) zero));
++  format %{ "cmp_vector_test_any_true $src1,$src2\t!" %}
++  ins_encode %{
++    const MachNode* mask1 = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    const MachNode* mask2 = static_cast<const MachNode*>(this->in(this->operand_index($src2)));
++    uint  masklen = mask1->bottom_type()->is_vectmask()->length();
++    assert(0 == Type::cmp(mask1->bottom_type(),mask2->bottom_type()), "");
++    __ ktest(masklen, $src1$$KRegister, $src1$$KRegister);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -7436,6 +7502,7 @@ instruct cmpvptest_anytrue_evex(rFlagsReg cr, legVec src1, legVec src2, immI_0 z
+ //------------------------------------- LoadMask --------------------------------------------
+ 
+ instruct loadMask(vec dst, vec src) %{
++  predicate(UseAVX <= 2);
+   match(Set dst (VectorLoadMask src));
+   effect(TEMP dst);
+   format %{ "vector_loadmask_byte $dst,$src\n\t" %}
+@@ -7448,10 +7515,31 @@ instruct loadMask(vec dst, vec src) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct loadMask_evex(kReg dst, vec src, rRegP scratch, kReg kscratch) %{
++  predicate(UseAVX > 2);
++  match(Set dst (VectorLoadMask src));
++  effect(TEMP_DEF dst, TEMP scratch, TEMP kscratch);
++  format %{ "vector_loadmask_byte $dst,$src\n\t" %}
++  ins_encode %{
++    assert(in(1)->bottom_type()->isa_vect(),"");
++    int vlen_in_bytes = vector_length_in_bytes(in(1));
++    int vlen_enc = vector_length_encoding(vlen_in_bytes);
++    __ evpcmp(T_BYTE, $dst$$KRegister, k0, $src$$XMMRegister, ExternalAddress(vector_masked_cmp_bits()), Assembler::eq, vlen_enc, $scratch$$Register);
++    int masklen = in(1)->bottom_type()->is_vect()->length();
++    if (masklen < 8) {
++      __ kxnorbl($kscratch$$KRegister, $kscratch$$KRegister, $kscratch$$KRegister);
++      __ kshiftrbl($kscratch$$KRegister, $kscratch$$KRegister, 8-masklen);
++      __ kandbl($dst$$KRegister, $kscratch$$KRegister, $dst$$KRegister);
++    }
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ //------------------------------------- StoreMask --------------------------------------------
+ 
+ instruct storeMask1B(vec dst, vec src, immI_1 size) %{
+-  predicate(vector_length(n) < 64 || VM_Version::supports_avx512vlbw());
++  predicate((vector_length(n) < 64 || VM_Version::supports_avx512vlbw()) &&
++            NULL == n->in(1)->bottom_type()->isa_vectmask());
+   match(Set dst (VectorStoreMask src size));
+   format %{ "vector_store_mask $dst,$src\t!" %}
+   ins_encode %{
+@@ -7468,7 +7556,8 @@ instruct storeMask1B(vec dst, vec src, immI_1 size) %{
+ %}
+ 
+ instruct storeMask2B(vec dst, vec src, immI_2 size) %{
+-  predicate(vector_length(n) <= 8);
++  predicate(vector_length(n) <= 8 &&
++            NULL == n->in(1)->bottom_type()->isa_vectmask());
+   match(Set dst (VectorStoreMask src size));
+   format %{ "vector_store_mask $dst,$src\n\t" %}
+   ins_encode %{
+@@ -7493,19 +7582,6 @@ instruct vstoreMask2B(vec dst, vec src, immI_2 size) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vstoreMask2B_evex(vec dst, vec src, immI_2 size) %{
+-  predicate(VM_Version::supports_avx512bw());
+-  match(Set dst (VectorStoreMask src size));
+-  format %{ "vector_store_mask $dst,$src\t!" %}
+-  ins_encode %{
+-    int src_vlen_enc = vector_length_encoding(this, $src);
+-    int dst_vlen_enc = vector_length_encoding(this);
+-    __ evpmovwb($dst$$XMMRegister, $src$$XMMRegister, src_vlen_enc);
+-    __ vpabsb($dst$$XMMRegister, $dst$$XMMRegister, dst_vlen_enc);
+-  %}
+-  ins_pipe( pipe_slow );
+-%}
+-
+ instruct storeMask4B(vec dst, vec src, immI_4 size) %{
+   predicate (vector_length(n) <= 4 && UseAVX <= 2);
+   match(Set dst (VectorStoreMask src size));
+@@ -7534,22 +7610,6 @@ instruct vstoreMask4B(vec dst, vec src, immI_4 size) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vstoreMask4B_evex(vec dst, vec src, immI_4 size) %{
+-  predicate(UseAVX > 2);
+-  match(Set dst (VectorStoreMask src size));
+-  format %{ "vector_store_mask $dst,$src\t!" %}
+-  ins_encode %{
+-    int src_vlen_enc = vector_length_encoding(this, $src);
+-    int dst_vlen_enc = vector_length_encoding(this);
+-    if (!VM_Version::supports_avx512vl()) {
+-      src_vlen_enc = Assembler::AVX_512bit;
+-    }
+-    __ evpmovdb($dst$$XMMRegister, $src$$XMMRegister, src_vlen_enc);
+-    __ vpabsb($dst$$XMMRegister, $dst$$XMMRegister, dst_vlen_enc);
+-  %}
+-  ins_pipe( pipe_slow );
+-%}
+-
+ instruct storeMask8B(vec dst, vec src, immI_8 size) %{
+   predicate(vector_length(n) == 2 && UseAVX <= 2);
+   match(Set dst (VectorStoreMask src size));
+@@ -7581,10 +7641,39 @@ instruct storeMask8B_avx(vec dst, vec src, immI_8 size, legVec vtmp) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vstoreMask8B_evex(vec dst, vec src, immI_8 size) %{
++instruct vstoreMask2B_evex(vec dst, vec src, immI_2 size) %{
++  predicate(VM_Version::supports_avx512bw());
++  match(Set dst (VectorStoreMask src size));
++  format %{ "vector_store_mask $dst,$src\t!" %}
++  ins_encode %{
++    int src_vlen_enc = vector_length_encoding(this, $src);
++    int dst_vlen_enc = vector_length_encoding(this);
++    __ evpmovwb($dst$$XMMRegister, $src$$XMMRegister, src_vlen_enc);
++    __ vpabsb($dst$$XMMRegister, $dst$$XMMRegister, dst_vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vstoreMask4B_evex(vec dst, vec src, immI_4 size) %{
+   predicate(UseAVX > 2);
+   match(Set dst (VectorStoreMask src size));
+   format %{ "vector_store_mask $dst,$src\t!" %}
++  ins_encode %{
++    int src_vlen_enc = vector_length_encoding(this, $src);
++    int dst_vlen_enc = vector_length_encoding(this);
++    if (!VM_Version::supports_avx512vl()) {
++      src_vlen_enc = Assembler::AVX_512bit;
++    }
++    __ evpmovdb($dst$$XMMRegister, $src$$XMMRegister, src_vlen_enc);
++    __ vpabsb($dst$$XMMRegister, $dst$$XMMRegister, dst_vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vstoreMask8B_evex(vec dst, vec src, immI_8 size) %{
++  predicate(UseAVX > 2 && NULL == n->in(1)->bottom_type()->isa_vectmask());
++  match(Set dst (VectorStoreMask src size));
++  format %{ "vector_store_mask $dst,$src\t!" %}
+   ins_encode %{
+     int src_vlen_enc = vector_length_encoding(this, $src);
+     int dst_vlen_enc = vector_length_encoding(this);
+@@ -7597,6 +7686,21 @@ instruct vstoreMask8B_evex(vec dst, vec src, immI_8 size) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct vstoreMask_evex(vec dst, kReg mask, immI size, rRegP scratch) %{
++  predicate(UseAVX > 2 && n->in(1)->bottom_type()->isa_vectmask());
++  match(Set dst (VectorStoreMask mask size));
++  effect(TEMP scratch);
++  format %{ "vector_store_mask $dst,$mask\t!" %}
++  ins_encode %{
++    int dst_vlen_enc = vector_length_encoding(this);
++    __ vpxor($dst$$XMMRegister, $dst$$XMMRegister, $dst$$XMMRegister, dst_vlen_enc);
++    __ evmovdqub($dst$$XMMRegister, $mask$$KRegister, ExternalAddress(vector_masked_cmp_bits()),
++                  true, dst_vlen_enc, $scratch$$Register);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++
+ instruct vmaskcast(vec dst) %{
+   predicate((vector_length(n) == vector_length(n->in(1))) &&
+             (vector_length_in_bytes(n) == vector_length_in_bytes(n->in(1))));
+@@ -8136,3 +8240,106 @@ instruct vmasked_store64(memory mem, vec src, kReg mask) %{
+   ins_pipe( pipe_slow );
+ %}
+ #endif // _LP64
++
++// ---------------------------------- Vector Masked Operations ------------------------------------
++instruct vmasked_unaryop(vec dst, kReg mask) %{
++  predicate(UseAVX > 2);
++  match(Set dst (VectorMaskOper dst mask));
++  format %{ "vector_masked_unary_op $dst, $mask \t! vector masked operation" %}
++  ins_encode %{
++    int vlen_enc       =  vector_length_encoding(this);
++    BasicType elmType  =  this->bottom_type()->is_vect()->element_basic_type();
++    uint32_t masked_op = reinterpret_cast<jlong>(this->meta_data());
++    __ evmasked_op(masked_op, elmType, $mask$$KRegister, $dst$$XMMRegister,
++                   $dst$$XMMRegister, $dst$$XMMRegister, true, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vmasked_binop(vec dst, vec src2, kReg mask) %{
++  predicate(UseAVX > 2);
++  match(Set dst (VectorMaskOper (Binary dst src2) mask));
++  format %{ "vector_masked_binary_op $dst, $dst, $src2, $mask \t! vector masked operation" %}
++  ins_encode %{
++    int vlen_enc       =  vector_length_encoding(this);
++    BasicType elmType  =  this->bottom_type()->is_vect()->element_basic_type();
++    uint32_t masked_op = reinterpret_cast<jlong>(this->meta_data());
++    bool is_varshift   = !VectorNode::is_vshift_cnt_opcode(in(2)->isa_Mach()->ideal_Opcode());
++    __ evmasked_op(masked_op, elmType, $mask$$KRegister, $dst$$XMMRegister,
++                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, is_varshift);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vmasked_binop_mem(vec dst, memory src2, kReg mask) %{
++  predicate(UseAVX > 2);
++  match(Set dst (VectorMaskOper (Binary dst src2) mask));
++  format %{ "vector_masked_binary_op_mem $dst, $dst, $src2, $mask \t! vector masked operation" %}
++  ins_encode %{
++    int vlen_enc       = vector_length_encoding(this);
++    BasicType elmType  =  this->bottom_type()->is_vect()->element_basic_type();
++    uint32_t masked_op = reinterpret_cast<jlong>(this->meta_data());
++    __ evmasked_op(masked_op, elmType, $mask$$KRegister, $dst$$XMMRegister,
++                   $dst$$XMMRegister, $src2$$Address, true, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vmasked_ternop(vec dst, vec src2, vec src3, kReg mask) %{
++  predicate(UseAVX > 2);
++  match(Set dst (VectorMaskOper (Binary dst src2) (Binary src3 mask)));
++  format %{ "vector_masked_ternary_op $dst, $src2, $src3, $mask \t! vector masked operation" %}
++  ins_encode %{
++    int vlen_enc       = vector_length_encoding(this);
++    BasicType elmType  = this->bottom_type()->is_vect()->element_basic_type();
++    uint32_t masked_op = reinterpret_cast<jlong>(this->meta_data());
++    __ evmasked_op(masked_op, elmType, $mask$$KRegister, $dst$$XMMRegister,
++                   $src2$$XMMRegister, $src3$$XMMRegister, true, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vmasked_ternop_mem(vec dst, vec src2, memory src3, kReg mask) %{
++  predicate(UseAVX > 2);
++  match(Set dst (VectorMaskOper (Binary dst src2) (Binary src3 mask)));
++  format %{ "vector_masked_ternary_op_mem $dst, $src2, $src3, $mask \t! vector masked operation" %}
++  ins_encode %{
++    int vlen_enc       = vector_length_encoding(this);
++    BasicType elmType  = this->bottom_type()->is_vect()->element_basic_type();
++    uint32_t masked_op = reinterpret_cast<jlong>(this->meta_data());
++    __ evmasked_op(masked_op, elmType, $mask$$KRegister, $dst$$XMMRegister,
++                   $src2$$XMMRegister, $src3$$Address, true, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++
++instruct mask_opers_evex(kReg dst, kReg src1, kReg src2, kReg kscratch) %{
++  predicate(VM_Version::supports_avx512vlbwdq());
++  match(Set dst (AndV src1 src2));
++  match(Set dst (OrV src1 src2));
++  match(Set dst (XorV src1 src2));
++  effect(TEMP kscratch);
++  format %{ "mask_opers_evex $dst, $src1, $src2\t!" %}
++  ins_encode %{
++    const MachNode* mask1 = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    const MachNode* mask2 = static_cast<const MachNode*>(this->in(this->operand_index($src2)));
++    assert(0 == Type::cmp(mask1->bottom_type(),mask2->bottom_type()), "");
++    auto btype = [=](int len) -> BasicType {
++      if (len <= 8) {
++        return T_BYTE;
++      } else if (len == 16) {
++        return T_SHORT;
++      } else if (len == 32) {
++        return T_INT;
++      } else if (len == 64) {
++        return T_LONG;
++      }
++      assert(false, "Unhandled length");
++      return T_ILLEGAL;
++    };
++    uint  masklen = mask1->bottom_type()->is_vectmask()->length();
++    __ masked_op(this->ideal_Opcode(), btype(masklen), $dst$$KRegister, $src1$$KRegister, $src2$$KRegister);
++  %}
++  ins_pipe( pipe_slow );
++%}
+diff --git a/src/hotspot/cpu/x86/x86_32.ad b/src/hotspot/cpu/x86/x86_32.ad
+index 7e278db7a69..2ec1756232d 100644
+--- a/src/hotspot/cpu/x86/x86_32.ad
++++ b/src/hotspot/cpu/x86/x86_32.ad
+@@ -12088,7 +12088,6 @@ instruct stringL_indexof_char(eDIRegP str1, eDXRegI cnt1, eAXRegI ch,
+   ins_pipe( pipe_slow );
+ %}
+ 
+-
+ // fast array equals
+ instruct array_equalsB(eDIRegP ary1, eSIRegP ary2, eAXRegI result,
+                        regD tmp1, regD tmp2, eCXRegI tmp3, eBXRegI tmp4, eFlagsReg cr)
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index f70f0be7feb..f49c0871d01 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -761,6 +761,12 @@ int InstructForm::memory_operand(FormDict &globals) const {
+   return NO_MEMORY_OPERAND;
+ }
+ 
++bool InstructForm::captures_meta_data(FormDict &globals) const {
++  if (_matrule && _matrule->_rChild &&
++      (!strcmp(_matrule->_rChild->_opType,"VectorMaskOper"))) return true;
++  return  false;
++}
++
+ // This instruction captures the machine-independent bottom_type
+ // Expected use is for pointer vs oop determination for LoadP
+ bool InstructForm::captures_bottom_type(FormDict &globals) const {
+@@ -1170,6 +1176,9 @@ const char *InstructForm::mach_base_class(FormDict &globals)  const {
+   else if (is_mach_constant()) {
+     return "MachConstantNode";
+   }
++  else if (captures_meta_data(globals)) {
++    return "MachMetaDataNode";
++  }
+   else if (captures_bottom_type(globals)) {
+     return "MachTypeNode";
+   } else {
+@@ -4198,8 +4207,8 @@ bool MatchRule::is_vector() const {
+     "VectorRearrange","VectorLoadShuffle", "VectorLoadConst",
+     "VectorCastB2X", "VectorCastS2X", "VectorCastI2X",
+     "VectorCastL2X", "VectorCastF2X", "VectorCastD2X",
+-    "VectorMaskWrapper", "VectorMaskCmp", "VectorReinterpret","LoadVectorMasked","StoreVectorMasked",
+-    "FmaVD", "FmaVF","PopCountVI",
++    "VectorMaskWrapper", "VectorMaskCmp", "VectorReinterpret", "VectorMaskOper",
++    "LoadVectorMasked","StoreVectorMasked","FmaVD", "FmaVF","PopCountVI",
+     // Next are not supported currently.
+     "PackB","PackS","PackI","PackL","PackF","PackD","Pack2L","Pack2D",
+     "ExtractB","ExtractUB","ExtractC","ExtractS","ExtractI","ExtractL","ExtractF","ExtractD",
+diff --git a/src/hotspot/share/adlc/formssel.hpp b/src/hotspot/share/adlc/formssel.hpp
+index 010117db01b..ff7288bc7d2 100644
+--- a/src/hotspot/share/adlc/formssel.hpp
++++ b/src/hotspot/share/adlc/formssel.hpp
+@@ -202,6 +202,8 @@ public:
+   // Expected use is for pointer vs oop determination for LoadP
+   virtual bool        captures_bottom_type(FormDict& globals) const;
+ 
++  virtual bool        captures_meta_data(FormDict &globals) const;
++
+   virtual const char *cost();      // Access ins_cost attribute
+   virtual uint        num_opnds(); // Count of num_opnds for MachNode class
+                                    // Counts USE_DEF opnds twice.  See also num_unique_opnds().
+diff --git a/src/hotspot/share/adlc/output_c.cpp b/src/hotspot/share/adlc/output_c.cpp
+index 87be46c9c73..be2ebcb73ec 100644
+--- a/src/hotspot/share/adlc/output_c.cpp
++++ b/src/hotspot/share/adlc/output_c.cpp
+@@ -1315,6 +1315,10 @@ static void generate_peepreplace( FILE *fp, FormDict &globals, PeepMatch *pmatch
+           // Get bottom type from instruction whose result we are replacing
+           fprintf(fp, "        root->_bottom_type = inst%d->bottom_type();\n", inst_num);
+         }
++        if( root_form->captures_meta_data(globals) ) {
++          // get meta data from instruction whose result we are replacing
++          fprintf(fp, "        root->_meta_data = inst%d->meta_data();\n", inst_num);
++        }
+         // Define result register and result operand
+         fprintf(fp, "        ra_->add_reference(root, inst%d);\n", inst_num);
+         fprintf(fp, "        ra_->set_oop (root, ra_->is_oop(inst%d));\n", inst_num);
+@@ -3929,6 +3933,9 @@ void ArchDesc::buildMachNode(FILE *fp_cpp, InstructForm *inst, const char *inden
+       fprintf(fp_cpp, "%s node->_bottom_type = _leaf->bottom_type();\n", indent);
+     }
+   }
++  if(inst->captures_meta_data(_globalNames)) {
++    fprintf(fp_cpp, "%s node->_meta_data = _leaf->meta_data();\n", indent);
++  }
+   if( inst->is_ideal_if() ) {
+     fprintf(fp_cpp, "%s node->_prob = _leaf->as_If()->_prob;\n", indent);
+     fprintf(fp_cpp, "%s node->_fcnt = _leaf->as_If()->_fcnt;\n", indent);
+diff --git a/src/hotspot/share/opto/cfgnode.cpp b/src/hotspot/share/opto/cfgnode.cpp
+index 33e26e2b8dc..e4f8e16e114 100644
+--- a/src/hotspot/share/opto/cfgnode.cpp
++++ b/src/hotspot/share/opto/cfgnode.cpp
+@@ -2411,9 +2411,15 @@ Node *PhiNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+     }
+ 
+     if (all_inputs_are_equiv_vboxes) {
++      // For targets which do not support predicated
++      // registers masks are propagated through vectors
++      // and are of same shape as the box vector type.
+       VectorBoxNode* vbox = static_cast<VectorBoxNode*>(in(1));
++      const TypeVect* vt = in(1)->bottom_type()->isa_vectmask() ?
++                           in(1)->bottom_type()->is_vectmask()  :
++                           vbox->vec_type();
+       PhiNode* new_vbox_phi = new PhiNode(r, vbox->box_type());
+-      PhiNode* new_vect_phi = new PhiNode(r, vbox->vec_type());
++      PhiNode* new_vect_phi = new PhiNode(r, vt);
+       for (uint i = 1; i < req(); ++i) {
+         VectorBoxNode* old_vbox = static_cast<VectorBoxNode*>(in(i));
+         new_vbox_phi->set_req(i, old_vbox->in(VectorBoxNode::Box));
+@@ -2422,6 +2428,26 @@ Node *PhiNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+       igvn->register_new_node_with_optimizer(new_vbox_phi, this);
+       igvn->register_new_node_with_optimizer(new_vect_phi, this);
+       progress = new VectorBoxNode(igvn->C, new_vbox_phi, new_vect_phi, vbox->box_type(), vbox->vec_type());
++    } else {
++      // Special case for targets which support predicated
++      // registers, a PhiNode with all its inputs as mask
++      // vector types should be replaced to have same type
++      // as its inputs.
++      bool all_inputs_are_equiv_mask_vectors = true;
++      for (unsigned i = 1; i < req() - 1 ; i++) {
++        if (in(i)->bottom_type()->isa_vectmask() == NULL ||
++            Type::cmp(in(i)->bottom_type(), in(i+1)->bottom_type()) != 0) {
++          all_inputs_are_equiv_mask_vectors = false;
++          break;
++        }
++      }
++      if (all_inputs_are_equiv_mask_vectors && bottom_type()->isa_vectmask() == NULL) {
++        Node* new_phi = new PhiNode(r, in(1)->bottom_type());
++        for (uint i = 1; i < req(); ++i) {
++          new_phi->set_req(i, in(i));
++        }
++        return new_phi;
++      }
+     }
+   }
+ 
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 89522b01bae..4438167fbf2 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -407,6 +407,7 @@ macro(MinV)
+ macro(MaxV)
+ macro(MinReductionV)
+ macro(MaxReductionV)
++macro(MaskOper)
+ macro(LoadVector)
+ macro(LoadVectorGather)
+ macro(StoreVector)
+@@ -447,6 +448,7 @@ macro(VectorBoxAllocate)
+ macro(VectorUnbox)
+ macro(VectorMaskWrapper)
+ macro(VectorMaskCmp)
++macro(VectorMaskOper)
+ macro(VectorMaskCast)
+ macro(VectorTest)
+ macro(VectorBlend)
+diff --git a/src/hotspot/share/opto/intrinsicnode.cpp b/src/hotspot/share/opto/intrinsicnode.cpp
+index e4accf4871f..36d94e8177e 100644
+--- a/src/hotspot/share/opto/intrinsicnode.cpp
++++ b/src/hotspot/share/opto/intrinsicnode.cpp
+@@ -112,3 +112,10 @@ SignumFNode* SignumFNode::make(PhaseGVN& gvn, Node* in) {
+   return new SignumFNode(in, gvn.makecon(TypeF::ZERO), gvn.makecon(TypeF::ONE));
+ }
+ 
++Node* MaskOperNode::make(PhaseGVN& gvn, Node* n1, uint opr) {
++  return new MaskOperNode(n1, gvn.C->top(), (OpKind)opr);
++}
++
++Node* MaskOperNode::make(PhaseGVN& gvn, Node* n1, Node* n2, uint opr) {
++  return new MaskOperNode(n1, n2, (OpKind)opr);
++}
+diff --git a/src/hotspot/share/opto/intrinsicnode.hpp b/src/hotspot/share/opto/intrinsicnode.hpp
+index 3d6e9a38d12..c4b6298d111 100644
+--- a/src/hotspot/share/opto/intrinsicnode.hpp
++++ b/src/hotspot/share/opto/intrinsicnode.hpp
+@@ -258,4 +258,97 @@ class SignumFNode : public Node {
+   virtual uint ideal_reg() const { return Op_RegF; }
+ };
+ 
++// Node corresponding to various operations of jdk.incubator.vector.VectorMask class.
++// Used during intrinsic creation of APIs defined in VectorMask.
++
++// TODO: Capture lane type and length, this will enable optimizing the shape of
++// VectorStoreMask node. TypeVect::VECTMASK represents a 64 bit boolean vector holding
++// entire opmask contents. VectorStoreMask dumps this value to a 64 byte ZMM which
++// has a frequency penalty associated with it. This can be avoided if all the mask bits
++// of opmask register were not used (only case where all the 64 bits are used is
++// 64 byte bytevector).
++class MaskOperNode : public Node {
++public:
++  enum OpKind {
++     MASK_FIRST_TRUE, MASK_LAST_TRUE, MASK_TRUE_COUNT, MASK_ANY_TRUE,
++     MASK_ALL_TRUE, MASK_NOT, MASK_OR, MASK_EQ, MASK_AND, MASK_ANDN
++  };
++
++  MaskOperNode(Node* n1, Node* n2, OpKind kind) : Node(0, n1, n2), _mask_opcode(kind) {}
++
++  virtual int Opcode() const;
++  virtual uint size_of() const { return sizeof(MaskOperNode); }
++  const int mask_Opcode() const { return _mask_opcode; }
++  void set_mask_Opcode(OpKind opkind) { _mask_opcode = opkind;}
++
++  uint num_operands() const {
++    switch(_mask_opcode) {
++      case MASK_FIRST_TRUE:
++      case MASK_LAST_TRUE:
++      case MASK_TRUE_COUNT:
++      case MASK_ALL_TRUE:
++      case MASK_ANY_TRUE:
++         return 1;
++      case MASK_EQ:
++      case MASK_NOT:
++      case MASK_OR:
++      case MASK_AND:
++      case MASK_ANDN:
++         return 2;
++      default:
++         ShouldNotReachHere();
++         return 0;
++    }
++  }
++
++  virtual const Type* bottom_type() const {
++    switch(_mask_opcode) {
++      case MASK_ALL_TRUE:
++      case MASK_ANY_TRUE:
++         return TypeInt::BOOL;
++      case MASK_FIRST_TRUE:
++      case MASK_LAST_TRUE:
++      case MASK_TRUE_COUNT:
++         return TypeInt::INT;
++      case MASK_EQ:
++      case MASK_NOT:
++      case MASK_OR:
++      case MASK_AND:
++      case MASK_ANDN:
++         return TypeVect::VECTMASK;
++      default:
++         ShouldNotReachHere();
++         return Type::TOP;
++    }
++  }
++
++  virtual uint match_edge(uint idx) const {
++    switch(_mask_opcode) {
++      case MASK_ALL_TRUE:
++      case MASK_ANY_TRUE:
++         return idx != 2;
++      case MASK_FIRST_TRUE:
++      case MASK_LAST_TRUE:
++      case MASK_TRUE_COUNT:
++      case MASK_EQ:
++      case MASK_NOT:
++      case MASK_OR:
++      case MASK_AND:
++      case MASK_ANDN:
++      default:
++         return true;
++    }
++  }
++
++  virtual uint ideal_reg() const {
++    return bottom_type()->ideal_reg();
++  }
++
++  static Node* make(PhaseGVN& gvn, Node* n1, uint opkind);
++  static Node* make(PhaseGVN& gvn, Node* n1, Node* n2, uint opkind);
++
++  private:
++    OpKind _mask_opcode;
++};
++
+ #endif // SHARE_OPTO_INTRINSICNODE_HPP
+diff --git a/src/hotspot/share/opto/machnode.hpp b/src/hotspot/share/opto/machnode.hpp
+index d96879f2dab..2e1abad2056 100644
+--- a/src/hotspot/share/opto/machnode.hpp
++++ b/src/hotspot/share/opto/machnode.hpp
+@@ -409,6 +409,17 @@ public:
+ #endif
+ };
+ 
++//------------------------------MachMetaDataNode----------------------------
++// Machine Nodes that need to retain a known Type and metadata.
++class MachMetaDataNode : public MachTypeNode {
++  virtual uint size_of() const { return sizeof(*this); } // Size is bigger
++public:
++  MachMetaDataNode( ) {}
++  const void *_meta_data;
++
++  const void *meta_data() const { return _meta_data; }
++};
++
+ //------------------------------MachBreakpointNode----------------------------
+ // Machine breakpoint or interrupt Node
+ class MachBreakpointNode : public MachIdealNode {
+diff --git a/src/hotspot/share/opto/matcher.cpp b/src/hotspot/share/opto/matcher.cpp
+index 15fdc49cea6..094f69db4f5 100644
+--- a/src/hotspot/share/opto/matcher.cpp
++++ b/src/hotspot/share/opto/matcher.cpp
+@@ -33,6 +33,7 @@
+ #include "opto/callnode.hpp"
+ #include "opto/idealGraphPrinter.hpp"
+ #include "opto/matcher.hpp"
++#include "opto/intrinsicnode.hpp"
+ #include "opto/memnode.hpp"
+ #include "opto/movenode.hpp"
+ #include "opto/opcodes.hpp"
+@@ -2337,6 +2338,49 @@ void Matcher::find_shared_post_visit(Node* n, uint opcode) {
+       n->del_req(3);
+       break;
+     }
++    case Op_MaskOper: {
++      uint num_opnds = static_cast<MaskOperNode*>(n)->num_operands();
++      if(num_opnds == 1) {
++        assert(n->in(2) == C->top(), "");
++        n->del_req(2);
++      }
++      break;
++    }
++    case Op_VectorMaskOper: {
++      uint num_opnds = static_cast<VectorMaskOperNode*>(n)->num_operands();
++      switch(num_opnds) {
++        case 3:
++         {
++           Node* pair1 = new BinaryNode(n->in(1), n->in(2));
++           Node* pair2 = new BinaryNode(n->in(3), n->in(4));
++           n->set_req(1, pair1);
++           n->set_req(2, pair2);
++           n->del_req(3);
++           n->del_req(3);
++         }
++         break;
++        case 2:
++         {
++           assert(n->in(3) == C->top(), "");
++           Node* pair1 = new BinaryNode(n->in(1), n->in(2));
++           n->set_req(1, pair1);
++           n->set_req(2, n->in(4));
++           n->del_req(3);
++           n->del_req(3);
++         }
++         break;
++        case 1:
++         {
++           assert(n->in(2) == C->top(), "");
++           assert(n->in(3) == C->top(), "");
++           n->set_req(2, n->in(4));
++           n->del_req(3);
++           n->del_req(3);
++         }
++         break;
++      }
++      break;
++    }
+     case Op_StoreVectorMasked: {
+       Node* pair = new BinaryNode(n->in(3), n->in(4));
+       n->set_req(3, pair);
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index 3fd0cd7444d..621b5afe597 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -1028,6 +1028,7 @@ public:
+   // Check if 'this' node dominates or equal to 'sub'.
+   bool dominates(Node* sub, Node_List &nlist);
+ 
++  virtual const void* meta_data() const { return NULL; }
+ protected:
+   bool remove_dead_region(PhaseGVN *phase, bool can_reshape);
+ public:
+diff --git a/src/hotspot/share/opto/vector.cpp b/src/hotspot/share/opto/vector.cpp
+index 21d721c2c26..c9efe252183 100644
+--- a/src/hotspot/share/opto/vector.cpp
++++ b/src/hotspot/share/opto/vector.cpp
+@@ -32,6 +32,15 @@
+ #include "opto/vector.hpp"
+ #include "utilities/macros.hpp"
+ 
++static bool is_vector_mask(ciKlass* klass) {
++  return klass->is_subclass_of(ciEnv::current()->vector_VectorMask_klass());
++}
++
++static bool is_vector_shuffle(ciKlass* klass) {
++  return klass->is_subclass_of(ciEnv::current()->vector_VectorShuffle_klass());
++}
++
++
+ void PhaseVector::optimize_vector_boxes() {
+   Compile::TracePhase tp("vector_elimination", &timers[_t_vector_elimination]);
+ 
+@@ -238,12 +247,23 @@ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+     }
+   }
+ 
++  ciInstanceKlass* iklass = vec_box->box_type()->klass()->as_instance_klass();
++  int n_fields = iklass->nof_nonstatic_fields();
++  assert(n_fields == 1, "sanity");
++
++  // If a mask is feeding into a safepoint, then its value should be
++  // packed into a byte vector first, this will simplify the re-materialization
++  // logic for both predicated and non-predicated targets.
++  bool is_mask = is_vector_mask(iklass);
++  if (is_mask && vec_value->Opcode() != Op_VectorStoreMask) {
++    const TypeVect* vt = vec_value->bottom_type()->is_vect();
++    BasicType bt = vt->element_basic_type();
++    vec_value = gvn.transform(VectorStoreMaskNode::make(gvn, vec_value, bt, vt->length()));
++  }
++
+   while (safepoints.size() > 0) {
+     SafePointNode* sfpt = safepoints.pop()->as_SafePoint();
+ 
+-    ciInstanceKlass* iklass = vec_box->box_type()->klass()->as_instance_klass();
+-    int n_fields = iklass->nof_nonstatic_fields();
+-    assert(n_fields == 1, "sanity");
+ 
+     uint first_ind = (sfpt->req() - sfpt->jvms()->scloff());
+     Node* sobj = new SafePointScalarObjectNode(vec_box->box_type(),
+@@ -252,6 +272,7 @@ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+ #endif // ASSERT
+                                                first_ind, n_fields);
+     sobj->init_req(0, C->root());
++
+     sfpt->add_req(vec_value);
+ 
+     sobj = gvn.transform(sobj);
+@@ -305,14 +326,6 @@ Node* PhaseVector::expand_vbox_node_helper(Node* vbox,
+   }
+ }
+ 
+-static bool is_vector_mask(ciKlass* klass) {
+-  return klass->is_subclass_of(ciEnv::current()->vector_VectorMask_klass());
+-}
+-
+-static bool is_vector_shuffle(ciKlass* klass) {
+-  return klass->is_subclass_of(ciEnv::current()->vector_VectorShuffle_klass());
+-}
+-
+ Node* PhaseVector::expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
+                                           Node* value,
+                                           const TypeInstPtr* box_type,
+@@ -326,7 +339,10 @@ Node* PhaseVector::expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
+   int num_elem = vect_type->length();
+ 
+   bool is_mask = is_vector_mask(box_klass);
+-  if (is_mask && bt != T_BOOLEAN) {
++  // If boxed mask value is present in a predicate register, it must be
++  // spilled to a vector though a VectorStoreMaskOperation before actual StoreVector
++  // operation to vector payload field.
++  if (is_mask && (value->bottom_type()->isa_vectmask() || bt != T_BOOLEAN)) {
+     value = gvn.transform(VectorStoreMaskNode::make(gvn, value, bt, num_elem));
+     // Although type of mask depends on its definition, in terms of storage everything is stored in boolean array.
+     bt = T_BOOLEAN;
+@@ -446,7 +462,7 @@ void PhaseVector::expand_vunbox_node(VectorUnboxNode* vec_unbox) {
+     C->set_max_vector_size(MAX2(C->max_vector_size(), vt->length_in_bytes()));
+ 
+     if (is_vector_mask(from_kls)) {
+-      vec_val_load = gvn.transform(new VectorLoadMaskNode(vec_val_load, TypeVect::make(masktype, num_elem)));
++      vec_val_load = gvn.transform(new VectorLoadMaskNode(vec_val_load, TypeVect::makemask(masktype, num_elem)));
+     } else if (is_vector_shuffle(from_kls)) {
+       if (vec_unbox->is_shuffle_to_vector() == false) {
+         assert(vec_unbox->bottom_type()->is_vect()->element_basic_type() == masktype, "expect shuffle type consistency");
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 484a956d558..5cfa3410cd9 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -355,7 +355,9 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+       return false;
+      }
+   } else {
+-    const TypeVect* vt = TypeVect::make(elem_bt, num_elem);
++    const TypeVect* vt = is_vector_mask(vbox_klass) ?
++                       TypeVect::makemask(elem_bt, num_elem) :
++                       TypeVect::make(elem_bt, num_elem);
+     switch (n) {
+       case 1:
+       case 2: {
+@@ -456,7 +458,8 @@ bool LibraryCallKit::inline_vector_shuffle_iota() {
+     ConINode* pred_node = (ConINode*)gvn().makecon(TypeInt::make(BoolTest::ge));
+     Node * lane_cnt  = gvn().makecon(TypeInt::make(num_elem));
+     Node * bcast_lane_cnt = gvn().transform(VectorNode::scalar2vector(lane_cnt, num_elem, type_bt));
+-    Node* mask = gvn().transform(new VectorMaskCmpNode(BoolTest::ge, bcast_lane_cnt, res, pred_node, vt));
++    const TypeVect * mvt  = TypeVect::makemask(elem_bt, num_elem);
++    Node* mask = gvn().transform(new VectorMaskCmpNode(BoolTest::ge, bcast_lane_cnt, res, pred_node, mvt));
+ 
+     // Make the indices greater than lane count as -ve values. This matches the java side implementation.
+     res = gvn().transform(VectorNode::make(Op_AndI, res, bcast_mod, num_elem, elem_bt));
+@@ -800,7 +803,7 @@ bool LibraryCallKit::inline_vector_mem_operation(bool is_store) {
+       // Special handle for masks
+       if (is_mask) {
+         vload = gvn().transform(LoadVectorNode::make(0, control(), memory(addr), addr, addr_type, num_elem, T_BOOLEAN));
+-        const TypeVect* to_vect_type = TypeVect::make(elem_bt, num_elem);
++        const TypeVect* to_vect_type = TypeVect::makemask(elem_bt, num_elem);
+         vload = gvn().transform(new VectorLoadMaskNode(vload, to_vect_type));
+       } else {
+         vload = gvn().transform(LoadVectorNode::make(0, control(), memory(addr), addr, addr_type, num_elem, elem_bt));
+@@ -1257,8 +1260,8 @@ bool LibraryCallKit::inline_vector_compare() {
+   BoolTest::mask pred = (BoolTest::mask)cond->get_con();
+   ConINode* pred_node = (ConINode*)gvn().makecon(cond);
+ 
+-  const TypeVect* vt = TypeVect::make(mask_bt, num_elem);
+-  Node* operation = gvn().transform(new VectorMaskCmpNode(pred, v1, v2, pred_node, vt));
++  const TypeVect* mvt = TypeVect::makemask(mask_bt, num_elem);
++  Node* operation = gvn().transform(new VectorMaskCmpNode(pred, v1, v2, pred_node, mvt));
+ 
+   Node* box = box_vector(operation, mbox_type, mask_bt, num_elem);
+   set_result(box);
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 5f178369e17..1f6e2716a97 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -27,6 +27,7 @@
+ #include "opto/mulnode.hpp"
+ #include "opto/subnode.hpp"
+ #include "opto/vectornode.hpp"
++#include "opto/intrinsicnode.hpp"
+ #include "utilities/powerOfTwo.hpp"
+ #include "utilities/globalDefinitions.hpp"
+ 
+@@ -229,6 +230,74 @@ int VectorNode::opcode(int sopc, BasicType bt) {
+   }
+ }
+ 
++bool VectorNode::is_maskable_operation(int opc, BasicType elemtype, uint &num_operands) {
++  switch(opc) {
++    case Op_AddVB:
++    case Op_AddVS:
++    case Op_AddVI:
++    case Op_AddVL:
++    case Op_AddVF:
++    case Op_AddVD:
++
++    case Op_SubVB:
++    case Op_SubVS:
++    case Op_SubVI:
++    case Op_SubVL:
++    case Op_SubVF:
++    case Op_SubVD:
++
++    case Op_MulVS:
++    case Op_MulVI:
++    case Op_MulVL:
++    case Op_MulVF:
++    case Op_MulVD:
++
++    case Op_DivVF:
++    case Op_DivVD:
++
++    case Op_LShiftVS:
++    case Op_LShiftVI:
++    case Op_LShiftVL:
++
++    case Op_RShiftVS:
++    case Op_RShiftVI:
++    case Op_RShiftVL:
++
++    case Op_URShiftVS:
++    case Op_URShiftVI:
++    case Op_URShiftVL:
++
++    case Op_MaxV:
++    case Op_MinV:
++      if (is_floating_point_type(elemtype)) {
++        return false;
++      } // fallthrough
++
++    case Op_VectorRearrange:
++      num_operands = 2;
++      return true;
++
++    case Op_AbsVI:
++      num_operands = 1;
++      return true;
++    case Op_FmaVF:
++    case Op_FmaVD:
++      num_operands = 3;
++      return true;
++
++    case Op_LShiftVB:
++    case Op_RShiftVB:
++    case Op_URShiftVB:
++
++    case Op_MulVB:
++      // Same existing instruction sequence as defined in instruction pattern,
++      // with a mask consuming PMULW post unpacking, to preven additional blending
++      // of result.
++    default:
++      return false;
++  }
++}
++
+ int VectorNode::replicate_opcode(BasicType bt) {
+   switch(bt) {
+     case T_BOOLEAN:
+@@ -347,8 +416,8 @@ bool VectorNode::is_shift(Node* n) {
+   return is_shift_opcode(n->Opcode());
+ }
+ 
+-bool VectorNode::is_vshift_cnt(Node* n) {
+-  switch (n->Opcode()) {
++bool VectorNode::is_vshift_cnt_opcode(int opc) {
++  switch (opc) {
+   case Op_LShiftCntV:
+   case Op_RShiftCntV:
+     return true;
+@@ -357,6 +426,10 @@ bool VectorNode::is_vshift_cnt(Node* n) {
+   }
+ }
+ 
++bool VectorNode::is_vshift_cnt(Node* n) {
++  return is_vshift_cnt_opcode(n->Opcode());
++}
++
+ // Check if input is loop invariant vector.
+ bool VectorNode::is_invariant_vector(Node* n) {
+   // Only Replicate vector nodes are loop invariant for now.
+@@ -610,26 +683,39 @@ bool VectorNode::is_vector_shift_count(int opc) {
+   }
+ }
+ 
+-static bool is_con_M1(Node* n) {
+-  if (n->is_Con()) {
+-    const Type* t = n->bottom_type();
+-    if (t->isa_int() && t->is_int()->get_con() == -1) {
+-      return true;
+-    }
+-    if (t->isa_long() && t->is_long()->get_con() == -1) {
+-      return true;
+-    }
++bool VectorNode::is_all_ones_vector(Node* n) {
++  Node* con = n->in(1);
++  const Type* t = con->bottom_type();
++  switch (n->Opcode()) {
++  case Op_ReplicateB:
++  case Op_ReplicateS:
++  case Op_ReplicateI:
++    return con->is_Con() && t->isa_int() && (0 == Type::cmp(TypeInt::ONE, t));
++  case Op_ReplicateL:
++    return con->is_Con() && t->isa_long() && (0 == Type::cmp(TypeLong::ONE, t));
++  case Op_ReplicateF:
++    return con->is_Con() && t->isa_float() && (0 == Type::cmp(TypeF::ONE, t));
++  case Op_ReplicateD:
++    return con->is_Con() && t->isa_double() && (0 == Type::cmp(TypeD::ONE, t));
++  default:
++    return false;
+   }
+-  return false;
+ }
+ 
+-bool VectorNode::is_all_ones_vector(Node* n) {
++bool VectorNode::is_all_zero_vector(Node* n) {
++  Node* con = n->in(1);
++  const Type* t = con->bottom_type();
+   switch (n->Opcode()) {
+   case Op_ReplicateB:
+   case Op_ReplicateS:
+   case Op_ReplicateI:
++    return con->is_Con() && t->isa_int() && (0 == Type::cmp(TypeInt::ZERO, t));
+   case Op_ReplicateL:
+-    return is_con_M1(n->in(1));
++    return con->is_Con() && t->isa_long() && (0 == Type::cmp(TypeLong::ZERO, t));
++  case Op_ReplicateF:
++    return con->is_Con() && t->isa_float() && (0 == Type::cmp(TypeF::ZERO, t));
++  case Op_ReplicateD:
++    return con->is_Con() && t->isa_double() && (0 == Type::cmp(TypeD::ZERO, t));
+   default:
+     return false;
+   }
+@@ -973,9 +1059,29 @@ ReductionNode* ReductionNode::make(int opc, Node *ctrl, Node* n1, Node* n2, Basi
+ 
+ Node* VectorLoadMaskNode::Identity(PhaseGVN* phase) {
+   BasicType out_bt = type()->is_vect()->element_basic_type();
+-  if (out_bt == T_BOOLEAN) {
++  if (!Matcher::has_predicated_vectors() && out_bt == T_BOOLEAN) {
+     return in(1); // redundant conversion
+   }
++
++  // Consider following snippet and its IR:-
++  //   VectorMask res = Mask1.and(Mask2);
++  //   return res.trueCount();
++  // Abstract level IR after parsing:
++  //   res = VectorBox (AndV (VectorLoadMask (VectorLoad Mask1))
++  //                         (VectorLoadMask (VectorLoad Mask2)));
++  //   return VectorTrueCount (VectorUnBox res);
++  // During Idealization of VectorUnbox node, Unbox + Box pattern is
++  // replaced by VectorStoreMask + VectorLoadMask pattern.
++  // In such case VectorStoreMask + VectorLoadMask is a redundant pattern
++  // iff original input to  VectorStoreMask is a node of type vectmask.
++
++  // VectorLoadMask(t1) (VectorStoreMask vectmask(t1)) => vectmask(t1)
++  if (in(1)->Opcode() == Op_VectorStoreMask &&
++      in(1)->in(1)->bottom_type()->isa_vectmask() &&
++      0 == Type::cmp(bottom_type(), in(1)->in(1)->bottom_type())) {
++    return in(1)->in(1);
++  }
++
+   return this;
+ }
+ 
+@@ -1218,21 +1324,23 @@ Node* VectorInsertNode::make(Node* vec, Node* new_val, int position) {
+ Node* VectorUnboxNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   Node* n = obj()->uncast();
+   if (EnableVectorReboxing && n->Opcode() == Op_VectorBox) {
+-    if (Type::cmp(bottom_type(), n->in(VectorBoxNode::Value)->bottom_type()) == 0) {
++    VectorBoxNode* vbox = static_cast<VectorBoxNode*>(n);
++    ciKlass* vbox_klass = vbox->box_type()->klass();
++    const TypeVect* in_vt = vbox->vec_type();
++    const TypeVect* out_vt = type()->is_vect();
++    Node* value = vbox->in(VectorBoxNode::Value);
++
++    bool is_vector_mask    = vbox_klass->is_subclass_of(ciEnv::current()->vector_VectorMask_klass());
++    bool is_vector_shuffle = vbox_klass->is_subclass_of(ciEnv::current()->vector_VectorShuffle_klass());
++    // TODO: maskAll() expands to -> Replicate + VectorBox
++    bool insert_loadmask   = is_vector_mask && Matcher::has_predicated_vectors();
++    if (!insert_loadmask && Type::cmp(bottom_type(), n->in(VectorBoxNode::Value)->bottom_type()) == 0) {
+       // Handled by VectorUnboxNode::Identity()
+     } else {
+-      VectorBoxNode* vbox = static_cast<VectorBoxNode*>(n);
+-      ciKlass* vbox_klass = vbox->box_type()->klass();
+-      const TypeVect* in_vt = vbox->vec_type();
+-      const TypeVect* out_vt = type()->is_vect();
+-
+       if (in_vt->length() == out_vt->length()) {
+         Node* value = vbox->in(VectorBoxNode::Value);
+-
+-        bool is_vector_mask    = vbox_klass->is_subclass_of(ciEnv::current()->vector_VectorMask_klass());
+-        bool is_vector_shuffle = vbox_klass->is_subclass_of(ciEnv::current()->vector_VectorShuffle_klass());
+         if (is_vector_mask) {
+-          if (in_vt->length_in_bytes() == out_vt->length_in_bytes() &&
++          if (!insert_loadmask && in_vt->length_in_bytes() == out_vt->length_in_bytes() &&
+               Matcher::match_rule_supported_vector(Op_VectorMaskCast, out_vt->length(), out_vt->element_basic_type())) {
+             // Apply "VectorUnbox (VectorBox vmask) ==> VectorMaskCast (vmask)"
+             // directly. This could avoid the transformation ordering issue from
+@@ -1240,6 +1348,7 @@ Node* VectorUnboxNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+             return new VectorMaskCastNode(value, out_vt);
+           }
+           // VectorUnbox (VectorBox vmask) ==> VectorLoadMask (VectorStoreMask vmask)
++          out_vt = TypeVect::makemask(out_vt->element_basic_type(), out_vt->length());
+           value = phase->transform(VectorStoreMaskNode::make(*phase, value, in_vt->element_basic_type(), in_vt->length()));
+           return new VectorLoadMaskNode(value, out_vt);
+         } else if (is_vector_shuffle) {
+@@ -1285,6 +1394,51 @@ const TypeFunc* VectorBoxNode::vec_box_type(const TypeInstPtr* box_type) {
+   return TypeFunc::make(domain, range);
+ }
+ 
++Node* VectorBlendNode::Ideal(PhaseGVN* phase, bool can_reshape) {
++  uint num_opers = 0;
++  //TODO: Check if canonicalized else re-wire edges.
++  BasicType elemtype = bottom_type()->is_vect()->element_basic_type();
++  if (Matcher::has_predicated_vectors() &&
++      VectorNode::is_maskable_operation(in(2)->Opcode(), elemtype, num_opers) &&
++      Matcher::match_rule_supported(Op_VectorMaskOper)) {
++    bool is_rearrange = in(2)->Opcode() == Op_VectorRearrange;
++    if (!is_rearrange && in(1) != in(2)->in(1)) {
++       return NULL;
++    }
++    if(is_rearrange && !is_all_zero_vector(in(1))) {
++       return NULL;
++    }
++    if(NULL == in(3)->bottom_type()->isa_vectmask()) {
++      return NULL;
++    }
++    Node* src1 = is_rearrange  ? in(2)->in(1) : in(1);
++    Node* src2 = num_opers > 1 ? in(2)->in(2) : phase->C->top();
++    Node* src3 = num_opers > 2 ? in(2)->in(3) : phase->C->top();
++    Node* mask = in(3);
++    VectorMaskOperNode* mask_op = new VectorMaskOperNode(src1, src2, src3, mask, vect_type());
++    mask_op->set_meta_data(reinterpret_cast<void*>((jlong)(in(2)->Opcode())));
++
++    return phase->transform(mask_op);
++  }
++  return NULL;
++}
++
++Node* VectorMaskOperNode::Ideal(PhaseGVN* phase, bool can_reshape) {
++  assert(in(4)->bottom_type()->isa_vectmask() != NULL, "Unexpected node");
++
++  int num_opers = num_operands();
++  if (num_opers > 1 && in(num_opers)->Opcode() == Op_LoadVector) {
++    Node* src1 = in(1);
++    Node* src2 = num_opers == 2 ? in(2)->in(2) : in(2);
++    Node* src3 = num_opers == 3 ? in(3)->in(2) : in(3);
++    Node* mask = in(4);
++    VectorMaskOperNode* mask_op = new VectorMaskOperNode(src1, src2, src3, mask, vect_type());
++    mask_op->set_meta_data(this->meta_data());
++    return phase->transform(mask_op);
++  }
++  return NULL;
++}
++
+ Node* ShiftVNode::Identity(PhaseGVN* phase) {
+   Node* in2 = in(2);
+   // Shift by ZERO does nothing
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 430267254c7..44608a9494b 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -66,7 +66,9 @@ class VectorNode : public TypeNode {
+ 
+   virtual int Opcode() const;
+ 
+-  virtual uint ideal_reg() const { return Matcher::vector_ideal_reg(vect_type()->length_in_bytes()); }
++  virtual uint ideal_reg() const {
++    return type()->ideal_reg();
++  }
+ 
+   static VectorNode* scalar2vector(Node* s, uint vlen, const Type* opd_t);
+   static VectorNode* shift_count(int opc, Node* cnt, uint vlen, BasicType bt);
+@@ -76,6 +78,8 @@ class VectorNode : public TypeNode {
+   static VectorNode* make(int vopc, Node* n1, Node* n2, Node* n3, const TypeVect* vt);
+ 
+   static bool is_shift_opcode(int opc);
++  static bool is_vshift_cnt_opcode(int opc);
++  static bool is_maskable_operation(int opc, BasicType elemtype, uint& num_operands);
+ 
+   static int  opcode(int opc, BasicType bt);
+   static int replicate_opcode(BasicType bt);
+@@ -90,6 +94,7 @@ class VectorNode : public TypeNode {
+   static bool is_vector_rotate_supported(int vopc, uint vlen, BasicType bt);
+   static bool is_invariant_vector(Node* n);
+   static bool is_all_ones_vector(Node* n);
++  static bool is_all_zero_vector(Node* n);
+   static bool is_vector_bitwise_not_pattern(Node* n);
+   static Node* degenerate_vector_rotate(Node* n1, Node* n2, bool is_rotate_left, int vlen,
+                                         BasicType bt, PhaseGVN* phase);
+@@ -1124,7 +1129,7 @@ class VectorMaskCmpNode : public VectorNode {
+   BoolTest::mask _predicate;
+ 
+  protected:
+-  uint size_of() const { return sizeof(*this); }
++  virtual  uint  size_of() const { return sizeof(VectorMaskCmpNode); }
+ 
+  public:
+   VectorMaskCmpNode(BoolTest::mask predicate, Node* in1, Node* in2, ConINode* predicate_node, const TypeVect* vt) :
+@@ -1136,6 +1141,7 @@ class VectorMaskCmpNode : public VectorNode {
+            "VectorMaskCmp inputs must have same number of elements");
+     assert((BoolTest::mask)predicate_node->get_int() == predicate, "Unmatched predicates");
+     init_class_id(Class_VectorMaskCmp);
++    set_meta_data(vt);
+   }
+ 
+   virtual int Opcode() const;
+@@ -1147,6 +1153,12 @@ class VectorMaskCmpNode : public VectorNode {
+ #ifndef PRODUCT
+   virtual void dump_spec(outputStream *st) const;
+ #endif // !PRODUCT
++
++  const void* meta_data() const { return _meta_data; }
++  void set_meta_data(const void* data) { _meta_data = data; }
++
++  private:
++    const void* _meta_data;
+ };
+ 
+ // Used to wrap other vector nodes in order to add masking functionality.
+@@ -1192,6 +1204,7 @@ class VectorBlendNode : public VectorNode {
+   }
+ 
+   virtual int Opcode() const;
++  Node* Ideal(PhaseGVN* phase, bool can_reshape);
+   Node* vec1() const { return in(1); }
+   Node* vec2() const { return in(2); }
+   Node* vec_mask() const { return in(3); }
+@@ -1424,4 +1437,27 @@ public:
+   Node* Ideal(PhaseGVN* phase, bool can_reshape);
+ };
+ 
++class VectorMaskOperNode : public VectorNode {
++public:
++  VectorMaskOperNode(Node* in1, Node* in2, Node* in3, Node* mask,  const TypeVect* vt)
++  : VectorNode(in1, in2, in3, mask, vt) {}
++
++  virtual int Opcode() const;
++  virtual uint  size_of() const { return sizeof(VectorMaskOperNode); }
++
++  const void* meta_data() const { return _meta_data; }
++  void set_meta_data(const void* data) { _meta_data = data; }
++  Node* Ideal(PhaseGVN* phase, bool can_reshape);
++
++  uint num_operands() const {
++    uint num_opers = 0;
++    uint32_t masked_op = reinterpret_cast<jlong>(this->meta_data());
++    (void)VectorNode::is_maskable_operation(masked_op, bottom_type()->is_vect()->element_basic_type(), num_opers);
++    return num_opers;
++  }
++
++  private:
++    const void* _meta_data;
++};
++
+ #endif // SHARE_OPTO_VECTORNODE_HPP
+diff --git a/src/hotspot/share/prims/vectorSupport.cpp b/src/hotspot/share/prims/vectorSupport.cpp
+index b8336c1c563..8c7ea4c3031 100644
+--- a/src/hotspot/share/prims/vectorSupport.cpp
++++ b/src/hotspot/share/prims/vectorSupport.cpp
+@@ -65,6 +65,8 @@ BasicType VectorSupport::klass2bt(InstanceKlass* ik) {
+ 
+   if (is_vector_shuffle(ik)) {
+     return T_BYTE;
++  } else if (is_vector_mask(ik)) {
++    return T_BOOLEAN;
+   } else { // vector and mask
+     oop value = ik->java_mirror()->obj_field(fd.offset());
+     BasicType elem_bt = java_lang_Class::as_BasicType(value);
+@@ -86,48 +88,36 @@ jint VectorSupport::klass2length(InstanceKlass* ik) {
+   return vlen;
+ }
+ 
+-void VectorSupport::init_payload_element(typeArrayOop arr, bool is_mask, BasicType elem_bt, int index, address addr) {
+-  if (is_mask) {
+-    // Masks require special handling: when boxed they are packed and stored in boolean
+-    // arrays, but in scalarized form they have the same size as corresponding vectors.
+-    // For example, Int512Mask is represented in memory as boolean[16], but
+-    // occupies the whole 512-bit vector register when scalarized.
+-    // (In generated code, the conversion is performed by VectorStoreMask.)
+-    //
+-    // TODO: revisit when predicate registers are fully supported.
+-    switch (elem_bt) {
+-      case T_BYTE:   arr->bool_at_put(index,  (*(jbyte*)addr) != 0); break;
+-      case T_SHORT:  arr->bool_at_put(index, (*(jshort*)addr) != 0); break;
+-      case T_INT:    // fall-through
+-      case T_FLOAT:  arr->bool_at_put(index,   (*(jint*)addr) != 0); break;
+-      case T_LONG:   // fall-through
+-      case T_DOUBLE: arr->bool_at_put(index,  (*(jlong*)addr) != 0); break;
+-
+-      default: fatal("unsupported: %s", type2name(elem_bt));
+-    }
+-  } else {
+-    switch (elem_bt) {
+-      case T_BYTE:   arr->  byte_at_put(index,   *(jbyte*)addr); break;
+-      case T_SHORT:  arr-> short_at_put(index,  *(jshort*)addr); break;
+-      case T_INT:    arr->   int_at_put(index,    *(jint*)addr); break;
+-      case T_FLOAT:  arr-> float_at_put(index,  *(jfloat*)addr); break;
+-      case T_LONG:   arr->  long_at_put(index,   *(jlong*)addr); break;
+-      case T_DOUBLE: arr->double_at_put(index, *(jdouble*)addr); break;
+-
+-      default: fatal("unsupported: %s", type2name(elem_bt));
+-    }
++// Masks require special handling: when boxed they are packed and stored in boolean
++// arrays, but in scalarized form they have the same size as corresponding vectors.
++// For example, Int512Mask is represented in memory as boolean[16], but
++// occupies the whole 512-bit vector register when scalarized.
++// During scalarization inserting a VectorStoreMask node between mask
++// and safepoint node always ensures the existence of masks in a boolean array.
++//
++// TODO: revisit when predicate registers are fully supported.
++//
++void VectorSupport::init_payload_element(typeArrayOop arr, BasicType elem_bt, int index, address addr) {
++  switch (elem_bt) {
++    case T_BOOLEAN: arr->  byte_at_put(index,   *(jboolean*)addr); break;
++    case T_BYTE:   arr->  byte_at_put(index,   *(jbyte*)addr); break;
++    case T_SHORT:  arr-> short_at_put(index,  *(jshort*)addr); break;
++    case T_INT:    arr->   int_at_put(index,    *(jint*)addr); break;
++    case T_FLOAT:  arr-> float_at_put(index,  *(jfloat*)addr); break;
++    case T_LONG:   arr->  long_at_put(index,   *(jlong*)addr); break;
++    case T_DOUBLE: arr->double_at_put(index, *(jdouble*)addr); break;
++
++    default: fatal("unsupported: %s", type2name(elem_bt));
+   }
+ }
+ 
+ Handle VectorSupport::allocate_vector_payload_helper(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, Location location, TRAPS) {
+-  bool is_mask = is_vector_mask(ik);
+-
+   int num_elem = klass2length(ik);
+   BasicType elem_bt = klass2bt(ik);
+   int elem_size = type2aelembytes(elem_bt);
+ 
+   // On-heap vector values are represented as primitive arrays.
+-  TypeArrayKlass* tak = TypeArrayKlass::cast(Universe::typeArrayKlassObj(is_mask ? T_BOOLEAN : elem_bt));
++  TypeArrayKlass* tak = TypeArrayKlass::cast(Universe::typeArrayKlassObj(elem_bt));
+ 
+   typeArrayOop arr = tak->allocate(num_elem, CHECK_NH); // safepoint
+ 
+@@ -140,13 +130,13 @@ Handle VectorSupport::allocate_vector_payload_helper(InstanceKlass* ik, frame* f
+       int off   = (i * elem_size) % VMRegImpl::stack_slot_size;
+ 
+       address elem_addr = reg_map->location(vreg, vslot) + off; // assumes little endian element order
+-      init_payload_element(arr, is_mask, elem_bt, i, elem_addr);
++      init_payload_element(arr, elem_bt, i, elem_addr);
+     }
+   } else {
+     // Value was directly saved on the stack.
+     address base_addr = ((address)fr->unextended_sp()) + location.stack_offset();
+     for (int i = 0; i < num_elem; i++) {
+-      init_payload_element(arr, is_mask, elem_bt, i, base_addr + i * elem_size);
++      init_payload_element(arr, elem_bt, i, base_addr + i * elem_size);
+     }
+   }
+   return Handle(THREAD, arr);
+diff --git a/src/hotspot/share/prims/vectorSupport.hpp b/src/hotspot/share/prims/vectorSupport.hpp
+index 8ea24bbb701..b8886c640cd 100644
+--- a/src/hotspot/share/prims/vectorSupport.hpp
++++ b/src/hotspot/share/prims/vectorSupport.hpp
+@@ -42,7 +42,7 @@ class VectorSupport : AllStatic {
+   static Handle allocate_vector_payload(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, ScopeValue* payload, TRAPS);
+   static Handle allocate_vector_payload_helper(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, Location location, TRAPS);
+ 
+-  static void init_payload_element(typeArrayOop arr, bool is_mask, BasicType elem_bt, int index, address addr);
++  static void init_payload_element(typeArrayOop arr, BasicType elem_bt, int index, address addr);
+ 
+   static BasicType klass2bt(InstanceKlass* ik);
+   static jint klass2length(InstanceKlass* ik);

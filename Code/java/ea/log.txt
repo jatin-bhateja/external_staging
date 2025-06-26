@@ -1,0 +1,1005 @@
+CompileCommand: print ea1.micro2 bool print = true
+
+============================= C2-compiled nmethod ==============================
+#r018 rsi:rsi   : parm 0: rawptr:BotPTR
+# -- Old rsp -- Framesize: 64 --
+#r591 rsp+60: in_preserve
+#r590 rsp+56: return address
+#r589 rsp+52: in_preserve
+#r588 rsp+48: saved fp register
+#r587 rsp+44: pad2, stack alignment
+#r586 rsp+40: pad2, stack alignment
+#r585 rsp+36: Fixed slot 1
+#r584 rsp+32: Fixed slot 0
+#r599 rsp+28: spill
+#r598 rsp+24: spill
+#r597 rsp+20: spill
+#r596 rsp+16: spill
+#r595 rsp+12: spill
+#r594 rsp+ 8: spill
+#r593 rsp+ 4: spill
+#r592 rsp+ 0: spill
+#
+----------------------- MetaData before Compile_id = 145 ------------------------
+{method}
+ - this oop:          0x00007fbad05115c8
+ - method holder:     'ea1'
+ - constants:         0x00007fbad0511058 constant pool [77]/operands[5] {0x00007fbad0511058} for 'ea1' cache=0x00007fbad0511770
+ - access:            0xc1000008  static 
+ - name:              'micro2'
+ - signature:         '(I)I'
+ - max stack:         4
+ - max locals:        4
+ - size of params:    1
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007fbb1901f340
+ - adapters:          AHE@0x00007fbb1c254b40: 0xa i2c: 0x00007fbb19129240 c2i: 0x00007fbb191292f9 c2iUV: 0x00007fbb191292c3 c2iNCI: 0x00007fbb19129333
+ - compiled entry     0x00007fbb191292f9
+ - code size:         33
+ - code start:        0x00007fbad0511598
+ - code end (excl):   0x00007fbad05115b9
+ - method data:       0x00007fbad0511990
+ - checked ex length: 0
+ - linenumber start:  0x00007fbad05115b9
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 145 -----------------------
+#
+#  int ( rawptr:BotPTR )
+#
+000     N283: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # breakpoint
+        nop 	# 11 bytes pad for loops and calls
+
+010     B1: #	out( B29 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+010     # stack bang (152 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #48	# Create frame
+
+01c     movq    R14, [RSI + #8 (8-bit)]	# ptr
+020     movl    R13, [RSI + #24 (8-bit)]	# int
+024     movl    RBX, [RSI + #16 (8-bit)]	# int
+027     movl    RBP, [RSI]	# int
+029     movq    RDI, RSI	# spill
+02c     call_leaf,runtime  OSR_migration_end
+        No JVM State Info
+        # 
+        nop 	# 7 bytes pad for loops and calls
+040     movl    R11, [R14 + #8 (8-bit)]	# compressed klass ptr
+044     NullCheck R14
+
+044     B2: #	out( B24 B3 ) <- in( B1 )  Freq: 0.999999
+044     cmpl    R11, narrowklass: precise [int: :Constant:exact *	# compressed klass ptr
+04b     jne,u   B24  P=0.000001 C=-1.000000
+
+051     B3: #	out( B20 B4 ) <- in( B2 )  Freq: 0.999998
+051     cmpl    RBP, #32
+054     jge     B20  P=0.030335 C=23339.000000
+
+05a     B4: #	out( B5 ) <- in( B3 )  Freq: 0.969663
+05a     # checkcastPP of R14
+05a     movl    R9, [R14 + #12 (8-bit)]	# range
+05e     movl    R10, RBP	# spill
+061     incl    R10	# int
+064     movl    R11, R14	# ptr -> int
+067     shrl    R11, #2
+06b     andl    R11, #3	# int
+06f     movl    RDI, #32	# int
+074     xorl    R8, R8	# int
+077     testl   R10, R10
+07a     cmovll R10, R8	# signed, int
+07e     cmpl    R10, RDI
+081     cmovlgt R10, RDI	# min
+085     addl    R11, R10	# int
+088     negl    R11	# int
+08b     andl    R11, #3	# int
+08f     addl    R11, R10	# int
+092     cmpl    R11, RDI
+095     cmovlgt R11, RDI	# min
+
+099     B5: #	out( B21 B6 ) <- in( B4 B7 ) Loop( B5-B7 inner pre of N274 reduction) Freq: 1.93932
+099     cmpl    RBP, R9	# unsigned
+        nop 	# 4 bytes pad for loops and calls
+0a0     jae,u   B21  P=0.000001 C=-1.000000
+
+0a6     B6: #	out( B8 B7 ) <- in( B5 )  Freq: 1.93932
+0a6     movl    [R14 + #16 + RBP << #2], R13	# int
+0ab     addl    RBX, R13	# int
+0ae     movl    R10, RBP	# spill
+0b1     incl    R10	# int
+0b4     cmpl    R10, R11
+0b7     jge,s   B8	# loop end  P=0.500000 C=23339.000000
+
+0b9     B7: #	out( B5 ) <- in( B6 )  Freq: 0.969661
+0b9     movl    RBP, R10	# spill
+0bc     jmp,s   B5
+
+0be     B8: #	out( B25 B9 ) <- in( B6 )  Freq: 0.969661
+0be     cmpl    R9, #32
+0c2     movl    RCX, R9	# spill
+0c5     cmovlge RCX, RDI	# signed, int
+0c8     movl    RDX, RCX	# spill
+0ca     addl    RDX, #-3	# int
+0cd     movl    RDI, #-2147483648	# int
+0d2     cmpl    RCX, RDX
+0d4     cmovll RDX, RDI	# signed, int
+0d7     cmpl    R10, RDX
+        nop 	# 6 bytes pad for loops and calls
+0e0     jge     B25  P=0.000001 C=-1.000000
+
+0e6     B9: #	out( B26 B10 ) <- in( B8 )  Freq: 0.96966
+0e6     movl    RCX, R10	# spill
+0e9     # castII of RCX
+0e9     cmpl    RCX, R9	# unsigned
+0ec     jae,u   B26  P=0.000001 C=-1.000000
+
+0f2     B10: #	out( B27 B11 ) <- in( B9 )  Freq: 0.969659
+0f2     addl    RBP, #4	# int
+0f5     cmpl    RBP, R9	# unsigned
+0f8     jae,u   B27  P=0.000001 C=-1.000000
+
+0fe     B11: #	out( B28 B12 ) <- in( B10 )  Freq: 0.969658
+        nop 	# 2 bytes pad for loops and calls
+100     cmpl    R10, R9	# unsigned
+103     jae,u   B28  P=0.000001 C=-1.000000
+
+109     B12: #	out( B13 ) <- in( B11 )  Freq: 0.969657
+109     movl    R10, R13	# spill
+10c     addl    R10, R13	# int
+10f     addl    R10, R10	# int
+112     replicateI XMM0,R13
+118     movl    R11, #4000	# int
+11e     # TLS is in R15
+
+11e     B13: #	out( B14 ) <- in( B12 B15 ) Loop( B13-B15 ) Freq: 31.9644
+11e     movl    RDI, RDX	# spill
+120     subl    RDI, RCX	# int
+122     cmpl    RDX, RCX
+124     cmovll RDI, R8	# signed, int
+128     cmpl    RDI, #4000	# unsigned
+12e     cmovla RDI, R11	# unsigned, int
+132     addl    RDI, RCX	# int
+        nop 	# 12 bytes pad for loops and calls
+
+140     B14: #	out( B14 B15 ) <- in( B13 B14 ) Loop( B14-B14 inner main of N136 reduction strip mined) Freq: 1053.7
+140     store_vector [R14 + #16 + RCX << #2],XMM0
+	
+147     addl    RBX, R10	# int
+14a     addl    RCX, #4	# int
+14d     cmpl    RCX, RDI
+14f     jl,s   B14	# loop end  P=0.969665 C=23339.000000
+
+151     B15: #	out( B13 B16 ) <- in( B14 )  Freq: 31.9644
+151     movq    RDI, [R15 + #976 (32-bit)]	# ptr
+158     testl   rax, [RDI]	# Safepoint: poll for GC        # ea1::micro2 @ bci:28 (line 31) L[0]=R13 L[1]=RBX L[2]=R14 L[3]=RCX
+        # OopMap {r14=Oop off=344/0x158}
+15a     cmpl    RCX, RDX
+15c     jl,s   B13  P=0.969665 C=23339.000000
+
+15e     B16: #	out( B20 B17 ) <- in( B25 B15 )  Freq: 0.969658
+        nop 	# 2 bytes pad for loops and calls
+160     cmpl    RCX, #32
+163     jge,s   B20  P=0.500000 C=-1.000000
+
+165     B17: #	out( B18 ) <- in( B16 )  Freq: 0.484829
+165     # castII of RCX
+        nop 	# 3 bytes pad for loops and calls
+
+168     B18: #	out( B22 B19 ) <- in( B17 B19 ) Loop( B18-B19 inner post of N274 reduction) Freq: 0.969657
+168     cmpl    RCX, R9	# unsigned
+16b     jae,us  B22  P=0.000001 C=-1.000000
+
+16d     B19: #	out( B18 B20 ) <- in( B18 )  Freq: 0.969656
+16d     movl    [R14 + #16 + RCX << #2], R13	# int
+172     addl    RBX, R13	# int
+175     incl    RCX	# int
+177     cmpl    RCX, #32
+17a     jl,s   B18	# loop end  P=0.500000 C=23339.000000
+
+17c     B20: #	out( N283 ) <- in( B3 B19 B16 )  Freq: 0.999992
+17c     movl    RAX, RBX	# spill
+17e     addq    rsp, 48	# Destroy frame
+	popq    rbp
+	cmpq     rsp, poll_offset[r15_thread] 
+	ja       #safepoint_stub	# Safepoint: poll for GC
+
+190     ret
+
+191     B21: #	out( B23 ) <- in( B5 )  Freq: 1.96508e-06
+191     movl    RCX, RBP	# spill
+193     movl    RBP, RBX	# spill
+195     jmp,s   B23
+
+197     B22: #	out( B23 ) <- in( B18 )  Freq: 9.82533e-07
+197     movl    RBP, RBX	# spill
+
+199     B23: #	out( N283 ) <- in( B22 B21 )  Freq: 2.94761e-06
+199     movl    RSI, #-28	# int
+19e     movq    [rsp + #16], R14	# spill
+1a3     movl    [rsp + #24], RCX	# spill
+1a7     movl    [rsp + #28], R13	# spill
+        nop 	# 3 bytes pad for loops and calls
+1af     call,static  wrapper for: uncommon_trap(reason='range_check' action='make_not_entrant' debug_id='0')
+        # ea1::micro2 @ bci:18 (line 33) L[0]=rsp + #28 L[1]=RBP L[2]=rsp + #16 L[3]=rsp + #24 STK[0]=rsp + #16 STK[1]=rsp + #24 STK[2]=rsp + #28
+        # OopMap {[-1850524908]=Oop off=436/0x1b4}
+1b4     stop	# ShouldNotReachHere
+
+1c8     B24: #	out( N283 ) <- in( B2 )  Freq: 9.99999e-07
+1c8     movl    RSI, #-115	# int
+1cd     movl    [rsp + #0], R13	# spill
+1d1     movl    [rsp + #4], RBX	# spill
+1d5     movq    [rsp + #8], R14	# spill
+        nop 	# 1 bytes pad for loops and calls
+1db     call,static  wrapper for: uncommon_trap(reason='constraint' action='reinterpret' debug_id='0')
+        # ea1::micro2 @ bci:9 (line 31) L[0]=rsp + #0 L[1]=rsp + #4 L[2]=rsp + #8 L[3]=RBP
+        # OopMap {[-1850524916]=Oop off=480/0x1e0}
+1e0     stop	# ShouldNotReachHere
+
+1f4     B25: #	out( B16 ) <- in( B8 )  Freq: 9.82537e-07
+1f4     movl    RCX, R10	# spill
+1f7     jmp     B16
+
+1fc     B26: #	out( N283 ) <- in( B9 )  Freq: 9.82536e-07
+1fc     stop	# ShouldNotReachHere
+
+210     B27: #	out( N283 ) <- in( B10 )  Freq: 9.82535e-07
+210     stop	# ShouldNotReachHere
+
+224     B28: #	out( N283 ) <- in( B11 )  Freq: 9.82534e-07
+224     stop	# ShouldNotReachHere
+
+238     B29: #	out( N283 ) <- in( B1 )  Freq: 1.01328e-06
+238     movl    RSI, #-66	# int
+23d     movl    [rsp + #0], R13	# spill
+241     movl    [rsp + #4], RBX	# spill
+        nop 	# 2 bytes pad for loops and calls
+247     call,static  wrapper for: uncommon_trap(reason='profile_predicate' action='maybe_recompile' debug_id='0')
+        # ea1::micro2 @ bci:9 (line 31) L[0]=rsp + #0 L[1]=rsp + #4 L[2]=#NULL L[3]=RBP
+        # OopMap {off=588/0x24c}
+24c     stop	# ShouldNotReachHere
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)    1502  145 %           ea1::micro2 @ 9 (33 bytes)
+ total in heap  [0x00007fbb19048d10,0x00007fbb19049368] = 1624
+ relocation     [0x00007fbb19048e70,0x00007fbb19048ed8] = 104
+ main code      [0x00007fbb19048ee0,0x00007fbb19049158] = 632
+ stub code      [0x00007fbb19049158,0x00007fbb19049170] = 24
+ oops           [0x00007fbb19049170,0x00007fbb19049178] = 8
+ metadata       [0x00007fbb19049178,0x00007fbb19049188] = 16
+ scopes data    [0x00007fbb19049188,0x00007fbb19049200] = 120
+ scopes pcs     [0x00007fbb19049200,0x00007fbb19049350] = 336
+ dependencies   [0x00007fbb19049350,0x00007fbb19049358] = 8
+ nul chk table  [0x00007fbb19049358,0x00007fbb19049368] = 16
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007fbad05115c8} 'micro2' '(I)I' in 'ea1'
+ ;; N283: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007fbb19048ee0:   callq  0x00007fbb2337d748           ;   {runtime_call os::breakpoint()}
+  0x00007fbb19048ee5:   nop
+  0x00007fbb19048ee6:   nop
+  0x00007fbb19048ee7:   nop
+  0x00007fbb19048ee8:   nop
+  0x00007fbb19048ee9:   nop
+  0x00007fbb19048eea:   nop
+  0x00007fbb19048eeb:   nop
+  0x00007fbb19048eec:   nop
+  0x00007fbb19048eed:   nop
+  0x00007fbb19048eee:   nop
+  0x00007fbb19048eef:   nop
+ ;; B1: #	out( B29 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007fbb19048ef0:   mov    %eax,-0x18000(%rsp)
+  0x00007fbb19048ef7:   push   %rbp
+  0x00007fbb19048ef8:   sub    $0x30,%rsp
+  0x00007fbb19048efc:   mov    0x8(%rsi),%r14
+  0x00007fbb19048f00:   mov    0x18(%rsi),%r13d
+  0x00007fbb19048f04:   mov    0x10(%rsi),%ebx
+  0x00007fbb19048f07:   mov    (%rsi),%ebp
+  0x00007fbb19048f09:   mov    %rsi,%rdi
+  0x00007fbb19048f0c:   movabs $0x7fbb23479f88,%r10
+  0x00007fbb19048f16:   callq  *%r10
+  0x00007fbb19048f19:   nop
+  0x00007fbb19048f1a:   nop
+  0x00007fbb19048f1b:   nop
+  0x00007fbb19048f1c:   nop
+  0x00007fbb19048f1d:   nop
+  0x00007fbb19048f1e:   nop
+  0x00007fbb19048f1f:   nop
+  0x00007fbb19048f20:   mov    0x8(%r14),%r11d              ; implicit exception: dispatches to 0x00007fbb19049118
+ ;; B2: #	out( B24 B3 ) <- in( B1 )  Freq: 0.999999
+  0x00007fbb19048f24:   cmp    $0x40dc8,%r11d               ;   {metadata({type array int})}
+  0x00007fbb19048f2b:   jne    0x00007fbb190490a8
+ ;; B3: #	out( B20 B4 ) <- in( B2 )  Freq: 0.999998
+  0x00007fbb19048f31:   cmp    $0x20,%ebp
+  0x00007fbb19048f34:   jge    0x00007fbb1904905c           ;*iload_3 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@9 (line 31)
+ ;; B4: #	out( B5 ) <- in( B3 )  Freq: 0.969663
+  0x00007fbb19048f3a:   mov    0xc(%r14),%r9d
+  0x00007fbb19048f3e:   mov    %ebp,%r10d
+  0x00007fbb19048f41:   inc    %r10d
+  0x00007fbb19048f44:   mov    %r14d,%r11d
+  0x00007fbb19048f47:   shr    $0x2,%r11d
+  0x00007fbb19048f4b:   and    $0x3,%r11d
+  0x00007fbb19048f4f:   mov    $0x20,%edi
+  0x00007fbb19048f54:   xor    %r8d,%r8d
+  0x00007fbb19048f57:   test   %r10d,%r10d
+  0x00007fbb19048f5a:   cmovl  %r8d,%r10d
+  0x00007fbb19048f5e:   cmp    %edi,%r10d
+  0x00007fbb19048f61:   cmovg  %edi,%r10d
+  0x00007fbb19048f65:   add    %r10d,%r11d
+  0x00007fbb19048f68:   neg    %r11d
+  0x00007fbb19048f6b:   and    $0x3,%r11d
+  0x00007fbb19048f6f:   add    %r10d,%r11d
+  0x00007fbb19048f72:   cmp    %edi,%r11d
+  0x00007fbb19048f75:   cmovg  %edi,%r11d
+ ;; B5: #	out( B21 B6 ) <- in( B4 B7 ) Loop( B5-B7 inner pre of N274 reduction) Freq: 1.93932
+  0x00007fbb19048f79:   cmp    %r9d,%ebp
+  0x00007fbb19048f7c:   nop
+  0x00007fbb19048f7d:   nop
+  0x00007fbb19048f7e:   nop
+  0x00007fbb19048f7f:   nop
+  0x00007fbb19048f80:   jae    0x00007fbb19049071
+ ;; B6: #	out( B8 B7 ) <- in( B5 )  Freq: 1.93932
+  0x00007fbb19048f86:   mov    %r13d,0x10(%r14,%rbp,4)      ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@18 (line 33)
+  0x00007fbb19048f8b:   add    %r13d,%ebx                   ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@23 (line 34)
+  0x00007fbb19048f8e:   mov    %ebp,%r10d
+  0x00007fbb19048f91:   inc    %r10d                        ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@25 (line 31)
+  0x00007fbb19048f94:   cmp    %r11d,%r10d
+  0x00007fbb19048f97:   jge    0x00007fbb19048f9e           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@12 (line 31)
+ ;; B7: #	out( B5 ) <- in( B6 )  Freq: 0.969661
+  0x00007fbb19048f99:   mov    %r10d,%ebp
+  0x00007fbb19048f9c:   jmp    0x00007fbb19048f79
+ ;; B8: #	out( B25 B9 ) <- in( B6 )  Freq: 0.969661
+  0x00007fbb19048f9e:   cmp    $0x20,%r9d
+  0x00007fbb19048fa2:   mov    %r9d,%ecx
+  0x00007fbb19048fa5:   cmovge %edi,%ecx
+  0x00007fbb19048fa8:   mov    %ecx,%edx
+  0x00007fbb19048faa:   add    $0xfffffffd,%edx
+  0x00007fbb19048fad:   mov    $0x80000000,%edi
+  0x00007fbb19048fb2:   cmp    %edx,%ecx
+  0x00007fbb19048fb4:   cmovl  %edi,%edx
+  0x00007fbb19048fb7:   cmp    %edx,%r10d
+  0x00007fbb19048fba:   nop
+  0x00007fbb19048fbb:   nop
+  0x00007fbb19048fbc:   nop
+  0x00007fbb19048fbd:   nop
+  0x00007fbb19048fbe:   nop
+  0x00007fbb19048fbf:   nop
+  0x00007fbb19048fc0:   jge    0x00007fbb190490d4
+ ;; B9: #	out( B26 B10 ) <- in( B8 )  Freq: 0.96966
+  0x00007fbb19048fc6:   mov    %r10d,%ecx
+  0x00007fbb19048fc9:   cmp    %r9d,%ecx
+  0x00007fbb19048fcc:   jae    0x00007fbb190490dc
+ ;; B10: #	out( B27 B11 ) <- in( B9 )  Freq: 0.969659
+  0x00007fbb19048fd2:   add    $0x4,%ebp
+  0x00007fbb19048fd5:   cmp    %r9d,%ebp
+  0x00007fbb19048fd8:   jae    0x00007fbb190490f0
+ ;; B11: #	out( B28 B12 ) <- in( B10 )  Freq: 0.969658
+  0x00007fbb19048fde:   nop
+  0x00007fbb19048fdf:   nop
+  0x00007fbb19048fe0:   cmp    %r9d,%r10d
+  0x00007fbb19048fe3:   jae    0x00007fbb19049104
+ ;; B12: #	out( B13 ) <- in( B11 )  Freq: 0.969657
+  0x00007fbb19048fe9:   mov    %r13d,%r10d
+  0x00007fbb19048fec:   add    %r13d,%r10d
+  0x00007fbb19048fef:   add    %r10d,%r10d
+  0x00007fbb19048ff2:   vpbroadcastd %r13d,%xmm0
+  0x00007fbb19048ff8:   mov    $0xfa0,%r11d
+ ;; B13: #	out( B14 ) <- in( B12 B15 ) Loop( B13-B15 ) Freq: 31.9644
+  0x00007fbb19048ffe:   mov    %edx,%edi
+  0x00007fbb19049000:   sub    %ecx,%edi
+  0x00007fbb19049002:   cmp    %ecx,%edx
+  0x00007fbb19049004:   cmovl  %r8d,%edi
+  0x00007fbb19049008:   cmp    $0xfa0,%edi
+  0x00007fbb1904900e:   cmova  %r11d,%edi
+  0x00007fbb19049012:   add    %ecx,%edi
+  0x00007fbb19049014:   nop
+  0x00007fbb19049015:   nop
+  0x00007fbb19049016:   nop
+  0x00007fbb19049017:   nop
+  0x00007fbb19049018:   nop
+  0x00007fbb19049019:   nop
+  0x00007fbb1904901a:   nop
+  0x00007fbb1904901b:   nop
+  0x00007fbb1904901c:   nop
+  0x00007fbb1904901d:   nop
+  0x00007fbb1904901e:   nop
+  0x00007fbb1904901f:   nop
+ ;; B14: #	out( B14 B15 ) <- in( B13 B14 ) Loop( B14-B14 inner main of N136 reduction strip mined) Freq: 1053.7
+  0x00007fbb19049020:   vmovdqu %xmm0,0x10(%r14,%rcx,4)     ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@18 (line 33)
+  0x00007fbb19049027:   add    %r10d,%ebx                   ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@23 (line 34)
+  0x00007fbb1904902a:   add    $0x4,%ecx                    ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@25 (line 31)
+  0x00007fbb1904902d:   cmp    %edi,%ecx
+  0x00007fbb1904902f:   jl     0x00007fbb19049020           ;*goto {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@28 (line 31)
+ ;; B15: #	out( B13 B16 ) <- in( B14 )  Freq: 31.9644
+  0x00007fbb19049031:   mov    0x3d0(%r15),%rdi             ; ImmutableOopMap {r14=Oop }
+                                                            ;*goto {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) ea1::micro2@28 (line 31)
+  0x00007fbb19049038:   test   %eax,(%rdi)                  ;*goto {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@28 (line 31)
+                                                            ;   {poll}
+  0x00007fbb1904903a:   cmp    %edx,%ecx
+  0x00007fbb1904903c:   jl     0x00007fbb19048ffe
+ ;; B16: #	out( B20 B17 ) <- in( B25 B15 )  Freq: 0.969658
+  0x00007fbb1904903e:   nop
+  0x00007fbb1904903f:   nop
+  0x00007fbb19049040:   cmp    $0x20,%ecx
+  0x00007fbb19049043:   jge    0x00007fbb1904905c
+ ;; B17: #	out( B18 ) <- in( B16 )  Freq: 0.484829
+  0x00007fbb19049045:   nop
+  0x00007fbb19049046:   nop
+  0x00007fbb19049047:   nop
+ ;; B18: #	out( B22 B19 ) <- in( B17 B19 ) Loop( B18-B19 inner post of N274 reduction) Freq: 0.969657
+  0x00007fbb19049048:   cmp    %r9d,%ecx
+  0x00007fbb1904904b:   jae    0x00007fbb19049077
+ ;; B19: #	out( B18 B20 ) <- in( B18 )  Freq: 0.969656
+  0x00007fbb1904904d:   mov    %r13d,0x10(%r14,%rcx,4)      ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@18 (line 33)
+  0x00007fbb19049052:   add    %r13d,%ebx                   ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@23 (line 34)
+  0x00007fbb19049055:   inc    %ecx                         ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@25 (line 31)
+  0x00007fbb19049057:   cmp    $0x20,%ecx
+  0x00007fbb1904905a:   jl     0x00007fbb19049048           ;*iload_3 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@9 (line 31)
+ ;; B20: #	out( N283 ) <- in( B3 B19 B16 )  Freq: 0.999992
+  0x00007fbb1904905c:   mov    %ebx,%eax
+  0x00007fbb1904905e:   add    $0x30,%rsp
+  0x00007fbb19049062:   pop    %rbp
+  0x00007fbb19049063:   cmp    0x3c8(%r15),%rsp             ;   {poll_return}
+  0x00007fbb1904906a:   ja     0x00007fbb19049140
+  0x00007fbb19049070:   retq   
+ ;; B21: #	out( B23 ) <- in( B5 )  Freq: 1.96508e-06
+  0x00007fbb19049071:   mov    %ebp,%ecx
+  0x00007fbb19049073:   mov    %ebx,%ebp
+  0x00007fbb19049075:   jmp    0x00007fbb19049079
+ ;; B22: #	out( B23 ) <- in( B18 )  Freq: 9.82533e-07
+  0x00007fbb19049077:   mov    %ebx,%ebp
+ ;; B23: #	out( N283 ) <- in( B22 B21 )  Freq: 2.94761e-06
+  0x00007fbb19049079:   mov    $0xffffffe4,%esi
+  0x00007fbb1904907e:   mov    %r14,0x10(%rsp)
+  0x00007fbb19049083:   mov    %ecx,0x18(%rsp)
+  0x00007fbb19049087:   mov    %r13d,0x1c(%rsp)
+  0x00007fbb1904908c:   nop
+  0x00007fbb1904908d:   nop
+  0x00007fbb1904908e:   nop
+  0x00007fbb1904908f:   callq  0x00007fbb19132820           ; ImmutableOopMap {[-1850524908]=Oop }
+                                                            ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@18 (line 33)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007fbb19049094:   movabs $0x7fbb23ad9548,%rdi         ;   {external_word}
+  0x00007fbb1904909e:   and    $0xfffffffffffffff0,%rsp
+  0x00007fbb190490a2:   callq  0x00007fbb231f9bb4           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007fbb190490a7:   hlt    
+ ;; B24: #	out( N283 ) <- in( B2 )  Freq: 9.99999e-07
+  0x00007fbb190490a8:   mov    $0xffffff8d,%esi
+  0x00007fbb190490ad:   mov    %r13d,(%rsp)
+  0x00007fbb190490b1:   mov    %ebx,0x4(%rsp)
+  0x00007fbb190490b5:   mov    %r14,0x8(%rsp)
+  0x00007fbb190490ba:   nop
+  0x00007fbb190490bb:   callq  0x00007fbb19132820           ; ImmutableOopMap {[-1850524916]=Oop }
+                                                            ;*iload_3 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@9 (line 31)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007fbb190490c0:   movabs $0x7fbb23ad9548,%rdi         ;   {external_word}
+  0x00007fbb190490ca:   and    $0xfffffffffffffff0,%rsp
+  0x00007fbb190490ce:   callq  0x00007fbb231f9bb4           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007fbb190490d3:   hlt    
+ ;; B25: #	out( B16 ) <- in( B8 )  Freq: 9.82537e-07
+  0x00007fbb190490d4:   mov    %r10d,%ecx
+  0x00007fbb190490d7:   jmpq   0x00007fbb1904903e
+ ;; B26: #	out( N283 ) <- in( B9 )  Freq: 9.82536e-07
+  0x00007fbb190490dc:   movabs $0x7fbb23c84cc8,%rdi         ;   {external_word}
+  0x00007fbb190490e6:   and    $0xfffffffffffffff0,%rsp
+  0x00007fbb190490ea:   callq  0x00007fbb231f9bb4           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007fbb190490ef:   hlt    
+ ;; B27: #	out( N283 ) <- in( B10 )  Freq: 9.82535e-07
+  0x00007fbb190490f0:   movabs $0x7fbb23c84268,%rdi         ;   {external_word}
+  0x00007fbb190490fa:   and    $0xfffffffffffffff0,%rsp
+  0x00007fbb190490fe:   callq  0x00007fbb231f9bb4           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007fbb19049103:   hlt    
+ ;; B28: #	out( N283 ) <- in( B11 )  Freq: 9.82534e-07
+  0x00007fbb19049104:   movabs $0x7fbb23c84268,%rdi         ;   {external_word}
+  0x00007fbb1904910e:   and    $0xfffffffffffffff0,%rsp
+  0x00007fbb19049112:   callq  0x00007fbb231f9bb4           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007fbb19049117:   hlt    
+ ;; B29: #	out( N283 ) <- in( B1 )  Freq: 1.01328e-06
+  0x00007fbb19049118:   mov    $0xffffffbe,%esi
+  0x00007fbb1904911d:   mov    %r13d,(%rsp)
+  0x00007fbb19049121:   mov    %ebx,0x4(%rsp)
+  0x00007fbb19049125:   nop
+  0x00007fbb19049126:   nop
+  0x00007fbb19049127:   callq  0x00007fbb19132820           ; ImmutableOopMap {}
+                                                            ;*iload_3 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@9 (line 31)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007fbb1904912c:   movabs $0x7fbb23ad9548,%rdi         ;   {external_word}
+  0x00007fbb19049136:   and    $0xfffffffffffffff0,%rsp
+  0x00007fbb1904913a:   callq  0x00007fbb231f9bb4           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007fbb1904913f:   hlt                                 ;*iload_3 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@9 (line 31)
+  0x00007fbb19049140:   movabs $0x7fbb19049063,%r10         ;   {internal_word}
+  0x00007fbb1904914a:   mov    %r10,0x3e0(%r15)
+  0x00007fbb19049151:   jmpq   0x00007fbb19131720           ;   {runtime_call SafepointBlob}
+  0x00007fbb19049156:   hlt    
+  0x00007fbb19049157:   hlt    
+[Exception Handler]
+  0x00007fbb19049158:   jmpq   0x00007fbb190c77a0           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007fbb1904915d:   callq  0x00007fbb19049162
+  0x00007fbb19049162:   subq   $0x5,(%rsp)
+  0x00007fbb19049167:   jmpq   0x00007fbb19132b40           ;   {runtime_call DeoptimizationBlob}
+  0x00007fbb1904916c:   hlt    
+  0x00007fbb1904916d:   hlt    
+  0x00007fbb1904916e:   hlt    
+  0x00007fbb1904916f:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007fbb19049170:   0x000000011f8a9fe8 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f8a9fe8}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007fbb19049178:   0x0000000800040dc8 {type array int}
+  0x00007fbb19049180:   0x00007fbad05115c8 {method} {0x00007fbad05115c8} 'micro2' '(I)I' in 'ea1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007fbb19048edf offset=ffffffff bits=0):
+PcDesc(pc=0x00007fbb19048f3a offset=5a bits=0):
+   ea1::micro2@9 (line 31)
+PcDesc(pc=0x00007fbb19048f8b offset=ab bits=0):
+   ea1::micro2@18 (line 33)
+PcDesc(pc=0x00007fbb19048f8e offset=ae bits=0):
+   ea1::micro2@23 (line 34)
+PcDesc(pc=0x00007fbb19048f94 offset=b4 bits=0):
+   ea1::micro2@25 (line 31)
+PcDesc(pc=0x00007fbb19048f99 offset=b9 bits=0):
+   ea1::micro2@12 (line 31)
+PcDesc(pc=0x00007fbb19049027 offset=147 bits=0):
+   ea1::micro2@18 (line 33)
+PcDesc(pc=0x00007fbb1904902a offset=14a bits=0):
+   ea1::micro2@23 (line 34)
+PcDesc(pc=0x00007fbb1904902d offset=14d bits=0):
+   ea1::micro2@25 (line 31)
+PcDesc(pc=0x00007fbb19049031 offset=151 bits=0):
+   ea1::micro2@28 (line 31)
+PcDesc(pc=0x00007fbb19049038 offset=158 bits=1):
+   ea1::micro2@28 (line 31)  reexecute=true
+   Locals
+    - l0: reg r13 [26],int
+    - l1: reg rbx [6],int
+    - l2: reg r14 [28],oop
+    - l3: reg rcx [2],int
+PcDesc(pc=0x00007fbb1904903a offset=15a bits=0):
+   ea1::micro2@28 (line 31)
+PcDesc(pc=0x00007fbb19049052 offset=172 bits=0):
+   ea1::micro2@18 (line 33)
+PcDesc(pc=0x00007fbb19049055 offset=175 bits=0):
+   ea1::micro2@23 (line 34)
+PcDesc(pc=0x00007fbb19049057 offset=177 bits=0):
+   ea1::micro2@25 (line 31)
+PcDesc(pc=0x00007fbb1904905c offset=17c bits=0):
+   ea1::micro2@9 (line 31)
+PcDesc(pc=0x00007fbb19049094 offset=1b4 bits=0):
+   ea1::micro2@18 (line 33)
+   Locals
+    - l0: stack[28]
+    - l1: reg rbp [10],int
+    - l2: stack[16],oop
+    - l3: stack[24]
+   Expression stack
+    - @0: stack[16],oop
+    - @1: stack[24]
+    - @2: stack[28]
+PcDesc(pc=0x00007fbb190490c0 offset=1e0 bits=0):
+   ea1::micro2@9 (line 31)
+   Locals
+    - l0: stack[0]
+    - l1: stack[4]
+    - l2: stack[8],oop
+    - l3: reg rbp [10],int
+PcDesc(pc=0x00007fbb1904912c offset=24c bits=0):
+   ea1::micro2@9 (line 31)
+   Locals
+    - l0: stack[0]
+    - l1: stack[4]
+    - l2: NULL
+    - l3: reg rbp [10],int
+PcDesc(pc=0x00007fbb19049140 offset=260 bits=0):
+   ea1::micro2@9 (line 31)
+PcDesc(pc=0x00007fbb19049171 offset=291 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 4 OopMaps
+
+ImmutableOopMap {r14=Oop } pc offsets: 344 
+ImmutableOopMap {[-1850524908]=Oop } pc offsets: 436 
+ImmutableOopMap {[-1850524916]=Oop } pc offsets: 480 
+ImmutableOopMap {} pc offsets: 588 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007fbb19048f3a offset=5a):
+   ea1::micro2@9 (line 31)
+ScopeDesc(pc=0x00007fbb19048f8b offset=ab):
+   ea1::micro2@18 (line 33)
+ScopeDesc(pc=0x00007fbb19048f8e offset=ae):
+   ea1::micro2@23 (line 34)
+ScopeDesc(pc=0x00007fbb19048f94 offset=b4):
+   ea1::micro2@25 (line 31)
+ScopeDesc(pc=0x00007fbb19048f99 offset=b9):
+   ea1::micro2@12 (line 31)
+ScopeDesc(pc=0x00007fbb19049027 offset=147):
+   ea1::micro2@18 (line 33)
+ScopeDesc(pc=0x00007fbb1904902a offset=14a):
+   ea1::micro2@23 (line 34)
+ScopeDesc(pc=0x00007fbb1904902d offset=14d):
+   ea1::micro2@25 (line 31)
+ScopeDesc(pc=0x00007fbb19049031 offset=151):
+   ea1::micro2@28 (line 31)
+ScopeDesc(pc=0x00007fbb19049038 offset=158):
+   ea1::micro2@28 (line 31)  reexecute=true
+   Locals
+    - l0: reg r13 [26],int
+    - l1: reg rbx [6],int
+    - l2: reg r14 [28],oop
+    - l3: reg rcx [2],int
+ScopeDesc(pc=0x00007fbb1904903a offset=15a):
+   ea1::micro2@28 (line 31)
+ScopeDesc(pc=0x00007fbb19049052 offset=172):
+   ea1::micro2@18 (line 33)
+ScopeDesc(pc=0x00007fbb19049055 offset=175):
+   ea1::micro2@23 (line 34)
+ScopeDesc(pc=0x00007fbb19049057 offset=177):
+   ea1::micro2@25 (line 31)
+ScopeDesc(pc=0x00007fbb1904905c offset=17c):
+   ea1::micro2@9 (line 31)
+ScopeDesc(pc=0x00007fbb19049094 offset=1b4):
+   ea1::micro2@18 (line 33)
+   Locals
+    - l0: stack[28]
+    - l1: reg rbp [10],int
+    - l2: stack[16],oop
+    - l3: stack[24]
+   Expression stack
+    - @0: stack[16],oop
+    - @1: stack[24]
+    - @2: stack[28]
+ScopeDesc(pc=0x00007fbb190490c0 offset=1e0):
+   ea1::micro2@9 (line 31)
+   Locals
+    - l0: stack[0]
+    - l1: stack[4]
+    - l2: stack[8],oop
+    - l3: reg rbp [10],int
+ScopeDesc(pc=0x00007fbb1904912c offset=24c):
+   ea1::micro2@9 (line 31)
+   Locals
+    - l0: stack[0]
+    - l1: stack[4]
+    - l2: NULL
+    - l3: reg rbp [10],int
+ScopeDesc(pc=0x00007fbb19049140 offset=260):
+   ea1::micro2@9 (line 31)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007fbb19048e70: 3200
+relocInfo@0x00007fbb19048e70 [type=6(runtime_call) addr=0x00007fbb19048ee0 offset=0 format=1] | [destination=0x00007fbb2337d748]
+         @0x00007fbb19048e72: 78016644
+relocInfo@0x00007fbb19048e74 [type=12(metadata) addr=0x00007fbb19048f24 offset=68 format=3 data=1] | [metadata_addr=0x00007fbb19049178 *=0x0000000800040dc8 offset=0]metadata_value=0x0000000800040dc8: {type array int}
+         @0x00007fbb19048e76: 5114
+relocInfo@0x00007fbb19048e76 [type=10(poll) addr=0x00007fbb19049038 offset=276]
+         @0x00007fbb19048e78: 582b
+relocInfo@0x00007fbb19048e78 [type=11(poll_return) addr=0x00007fbb19049063 offset=43]
+         @0x00007fbb19048e7a: 322c
+relocInfo@0x00007fbb19048e7a [type=6(runtime_call) addr=0x00007fbb1904908f offset=44 format=1] | [destination=0x00007fbb19132820]
+         @0x00007fbb19048e7c: 7c0323ad95487fbb3805
+relocInfo@0x00007fbb19048e84 [type=7(external_word) addr=0x00007fbb19049094 offset=5 data={23ad95487fbb}] | [target=0x00007fbb23ad9548]
+         @0x00007fbb19048e86: 320e
+relocInfo@0x00007fbb19048e86 [type=6(runtime_call) addr=0x00007fbb190490a2 offset=14 format=1] | [destination=0x00007fbb231f9bb4]
+         @0x00007fbb19048e88: 3219
+relocInfo@0x00007fbb19048e88 [type=6(runtime_call) addr=0x00007fbb190490bb offset=25 format=1] | [destination=0x00007fbb19132820]
+         @0x00007fbb19048e8a: 7c0323ad95487fbb3805
+relocInfo@0x00007fbb19048e92 [type=7(external_word) addr=0x00007fbb190490c0 offset=5 data={23ad95487fbb}] | [target=0x00007fbb23ad9548]
+         @0x00007fbb19048e94: 320e
+relocInfo@0x00007fbb19048e94 [type=6(runtime_call) addr=0x00007fbb190490ce offset=14 format=1] | [destination=0x00007fbb231f9bb4]
+         @0x00007fbb19048e96: 7c0323c84cc87fbb380e
+relocInfo@0x00007fbb19048e9e [type=7(external_word) addr=0x00007fbb190490dc offset=14 data={23c84cc87fbb}] | [target=0x00007fbb23c84cc8]
+         @0x00007fbb19048ea0: 320e
+relocInfo@0x00007fbb19048ea0 [type=6(runtime_call) addr=0x00007fbb190490ea offset=14 format=1] | [destination=0x00007fbb231f9bb4]
+         @0x00007fbb19048ea2: 7c0323c842687fbb3806
+relocInfo@0x00007fbb19048eaa [type=7(external_word) addr=0x00007fbb190490f0 offset=6 data={23c842687fbb}] | [target=0x00007fbb23c84268]
+         @0x00007fbb19048eac: 320e
+relocInfo@0x00007fbb19048eac [type=6(runtime_call) addr=0x00007fbb190490fe offset=14 format=1] | [destination=0x00007fbb231f9bb4]
+         @0x00007fbb19048eae: 7c0323c842687fbb3806
+relocInfo@0x00007fbb19048eb6 [type=7(external_word) addr=0x00007fbb19049104 offset=6 data={23c842687fbb}] | [target=0x00007fbb23c84268]
+         @0x00007fbb19048eb8: 320e
+relocInfo@0x00007fbb19048eb8 [type=6(runtime_call) addr=0x00007fbb19049112 offset=14 format=1] | [destination=0x00007fbb231f9bb4]
+         @0x00007fbb19048eba: 3215
+relocInfo@0x00007fbb19048eba [type=6(runtime_call) addr=0x00007fbb19049127 offset=21 format=1] | [destination=0x00007fbb19132820]
+         @0x00007fbb19048ebc: 7c0323ad95487fbb3805
+relocInfo@0x00007fbb19048ec4 [type=7(external_word) addr=0x00007fbb1904912c offset=5 data={23ad95487fbb}] | [target=0x00007fbb23ad9548]
+         @0x00007fbb19048ec6: 320e
+relocInfo@0x00007fbb19048ec6 [type=6(runtime_call) addr=0x00007fbb1904913a offset=14 format=1] | [destination=0x00007fbb231f9bb4]
+         @0x00007fbb19048ec8: 78dd4006
+relocInfo@0x00007fbb19048eca [type=8(internal_word) addr=0x00007fbb19049140 offset=6 data=221] | [target=0x00007fbb19049063]
+         @0x00007fbb19048ecc: 3211
+relocInfo@0x00007fbb19048ecc [type=6(runtime_call) addr=0x00007fbb19049151 offset=17 format=1] | [destination=0x00007fbb19131720]
+         @0x00007fbb19048ece: 0007
+relocInfo@0x00007fbb19048ece [type=0(none) addr=0x00007fbb19049158 offset=7]
+         @0x00007fbb19048ed0: 3200
+relocInfo@0x00007fbb19048ed0 [type=6(runtime_call) addr=0x00007fbb19049158 offset=0 format=1] | [destination=0x00007fbb190c77a0]
+         @0x00007fbb19048ed2: 320f
+relocInfo@0x00007fbb19048ed2 [type=6(runtime_call) addr=0x00007fbb19049167 offset=15 format=1] | [destination=0x00007fbb19132b40]
+         @0x00007fbb19048ed4: 0000
+relocInfo@0x00007fbb19048ed4 [type=0(none) addr=0x00007fbb19049167 offset=0]
+         @0x00007fbb19048ed6: 0000
+relocInfo@0x00007fbb19048ed6 [type=0(none) addr=0x00007fbb19049167 offset=0]
+         @0x00007fbb19048ed8: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable (size = 1 entries, 12 bytes):
+{
+   < 0x00007fbb19048f20, 0x00007fbb19049118 > 
+}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x000000011f8a9fe8 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f8a9fe8}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x0000000800040dc8 {type array int}
+#2: 0x00007fbad05115c8 {method} {0x00007fbad05115c8} 'micro2' '(I)I' in 'ea1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+======== Connection graph for  ea1::main
+invocation #0: 2 iterations and 0.000008 sec to build connection graph with 368 nodes and worklist size 16
+
+JavaObject(5) NoEscape(NoEscape) NSR [ 316F 239F 324F [ 151 156 ]]   139  AllocateArray  === 98 87 117 8 1 (134 120 20 119 46 1 1 91 90 108 20 1 1 ) [[ 140 141 142 149 150 151 ]]  rawptr:NotNull ( int:>=0, java/lang/Object:NotNull *, bool, int, bool ) ea1::micro2 @ bci:4 (line 29) ea1::main @ bci:14 (line 41) !jvms: ea1::micro2 @ bci:4 (line 29) ea1::main @ bci:14 (line 41)
+LocalVar(10) [ 139P [ 156 ]]   151  Proj  === 139  [[ 152 156 ]] #5 !jvms: ea1::micro2 @ bci:4 (line 29) ea1::main @ bci:14 (line 41)
+LocalVar(14) [ 151 139P [ 316b 239b 324b ]]   156  CheckCastPP  === 153 151  [[ 309 239 172 184 196 324 324 316 ]]  #int[int:32]:NotNull:exact * !jvms: ea1::micro2 @ bci:4 (line 29) ea1::main @ bci:14 (line 41)
+
+
+======== Connection graph for  ea1::micro2
+invocation #0: 2 iterations and 0.000008 sec to build connection graph with 250 nodes and worklist size 14
+
+JavaObject(4) NoEscape(NoEscape) NSR [ 211F 149F 212F [ 57 62 ]]    45  AllocateArray  === 5 6 7 8 1 (39 24 22 23 41 10 22 1 1 ) [[ 46 47 48 55 56 57 ]]  rawptr:NotNull ( int:>=0, java/lang/Object:NotNull *, bool, int, bool ) ea1::micro2 @ bci:4 (line 29) !jvms: ea1::micro2 @ bci:4 (line 29)
+LocalVar(9) [ 45P [ 62 ]]    57  Proj  === 45  [[ 58 62 ]] #5 !jvms: ea1::micro2 @ bci:4 (line 29)
+LocalVar(12) [ 57 45P [ 211b 149b 212b ]]    62  CheckCastPP  === 59 57  [[ 204 149 79 92 105 212 211 212 ]]  #int[int:32]:NotNull:exact * !jvms: ea1::micro2 @ bci:4 (line 29)
+
+
+============================= C2-compiled nmethod ==============================
+#r018 rsi   : parm 0: int
+# -- Old rsp -- Framesize: 32 --
+#r591 rsp+28: in_preserve
+#r590 rsp+24: return address
+#r589 rsp+20: in_preserve
+#r588 rsp+16: saved fp register
+#r587 rsp+12: pad2, stack alignment
+#r586 rsp+ 8: pad2, stack alignment
+#r585 rsp+ 4: Fixed slot 1
+#r584 rsp+ 0: Fixed slot 0
+#
+----------------------- MetaData before Compile_id = 147 ------------------------
+{method}
+ - this oop:          0x00007fbad05115c8
+ - method holder:     'ea1'
+ - constants:         0x00007fbad0511058 constant pool [77]/operands[5] {0x00007fbad0511058} for 'ea1' cache=0x00007fbad0511770
+ - access:            0xc1000008  static 
+ - name:              'micro2'
+ - signature:         '(I)I'
+ - max stack:         4
+ - max locals:        4
+ - size of params:    1
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007fbb1901f340
+ - adapters:          AHE@0x00007fbb1c254b40: 0xa i2c: 0x00007fbb19129240 c2i: 0x00007fbb191292f9 c2iUV: 0x00007fbb191292c3 c2iNCI: 0x00007fbb19129333
+ - compiled entry     0x00007fbb191292f9
+ - code size:         33
+ - code start:        0x00007fbad0511598
+ - code end (excl):   0x00007fbad05115b9
+ - method data:       0x00007fbad0511990
+ - checked ex length: 0
+ - linenumber start:  0x00007fbad05115b9
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 147 -----------------------
+#
+#  int ( int )
+#
+000     N1: #	out( B1 ) <- in( B1 )  Freq: 1
+
+000     B1: #	out( N1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (96 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #16	# Create frame
+
+00c     addl    RSI, RSI	# int
+00e     addl    RSI, RSI	# int
+010     addl    RSI, RSI	# int
+012     addl    RSI, RSI	# int
+014     movl    RAX, RSI	# spill
+016     addl    RAX, RSI	# int
+018     addq    rsp, 16	# Destroy frame
+	popq    rbp
+	cmpq     rsp, poll_offset[r15_thread] 
+	ja       #safepoint_stub	# Safepoint: poll for GC
+
+02a     ret
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)    1575  147             ea1::micro2 (33 bytes)
+ total in heap  [0x00007fbb19048a10,0x00007fbb19048c48] = 568
+ relocation     [0x00007fbb19048b70,0x00007fbb19048b80] = 16
+ main code      [0x00007fbb19048b80,0x00007fbb19048bc8] = 72
+ stub code      [0x00007fbb19048bc8,0x00007fbb19048be0] = 24
+ oops           [0x00007fbb19048be0,0x00007fbb19048be8] = 8
+ metadata       [0x00007fbb19048be8,0x00007fbb19048bf0] = 8
+ scopes data    [0x00007fbb19048bf0,0x00007fbb19048c00] = 16
+ scopes pcs     [0x00007fbb19048c00,0x00007fbb19048c40] = 64
+ dependencies   [0x00007fbb19048c40,0x00007fbb19048c48] = 8
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007fbad05115c8} 'micro2' '(I)I' in 'ea1'
+  # parm0:    rsi       = int
+  #           [sp+0x20]  (sp of caller)
+ ;; N1: #	out( B1 ) <- in( B1 )  Freq: 1
+ ;; B1: #	out( N1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007fbb19048b80:   mov    %eax,-0x18000(%rsp)
+  0x00007fbb19048b87:   push   %rbp
+  0x00007fbb19048b88:   sub    $0x10,%rsp                   ;*synchronization entry
+                                                            ; - ea1::micro2@-1 (line 28)
+  0x00007fbb19048b8c:   add    %esi,%esi
+  0x00007fbb19048b8e:   add    %esi,%esi
+  0x00007fbb19048b90:   add    %esi,%esi
+  0x00007fbb19048b92:   add    %esi,%esi
+  0x00007fbb19048b94:   mov    %esi,%eax
+  0x00007fbb19048b96:   add    %esi,%eax                    ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ea1::micro2@23 (line 34)
+  0x00007fbb19048b98:   add    $0x10,%rsp
+  0x00007fbb19048b9c:   pop    %rbp
+  0x00007fbb19048b9d:   cmp    0x3c8(%r15),%rsp             ;   {poll_return}
+  0x00007fbb19048ba4:   ja     0x00007fbb19048bab
+  0x00007fbb19048baa:   retq   
+  0x00007fbb19048bab:   movabs $0x7fbb19048b9d,%r10         ;   {internal_word}
+  0x00007fbb19048bb5:   mov    %r10,0x3e0(%r15)
+  0x00007fbb19048bbc:   jmpq   0x00007fbb19131720           ;   {runtime_call SafepointBlob}
+  0x00007fbb19048bc1:   hlt    
+  0x00007fbb19048bc2:   hlt    
+  0x00007fbb19048bc3:   hlt    
+  0x00007fbb19048bc4:   hlt    
+  0x00007fbb19048bc5:   hlt    
+  0x00007fbb19048bc6:   hlt    
+  0x00007fbb19048bc7:   hlt    
+[Exception Handler]
+  0x00007fbb19048bc8:   jmpq   0x00007fbb190c77a0           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007fbb19048bcd:   callq  0x00007fbb19048bd2
+  0x00007fbb19048bd2:   subq   $0x5,(%rsp)
+  0x00007fbb19048bd7:   jmpq   0x00007fbb19132b40           ;   {runtime_call DeoptimizationBlob}
+  0x00007fbb19048bdc:   hlt    
+  0x00007fbb19048bdd:   hlt    
+  0x00007fbb19048bde:   hlt    
+  0x00007fbb19048bdf:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007fbb19048be0:   0x000000011f8a9fe8 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f8a9fe8}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007fbb19048be8:   0x00007fbad05115c8 {method} {0x00007fbad05115c8} 'micro2' '(I)I' in 'ea1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007fbb19048b7f offset=ffffffff bits=0):
+PcDesc(pc=0x00007fbb19048b8c offset=c bits=0):
+   ea1::micro2@-1 (line 28)
+PcDesc(pc=0x00007fbb19048b98 offset=18 bits=0):
+   ea1::micro2@23 (line 34)
+PcDesc(pc=0x00007fbb19048be1 offset=61 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 0 OopMaps
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007fbb19048b8c offset=c):
+   ea1::micro2@-1 (line 28)
+ScopeDesc(pc=0x00007fbb19048b98 offset=18):
+   ea1::micro2@23 (line 34)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007fbb19048b70: 581d
+relocInfo@0x00007fbb19048b70 [type=11(poll_return) addr=0x00007fbb19048b9d offset=29]
+         @0x00007fbb19048b72: 780e400e
+relocInfo@0x00007fbb19048b74 [type=8(internal_word) addr=0x00007fbb19048bab offset=14 data=14] | [target=0x00007fbb19048b9d]
+         @0x00007fbb19048b76: 3211
+relocInfo@0x00007fbb19048b76 [type=6(runtime_call) addr=0x00007fbb19048bbc offset=17 format=1] | [destination=0x00007fbb19131720]
+         @0x00007fbb19048b78: 000c
+relocInfo@0x00007fbb19048b78 [type=0(none) addr=0x00007fbb19048bc8 offset=12]
+         @0x00007fbb19048b7a: 3200
+relocInfo@0x00007fbb19048b7a [type=6(runtime_call) addr=0x00007fbb19048bc8 offset=0 format=1] | [destination=0x00007fbb190c77a0]
+         @0x00007fbb19048b7c: 320f
+relocInfo@0x00007fbb19048b7c [type=6(runtime_call) addr=0x00007fbb19048bd7 offset=15 format=1] | [destination=0x00007fbb19132b40]
+         @0x00007fbb19048b7e: 0000
+relocInfo@0x00007fbb19048b7e [type=0(none) addr=0x00007fbb19048bd7 offset=0]
+         @0x00007fbb19048b80: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable is empty
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x000000011f8a9fe8 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f8a9fe8}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x00007fbad05115c8 {method} {0x00007fbad05115c8} 'micro2' '(I)I' in 'ea1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+[RES] -1018167296
+------------------------------------------------------------------------
+static ea1::micro2(I)I
+  interpreter_invocation_count:       39718
+  invocation_counter:                 39718
+  backedge_counter:                 1270976
+  decompile_count:                        0
+  mdo size: 472 bytes
+
+0 iconst_0
+1 istore_1
+2 bipush 32
+4 newarray int
+6 astore_2
+7 iconst_0
+8 istore_3
+9 iload_3
+10 bipush 32
+12 if_icmpge 31
+  0   bci: 12   BranchData          taken(38613) displacement(56)
+                                    not taken(1265856)
+15 aload_2
+16 iload_3
+17 iload_0
+18 iastore
+19 iload_1
+20 aload_2
+21 iload_3
+22 iaload
+23 iadd
+24 istore_1
+25 iinc #3 1
+28 goto 9
+  32  bci: 28   JumpData            taken(1265856) displacement(-32)
+31 iload_1
+32 ireturn
+------------------------------------------------------------------------
+Total MDO size: 472 bytes

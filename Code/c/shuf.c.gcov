@@ -1,0 +1,32 @@
+        -:    0:Source:shuf.c
+        -:    0:Graph:shuf.gcno
+        -:    0:Data:shuf.gcda
+        -:    0:Runs:0
+        -:    1:
+        -:    2:
+function _Z12pack_shufflePiPl called 0 returned 0% blocks executed 0%
+    #####:    3:void pack_shuffle(int * res, long * src) {
+        -:    4:   asm volatile(
+        -:    5:      "vpxor %%ymm0, %%ymm0, %%ymm0 \n\t"
+        -:    6:      "vmovdqu %1,  %%ymm1 \n\t"
+        -:    7:      "vextractf128 $0x1, %%ymm1, %%xmm2 \n\t"
+        -:    8:      "vshufps $0x88, %%ymm2, %%ymm1, %%ymm1 \n\t"
+        -:    9:      "movdqu %%xmm1, %0"
+        -:   10:     : "=m"(*res)
+        -:   11:     : "m"(*src)
+        -:   12:     : "%ymm0", "%ymm1" , "%xmm2"
+    #####:   13:  );
+    %%%%%:   13-block  0
+call    0 never executed
+    #####:   14:}
+        -:   15:
+        -:   16:long src[] = { 0x00000000FFFFFFFFL, 0x00000000FFFFFFFFL, 0x00000000AAAAAAAAL, 0x00000000AAAAAAAAL };
+        -:   17:int res[4];
+        -:   18:
+function main called 0 returned 0% blocks executed 0%
+    #####:   19:int main() {
+    #####:   20:   pack_shuffle(res, src);
+    %%%%%:   20-block  0
+call    0 never executed
+    #####:   21:}
+        -:   22:

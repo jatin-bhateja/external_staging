@@ -1,0 +1,1333 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/make/common/JavaCompilation.gmk b/make/common/JavaCompilation.gmk
+index cb93131a124..a521f857ea9 100644
+--- a/make/common/JavaCompilation.gmk
++++ b/make/common/JavaCompilation.gmk
+@@ -264,7 +264,8 @@ define SetupJavaCompilationBody
+   endif
+ 
+   # Allow overriding on the command line
+-  JAVA_WARNINGS_ARE_ERRORS ?= -Werror
++  # JAVA_WARNINGS_ARE_ERRORS ?= -Werror
++  JAVA_WARNINGS_ARE_ERRORS ?=
+ 
+   # Tell javac to do exactly as told and no more
+   PARANOIA_FLAGS := -implicit:none -Xprefer:source -XDignore.symbol.file=true -encoding ascii
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 2119c0797a6..af33c146e2e 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -11263,6 +11263,20 @@ void Assembler::bzhiq(Register dst, Register src1, Register src2) {
+   emit_int16((unsigned char)0xF5, (0xC0 | encode));
+ }
+ 
++void Assembler::pext(Register dst, Register src1, Register src2) {
++  assert(VM_Version::supports_bmi2(), "bit manipulation instructions not supported");
++  InstructionAttr attributes(AVX_128bit, /* vex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16((unsigned char)0xF5, (0xC0 | encode));
++}
++
++void Assembler::pdep(Register dst, Register src1, Register src2) {
++  assert(VM_Version::supports_bmi2(), "bit manipulation instructions not supported");
++  InstructionAttr attributes(AVX_128bit, /* vex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_F2, VEX_OPCODE_0F_38, &attributes);
++  emit_int16((unsigned char)0xF5, (0xC0 | encode));
++}
++
+ void Assembler::shlxl(Register dst, Register src1, Register src2) {
+   assert(VM_Version::supports_bmi2(), "");
+   InstructionAttr attributes(AVX_128bit, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ true);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 09b2a392d30..be923239f9f 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -2176,6 +2176,9 @@ private:
+   void shrxq(Register dst, Register src1, Register src2);
+ 
+   void bzhiq(Register dst, Register src1, Register src2);
++  void pdep(Register dst, Register src1, Register src2);
++  void pext(Register dst, Register src1, Register src2);
++
+ 
+   //====================VECTOR ARITHMETIC=====================================
+   // Add Packed Floating-Point Values
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index df3501974c4..688f507dcd8 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -4052,6 +4052,48 @@ void C2_MacroAssembler::masked_op(int ideal_opc, int mask_len, KRegister dst,
+   }
+ }
+ 
++void C2_MacroAssembler::vector_long_to_maskvec(XMMRegister dst, Register src, Register rtmp1,
++                                               Register rtmp2, XMMRegister xtmp, int mask_len,
++                                               int vec_enc) {
++  int index = 0;
++  int vindex = 0;
++  movq(rtmp1, src);
++  andq(rtmp1, (0xFFFFFFFFFFFFFFFFUL >> (64 - mask_len)));
++  mov64(rtmp2, -1L);
++  pext(rtmp2, rtmp2, rtmp1);
++  mov64(rtmp1, 0x0101010101010101L);
++  pdep(rtmp1, rtmp2, rtmp1);
++  if (mask_len > 8) {
++    vpxor(xtmp, xtmp, xtmp, vec_enc);
++    movq(xtmp, rtmp1);
++  }
++  movq(dst, rtmp1);
++
++  mask_len -= 8;
++  while (mask_len > 0) {
++    assert ((mask_len & 0x7) == 0, "mask must be multiple of 8");
++    index++;
++    if ((index % 2) == 0) {
++      pxor(xtmp, xtmp);
++    }
++    mov64(rtmp1, 0x0101010101010101L);
++    shrq(rtmp2, 8);
++    pdep(rtmp1, rtmp2, rtmp1);
++    pinsrq(xtmp, rtmp1, index % 2);
++    vindex = index / 2;
++    if (vindex) {
++      // Write entire 16 byte vector when both 64 bit
++      // lanes are update to save redundant instructions.
++      if (index % 2) {
++        vinsertf128(dst, dst, xtmp, vindex);
++      }
++    } else {
++      vmovdqu(dst, xtmp);
++    }
++    mask_len -= 8;
++  }
++}
++
+ #ifdef _LP64
+ void C2_MacroAssembler::vector_mask_operation(int opc, Register dst, KRegister mask,
+                                               Register tmp, int masklen, int masksize,
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 8efa36a8101..fca5d97febf 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -229,6 +229,9 @@ public:
+   void vector_mask_operation(int opc, Register dst, XMMRegister mask, XMMRegister xtmp, XMMRegister xtmp1,
+                              Register tmp, int masklen, int masksize, int vec_enc);
+ #endif
++  void vector_long_to_maskvec(XMMRegister dst, Register src, Register rtmp1,
++                              Register rtmp2, XMMRegister xtmp, int mask_len, int vec_enc);
++
+   void string_indexof_char(Register str1, Register cnt1, Register ch, Register result,
+                            XMMRegister vec1, XMMRegister vec2, XMMRegister vec3, Register tmp);
+ 
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 5a8569dc6e0..7eec3e008d8 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1599,6 +1599,11 @@ const bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
++    case Op_VectorLongToMask:
++      if (!VM_Version::supports_bmi2()) {
++        return false;
++      }
++      break;
+   }
+   return true;  // Match rules are supported by default.
+ }
+@@ -9417,6 +9422,45 @@ instruct mask_opers_evex(kReg dst, kReg src1, kReg src2, kReg kscratch) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct long_to_maskLE8_avx(vec dst, rRegL src, rRegL rtmp1, rRegL rtmp2) %{
++  predicate(!VM_Version::supports_evex() && Matcher::vector_length(n) <= 8);
++  match(Set dst (VectorLongToMask src));
++  effect(TEMP dst, TEMP rtmp1, TEMP rtmp2);
++  format %{ "long_to_mask_avx $dst, $src\t! using $rtmp1, $rtmp2 as TEMP" %}
++  ins_encode %{
++    int mask_len = Matcher::vector_length(this);
++    int vec_enc  = vector_length_encoding(this);
++    __ vector_long_to_maskvec($dst$$XMMRegister, $src$$Register, $rtmp1$$Register,
++                              $rtmp2$$Register, xnoreg, mask_len, vec_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++
++instruct long_to_maskGT8_avx(vec dst, rRegL src, rRegL rtmp1, rRegL rtmp2, vec xtmp) %{
++  predicate(!VM_Version::supports_evex() && Matcher::vector_length(n) > 8);
++  match(Set dst (VectorLongToMask src));
++  effect(TEMP dst, TEMP rtmp1, TEMP rtmp2, TEMP xtmp);
++  format %{ "long_to_mask_avx $dst, $src\t! using $rtmp1, $rtmp2 and $xtmp as TEMP" %}
++  ins_encode %{
++    int mask_len = Matcher::vector_length(this);
++    int vec_enc  = vector_length_encoding(this);
++    __ vector_long_to_maskvec($dst$$XMMRegister, $src$$Register, $rtmp1$$Register,
++                              $rtmp2$$Register, $xtmp$$XMMRegister, mask_len, vec_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct long_to_mask_evex(kReg dst, rRegL src) %{
++  predicate(VM_Version::supports_evex());
++  match(Set dst (VectorLongToMask src));
++  format %{ "long_to_mask_evex $dst, $src\t!" %}
++  ins_encode %{
++    __ kmov($dst$$KRegister, $src$$Register);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct castMM(kReg dst)
+ %{
+   match(Set dst (CastVV dst));
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index 73afe660545..65fa6085e07 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -4233,8 +4233,8 @@ bool MatchRule::is_vector() const {
+     "VectorRearrange","VectorLoadShuffle", "VectorLoadConst",
+     "VectorCastB2X", "VectorCastS2X", "VectorCastI2X",
+     "VectorCastL2X", "VectorCastF2X", "VectorCastD2X",
+-    "VectorMaskWrapper", "VectorMaskCmp", "VectorReinterpret","LoadVectorMasked","StoreVectorMasked",
+-    "FmaVD", "FmaVF","PopCountVI",
++    "VectorMaskWrapper","VectorMaskCmp","VectorReinterpret","LoadVectorMasked","StoreVectorMasked",
++    "FmaVD","FmaVF","PopCountVI","VectorLongToMask",
+     // Next are vector mask ops.
+     "MaskAll", "AndVMask", "OrVMask", "XorVMask", "VectorMaskCast",
+     // Next are not supported currently.
+diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
+index f2ab9ca2527..aef4ac057d7 100644
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@ -859,6 +859,7 @@ class methodHandle;
+                                                "Ljava/lang/Class;"                                                                             \
+                                                "I"                                                                                             \
+                                                "J"                                                                                             \
++                                               "I"                                                                                             \
+                                                "Ljdk/internal/vm/vector/VectorSupport$VectorSpecies;"                                          \
+                                                "Ljdk/internal/vm/vector/VectorSupport$BroadcastOperation;)"                                    \
+                                                "Ljdk/internal/vm/vector/VectorSupport$VectorPayload;")                                         \
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 826f47fcf36..1b2953c96b6 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -426,6 +426,7 @@ macro(VectorMaskTrueCount)
+ macro(VectorMaskFirstTrue)
+ macro(VectorMaskLastTrue)
+ macro(VectorMaskToLong)
++macro(VectorLongToMask)
+ macro(Pack)
+ macro(PackB)
+ macro(PackS)
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 198f43efada..037965b3149 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -782,20 +782,23 @@ bool LibraryCallKit::inline_vector_shuffle_to_vector() {
+ //  S extends VectorSpecies<E>,
+ //  E>
+ // M broadcastCoerced(Class<? extends M> vmClass, Class<E> elementType, int length,
+-//                    long bits, S s,
++//                    long bits, int bitwise, S s,
+ //                    BroadcastOperation<M, E, S> defaultImpl)
+ bool LibraryCallKit::inline_vector_broadcast_coerced() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+   const TypeInt*     vlen         = gvn().type(argument(2))->isa_int();
++  const TypeInt*     bitwise      = gvn().type(argument(5))->isa_int();
+ 
+-  if (vector_klass == NULL || elem_klass == NULL || vlen == NULL ||
+-      vector_klass->const_oop() == NULL || elem_klass->const_oop() == NULL || !vlen->is_con()) {
++  if (vector_klass == NULL || elem_klass == NULL || vlen == NULL || bitwise == NULL ||
++      vector_klass->const_oop() == NULL || elem_klass->const_oop() == NULL ||
++      !vlen->is_con() || !bitwise->is_con()) {
+     if (C->print_intrinsics()) {
+-      tty->print_cr("  ** missing constant: vclass=%s etype=%s vlen=%s",
++      tty->print_cr("  ** missing constant: vclass=%s etype=%s vlen=%s bitwise=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(2)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(5)->Opcode()]);
+     }
+     return false; // not enough info for intrinsification
+   }
+@@ -818,47 +821,63 @@ bool LibraryCallKit::inline_vector_broadcast_coerced() {
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+ 
+-  // TODO When mask usage is supported, VecMaskNotUsed needs to be VecMaskUseLoad.
+-  if (!arch_supports_vector(VectorNode::replicate_opcode(elem_bt), num_elem, elem_bt,
+-                            (is_vector_mask(vbox_klass) ? VecMaskUseStore : VecMaskNotUsed), true /*has_scalar_args*/)) {
++  bool is_mask = is_vector_mask(vbox_klass);
++  bool is_fromlong = is_mask ? bitwise->get_con() == 1 : false;
++  VectorMaskUseType checkFlags = (VectorMaskUseType)(is_mask ? VecMaskUseLoad : VecMaskNotUsed);
++  int opc = is_fromlong ? Op_VectorLongToMask : VectorNode::replicate_opcode(elem_bt);
++
++  if (!arch_supports_vector(opc, num_elem, elem_bt, checkFlags, true /*has_scalar_args*/)) {
+     if (C->print_intrinsics()) {
+-      tty->print_cr("  ** not supported: arity=0 op=broadcast vlen=%d etype=%s ismask=%d",
++      tty->print_cr("  ** not supported: arity=0 op=broadcast vlen=%d etype=%s ismask=%d isfromlong=%d",
+                     num_elem, type2name(elem_bt),
+-                    is_vector_mask(vbox_klass) ? 1 : 0);
++                    is_mask ? 1 : 0,
++                    is_fromlong ? 1 : 0);
+     }
+     return false; // not supported
+   }
+ 
++  Node* broadcast = NULL;
+   Node* bits = argument(3); // long
+-  Node* elem = NULL;
+-  switch (elem_bt) {
+-    case T_BOOLEAN: // fall-through
+-    case T_BYTE:    // fall-through
+-    case T_SHORT:   // fall-through
+-    case T_CHAR:    // fall-through
+-    case T_INT: {
+-      elem = gvn().transform(new ConvL2INode(bits));
+-      break;
+-    }
+-    case T_DOUBLE: {
+-      elem = gvn().transform(new MoveL2DNode(bits));
+-      break;
+-    }
+-    case T_FLOAT: {
+-      bits = gvn().transform(new ConvL2INode(bits));
+-      elem = gvn().transform(new MoveI2FNode(bits));
+-      break;
++  Node* elem = bits;
++
++  if (is_fromlong) {
++    const TypeVect* vt = TypeVect::makemask(elem_bt, num_elem);
++    if (vt->isa_vectmask() == NULL) {
++      const TypeVect* mt = TypeVect::make(T_BOOLEAN, num_elem);
++      broadcast = gvn().transform(new VectorLongToMaskNode(elem, mt));
++      broadcast = gvn().transform(new VectorLoadMaskNode(broadcast, vt));
++    } else {
++      broadcast = gvn().transform(new VectorLongToMaskNode(elem, vt));
+     }
+-    case T_LONG: {
+-      elem = bits; // no conversion needed
+-      break;
++  } else {
++    switch (elem_bt) {
++      case T_BOOLEAN: // fall-through
++      case T_BYTE:    // fall-through
++      case T_SHORT:   // fall-through
++      case T_CHAR:    // fall-through
++      case T_INT: {
++        elem = gvn().transform(new ConvL2INode(bits));
++        break;
++      }
++      case T_DOUBLE: {
++        elem = gvn().transform(new MoveL2DNode(bits));
++        break;
++      }
++      case T_FLOAT: {
++        bits = gvn().transform(new ConvL2INode(bits));
++        elem = gvn().transform(new MoveI2FNode(bits));
++        break;
++      }
++      case T_LONG: {
++        // no conversion needed
++        break;
++      }
++      default: fatal("%s", type2name(elem_bt));
+     }
+-    default: fatal("%s", type2name(elem_bt));
++    broadcast = VectorNode::scalar2vector(elem, num_elem, Type::get_const_basic_type(elem_bt), is_mask);
++    broadcast = gvn().transform(broadcast);
+   }
+ 
+-  Node* broadcast = VectorNode::scalar2vector(elem, num_elem, Type::get_const_basic_type(elem_bt), is_vector_mask(vbox_klass));
+-  broadcast = gvn().transform(broadcast);
+-
+   Node* box = box_vector(broadcast, vbox_type, elem_bt, num_elem);
+   set_result(box);
+   C->set_max_vector_size(MAX2(C->max_vector_size(), (uint)(num_elem * type2aelembytes(elem_bt))));
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 6a5b0b9b014..9b23d3a65d7 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -590,7 +590,6 @@ VectorNode* VectorNode::scalar2vector(Node* s, uint vlen, const Type* opd_t, boo
+   BasicType bt = opd_t->array_element_basic_type();
+   const TypeVect* vt = opd_t->singleton() ? TypeVect::make(opd_t, vlen, is_mask)
+                                           : TypeVect::make(bt, vlen, is_mask);
+-
+   if (is_mask && Matcher::match_rule_supported_vector(Op_MaskAll, vlen, bt)) {
+     return new MaskAllNode(s, vt);
+   }
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 0b04a053f99..ed3660e1bcc 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -965,6 +965,14 @@ class VectorMaskToLongNode : public VectorMaskOpNode {
+   virtual uint  ideal_reg() const { return Op_RegL; }
+ };
+ 
++class VectorLongToMaskNode : public VectorNode {
++ public:
++  VectorLongToMaskNode(Node* mask, const TypeVect* ty):
++    VectorNode(mask, ty) {
++  }
++  virtual int Opcode() const;
++};
++
+ //-------------------------- Vector mask broadcast -----------------------------------
+ class MaskAllNode : public VectorNode {
+  public:
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index 63e00765792..cb5af597cb4 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -169,7 +169,7 @@ public class VectorSupport {
+      E>
+     VM broadcastCoerced(Class<? extends VM> vmClass, Class<E> eClass,
+                         int length,
+-                        long bits, S s,
++                        long bits, int bitwise, S s,
+                         BroadcastOperation<VM, S> defaultImpl) {
+         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+         return defaultImpl.broadcast(bits, s);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+index 3a2620583bf..b81f2059677 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+@@ -758,7 +758,7 @@ final class Byte128Vector extends ByteVector {
+         /*package-private*/
+         static Byte128Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Byte128Mask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Byte128Mask  TRUE_MASK = new Byte128Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+index 6fbe00dfdea..b0a1a1f77d3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+@@ -790,7 +790,7 @@ final class Byte256Vector extends ByteVector {
+         /*package-private*/
+         static Byte256Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Byte256Mask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Byte256Mask  TRUE_MASK = new Byte256Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+index fd6117a7884..7e95504f520 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+@@ -854,7 +854,7 @@ final class Byte512Vector extends ByteVector {
+         /*package-private*/
+         static Byte512Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Byte512Mask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Byte512Mask  TRUE_MASK = new Byte512Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+index 309f54eaf76..709a93a06b6 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+@@ -742,7 +742,7 @@ final class Byte64Vector extends ByteVector {
+         /*package-private*/
+         static Byte64Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Byte64Mask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Byte64Mask  TRUE_MASK = new Byte64Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+index e27775d61c3..73c35305759 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+@@ -728,7 +728,7 @@ final class ByteMaxVector extends ByteVector {
+         /*package-private*/
+         static ByteMaxMask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(ByteMaxMask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final ByteMaxMask  TRUE_MASK = new ByteMaxMask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index 32b84aef14b..bea17037d23 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -456,7 +456,7 @@ public abstract class ByteVector extends AbstractVector<Byte> {
+     public static ByteVector zero(VectorSpecies<Byte> species) {
+         ByteSpecies vsp = (ByteSpecies) species;
+         return VectorSupport.broadcastCoerced(vsp.vectorType(), byte.class, species.length(),
+-                                0, vsp,
++                                0, 0, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -2930,14 +2930,13 @@ public abstract class ByteVector extends AbstractVector<Byte> {
+     ByteVector fromArray(VectorSpecies<Byte> species,
+                                    byte[] a, int offset,
+                                    VectorMask<Byte> m) {
+-        ByteSpecies vsp = (ByteSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            ByteSpecies vsp = (ByteSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+@@ -4151,7 +4150,7 @@ public abstract class ByteVector extends AbstractVector<Byte> {
+             return (ByteVector)
+                 VectorSupport.broadcastCoerced(
+                     vectorType, byte.class, laneCount,
+-                    bits, this,
++                    bits, 0, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+index 62f2eb5eff5..1c8a097d85d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+@@ -719,7 +719,7 @@ final class Double128Vector extends DoubleVector {
+         /*package-private*/
+         static Double128Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Double128Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Double128Mask  TRUE_MASK = new Double128Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+index 547684af87d..37193b63bba 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+@@ -723,7 +723,7 @@ final class Double256Vector extends DoubleVector {
+         /*package-private*/
+         static Double256Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Double256Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Double256Mask  TRUE_MASK = new Double256Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+index bacc0cde088..cca90a42302 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+@@ -731,7 +731,7 @@ final class Double512Vector extends DoubleVector {
+         /*package-private*/
+         static Double512Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Double512Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Double512Mask  TRUE_MASK = new Double512Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+index 29977c72c6a..a0b851c8fa4 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+@@ -717,7 +717,7 @@ final class Double64Vector extends DoubleVector {
+         /*package-private*/
+         static Double64Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Double64Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Double64Mask  TRUE_MASK = new Double64Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+index c9db9f93b40..cbedca57edc 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+@@ -716,7 +716,7 @@ final class DoubleMaxVector extends DoubleVector {
+         /*package-private*/
+         static DoubleMaxMask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(DoubleMaxMask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final DoubleMaxMask  TRUE_MASK = new DoubleMaxMask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index 691a4def745..5f8a9114304 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -445,7 +445,7 @@ public abstract class DoubleVector extends AbstractVector<Double> {
+     public static DoubleVector zero(VectorSpecies<Double> species) {
+         DoubleSpecies vsp = (DoubleSpecies) species;
+         return VectorSupport.broadcastCoerced(vsp.vectorType(), double.class, species.length(),
+-                        toBits(0.0f), vsp,
++                        toBits(0.0f), 0, vsp,
+                         ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -2728,14 +2728,13 @@ public abstract class DoubleVector extends AbstractVector<Double> {
+     DoubleVector fromArray(VectorSpecies<Double> species,
+                                    double[] a, int offset,
+                                    VectorMask<Double> m) {
+-        DoubleSpecies vsp = (DoubleSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            DoubleSpecies vsp = (DoubleSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+@@ -3756,7 +3755,7 @@ public abstract class DoubleVector extends AbstractVector<Double> {
+             return (DoubleVector)
+                 VectorSupport.broadcastCoerced(
+                     vectorType, double.class, laneCount,
+-                    bits, this,
++                    bits, 0, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+index 4e0dd018d26..aa0ff6034b1 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+@@ -723,7 +723,7 @@ final class Float128Vector extends FloatVector {
+         /*package-private*/
+         static Float128Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Float128Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Float128Mask  TRUE_MASK = new Float128Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+index 7812876f4eb..1328f464070 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+@@ -731,7 +731,7 @@ final class Float256Vector extends FloatVector {
+         /*package-private*/
+         static Float256Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Float256Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Float256Mask  TRUE_MASK = new Float256Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+index a8936709baa..bd4d22d73f4 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+@@ -747,7 +747,7 @@ final class Float512Vector extends FloatVector {
+         /*package-private*/
+         static Float512Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Float512Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Float512Mask  TRUE_MASK = new Float512Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+index 0c91d46e64e..59afd167cfc 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+@@ -719,7 +719,7 @@ final class Float64Vector extends FloatVector {
+         /*package-private*/
+         static Float64Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Float64Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Float64Mask  TRUE_MASK = new Float64Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+index f2e1bd05c13..54bc3397be9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+@@ -716,7 +716,7 @@ final class FloatMaxVector extends FloatVector {
+         /*package-private*/
+         static FloatMaxMask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(FloatMaxMask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final FloatMaxMask  TRUE_MASK = new FloatMaxMask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index d5dbc2f9efa..6f380d19252 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -445,7 +445,7 @@ public abstract class FloatVector extends AbstractVector<Float> {
+     public static FloatVector zero(VectorSpecies<Float> species) {
+         FloatSpecies vsp = (FloatSpecies) species;
+         return VectorSupport.broadcastCoerced(vsp.vectorType(), float.class, species.length(),
+-                        toBits(0.0f), vsp,
++                        toBits(0.0f), 0, vsp,
+                         ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -2752,14 +2752,13 @@ public abstract class FloatVector extends AbstractVector<Float> {
+     FloatVector fromArray(VectorSpecies<Float> species,
+                                    float[] a, int offset,
+                                    VectorMask<Float> m) {
+-        FloatSpecies vsp = (FloatSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            FloatSpecies vsp = (FloatSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+@@ -3706,7 +3705,7 @@ public abstract class FloatVector extends AbstractVector<Float> {
+             return (FloatVector)
+                 VectorSupport.broadcastCoerced(
+                     vectorType, float.class, laneCount,
+-                    bits, this,
++                    bits, 0, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+index f5404215969..58f01ebd26b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+@@ -734,7 +734,7 @@ final class Int128Vector extends IntVector {
+         /*package-private*/
+         static Int128Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Int128Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Int128Mask  TRUE_MASK = new Int128Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+index f5ed7ce09b8..63e05d576cb 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+@@ -742,7 +742,7 @@ final class Int256Vector extends IntVector {
+         /*package-private*/
+         static Int256Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Int256Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Int256Mask  TRUE_MASK = new Int256Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+index 6da5f59d602..02374986298 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+@@ -758,7 +758,7 @@ final class Int512Vector extends IntVector {
+         /*package-private*/
+         static Int512Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Int512Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Int512Mask  TRUE_MASK = new Int512Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+index c9b1afb21b7..56ed712e7fd 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+@@ -730,7 +730,7 @@ final class Int64Vector extends IntVector {
+         /*package-private*/
+         static Int64Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Int64Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Int64Mask  TRUE_MASK = new Int64Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+index 7b28a5947b0..f1a6716b350 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+@@ -728,7 +728,7 @@ final class IntMaxVector extends IntVector {
+         /*package-private*/
+         static IntMaxMask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(IntMaxMask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final IntMaxMask  TRUE_MASK = new IntMaxMask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index 3deb61e9904..9d8e6b75833 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -456,7 +456,7 @@ public abstract class IntVector extends AbstractVector<Integer> {
+     public static IntVector zero(VectorSpecies<Integer> species) {
+         IntSpecies vsp = (IntSpecies) species;
+         return VectorSupport.broadcastCoerced(vsp.vectorType(), int.class, species.length(),
+-                                0, vsp,
++                                0, 0, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -2922,14 +2922,13 @@ public abstract class IntVector extends AbstractVector<Integer> {
+     IntVector fromArray(VectorSpecies<Integer> species,
+                                    int[] a, int offset,
+                                    VectorMask<Integer> m) {
+-        IntSpecies vsp = (IntSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            IntSpecies vsp = (IntSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+@@ -3876,7 +3875,7 @@ public abstract class IntVector extends AbstractVector<Integer> {
+             return (IntVector)
+                 VectorSupport.broadcastCoerced(
+                     vectorType, int.class, laneCount,
+-                    bits, this,
++                    bits, 0, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+index 81dbb215f0d..721038ae44d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+@@ -720,7 +720,7 @@ final class Long128Vector extends LongVector {
+         /*package-private*/
+         static Long128Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Long128Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Long128Mask  TRUE_MASK = new Long128Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+index 569bd91eafa..2c2c9fe9c66 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+@@ -724,7 +724,7 @@ final class Long256Vector extends LongVector {
+         /*package-private*/
+         static Long256Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Long256Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Long256Mask  TRUE_MASK = new Long256Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+index 543baf97d47..8ee4f656032 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+@@ -732,7 +732,7 @@ final class Long512Vector extends LongVector {
+         /*package-private*/
+         static Long512Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Long512Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Long512Mask  TRUE_MASK = new Long512Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+index 328b399d59e..841219e38a4 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+@@ -718,7 +718,7 @@ final class Long64Vector extends LongVector {
+         /*package-private*/
+         static Long64Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Long64Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Long64Mask  TRUE_MASK = new Long64Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+index 23e9d9f3fb6..b7954e968f8 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+@@ -718,7 +718,7 @@ final class LongMaxVector extends LongVector {
+         /*package-private*/
+         static LongMaxMask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(LongMaxMask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final LongMaxMask  TRUE_MASK = new LongMaxMask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index b48778f5ec3..31d997083c0 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -456,7 +456,7 @@ public abstract class LongVector extends AbstractVector<Long> {
+     public static LongVector zero(VectorSpecies<Long> species) {
+         LongSpecies vsp = (LongSpecies) species;
+         return VectorSupport.broadcastCoerced(vsp.vectorType(), long.class, species.length(),
+-                                0, vsp,
++                                0, 0, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -2783,14 +2783,13 @@ public abstract class LongVector extends AbstractVector<Long> {
+     LongVector fromArray(VectorSpecies<Long> species,
+                                    long[] a, int offset,
+                                    VectorMask<Long> m) {
+-        LongSpecies vsp = (LongSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            LongSpecies vsp = (LongSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+@@ -3811,7 +3810,7 @@ public abstract class LongVector extends AbstractVector<Long> {
+             return (LongVector)
+                 VectorSupport.broadcastCoerced(
+                     vectorType, long.class, laneCount,
+-                    bits, this,
++                    bits, 0, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+index cd52dc003b6..c29a9a7f741 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+@@ -742,7 +742,7 @@ final class Short128Vector extends ShortVector {
+         /*package-private*/
+         static Short128Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Short128Mask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Short128Mask  TRUE_MASK = new Short128Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+index 66f6d409e6a..e955adcde5d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+@@ -758,7 +758,7 @@ final class Short256Vector extends ShortVector {
+         /*package-private*/
+         static Short256Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Short256Mask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Short256Mask  TRUE_MASK = new Short256Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+index a2a8a07ddd3..29d6e62b16d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+@@ -790,7 +790,7 @@ final class Short512Vector extends ShortVector {
+         /*package-private*/
+         static Short512Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Short512Mask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Short512Mask  TRUE_MASK = new Short512Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+index ff2b2d7e063..d96cee0b680 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+@@ -734,7 +734,7 @@ final class Short64Vector extends ShortVector {
+         /*package-private*/
+         static Short64Mask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(Short64Mask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Short64Mask  TRUE_MASK = new Short64Mask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+index 7aa01264a73..e132cde8871 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+@@ -728,7 +728,7 @@ final class ShortMaxVector extends ShortVector {
+         /*package-private*/
+         static ShortMaxMask maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced(ShortMaxMask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final ShortMaxMask  TRUE_MASK = new ShortMaxMask(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index e1cada48f17..853b6e4acf6 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -456,7 +456,7 @@ public abstract class ShortVector extends AbstractVector<Short> {
+     public static ShortVector zero(VectorSpecies<Short> species) {
+         ShortSpecies vsp = (ShortSpecies) species;
+         return VectorSupport.broadcastCoerced(vsp.vectorType(), short.class, species.length(),
+-                                0, vsp,
++                                0, 0, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -2930,14 +2930,13 @@ public abstract class ShortVector extends AbstractVector<Short> {
+     ShortVector fromArray(VectorSpecies<Short> species,
+                                    short[] a, int offset,
+                                    VectorMask<Short> m) {
+-        ShortSpecies vsp = (ShortSpecies) species;
+-        if (offset >= 0 && offset <= (a.length - species.length())) {
++        if (m.allTrue()) {
++            return fromArray(species, a, offset);
++        } else {
++            ShortSpecies vsp = (ShortSpecies) species;
++            checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+             return vsp.dummyVector().fromArray0(a, offset, m);
+         }
+-
+-        // FIXME: optimize
+-        checkMaskFromIndexSize(offset, vsp, m, 1, a.length);
+-        return vsp.vOp(m, i -> a[offset + i]);
+     }
+ 
+     /**
+@@ -4145,7 +4144,7 @@ public abstract class ShortVector extends AbstractVector<Short> {
+             return (ShortVector)
+                 VectorSupport.broadcastCoerced(
+                     vectorType, short.class, laneCount,
+-                    bits, this,
++                    bits, 0, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
+index 71cef5f9594..d7c9fac28bb 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
+@@ -237,26 +237,24 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
+      */
+     @ForceInline
+     public static <E> VectorMask<E> fromLong(VectorSpecies<E> species, long bits) {
+-        AbstractSpecies<E> vspecies = (AbstractSpecies<E>) species;
+-        int laneCount = vspecies.laneCount();
+-        if (laneCount < Long.SIZE) {
+-            int extraSignBits = Long.SIZE - laneCount;
+-            bits <<= extraSignBits;
+-            bits >>= extraSignBits;
+-        }
+-        if (bits == (bits >> 1)) {
+-            // Special case.
+-            assert(bits == 0 || bits == -1);
+-            return vspecies.maskAll(bits != 0);
+-        }
+-        // FIXME: Intrinsify this.
+-        long shifted = bits;
+-        boolean[] a = new boolean[laneCount];
+-        for (int i = 0; i < a.length; i++) {
+-            a[i] = ((shifted & 1) != 0);
+-            shifted >>= 1;  // replicate sign bit
+-        }
+-        return fromValues(vspecies, a);
++        AbstractSpecies<E> vsp = (AbstractSpecies<E>) species;
++        bits &= (1 << vsp.laneCount()) - 1;
++        return VectorSupport.broadcastCoerced(vsp.maskType(), vsp.elementType(), vsp.laneCount(), bits, 1, vsp,
++                                              (m, s) -> {
++                                                  if (m == (m >> 1)) {
++                                                      // Special case.
++                                                      assert(m == 0 || m == -1);
++                                                      return s.maskAll(m != 0);
++                                                  }
++
++                                                  long shifted = m;
++                                                  boolean[] a = new boolean[s.laneCount()];
++                                                  for (int i = 0; i < a.length; i++) {
++                                                      a[i] = ((shifted & 1) != 0);
++                                                      shifted >>= 1;  // replicate sign bit
++                                                  }
++                                                  return fromValues(s, a);
++                                              });
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index 45c2cf9267c..9b89af3eeca 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -471,11 +471,11 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         $Type$Species vsp = ($Type$Species) species;
+ #if[FP]
+         return VectorSupport.broadcastCoerced(vsp.vectorType(), $type$.class, species.length(),
+-                        toBits(0.0f), vsp,
++                        toBits(0.0f), 0, vsp,
+                         ((bits_, s_) -> s_.rvOp(i -> bits_)));
+ #else[FP]
+         return VectorSupport.broadcastCoerced(vsp.vectorType(), $type$.class, species.length(),
+-                                0, vsp,
++                                0, 0, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+ #end[FP]
+     }
+@@ -4652,17 +4652,17 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ 
+     /*package-private*/
+     abstract
+-    $abstractvectortype$ fromArray0($type$[] a, int offset, VectorMask<$Boxtype$> m);
++    $abstractvectortype$ fromArray0($type$[] a, int offset, VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    $abstractvectortype$ fromArray0Template(Class<M> maskClass, $type$[] a, int offset, M m) {
++    $abstractvectortype$ fromArray0Template(Class<M> maskClass, $type$[] a, int offset, M m, boolean strictPredF) {
+         m.check(species());
+         $Type$Species vsp = vspecies();
+         return VectorSupport.loadMasked(
+             vsp.vectorType(), maskClass, vsp.elementType(), vsp.laneCount(),
+             a, arrayAddress(a, offset), m,
+-            a, offset, vsp,
++            a, offset, vsp, strictPredF,
+             (arr, off, s, vm) -> s.ldOp(arr, off, vm,
+                                         (arr_, off_, i) -> arr_[off_ + i]));
+     }
+@@ -4672,12 +4672,12 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     abstract
+     $abstractvectortype$ fromArray0($type$[] a, int offset,
+                                     int[] indexMap, int mapOffset,
+-                                    VectorMask<$Boxtype$> m);
++                                    VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+     $abstractvectortype$ fromArray0Template(Class<M> maskClass, $type$[] a, int offset,
+-                                            int[] indexMap, int mapOffset, M m) {
++                                            int[] indexMap, int mapOffset, M m, boolean strictPredF) {
+         $Type$Species vsp = vspecies();
+         IntVector.IntSpecies isp = IntVector.species(vsp.indexShape());
+         Objects.requireNonNull(a);
+@@ -4746,11 +4746,11 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ 
+     /*package-private*/
+     abstract
+-    $abstractvectortype$ fromCharArray0(char[] a, int offset, VectorMask<$Boxtype$> m);
++    $abstractvectortype$ fromCharArray0(char[] a, int offset, VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    $abstractvectortype$ fromCharArray0Template(Class<M> maskClass, char[] a, int offset, M m) {
++    $abstractvectortype$ fromCharArray0Template(Class<M> maskClass, char[] a, int offset, M m, boolean strictPredF) {
+         m.check(species());
+         $Type$Species vsp = vspecies();
+         return VectorSupport.loadMasked(
+@@ -4780,11 +4780,11 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ 
+     /*package-private*/
+     abstract
+-    $abstractvectortype$ fromBooleanArray0(boolean[] a, int offset, VectorMask<$Boxtype$> m);
++    $abstractvectortype$ fromBooleanArray0(boolean[] a, int offset, VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    $abstractvectortype$ fromBooleanArray0Template(Class<M> maskClass, boolean[] a, int offset, M m) {
++    $abstractvectortype$ fromBooleanArray0Template(Class<M> maskClass, boolean[] a, int offset, M m, boolean strictPredF) {
+         m.check(species());
+         $Type$Species vsp = vspecies();
+         return VectorSupport.loadMasked(
+@@ -4815,11 +4815,11 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     }
+ 
+     abstract
+-    $abstractvectortype$ fromByteArray0(byte[] a, int offset, VectorMask<$Boxtype$> m);
++    $abstractvectortype$ fromByteArray0(byte[] a, int offset, VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    $abstractvectortype$ fromByteArray0Template(Class<M> maskClass, byte[] a, int offset, M m) {
++    $abstractvectortype$ fromByteArray0Template(Class<M> maskClass, byte[] a, int offset, M m, boolean strictPredF) {
+         $Type$Species vsp = vspecies();
+         m.check(vsp);
+         return VectorSupport.loadMasked(
+@@ -4850,11 +4850,11 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     }
+ 
+     abstract
+-    $abstractvectortype$ fromByteBuffer0(ByteBuffer bb, int offset, VectorMask<$Boxtype$> m);
++    $abstractvectortype$ fromByteBuffer0(ByteBuffer bb, int offset, VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    $abstractvectortype$ fromByteBuffer0Template(Class<M> maskClass, ByteBuffer bb, int offset, M m) {
++    $abstractvectortype$ fromByteBuffer0Template(Class<M> maskClass, ByteBuffer bb, int offset, M m, boolean strictPredF) {
+         $Type$Species vsp = vspecies();
+         m.check(vsp);
+         return ScopedMemoryAccess.loadFromByteBufferMasked(
+@@ -4887,11 +4887,11 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     }
+ 
+     abstract
+-    void intoArray0($type$[] a, int offset, VectorMask<$Boxtype$> m);
++    void intoArray0($type$[] a, int offset, VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    void intoArray0Template(Class<M> maskClass, $type$[] a, int offset, M m) {
++    void intoArray0Template(Class<M> maskClass, $type$[] a, int offset, M m, boolean strictPredF) {
+         m.check(species());
+         $Type$Species vsp = vspecies();
+         VectorSupport.storeMasked(
+@@ -4907,12 +4907,12 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     abstract
+     void intoArray0($type$[] a, int offset,
+                     int[] indexMap, int mapOffset,
+-                    VectorMask<$Boxtype$> m);
++                    VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+     void intoArray0Template(Class<M> maskClass, $type$[] a, int offset,
+-                            int[] indexMap, int mapOffset, M m) {
++                            int[] indexMap, int mapOffset, M m, boolean strictPredF) {
+         m.check(species());
+         $Type$Species vsp = vspecies();
+         IntVector.IntSpecies isp = IntVector.species(vsp.indexShape());
+@@ -4954,7 +4954,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+             vsp.vectorType(), maskClass, vsp.elementType(), vsp.laneCount(),
+             isp.vectorType(),
+             a, arrayAddress(a, 0), vix,
+-            this, m,
++            this, m, strictPredF,
+             a, offset, indexMap, mapOffset,
+             (arr, off, v, map, mo, vm)
+             -> v.stOp(arr, off, vm,
+@@ -4967,18 +4967,18 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ 
+ #if[byte]
+     abstract
+-    void intoBooleanArray0(boolean[] a, int offset, VectorMask<$Boxtype$> m);
++    void intoBooleanArray0(boolean[] a, int offset, VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    void intoBooleanArray0Template(Class<M> maskClass, boolean[] a, int offset, M m) {
++    void intoBooleanArray0Template(Class<M> maskClass, boolean[] a, int offset, M m, boolean strictPredF) {
+         m.check(species());
+         $Type$Species vsp = vspecies();
+         ByteVector normalized = this.and((byte) 1);
+         VectorSupport.storeMasked(
+             vsp.vectorType(), maskClass, vsp.elementType(), vsp.laneCount(),
+             a, booleanArrayAddress(a, offset),
+-            normalized, m, a, offset,
++            normalized, m, a, offset, strictPredF,
+             (arr, off, v, vm)
+             -> v.stOp(arr, off, vm,
+                       (arr_, off_, i, e) -> arr_[off_ + i] = (e & 1) != 0));
+@@ -5007,13 +5007,13 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    void intoByteArray0Template(Class<M> maskClass, byte[] a, int offset, M m) {
++    void intoByteArray0Template(Class<M> maskClass, byte[] a, int offset, M m, boolean strictPredF) {
+         $Type$Species vsp = vspecies();
+         m.check(vsp);
+         VectorSupport.storeMasked(
+             vsp.vectorType(), maskClass, vsp.elementType(), vsp.laneCount(),
+             a, byteArrayAddress(a, offset),
+-            this, m, a, offset,
++            this, m, a, offset, storeMasked,
+             (arr, off, v, vm) -> {
+                 ByteBuffer wb = wrapper(arr, NATIVE_ENDIAN);
+                 v.stOp(wb, off, vm,
+@@ -5036,16 +5036,16 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     }
+ 
+     abstract
+-    void intoByteBuffer0(ByteBuffer bb, int offset, VectorMask<$Boxtype$> m);
++    void intoByteBuffer0(ByteBuffer bb, int offset, VectorMask<$Boxtype$> m, boolean strictPredF);
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    void intoByteBuffer0Template(Class<M> maskClass, ByteBuffer bb, int offset, M m) {
++    void intoByteBuffer0Template(Class<M> maskClass, ByteBuffer bb, int offset, M m, boolean strictPredF) {
+         $Type$Species vsp = vspecies();
+         m.check(vsp);
+         ScopedMemoryAccess.storeIntoByteBufferMasked(
+                 vsp.vectorType(), maskClass, vsp.elementType(), vsp.laneCount(),
+-                this, m, bb, offset,
++                this, m, bb, offset, strictPredF,
+                 (buf, off, v, vm) -> {
+                     ByteBuffer wb = wrapper(buf, NATIVE_ENDIAN);
+                     v.stOp(wb, off, vm,
+@@ -5060,13 +5060,13 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     @ForceInline
+     final
+     <M extends VectorMask<$Boxtype$>>
+-    void intoCharArray0Template(Class<M> maskClass, char[] a, int offset, M m) {
++    void intoCharArray0Template(Class<M> maskClass, char[] a, int offset, M m, boolean strictPredF) {
+         m.check(species());
+         $Type$Species vsp = vspecies();
+         VectorSupport.storeMasked(
+             vsp.vectorType(), maskClass, vsp.elementType(), vsp.laneCount(),
+             a, charArrayAddress(a, offset),
+-            this, m, a, offset,
++            this, m, a, offset, strictPredF,
+             (arr, off, v, vm)
+             -> v.stOp(arr, off, vm,
+                       (arr_, off_, i, e) -> arr_[off_ + i] = (char) e));
+@@ -5329,7 +5329,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+             return ($abstractvectortype$)
+                 VectorSupport.broadcastCoerced(
+                     vectorType, $type$.class, laneCount,
+-                    bits, this,
++                    bits, 0, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+index df15c85fccc..fb286e7d2dd 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+@@ -1001,7 +1001,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         /*package-private*/
+         static $masktype$ maskAll(boolean bit) {
+             return VectorSupport.broadcastCoerced($masktype$.class, $bitstype$.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
++                                                  (bit ? -1 : 0), 0, null,
+                                                   (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final $masktype$  TRUE_MASK = new $masktype$(true);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+old mode 100644
+new mode 100755

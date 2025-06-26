@@ -1,0 +1,272 @@
+CompileCommand: print method_dispatch_patching.micro bool print = true
+
+============================= C2-compiled nmethod ==============================
+#r050 rsi   : parm 0: int
+# -- Old rsp -- Framesize: 32 --
+#r623 rsp+28: in_preserve
+#r622 rsp+24: return address
+#r621 rsp+20: in_preserve
+#r620 rsp+16: saved fp register
+#r619 rsp+12: pad2, stack alignment
+#r618 rsp+ 8: pad2, stack alignment
+#r617 rsp+ 4: Fixed slot 1
+#r616 rsp+ 0: Fixed slot 0
+#
+----------------------- MetaData before Compile_id = 9 ------------------------
+{method}
+ - this oop:          0x00007f41d6400438
+ - method holder:     'method_dispatch_patching'
+ - constants:         0x00007f41d6400050 constant pool [68]/operands[5] {0x00007f41d6400050} for 'method_dispatch_patching' cache=0x00007f41d6400fe0
+ - access:            0x9  public static 
+ - flags:             0x4080  queued_for_compilation has_loops_flag_init 
+ - name:              'micro'
+ - signature:         '(I)I'
+ - max stack:         3
+ - max locals:        1
+ - size of params:    1
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007f4264668360
+ - adapters:          AHE@0x00007f4270261c30: 0xa i2c: 0x00007f4264778260 c2i: 0x00007f4264778315 c2iUV: 0x00007f42647782f4 c2iNCI: 0x00007f426477834f
+ - compiled entry     0x00007f4264778315
+ - code size:         8
+ - code start:        0x00007f41d6400428
+ - code end (excl):   0x00007f41d6400430
+ - method data:       0x00007f41d6401508
+ - checked ex length: 0
+ - linenumber start:  0x00007f41d6400430
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 9 -----------------------
+#
+#  int ( int )
+#
+000     N1: #	out( B1 ) <- in( B2 B3 )  Freq: 1
+
+000     B1: #	out( B3 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (120 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #16	# Create frame
+
+01a     movl    RDX, RSI	# spill
+01c     movq    R10, java/lang/Class (java/io/Serializable,java/lang/constant/Constable,java/lang/reflect/AnnotatedElement,java/lang/invoke/TypeDescriptor,java/lang/reflect/GenericDeclaration,java/lang/reflect/Type,java/lang/invoke/TypeDescriptor$OfField):exact *	# ptr
+026     movl    R11, [R10 + #112 (8-bit)]	# compressed ptr ! Field: method_dispatch_patching.obj
+02a     decode_heap_oop RSI,R11
+        nop 	# 3 bytes pad for loops and calls
+055     movq    rax, #Universe::non_oop_word()
+	call,dynamic  root_class::getElement
+        # method_dispatch_patching::micro @ bci:4 (line 33) L[0]=_
+        # OopMap {off=100/0x64}
+
+06c     B2: #	out( N1 ) <- in( B1 )  Freq: 0.99998
+        # Block is sole successor of call
+06c     addq    rsp, 16	# Destroy frame
+	popq    rbp
+	cmpq    rsp, poll_offset[r15_thread] 
+	ja      #safepoint_stub	# Safepoint: poll for GC
+
+07e     ret
+
+07f     B3: #	out( N1 ) <- in( B1 )  Freq: 1e-05
+07f     # exception oop is in rax; no code emitted
+07f     movq    RSI, RAX	# spill
+082     addq    rsp, 16	# Destroy frame
+	popq    rbp
+
+087     jmp     rethrow_stub
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2) 492    9             method_dispatch_patching::micro (8 bytes)
+ total in heap  [0x00007f42647ad190,0x00007f42647ad4b8] = 808
+ relocation     [0x00007f42647ad300,0x00007f42647ad330] = 48
+ main code      [0x00007f42647ad340,0x00007f42647ad3f0] = 176
+ stub code      [0x00007f42647ad3f0,0x00007f42647ad408] = 24
+ oops           [0x00007f42647ad408,0x00007f42647ad410] = 8
+ metadata       [0x00007f42647ad410,0x00007f42647ad418] = 8
+ scopes data    [0x00007f42647ad418,0x00007f42647ad438] = 32
+ scopes pcs     [0x00007f42647ad438,0x00007f42647ad498] = 96
+ dependencies   [0x00007f42647ad498,0x00007f42647ad4a0] = 8
+ handler table  [0x00007f42647ad4a0,0x00007f42647ad4b8] = 24
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007f41d6400438} 'micro' '(I)I' in 'method_dispatch_patching'
+  # parm0:    rsi       = int
+  #           [sp+0x20]  (sp of caller)
+ ;; N1: #	out( B1 ) <- in( B2 B3 )  Freq: 1
+ ;; B1: #	out( B3 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f42647ad340:   mov    %eax,-0x18000(%rsp)
+  0x00007f42647ad347:   push   %rbp
+  0x00007f42647ad348:   sub    $0x10,%rsp
+  0x00007f42647ad34c:   cmpl   $0x0,0x20(%r15)
+  0x00007f42647ad354:   jne    0x00007f42647ad3e2           ;*synchronization entry
+                                                            ; - method_dispatch_patching::micro@-1 (line 33)
+  0x00007f42647ad35a:   mov    %esi,%edx
+  0x00007f42647ad35c:   movabs $0x11f012ed0,%r10            ;   {oop(a 'java/lang/Class'{0x000000011f012ed0} = 'method_dispatch_patching')}
+  0x00007f42647ad366:   mov    0x70(%r10),%r11d
+  0x00007f42647ad36a:   mov    %r11,%rsi
+  0x00007f42647ad36d:   cmp    0x145fa15c(%rip),%r12        # 0x00007f4278da74d0
+                                                            ;   {external_word}
+  0x00007f42647ad374:   je     0x00007f42647ad38e
+ ;; MacroAssembler::decode_heap_oop: heap base corrupted?
+  0x00007f42647ad37a:   movabs $0x7f42782f41b8,%rdi         ;   {external_word}
+  0x00007f42647ad384:   and    $0xfffffffffffffff0,%rsp
+  0x00007f42647ad388:   callq  0x00007f427759eb4a           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f42647ad38d:   hlt    
+  0x00007f42647ad38e:   shl    $0x3,%rsi                    ;*getstatic obj {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - method_dispatch_patching::micro@0 (line 33)
+  0x00007f42647ad392:   nop
+  0x00007f42647ad393:   nop
+  0x00007f42647ad394:   nop
+  0x00007f42647ad395:   movabs $0x7f41bc110b20,%rax
+  0x00007f42647ad39f:   callq  0x00007f4264773020           ; ImmutableOopMap {}
+                                                            ;*invokevirtual getElement {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - method_dispatch_patching::micro@4 (line 33)
+                                                            ;   {virtual_call}
+  0x00007f42647ad3a4:   nopl   0x214(%rax,%rax,1)           ;   {other}
+ ;; B2: #	out( N1 ) <- in( B1 )  Freq: 0.99998
+  0x00007f42647ad3ac:   add    $0x10,%rsp
+  0x00007f42647ad3b0:   pop    %rbp
+  0x00007f42647ad3b1:   cmp    0x490(%r15),%rsp             ;   {poll_return}
+  0x00007f42647ad3b8:   ja     0x00007f42647ad3cc
+  0x00007f42647ad3be:   retq                                ;*invokevirtual getElement {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - method_dispatch_patching::micro@4 (line 33)
+ ;; B3: #	out( N1 ) <- in( B1 )  Freq: 1e-05
+  0x00007f42647ad3bf:   mov    %rax,%rsi
+  0x00007f42647ad3c2:   add    $0x10,%rsp
+  0x00007f42647ad3c6:   pop    %rbp
+  0x00007f42647ad3c7:   jmpq   0x00007f42647aad20           ;   {runtime_call _rethrow_Java}
+  0x00007f42647ad3cc:   movabs $0x7f42647ad3b1,%r10         ;   {internal_word}
+  0x00007f42647ad3d6:   mov    %r10,0x4a8(%r15)
+  0x00007f42647ad3dd:   jmpq   0x00007f426477aea0           ;   {runtime_call SafepointBlob}
+  0x00007f42647ad3e2:   callq  Stub::nmethod_entry_barrier  ;   {runtime_call StubRoutines (final stubs)}
+  0x00007f42647ad3e7:   jmpq   0x00007f42647ad35a
+  0x00007f42647ad3ec:   hlt    
+  0x00007f42647ad3ed:   hlt    
+  0x00007f42647ad3ee:   hlt    
+  0x00007f42647ad3ef:   hlt    
+[Exception Handler]
+  0x00007f42647ad3f0:   jmpq   0x00007f42647a58a0           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007f42647ad3f5:   callq  0x00007f42647ad3fa
+  0x00007f42647ad3fa:   subq   $0x5,(%rsp)
+  0x00007f42647ad3ff:   jmpq   0x00007f426477c360           ;   {runtime_call DeoptimizationBlob}
+  0x00007f42647ad404:   hlt    
+  0x00007f42647ad405:   hlt    
+  0x00007f42647ad406:   hlt    
+  0x00007f42647ad407:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007f42647ad408:   0x00000007ff0fbbb8 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff0fbbb8}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007f42647ad410:   0x00007f41d6400438 {method} {0x00007f41d6400438} 'micro' '(I)I' in 'method_dispatch_patching'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007f42647ad33f offset=ffffffff bits=0):
+PcDesc(pc=0x00007f42647ad35a offset=1a bits=0):
+   method_dispatch_patching::micro@-1 (line 33)
+PcDesc(pc=0x00007f42647ad392 offset=52 bits=0):
+   method_dispatch_patching::micro@0 (line 33)
+PcDesc(pc=0x00007f42647ad3a4 offset=64 bits=0):
+   method_dispatch_patching::micro@4 (line 33)
+   Locals
+    - l0: empty
+PcDesc(pc=0x00007f42647ad3bf offset=7f bits=0):
+   method_dispatch_patching::micro@4 (line 33)
+PcDesc(pc=0x00007f42647ad409 offset=c9 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 1 OopMaps
+
+ImmutableOopMap {} pc offsets: 100 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007f42647ad35a offset=1a):
+   method_dispatch_patching::micro@-1 (line 33)
+ScopeDesc(pc=0x00007f42647ad392 offset=52):
+   method_dispatch_patching::micro@0 (line 33)
+ScopeDesc(pc=0x00007f42647ad3a4 offset=64):
+   method_dispatch_patching::micro@4 (line 33)
+   Locals
+    - l0: empty
+ScopeDesc(pc=0x00007f42647ad3bf offset=7f):
+   method_dispatch_patching::micro@4 (line 33)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007f42647ad300: 081c
+relocInfo@0x00007f42647ad300 [type=1(oop) addr=0x00007f42647ad35c offset=28] | [oop_addr=0x00007f42647ad35e *=0x000000011f012ed0 offset=0]
+         @0x00007f42647ad302: 7c0378da74d07f423911
+relocInfo@0x00007f42647ad30a [type=7(external_word) addr=0x00007f42647ad36d offset=17 format=1 data={78da74d07f42}] | [target=0x00007f4278da74d0]
+         @0x00007f42647ad30c: 7c03782f41b87f42380d
+relocInfo@0x00007f42647ad314 [type=7(external_word) addr=0x00007f42647ad37a offset=13 data={782f41b87f42}] | [target=0x00007f42782f41b8]
+         @0x00007f42647ad316: 310e
+relocInfo@0x00007f42647ad316 [type=6(runtime_call) addr=0x00007f42647ad388 offset=14 format=1] | [destination=0x00007f427759eb4a]
+         @0x00007f42647ad318: 780a1117
+relocInfo@0x00007f42647ad31a [type=2(virtual_call) addr=0x00007f42647ad39f offset=23 format=1 data=10] | [destination=0x00007f4264773020 cached_value=0x00007f42647ad395 metadata=0x0000000000000000]
+         @0x00007f42647ad31c: 8005
+relocInfo@0x00007f42647ad31c [type=16(post_call_nop) addr=0x00007f42647ad3a4 offset=5]
+         @0x00007f42647ad31e: 580d
+relocInfo@0x00007f42647ad31e [type=11(poll_return) addr=0x00007f42647ad3b1 offset=13]
+         @0x00007f42647ad320: 3116
+relocInfo@0x00007f42647ad320 [type=6(runtime_call) addr=0x00007f42647ad3c7 offset=22 format=1] | [destination=0x00007f42647aad20]
+         @0x00007f42647ad322: 781b4005
+relocInfo@0x00007f42647ad324 [type=8(internal_word) addr=0x00007f42647ad3cc offset=5 data=27] | [target=0x00007f42647ad3b1]
+         @0x00007f42647ad326: 3111
+relocInfo@0x00007f42647ad326 [type=6(runtime_call) addr=0x00007f42647ad3dd offset=17 format=1] | [destination=0x00007f426477aea0]
+         @0x00007f42647ad328: 3105
+relocInfo@0x00007f42647ad328 [type=6(runtime_call) addr=0x00007f42647ad3e2 offset=5 format=1] | [destination=0x00007f42646cd3e0]
+         @0x00007f42647ad32a: 000e
+relocInfo@0x00007f42647ad32a [type=0(none) addr=0x00007f42647ad3f0 offset=14]
+         @0x00007f42647ad32c: 3100
+relocInfo@0x00007f42647ad32c [type=6(runtime_call) addr=0x00007f42647ad3f0 offset=0 format=1] | [destination=0x00007f42647a58a0]
+         @0x00007f42647ad32e: 310f
+relocInfo@0x00007f42647ad32e [type=6(runtime_call) addr=0x00007f42647ad3ff offset=15 format=1] | [destination=0x00007f426477c360]
+         @0x00007f42647ad330: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+Dependency of type evol_method
+  method  = *{method} {0x00007f41d6400438} 'micro' '(I)I' in 'method_dispatch_patching'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 24 bytes)
+catch_pco = 100 (pc=0x00007f42647ad3a4, 1 entries)
+  bci -1 at scope depth 0 -> pco 127 (pc=0x00007f42647ad3bf)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable is empty
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00000007ff0fbbb8 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff0fbbb8}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00007f41d6400438 {method} {0x00007f41d6400438} 'micro' '(I)I' in 'method_dispatch_patching'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+resolving virtual (invokevirtual) call to subclass2::getElement at pc: 0x00007f42647ad3a4 to code: 0x0000000000000000
+IC miss (invokevirtual) call to subclass1::getElement code: 0x0000000000000000
+[res] 149990
+------------------------------------------------------------------------
+static method_dispatch_patching::micro(I)I
+  interpreter_invocation_count:        6784
+  invocation_counter:                  6784
+  backedge_counter:                       0
+  decompile_count:                        0
+  mdo size: 472 bytes
+
+   0 getstatic 7 <method_dispatch_patching.obj:Lroot_class;> 
+   3 iload_0
+   4 invokevirtual 13 <root_class.getElement(I)I> 
+  0    bci: 4    VirtualCallData    count(0) entries(2)
+                                    'subclass1'(2561 0.50)
+                                    'subclass2'(2560 0.50)
+   7 ireturn
+------------------------------------------------------------------------
+Total MDO size: 472 bytes

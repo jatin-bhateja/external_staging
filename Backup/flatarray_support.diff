@@ -1,0 +1,294 @@
+diff --git a/make/modules/java.base/gensrc/GensrcValueClasses.gmk b/make/modules/java.base/gensrc/GensrcValueClasses.gmk
+index 445b4fb7467..07135d60b00 100644
+--- a/make/modules/java.base/gensrc/GensrcValueClasses.gmk
++++ b/make/modules/java.base/gensrc/GensrcValueClasses.gmk
+@@ -32,7 +32,6 @@ java.base-VALUE_CLASS-REPLACEMENTS := \
+     java/lang/Integer.java \
+     java/lang/Long.java \
+     java/lang/Float.java \
+-    java/lang/Float16.java \
+     java/lang/Double.java \
+     java/lang/Boolean.java \
+     java/lang/Character.java \
+@@ -56,9 +55,16 @@ java.base-VALUE_CLASS-REPLACEMENTS := \
+     java/time/Period.java \
+     #
+ 
++java.base-FLAT-LAYOUT-VALUE-CLASS-REPLACEMENTS := \
++    java/lang/Float16.java \
++    #
++
+ java.base-VALUE-CLASS-FILES := \
+     $(foreach f, $(java.base-VALUE_CLASS-REPLACEMENTS), $(addprefix $(TOPDIR)/src/java.base/share/classes/, $(f)))
+ 
++java.base-FLAT-LAYOUT-VALUE-CLASS-FILES := \
++    $(foreach f, $(java.base-FLAT-LAYOUT-VALUE-CLASS-REPLACEMENTS), $(addprefix $(TOPDIR)/src/java.base/share/classes/, $(f)))
++
+ $(eval $(call SetupTextFileProcessing, JAVA_BASE_VALUECLASS_REPLACEMENTS, \
+     SOURCE_FILES := $(java.base-VALUE-CLASS-FILES), \
+     SOURCE_BASE_DIR := $(TOPDIR)/src/java.base/share/classes, \
+@@ -68,4 +74,14 @@ $(eval $(call SetupTextFileProcessing, JAVA_BASE_VALUECLASS_REPLACEMENTS, \
+         public abstract class => public abstract value class, \
+ ))
+ 
++$(eval $(call SetupTextFileProcessing, JAVA_BASE_FLAT_LAYOUT_VALUECLASS_REPLACEMENTS, \
++    SOURCE_FILES := $(java.base-FLAT-LAYOUT-VALUE-CLASS-FILES), \
++    SOURCE_BASE_DIR := $(TOPDIR)/src/java.base/share/classes, \
++    OUTPUT_DIR := $(SUPPORT_OUTPUTDIR)/gensrc-valueclasses/java.base/, \
++    REPLACEMENTS := \
++        public final class => @jdk.internal.vm.annotation.ImplicitlyConstructible\n@jdk.internal.vm.annotation.NullRestrictedArray\npublic final value class ; \
++        public abstract class => public abstract value class, \
++))
++
+ TARGETS += $(JAVA_BASE_VALUECLASS_REPLACEMENTS)
++TARGETS += $(JAVA_BASE_FLAT_LAYOUT_VALUECLASS_REPLACEMENTS)
+diff --git a/src/hotspot/share/classfile/classFileParser.cpp b/src/hotspot/share/classfile/classFileParser.cpp
+index b67e5b3951d..cbbc1660b81 100644
+--- a/src/hotspot/share/classfile/classFileParser.cpp
++++ b/src/hotspot/share/classfile/classFileParser.cpp
+@@ -956,6 +956,7 @@ class AnnotationCollector : public ResourceObj{
+     _jdk_internal_ImplicitlyConstructible,
+     _jdk_internal_LooselyConsistentValue,
+     _jdk_internal_NullRestricted,
++    _jdk_internal_NullRestrictedArray,
+     _java_lang_Deprecated,
+     _java_lang_Deprecated_for_removal,
+     _annotation_LIMIT
+@@ -2073,6 +2074,10 @@ AnnotationCollector::annotation_index(const ClassLoaderData* loader_data,
+       if (_location != _in_class)   break; // only allow for classes
+       return _jdk_internal_ImplicitlyConstructible;
+     }
++    case VM_SYMBOL_ENUM_NAME(jdk_internal_vm_annotation_NullRestrictedArray_signature): {
++      if (_location != _in_class)   break; // only allow for classes
++      return _jdk_internal_NullRestrictedArray;
++    }
+     case VM_SYMBOL_ENUM_NAME(jdk_internal_vm_annotation_LooselyConsistentValue_signature): {
+       if (_location != _in_class)   break; // only allow for classes
+       return _jdk_internal_LooselyConsistentValue;
+@@ -5628,6 +5633,9 @@ void ClassFileParser::fill_instance_klass(InstanceKlass* ik,
+   if (_is_implicitly_constructible) {
+     ik->set_is_implicitly_constructible();
+   }
++  if (_has_null_restricted_array) {
++    ik->set_has_null_restricted_array();
++  }
+   if (_is_hidden) {
+     ik->set_is_hidden();
+   }
+@@ -5904,6 +5912,7 @@ ClassFileParser::ClassFileParser(ClassFileStream* stream,
+   _is_naturally_atomic(false),
+   _must_be_atomic(true),
+   _is_implicitly_constructible(false),
++  _has_null_restricted_array(false),
+   _has_loosely_consistent_annotation(false),
+   _has_implicitly_constructible_annotation(false),
+   _has_finalizer(false),
+@@ -6387,6 +6396,9 @@ void ClassFileParser::post_process_parsed_stream(const ClassFileStream* const st
+     if (_parsed_annotations->has_annotation(ClassAnnotationCollector::_jdk_internal_ImplicitlyConstructible)) {
+       _is_implicitly_constructible = true;
+     }
++    if (_parsed_annotations->has_annotation(ClassAnnotationCollector::_jdk_internal_NullRestrictedArray)) {
++      _has_null_restricted_array = true;
++    }
+     // Apply VM options override
+     if (*ForceNonTearable != '\0') {
+       // Allow a command line switch to force the same atomicity property:
+diff --git a/src/hotspot/share/classfile/classFileParser.hpp b/src/hotspot/share/classfile/classFileParser.hpp
+index 1b0e194f929..ccc28d030aa 100644
+--- a/src/hotspot/share/classfile/classFileParser.hpp
++++ b/src/hotspot/share/classfile/classFileParser.hpp
+@@ -213,6 +213,7 @@ class ClassFileParser {
+   bool _is_naturally_atomic;
+   bool _must_be_atomic;
+   bool _is_implicitly_constructible;
++  bool _has_null_restricted_array;
+   bool _has_loosely_consistent_annotation;
+   bool _has_implicitly_constructible_annotation;
+ 
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index 3d683afc943..e5e2bbce19a 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -275,6 +275,7 @@ class SerializeClosure;
+   template(jdk_internal_vm_annotation_ImplicitlyConstructible_signature,     "Ljdk/internal/vm/annotation/ImplicitlyConstructible;") \
+   template(jdk_internal_vm_annotation_LooselyConsistentValue_signature,      "Ljdk/internal/vm/annotation/LooselyConsistentValue;") \
+   template(jdk_internal_vm_annotation_NullRestricted_signature,              "Ljdk/internal/vm/annotation/NullRestricted;") \
++  template(jdk_internal_vm_annotation_NullRestrictedArray_signature,         "Ljdk/internal/vm/annotation/NullRestrictedArray;") \
+   template(jdk_internal_ValueBased_signature,                                "Ljdk/internal/ValueBased;") \
+                                                                                                   \
+   /* class symbols needed by intrinsics */                                                        \
+diff --git a/src/hotspot/share/interpreter/interpreterRuntime.cpp b/src/hotspot/share/interpreter/interpreterRuntime.cpp
+index dc382496e5c..6adc3d04b37 100644
+--- a/src/hotspot/share/interpreter/interpreterRuntime.cpp
++++ b/src/hotspot/share/interpreter/interpreterRuntime.cpp
+@@ -380,7 +380,9 @@ JRT_END
+ JRT_ENTRY(void, InterpreterRuntime::anewarray(JavaThread* current, ConstantPool* pool, int index, jint size))
+   Klass*    klass = pool->klass_at(index, CHECK);
+   arrayOop obj = nullptr;
+-  if (klass->is_inline_klass() && InlineKlass::cast(klass)->is_implicitly_constructible()) {
++  if (klass->is_inline_klass() &&
++      InlineKlass::cast(klass)->is_implicitly_constructible() &&
++      InlineKlass::cast(klass)->has_null_restricted_array()) {
+     obj = oopFactory::new_valueArray(klass, size, CHECK);
+   } else {
+     obj = oopFactory::new_objArray(klass, size, CHECK);
+diff --git a/src/hotspot/share/oops/instanceKlass.hpp b/src/hotspot/share/oops/instanceKlass.hpp
+index b6054447838..28c04929fc8 100644
+--- a/src/hotspot/share/oops/instanceKlass.hpp
++++ b/src/hotspot/share/oops/instanceKlass.hpp
+@@ -381,6 +381,9 @@ class InstanceKlass: public Klass {
+   bool is_implicitly_constructible() const { return _misc_flags.is_implicitly_constructible(); }
+   void set_is_implicitly_constructible()   { _misc_flags.set_is_implicitly_constructible(true); }
+ 
++  bool has_null_restricted_array() const   { return _misc_flags.has_null_restricted_array(); }
++  void set_has_null_restricted_array()     { _misc_flags.set_has_null_restricted_array(true); }
++
+   // field sizes
+   int nonstatic_field_size() const         { return _nonstatic_field_size; }
+   void set_nonstatic_field_size(int size)  { _nonstatic_field_size = size; }
+diff --git a/src/hotspot/share/oops/instanceKlassFlags.hpp b/src/hotspot/share/oops/instanceKlassFlags.hpp
+index d7582df6d95..c79a2a9c7c2 100644
+--- a/src/hotspot/share/oops/instanceKlassFlags.hpp
++++ b/src/hotspot/share/oops/instanceKlassFlags.hpp
+@@ -60,7 +60,8 @@ class InstanceKlassFlags {
+     flag(is_naturally_atomic                , 1 << 17) /* loaded/stored in one instruction */ \
+     flag(must_be_atomic                     , 1 << 18) /* doesn't allow tearing */ \
+     flag(has_loosely_consistent_annotation  , 1 << 19) /* the class has the LooselyConsistentValue annotation WARNING: it doesn't automatically mean that the class allows tearing */ \
+-    flag(is_implicitly_constructible        , 1 << 20) /* the class has the ImplicitlyConstrutible annotation */
++    flag(is_implicitly_constructible        , 1 << 20) /* the class has the ImplicitlyConstrutible annotation */ \
++    flag(has_null_restricted_array          , 1 << 21) /* the class has the NullRestrictedArray annotation */
+     /* end of list */
+ 
+   /* (*) An inline type is considered empty if it contains no non-static fields or
+diff --git a/src/java.base/share/classes/jdk/internal/vm/annotation/NullRestrictedArray.java b/src/java.base/share/classes/jdk/internal/vm/annotation/NullRestrictedArray.java
+new file mode 100644
+index 00000000000..5851d84189a
+--- /dev/null
++++ b/src/java.base/share/classes/jdk/internal/vm/annotation/NullRestrictedArray.java
+@@ -0,0 +1,49 @@
++/*
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.  Oracle designates this
++ * particular file as subject to the "Classpath" exception as provided
++ * by Oracle in the LICENSE file that accompanied this code.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++package jdk.internal.vm.annotation;
++
++import java.lang.annotation.*;
++
++/**
++ * A null-restricted array is an array whose elements are of value class type and are
++ * never assigned a {@code null} value during the lifetime of array.
++ * Element type must also be annotated with {@link ImplicitlyConstructible} annotation
++ * to ensure default value assignment to array elements, thereby guarantying initialized
++ * value array by construction.
++ * The initial value of the elements is the zero instance of the given class, and attempts to
++ * write {@code null} to the element will throw an exception.
++ * <p>
++ * The HotSpot VM uses this annotation to enable flat runtime layout of an array that would
++ * otherwise be impossible.
++ * <p>
++ * Because these behaviors are not specified by Java SE, this annotation should only be used
++ * by internal JDK classes for experimental purposes and should not affect user-observable
++ * outcomes.
++ */
++@Target(ElementType.TYPE)
++@Retention(RetentionPolicy.RUNTIME)
++public @interface NullRestrictedArray {
++}
+diff --git a/test/hotspot/jtreg/compiler/valhalla/inlinetypes/TestFlatArrayVectorization.java b/test/hotspot/jtreg/compiler/valhalla/inlinetypes/TestFlatArrayVectorization.java
+new file mode 100644
+index 00000000000..25a7ac4ac00
+--- /dev/null
++++ b/test/hotspot/jtreg/compiler/valhalla/inlinetypes/TestFlatArrayVectorization.java
+@@ -0,0 +1,71 @@
++/*
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/**
++* @test
++* @bug 8333852
++* @summary Allow flat array layout for implicitly constructible value classes.
++* @requires vm.compiler2.enabled
++* @enablePreview
++* @library /test/lib /
++* @compile --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED TestFlatArrayVectorization.java
++* @run main/othervm --enable-preview compiler.valhalla.inlinetypes.TestFlatArrayVectorization
++*/
++
++package compiler.valhalla.inlinetypes;
++import compiler.lib.ir_framework.*;
++import java.util.Random;
++import jdk.internal.vm.annotation.ImplicitlyConstructible;
++import jdk.internal.vm.annotation.NullRestrictedArray;
++
++@ImplicitlyConstructible
++@NullRestrictedArray
++value class SimpleValue {
++   int field;
++   public SimpleValue(int field) {
++      this.field = field;
++   }
++}
++
++public class TestFlatArrayVectorization {
++   public static SimpleValue [] varr;
++   public static final int SIZE = 2048;
++   public static final int SIZE_M1 = SIZE - 1;
++   public static int res = 0;
++   public static Random rd = new Random(2048);
++
++   //public static int test(int ctr) {
++   @Test
++   @IR(counts = {IRNode.POPULATE_INDEX, " > 0"}, applyIf = {"EnableValhalla", "true"})
++   public static int test() {
++      varr = new SimpleValue [SIZE];    // ANEWARRAY
++      for (int i = 0; i < varr.length; i++) {
++          varr[i] = new SimpleValue(i); // AASTORE
++      }
++      return varr[rd.nextInt(2047)].field;   
++   }
++
++   public static void main(String [] args) {
++      TestFramework.runWithFlags("--enable-preview", "-Xbatch", "-XX:-TieredCompilation", "-XX:-UseOnStackReplacement", "--add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED");
++   }
++}

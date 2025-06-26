@@ -1,0 +1,277 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index e4ab99bf1c3..80d0fd6b743 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -1750,6 +1750,13 @@ void Assembler::andnl(Register dst, Register src1, Address src2) {
+   emit_operand(dst, src2, 0);
+ }
+ 
++void Assembler::btcl(Register dst, int imm8) {
++  int encode = prefix_and_encode(0, dst->encoding(), true /* is_map1 */);
++  // ModRM = ModRM.Mod(0x3) | ModRM.Reg(7) | ModRM.RM(encode)
++  emit_opcode_prefix_and_encoding((unsigned char)0xBA, 0xF8, encode);
++  emit_int8(imm8);
++}
++
+ void Assembler::bsfl(Register dst, Register src) {
+   int encode = prefix_and_encode(dst->encoding(), src->encoding(), true /* is_map1 */);
+   emit_opcode_prefix_and_encoding((unsigned char)0xBC, 0xC0, encode);
+@@ -12793,6 +12800,24 @@ void Assembler::vzeroupper_uncached() {
+   }
+ }
+ 
++void Assembler::evfpclassps(KRegister kdst, XMMRegister src, uint8_t imm8, int vector_len) {
++  assert(VM_Version::supports_avx512dq(), "");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(kdst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int24((unsigned char)0x66, (unsigned char)(0xC0 | encode), imm8);
++}
++
++void Assembler::evfpclasspd(KRegister kdst, XMMRegister src, uint8_t imm8, int vector_len) {
++  assert(VM_Version::supports_avx512dq(), "");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(kdst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int24((unsigned char)0x66, (unsigned char)(0xC0 | encode), imm8);
++}
++
+ void Assembler::vfpclassss(KRegister kdst, XMMRegister src, uint8_t imm8) {
+   // Encoding: EVEX.LIG.66.0F3A.W0 67 /r ib
+   assert(VM_Version::supports_evex(), "");
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 420c28254d5..8fc1c75b595 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1201,6 +1201,7 @@ class Assembler : public AbstractAssembler  {
+ 
+   void bsfl(Register dst, Register src);
+   void bsrl(Register dst, Register src);
++  void btcl(Register dst, int imm8);
+ 
+ #ifdef _LP64
+   void bsfq(Register dst, Register src);
+@@ -3204,6 +3205,9 @@ class Assembler : public AbstractAssembler  {
+   void vfpclassss(KRegister kdst, XMMRegister src, uint8_t imm8);
+   void vfpclasssd(KRegister kdst, XMMRegister src, uint8_t imm8);
+ 
++  void evfpclassps(KRegister kdst, XMMRegister src, uint8_t imm8, int vector_len);
++  void evfpclasspd(KRegister kdst, XMMRegister src, uint8_t imm8, int vector_len);
++
+   // Vector blends
+   void blendvps(XMMRegister dst, XMMRegister src);
+   void blendvpd(XMMRegister dst, XMMRegister src);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index d135c7bacfa..200496eeb3b 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -10564,11 +10564,11 @@ instruct castVVLeg(legVec dst)
+   ins_pipe(empty);
+ %}
+ 
+-instruct FloatClassCheck_reg_reg_vfpclass(rRegI dst, regF src, kReg ktmp, rFlagsReg cr)
++instruct fpclass_isInfiniteF_reg(rRegI dst, regF src, kReg ktmp)
+ %{
+   match(Set dst (IsInfiniteF src));
+-  effect(TEMP ktmp, KILL cr);
+-  format %{ "float_class_check $dst, $src" %}
++  effect(TEMP ktmp);
++  format %{ "is_infinite_float $dst, $src\t! using $ktmp as TEMP" %}
+   ins_encode %{
+     __ vfpclassss($ktmp$$KRegister, $src$$XMMRegister, 0x18);
+     __ kmovbl($dst$$Register, $ktmp$$KRegister);
+@@ -10576,11 +10576,11 @@ instruct FloatClassCheck_reg_reg_vfpclass(rRegI dst, regF src, kReg ktmp, rFlags
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct DoubleClassCheck_reg_reg_vfpclass(rRegI dst, regD src, kReg ktmp, rFlagsReg cr)
++instruct fpclass_isInfiniteD_reg(rRegI dst, regD src, kReg ktmp)
+ %{
+   match(Set dst (IsInfiniteD src));
+-  effect(TEMP ktmp, KILL cr);
+-  format %{ "double_class_check $dst, $src" %}
++  effect(TEMP ktmp);
++  format %{ "is_infinite_double $dst, $src\t! using $ktmp as TEMP" %}
+   ins_encode %{
+     __ vfpclasssd($ktmp$$KRegister, $src$$XMMRegister, 0x18);
+     __ kmovbl($dst$$Register, $ktmp$$KRegister);
+@@ -10588,6 +10588,57 @@ instruct DoubleClassCheck_reg_reg_vfpclass(rRegI dst, regD src, kReg ktmp, rFlag
+   ins_pipe(pipe_slow);
+ %}
+ 
++instruct fpclass_isFiniteF_reg(rRegI dst, regF src, kReg ktmp, rFlagsReg cr)
++%{
++  match(Set dst (IsFiniteF src));
++  effect(TEMP ktmp, KILL cr);
++  format %{ "is_finite_float $dst, $src\t! using $ktmp as TEMP" %}
++  ins_encode %{
++    // isFinite = ~(NaN | +Inf | -Inf)
++    __ vfpclassss($ktmp$$KRegister, $src$$XMMRegister, 0xCD);
++    __ kmovbl($dst$$Register, $ktmp$$KRegister);
++    __ btcl($dst$$Register, 0);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct fpclass_isFiniteD_reg(rRegI dst, regD src, kReg ktmp, rFlagsReg cr)
++%{
++  match(Set dst (IsFiniteD src));
++  effect(TEMP ktmp, KILL cr);
++  format %{ "is_finite_double $dst, $src\t! using $ktmp as TEMP" %}
++  ins_encode %{
++    // isFinite = ~(NaN | +Inf | -Inf)
++    __ vfpclasssd($ktmp$$KRegister, $src$$XMMRegister, 0xCD);
++    __ kmovbl($dst$$Register, $ktmp$$KRegister);
++    __ btcl($dst$$Register, 0);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_fpclass_isInfinite_reg(vec dst, vec src, kReg ktmp, vec xtmp, rRegI rtmp)
++%{
++  match(Set dst (IsInfiniteV src));
++  effect(TEMP ktmp, TEMP xtmp, TEMP rtmp);
++  format %{ "is_infinite_vector $dst, $src\t! using $ktmp, $xtmp and $rtmp as TEMP" %}
++  ins_encode %{
++    BasicType bt = Matcher::vector_element_basic_type(this);
++    int dst_vlen_enc = vector_length_encoding(this);
++    int src_vlen_enc = vector_length_encoding(this, $src);
++    if (bt == T_FLOAT) {
++      __ evfpclassps($ktmp$$KRegister, $src$$XMMRegister, 0x18, src_vlen_enc);
++    } else {
++      assert(bt == T_DOUBLE, "");
++      __ evfpclasspd($ktmp$$KRegister, $src$$XMMRegister, 0x18, src_vlen_enc);
++    }
++    __ movl($rtmp$$Register, 0x01010101);
++    __ vpbroadcast(T_INT, $xtmp$$XMMRegister, $rtmp$$Register, Assembler::AVX_128bit);
++    __ evpmovm2b($dst$$XMMRegister, $ktmp$$KRegister, Assembler::AVX_128bit);
++    __ vpand($dst$$XMMRegister, $dst$$XMMRegister, $xtmp$$XMMRegister, src_vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
+ instruct vector_addsub_saturating_subword_reg(vec dst, vec src1, vec src2)
+ %{
+   predicate(is_subword_type(Matcher::vector_element_basic_type(n)) &&
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index dfa414ef564..30d1669d8ca 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -4337,7 +4337,7 @@ bool MatchRule::is_vector() const {
+     "DivVF","DivVD",
+     "AbsVB","AbsVS","AbsVI","AbsVL","AbsVF","AbsVD",
+     "NegVF","NegVD","NegVI","NegVL",
+-    "SqrtVD","SqrtVF",
++    "SqrtVD","SqrtVF","IsFiniteV", "IsInfiniteV",
+     "AndV" ,"XorV" ,"OrV",
+     "MaxV", "MinV", "UMinV", "UMaxV",
+     "CompressV", "ExpandV", "CompressM", "CompressBitsV", "ExpandBitsV",
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 60ee3e01137..610c4cbcb2e 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -416,6 +416,8 @@ macro(NegVF)
+ macro(NegVD)
+ macro(SqrtVD)
+ macro(SqrtVF)
++macro(IsFiniteV)
++macro(IsInfiniteV)
+ macro(LShiftCntV)
+ macro(RShiftCntV)
+ macro(LShiftVB)
+diff --git a/src/hotspot/share/opto/superword.cpp b/src/hotspot/share/opto/superword.cpp
+index 20c8dfbff17..65070451115 100644
+--- a/src/hotspot/share/opto/superword.cpp
++++ b/src/hotspot/share/opto/superword.cpp
+@@ -2566,6 +2566,9 @@ const Type* VLoopTypes::container_type(Node* n) const {
+     if (n->Opcode() == Op_ConvF2HF) {
+       return TypeInt::SHORT;
+     }
++    if (VectorNode::is_fpclass_opcode(n->Opcode())) {
++      return TypeInt::BOOL;
++    }
+     // A narrow type of arithmetic operations will be determined by
+     // propagating the type of memory operations.
+     return TypeInt::INT;
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index cc2fff23acc..5fc9c1f1c01 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -155,6 +155,14 @@ int VectorNode::opcode(int sopc, BasicType bt) {
+     return (is_integral_type(bt) ? Op_RotateLeftV : 0);
+   case Op_RotateRight:
+     return (is_integral_type(bt) ? Op_RotateRightV : 0);
++  case Op_IsInfiniteD:
++  case Op_IsInfiniteF:
++    // FIXME: Expecting T_BOOLEAN
++    return (is_integral_type(bt) ? Op_IsInfiniteV : 0);
++  case Op_IsFiniteD:
++  case Op_IsFiniteF:
++    // FIXME: Expecting T_BOOLEAN
++    return (is_integral_type(bt) ? Op_IsFiniteV : 0);
+   case Op_SqrtF:
+     return (bt == T_FLOAT ? Op_SqrtVF : 0);
+   case Op_SqrtD:
+@@ -559,6 +567,18 @@ bool VectorNode::is_shift(Node* n) {
+   return is_shift_opcode(n->Opcode());
+ }
+ 
++bool VectorNode::is_fpclass_opcode(int opc) {
++  switch (opc) {
++  case Op_IsInfiniteF:
++  case Op_IsInfiniteD:
++  case Op_IsFiniteF:
++  case Op_IsFiniteD:
++    return true;
++  default:
++    return false;
++  }
++}
++
+ bool VectorNode::is_rotate_opcode(int opc) {
+   switch (opc) {
+   case Op_RotateRight:
+@@ -721,6 +741,9 @@ VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, b
+   case Op_SqrtVF: return new SqrtVFNode(n1, vt);
+   case Op_SqrtVD: return new SqrtVDNode(n1, vt);
+ 
++  case Op_IsInfiniteV: return new IsInfiniteVNode(n1, vt);
++  case Op_IsFiniteV: return new IsFiniteVNode(n1, vt);
++
+   case Op_RoundVF: return new RoundVFNode(n1, vt);
+   case Op_RoundVD: return new RoundVDNode(n1, vt);
+ 
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 25a381408ca..b2eeaf812bd 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -92,6 +92,8 @@ class VectorNode : public TypeNode {
+ 
+   static bool is_rotate_opcode(int opc);
+ 
++  static bool is_fpclass_opcode(int opc);
++
+   static int opcode(int sopc, BasicType bt);         // scalar_opc -> vector_opc
+   static int scalar_opcode(int vopc, BasicType bt);  // vector_opc -> scalar_opc
+ 
+@@ -2040,4 +2042,18 @@ class ExpandBitsVNode : public VectorNode {
+   virtual int Opcode() const;
+ };
+ 
++class IsFiniteVNode : public VectorNode {
++public:
++  IsFiniteVNode(Node* in, const TypeVect* vt)
++  : VectorNode(in, vt) {}
++  virtual int Opcode() const;
++};
++
++class IsInfiniteVNode : public VectorNode {
++public:
++  IsInfiniteVNode(Node* in, const TypeVect* vt)
++  : VectorNode(in, vt) {}
++  virtual int Opcode() const;
++};
++
+ #endif // SHARE_OPTO_VECTORNODE_HPP

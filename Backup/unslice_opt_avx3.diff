@@ -1,0 +1,125 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index 8fae8d71b04..1883a7929a1 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -2335,8 +2335,10 @@ ByteVector sliceTemplate(int origin) {
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+         VectorShuffle<Byte> iota = iotaShuffle();
+-        VectorMask<Byte> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
+-                                                                  (broadcast((byte)(origin))));
++        /*VectorMask<Byte> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
++                                                                  (broadcast((byte)(origin))));*/
++        int mask_shift = (part == 0) ? origin : 0;
++        VectorMask<Byte> blendMask = VectorMask.fromLong(vspecies(), ((1L << (length() - origin)) - 1L) << mask_shift);
+         iota = iotaShuffle(-origin, 1, true);
+         return that.blend(this.rearrange(iota), blendMask);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index 59e67195732..1036e0de03e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -2177,8 +2177,10 @@ DoubleVector sliceTemplate(int origin) {
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+         VectorShuffle<Double> iota = iotaShuffle();
+-        VectorMask<Double> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
+-                                                                  (broadcast((double)(origin))));
++        /*VectorMask<Double> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
++                                                                  (broadcast((double)(origin))));*/
++        int mask_shift = (part == 0) ? origin : 0;
++        VectorMask<Double> blendMask = VectorMask.fromLong(vspecies(), ((1L << (length() - origin)) - 1L) << mask_shift);
+         iota = iotaShuffle(-origin, 1, true);
+         return that.blend(this.rearrange(iota), blendMask);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index 45427817e3d..bff403d48f3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -2189,8 +2189,10 @@ FloatVector sliceTemplate(int origin) {
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+         VectorShuffle<Float> iota = iotaShuffle();
+-        VectorMask<Float> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
+-                                                                  (broadcast((float)(origin))));
++        /*VectorMask<Float> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
++                                                                  (broadcast((float)(origin))));*/
++        int mask_shift = (part == 0) ? origin : 0;
++        VectorMask<Float> blendMask = VectorMask.fromLong(vspecies(), ((1L << (length() - origin)) - 1L) << mask_shift);
+         iota = iotaShuffle(-origin, 1, true);
+         return that.blend(this.rearrange(iota), blendMask);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index 3317e25e73e..496daac27f8 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -2320,8 +2320,10 @@ IntVector sliceTemplate(int origin) {
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+         VectorShuffle<Integer> iota = iotaShuffle();
+-        VectorMask<Integer> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
+-                                                                  (broadcast((int)(origin))));
++        /*VectorMask<Integer> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
++                                                                  (broadcast((int)(origin))));*/
++        int mask_shift = (part == 0) ? origin : 0;
++        VectorMask<Integer> blendMask = VectorMask.fromLong(vspecies(), ((1L << (length() - origin)) - 1L) << mask_shift);
+         iota = iotaShuffle(-origin, 1, true);
+         return that.blend(this.rearrange(iota), blendMask);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index 9dd3f2eb136..0245a94dbd8 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -2186,8 +2186,10 @@ LongVector sliceTemplate(int origin) {
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+         VectorShuffle<Long> iota = iotaShuffle();
+-        VectorMask<Long> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
+-                                                                  (broadcast((long)(origin))));
++        /*VectorMask<Long> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
++                                                                  (broadcast((long)(origin))));*/
++        int mask_shift = (part == 0) ? origin : 0;
++        VectorMask<Long> blendMask = VectorMask.fromLong(vspecies(), ((1L << (length() - origin)) - 1L) << mask_shift);
+         iota = iotaShuffle(-origin, 1, true);
+         return that.blend(this.rearrange(iota), blendMask);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index ba21e8a9e95..df4dcec0d51 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -2336,8 +2336,10 @@ ShortVector sliceTemplate(int origin) {
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+         VectorShuffle<Short> iota = iotaShuffle();
+-        VectorMask<Short> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
+-                                                                  (broadcast((short)(origin))));
++        /*VectorMask<Short> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
++                                                                  (broadcast((short)(origin))));*/
++        int mask_shift = (part == 0) ? origin : 0;
++        VectorMask<Short> blendMask = VectorMask.fromLong(vspecies(), ((1L << (length() - origin)) - 1L) << mask_shift);
+         iota = iotaShuffle(-origin, 1, true);
+         return that.blend(this.rearrange(iota), blendMask);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index d7562bae475..8de3263b916 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -2712,8 +2712,10 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+         VectorShuffle<$Boxtype$> iota = iotaShuffle();
+-        VectorMask<$Boxtype$> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
+-                                                                  (broadcast(($type$)(origin))));
++        /*VectorMask<$Boxtype$> blendMask = iota.toVector().compare((part == 0) ? VectorOperators.GE : VectorOperators.LT,
++                                                                  (broadcast(($type$)(origin))));*/
++        int mask_shift = (part == 0) ? origin : 0;
++        VectorMask<$Boxtype$> blendMask = VectorMask.fromLong(vspecies(), ((1L << (length() - origin)) - 1L) << mask_shift);
+         iota = iotaShuffle(-origin, 1, true);
+         return that.blend(this.rearrange(iota), blendMask);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+old mode 100644
+new mode 100755

@@ -1,0 +1,47 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/java.base/share/classes/java/lang/Long.java b/src/java.base/share/classes/java/lang/Long.java
+index 70bd2d62add..29364826f53 100644
+--- a/src/java.base/share/classes/java/lang/Long.java
++++ b/src/java.base/share/classes/java/lang/Long.java
+@@ -2031,6 +2031,39 @@ public static long min(long a, long b) {
+         return Math.min(a, b);
+     }
+ 
++    /**
++     * Returns sum of two ${@code long} values clamped by the largest representable 
++     * signed value ${Long.MAX_VALUE}
++     *
++     * @param a the first operand
++     * @param b the second operand
++     * @return the saturated sum of {@code a} and {@code b}
++     * @see java.util.function.BinaryOperator
++     * @since 23
++     */
++    public static long saturating_sum(long a, long b) {
++        boolean both_negatives = ((a & b) >> (Long.SIZE - 1)) == 1;
++        if (both_negatives) {
++            long res = a + b;
++            return res > Long.MIN_VALUE ? Long.MIN_VALUE : res; 
++        }
++        return (Long.MAX_VALUE - max(a, b)) < min(a, b) ? Long.MAX_VALUE : a + b;
++    }
++
++    /**
++     * Returns difference of two ${@code long} values clamped by the smallest representable 
++     * signed value ${Long.MIN_VALUE}
++     *
++     * @param a the first operand
++     * @param b the second operand
++     * @return the saturated difference of {@code a} and {@code b}
++     * @see java.util.function.BinaryOperator
++     * @since 23
++     */
++    public static long saturating_sub(long a, long b) {
++        return (max(a, b) - Long.MIN_VALUE) > min(a, b) ? Long.MIN_VALUE : a - b;
++    }
++
+     /**
+      * Returns an {@link Optional} containing the nominal descriptor for this
+      * instance, which is the instance itself.

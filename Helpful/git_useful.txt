@@ -1,0 +1,169 @@
+
+Work Flows:
+-----------
+
+1) Configurations:
+     a) PAT : Generation
+         https://wiki.openjdk.java.net/display/SKARA/CLI+Tools
+     b) Storing token in credential manager.
+     c) Set upstream branches.
+      DPROMPT>git remote add -m master -t master upstream http:/github.com/openjdk/jdk.git
+
+     DPROMPT> git config --global credential.helper /usr/libexec/git-core/git-credential-libsecret
+     DPROMPT> git config --global credential.helper cache 
+     DPROMPT>git config --global credential.helper 'cache --timeout=3600'
+     DPROMPT>git config --global credential.helper 'cache --timeout=36000000'
+     
+     user.name=Jatin Bhateja
+     user.email=jbhateja@openjdk.org
+
+     DPROMPT>sudo git skara sync --branches  vectorIntrinsics
+     
+     sudo git skara sync --verbose -ff  --from http://github.com/openjdk/panama-vector.git --branches vectorIntrinsics
+     git checkout vectorIntrinsics
+
+     openjdk/jdk: .git/config
+     [core]
+        repositoryformatversion = 0
+        filemode = true
+        bare = false
+        logallrefupdates = true
+     [remote "origin"]
+             url = http://github.com/jatin-bhateja/jdk.git
+             fetch = +refs/heads/*:refs/remotes/origin/*
+     [branch "master"]
+             remote = origin
+             merge = refs/heads/master
+     [remote "upstream"]
+             url = http://github.com/openjdk/jdk.git
+             fetch = +refs/heads/*:refs/remotes/upstream/*
+
+     openjdk/panama-vector: .git/config
+     [core]
+        repositoryformatversion = 0
+        filemode = true
+        bare = false
+        logallrefupdates = true
+     [remote "origin"]
+             url = http://github.com/jatin-bhateja/panama-vector.git
+             fetch = +refs/heads/*:refs/remotes/origin/*
+     [branch "master"]
+             remote = origin
+             merge = refs/heads/master
+     [remote "upstream"]
+             url = http://github.com/openjdk/panama-vector.git
+             fetch = +refs/heads/*:refs/remotes/upstream/*
+
+
+
+2)  Synching:
+   - sudo git [skara] sync ( OpenJDK/jdk/master -> jatin-bhateja/OpenJDK/master)
+   - sudo git pull       ( pull changes from local fork to current sandbox)
+   - git co JDK-<BRANCH> 
+   - sudo git pull origin master ( rebas w.r.t to current local fork).
+   - sudo git rebase master (move changes in branch at the top after merge).
+
+
+
+3) Review Workflow:  
+     $ git clone https://github.com/edvbld/skara
+     cloning into 'skara'...
+     remote: Enumerating objects: 48, done.
+     remote: Counting objects: 100% (48/48), done.
+     remote: Compressing objects: 100% (23/23), done.
+     remote: Total 13764 (delta 5), reused 40 (delta 3), pack-reused 13716
+     Receiving objects: 100% (13764/13764), 2.18 MiB | 941.00 KiB/s, done.
+     Resolving deltas: 100% (4565/4565), done.
+      
+     $ cd skara
+      
+     $ git checkout -b SKARA-296
+     Switched to a new branch 'SKARA-296'
+      
+     $ # hack, hack
+      
+     $ git add <paths/to/files/that/have/changed>
+      
+     $ git commit -m skara-296
+     [SKARA-296 88d7b01] skara-296                  
+      1 file changed, 17 insertions(+), 4 deletions(-) 
+      
+     $ git push --set-upstream origin SKARA-296
+     Enumerating objects: 25, done.
+     Counting objects: 100% (25/25), done.
+     Delta compression using up to 8 threads
+     Compressing objects: 100% (8/8), done.
+     Writing objects: 100% (13/13), 1.11 KiB | 1.11 MiB/s, done.
+     Total 13 (delta 3), reused 0 (delta 0)
+     remote: Resolving deltas: 100% (3/3), completed with 3 local objects.
+     remote:
+     remote: Create a pull request for 'SKARA-296' on GitHub by visiting:
+     remote:      https://github.com/edvbld/skara/pull/new/SKARA-296
+     remote:
+     To https://github.com/edvbld/skara
+
+4) git pr (skara tooling)
+
+     DPROMPT>git pr info  61
+     WARNING: Your git version is: 2.17.1, which is not a known supported version. Please consider upgrading to a more recent version.
+     fatal: unable to connect to cache daemon: Permission denied
+     Password for 'https://jatin-bhateja@github.com': 
+     fatal: unable to connect to cache daemon: Permission denied
+     URL:          https://github.com/openjdk/jdk/pull/61
+     Title:        8252847: New AVX512 optimized stubs for both conjoint and disjoint arraycopy
+     Author:       jatin-bhateja
+     Branch:       master
+     Labels:       hotspot, rfr
+     Assignees:    -
+     Reviewers:    -
+     Contributors: -
+     Status:       RFR
+     Issue:        JDK-8252847
+     Checks:
+     - jcheck: OK
+     Exception in thread "main" java.io.IOException: Unexpected exit code
+     'git fetch --recurse-submodules=on-demand --tags https://github.com/openjdk/jdk master' exited with status: 128
+     [stdout]
+     [stderr]
+     > fatal: unable to access 'https://github.com/openjdk/jdk/': gnutls_handshake() failed: The TLS connection was non-properly terminated.
+       -> SSL issue , http -> https
+
+5) Skara tooling : update and build
+      2182  cd buildSrc/
+      2183  ls
+      2184  mv build build.old
+      2185  cd ..
+      2186  sh skara.sh
+      2187  sh gradlew
+      2188  sudo sh gradlew
+      2189  git skara update
+      2190  sudo git skara update
+
+
+6) Git Fork Sync:
+  sudo git sync (SKARA) 
+    OR
+  sudo git pull upstream master
+  sudo git push 
+
+  OR
+
+  691  sudo git pull upstream vectorIntrinsics
+  692  sudo git push origin vectorIntrinsics
+  693  git log
+  694  sudo git checkout master
+  695  git checkout -b vectorIntrinsics+mask
+  696  sudo git pull upstream vectorIntrinsics+mask
+  697  git log
+  698  sudo git push  origin vectorIntrinsics+mask
+
+
+
+7) git checkout JDK-8223347 git fetch https://git.openjdk.java.net/jdk master git merge FETCH_HEAD # resolve conflicts and follow the instructions given by git merge git commit -m "Merge master" git push 
+
+8) Hard reset of remote repo to a changelist.
+
+ 2060  sudo git reset --hard a5d6c5de5f9e8a21bfc6a53ae4cf57f2b32332ce
+ 2061  git branch
+ 2062  sudo git push -f
+

@@ -1,0 +1,1213 @@
+diff --git a/src/hotspot/cpu/aarch64/matcher_aarch64.hpp b/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
+index 36d985c8a36..4d28e5ade66 100644
+--- a/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
+@@ -177,10 +177,6 @@
+     return is_alltrue ? BoolTest::eq : BoolTest::ne;
+   }
+ 
+-  static bool vector_indexes_needs_pruning(BasicType bt, int vlen) {
+-    return false;
+-  }
+-
+   // Returns pre-selection estimated size of a vector operation.
+   static int vector_op_pre_select_sz_estimate(int vopc, BasicType ety, int vlen) {
+     switch(vopc) {
+diff --git a/src/hotspot/cpu/arm/matcher_arm.hpp b/src/hotspot/cpu/arm/matcher_arm.hpp
+index ca3a4f606ce..716a997a72b 100644
+--- a/src/hotspot/cpu/arm/matcher_arm.hpp
++++ b/src/hotspot/cpu/arm/matcher_arm.hpp
+@@ -170,10 +170,6 @@
+     return BoolTest::illegal;
+   }
+ 
+-  static bool vector_indexes_needs_pruning(BasicType bt, int vlen) {
+-    return false;
+-  }
+-
+   // Returns pre-selection estimated size of a vector operation.
+   static int vector_op_pre_select_sz_estimate(int vopc, BasicType ety, int vlen) {
+     switch(vopc) {
+diff --git a/src/hotspot/cpu/ppc/matcher_ppc.hpp b/src/hotspot/cpu/ppc/matcher_ppc.hpp
+index 00cd9dbfc50..0ee4245f274 100644
+--- a/src/hotspot/cpu/ppc/matcher_ppc.hpp
++++ b/src/hotspot/cpu/ppc/matcher_ppc.hpp
+@@ -179,10 +179,6 @@
+     return BoolTest::illegal;
+   }
+ 
+-  static bool vector_indexes_needs_pruning(BasicType bt, int vlen) {
+-    return false;
+-  }
+-
+   // Returns pre-selection estimated size of a vector operation.
+   static int vector_op_pre_select_sz_estimate(int vopc, BasicType ety, int vlen) {
+     switch(vopc) {
+diff --git a/src/hotspot/cpu/riscv/matcher_riscv.hpp b/src/hotspot/cpu/riscv/matcher_riscv.hpp
+index 497939f0cea..6e2b97b8202 100644
+--- a/src/hotspot/cpu/riscv/matcher_riscv.hpp
++++ b/src/hotspot/cpu/riscv/matcher_riscv.hpp
+@@ -176,10 +176,6 @@
+     return is_alltrue ? BoolTest::eq : BoolTest::ne;
+   }
+ 
+-  static bool vector_indexes_needs_pruning(BasicType bt, int vlen) {
+-    return false;
+-  }
+-
+   // Returns pre-selection estimated size of a vector operation.
+   static int vector_op_pre_select_sz_estimate(int vopc, BasicType ety, int vlen) {
+     switch(vopc) {
+diff --git a/src/hotspot/cpu/s390/matcher_s390.hpp b/src/hotspot/cpu/s390/matcher_s390.hpp
+index 43023e7ee3d..6c6cae3c58f 100644
+--- a/src/hotspot/cpu/s390/matcher_s390.hpp
++++ b/src/hotspot/cpu/s390/matcher_s390.hpp
+@@ -168,10 +168,6 @@
+     return BoolTest::illegal;
+   }
+ 
+-  static bool vector_indexes_needs_pruning(BasicType bt, int vlen) {
+-    return false;
+-  }
+-
+   // Returns pre-selection estimated size of a vector operation.
+   static int vector_op_pre_select_sz_estimate(int vopc, BasicType ety, int vlen) {
+     switch(vopc) {
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 4ac5edab99b..4bef0741987 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -6459,11 +6459,9 @@ void C2_MacroAssembler::select_from_two_vectors_evex(BasicType elem_bt, XMMRegis
+       evpermi2q(dst, src1, src2, vlen_enc);
+       break;
+     case T_FLOAT:
+-      vcvttps2dq(dst, dst, vlen_enc);
+       evpermi2ps(dst, src1, src2, vlen_enc);
+       break;
+     case T_DOUBLE:
+-      evcvttpd2qq(dst, dst, vlen_enc);
+       evpermi2pd(dst, src1, src2, vlen_enc);
+       break;
+     default:
+diff --git a/src/hotspot/cpu/x86/matcher_x86.hpp b/src/hotspot/cpu/x86/matcher_x86.hpp
+index a76acd706c1..192e959451f 100644
+--- a/src/hotspot/cpu/x86/matcher_x86.hpp
++++ b/src/hotspot/cpu/x86/matcher_x86.hpp
+@@ -212,18 +212,6 @@
+     return BoolTest::lt;
+   }
+ 
+-  static bool vector_indexes_needs_pruning(BasicType bt, int vlen) {
+-     switch(bt) {
+-       default:
+-         return false;
+-       case T_SHORT:
+-         return !VM_Version::supports_avx512bw();
+-       case T_LONG:
+-       case T_DOUBLE:
+-         return !VM_Version::supports_avx512vl();
+-     }
+-  }
+-
+   // Returns pre-selection estimated size of a vector operation.
+   // Currently, it's a rudimentary heuristic based on emitted code size for complex
+   // IR nodes used by unroll policy. Idea is to constrain unrolling factor and prevent
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 0b7b437b4bf..f091f0451e2 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1945,10 +1945,7 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+        if (bt == T_BYTE && !VM_Version::supports_avx512_vbmi()) {
+          return false;
+        }
+-       if ((bt == T_INT || bt == T_FLOAT) && !VM_Version::supports_evex()) {
+-         return false;
+-       }
+-       if (bt == T_DOUBLE && !VM_Version::supports_avx512dq()) {
++       if ((bt == T_INT || bt == T_FLOAT || bt == T_DOUBLE) && !VM_Version::supports_evex()) {
+          return false;
+        }
+        break;
+diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
+index d8bb15a1ab1..2442a832f4f 100644
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@ -978,6 +978,8 @@ class methodHandle;
+                                                                                                                                                \
+   do_intrinsic(_VectorSelectFromTwoVectorOp, jdk_internal_vm_vector_VectorSupport, vector_select_from_op_name, vector_select_from_op_sig, F_S) \
+    do_signature(vector_select_from_op_sig, "(Ljava/lang/Class;"                                                                                \
++                                            "Ljava/lang/Class;"                                                                                \
++                                            "Ljava/lang/Class;"                                                                                \
+                                             "Ljava/lang/Class;"                                                                                \
+                                             "I"                                                                                                \
+                                             "Ljdk/internal/vm/vector/VectorSupport$Vector;"                                                    \
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index cdbfdef05e9..ece3b15fe95 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -2632,24 +2632,32 @@ bool LibraryCallKit::inline_vector_extract() {
+ }
+ 
+ 
+-// public static
+-// <V extends Vector<E>,
+-//  E>
+-// V selectFromTwoVectorOp(Class<? extends V> vClass, Class<E> eClass, int length,
+-//                         V v1, V v2, V v3,
+-//                         SelectFromTwoVector<V> defaultImpl)
++//  public static
++//  <V extends Vector<E1>,
++//   VI extends Vector<E2>,
++//   E1,
++//   E2>
++//  V selectFromTwoVectorOp(Class<? extends V> vClass, Class<? extends VI> viClass,
++//                          Class<E1> eClass, Class<E2> iClass, int length,
++//                          VI v1, V v2, V v3,
++//                          SelectFromTwoVector<V> defaultImpl)
+ bool LibraryCallKit::inline_vector_select_from_two_vectors() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+-  const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(2))->isa_int();
+-
+-  if (vector_klass == nullptr || elem_klass == nullptr ||  vlen == nullptr ||
+-      vector_klass->const_oop() == nullptr || elem_klass->const_oop() == nullptr ||
+-      !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s",
++  const TypeInstPtr* index_vector_klass = gvn().type(argument(1))->isa_instptr();
++  const TypeInstPtr* elem_klass = gvn().type(argument(2))->isa_instptr();
++  const TypeInstPtr* index_elem_klass = gvn().type(argument(3))->isa_instptr();
++  const TypeInt* vlen = gvn().type(argument(4))->isa_int();
++
++  if (vector_klass == nullptr || index_vector_klass == nullptr || elem_klass == nullptr ||
++      index_elem_klass == nullptr || vlen == nullptr || vector_klass->const_oop() == nullptr ||
++      index_vector_klass->const_oop() == nullptr || elem_klass->const_oop() == nullptr ||
++      index_elem_klass->const_oop() == nullptr || !vlen->is_con()) {
++    log_if_needed("  ** missing constant: vclass=%s viclass = %s etype=%s itype = %s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(2)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(4)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
+@@ -2658,25 +2666,36 @@ bool LibraryCallKit::inline_vector_select_from_two_vectors() {
+     return false;
+   }
+ 
++  if (!is_klass_initialized(index_vector_klass)) {
++    log_if_needed("  ** klass argument not initialized");
++    return false;
++  }
++
+   ciType* elem_type = elem_klass->const_oop()->as_instance()->java_mirror_type();
+   if (!elem_type->is_primitive_type()) {
+     log_if_needed("  ** not a primitive bt=%d", elem_type->basic_type());
+     return false; // should be primitive type
+   }
+ 
++  ciType* index_elem_type = index_elem_klass->const_oop()->as_instance()->java_mirror_type();
++  if (!index_elem_type->is_primitive_type()) {
++    log_if_needed("  ** index element not a primitive bt=%d", index_elem_type->basic_type());
++    return false; // should be primitive type
++  }
++
+   int num_elem = vlen->get_con();
+   BasicType elem_bt = elem_type->basic_type();
++  BasicType index_elem_bt = index_elem_type->basic_type();
++  assert(!is_floating_point_type(index_elem_bt), "floating point index element type");
+ 
+   if (!arch_supports_vector(Op_SelectFromTwoVector, num_elem, elem_bt, VecMaskNotUsed)) {
+-    int opc = VectorSupport::vop2ideal(VectorSupport::VECTOR_OP_SUB, elem_bt);
+-    int sopc = VectorNode::opcode(opc, elem_bt);
+-    if (!arch_supports_vector(Op_VectorMaskCmp, num_elem, elem_bt, VecMaskNotUsed)   ||
+-        !arch_supports_vector(Op_VectorBlend, num_elem, elem_bt, VecMaskUseLoad)     ||
+-        !arch_supports_vector(Op_VectorRearrange, num_elem, elem_bt, VecMaskNotUsed) ||
+-        (!is_integral_type(elem_bt) &&
+-          ((elem_bt == T_FLOAT && !arch_supports_vector(Op_VectorCastF2X, num_elem, T_INT, VecMaskNotUsed))     ||
+-           (elem_bt == T_DOUBLE && !arch_supports_vector(Op_VectorCastD2X, num_elem, T_LONG, VecMaskNotUsed)))) ||
+-        !arch_supports_vector(sopc, num_elem, elem_bt, VecMaskNotUsed)) {
++    int cast_vopc = VectorCastNode::opcode(-1, index_elem_bt, true);
++    if (!arch_supports_vector(Op_VectorMaskCmp, num_elem, T_BYTE, VecMaskNotUsed)            ||
++        !arch_supports_vector(Op_VectorBlend, num_elem, elem_bt, VecMaskUseLoad)             ||
++        !arch_supports_vector(Op_VectorRearrange, num_elem, elem_bt, VecMaskNotUsed)         ||
++        !arch_supports_vector(cast_vopc, num_elem, T_BYTE, VecMaskNotUsed)                   ||
++        !arch_supports_vector(Op_VectorLoadShuffle, num_elem, index_elem_bt, VecMaskNotUsed) ||
++        !arch_supports_vector(Op_Replicate, num_elem, T_BYTE, VecMaskNotUsed)) {
+       log_if_needed("  ** not supported: opc=%d vlen=%d etype=%s ismask=useload",
+                     Op_SelectFromTwoVector, num_elem, type2name(elem_bt));
+       return false; // not supported
+@@ -2684,24 +2703,26 @@ bool LibraryCallKit::inline_vector_select_from_two_vectors() {
+   }
+ 
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
++  ciKlass* index_vbox_klass = index_vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
++  const TypeInstPtr* index_vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, index_vbox_klass);
+ 
+-  Node* opd1 = unbox_vector(argument(3), vbox_type, elem_bt, num_elem);
++  Node* opd1 = unbox_vector(argument(5), index_vbox_type, index_elem_bt, num_elem);
+   if (opd1 == nullptr) {
+     log_if_needed("  ** unbox failed v1=%s",
+-                  NodeClassNames[argument(3)->Opcode()]);
++                  NodeClassNames[argument(5)->Opcode()]);
+     return false;
+   }
+-  Node* opd2 = unbox_vector(argument(4), vbox_type, elem_bt, num_elem);
++  Node* opd2 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+   if (opd2 == nullptr) {
+     log_if_needed("  ** unbox failed v1=%s",
+-                  NodeClassNames[argument(4)->Opcode()]);
++                  NodeClassNames[argument(6)->Opcode()]);
+     return false;
+   }
+-  Node* opd3 = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++  Node* opd3 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
+   if (opd3 == nullptr) {
+     log_if_needed("  ** unbox failed v1=%s",
+-                  NodeClassNames[argument(5)->Opcode()]);
++                  NodeClassNames[argument(7)->Opcode()]);
+     return false;
+   }
+ 
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 1503b4faeab..7c29cb3ef9d 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -2087,10 +2087,12 @@ Node* VectorBlendNode::Identity(PhaseGVN* phase) {
+ Node* SelectFromTwoVectorNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   int num_elem = vect_type()->length();
+   BasicType elem_bt = vect_type()->element_basic_type();
++
+   // Keep the node if it is supported, else lower it to other nodes.
+   if (Matcher::match_rule_supported_vector(Op_SelectFromTwoVector, num_elem, elem_bt)) {
+     return nullptr;
+   }
++
+   Node* index_vec = in(1);
+   Node* src1 = in(2);
+   Node* src2 = in(3);
+@@ -2098,95 +2100,45 @@ Node* SelectFromTwoVectorNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   // Lower the IR to constituents operations.
+   //   SelectFromTwoVectorNode =
+   //     (VectorBlend
+-  //         (VectorRearrange SRC1 INDEX)
+-  //         (VectorRearrange SRC2 NORM_INDEX)
++  //         (VectorRearrange SRC1 WRAPED_INDEX)
++  //         (VectorRearrange SRC2 WRAPED_INDEX)
+   //         MASK)
+   //
+-  // MASK = INDEX < num_elem
++  // MASK = WRAPED_INDEX < num_elem
+   //
+   // This shall prevent an intrinsification failure and associated argument
+   // boxing penalties.
+-  // Here, MASK lanes corresponding to INDEX values greater than or equal to
++  // Here, MASK lanes corresponding to WRAPPED_INDEX values greater than or equal to
+   // vector length (VELEN) are set and are used to select the elements from
+   // second source (SRC2) vector.
+ 
+-  const Type* lane_count_type = nullptr;
+-  switch(elem_bt) {
+-    case T_BYTE:
+-    case T_SHORT:
+-    case T_INT:
+-    case T_FLOAT:
+-      lane_count_type = TypeInt::make(num_elem);
+-      break;
+-    case T_DOUBLE:
+-    case T_LONG:
+-      lane_count_type = TypeLong::make(num_elem);
+-      break;
+-    default:
+-      fatal("Unsupported vectortype (%s)", type2name(elem_bt));
+-      break;
+-  }
++  const TypeVect* index_vect_type = index_vec->bottom_type()->is_vect();
++  BasicType index_elem_bt = index_vect_type->element_basic_type();
++  assert(!is_floating_point_type(index_elem_bt), "");
+ 
+-  BasicType integral_elem_bt = elem_bt;
+-  Node* integral_index_vec = index_vec;
+-  if (elem_bt == T_FLOAT) {
+-      integral_elem_bt = T_INT;
+-      integral_index_vec = phase->transform(new VectorCastF2XNode(index_vec, TypeVect::make(integral_elem_bt, num_elem)));
+-  } else if (elem_bt == T_DOUBLE) {
+-      integral_elem_bt = T_LONG;
+-      integral_index_vec = phase->transform(new VectorCastD2XNode(index_vec, TypeVect::make(integral_elem_bt, num_elem)));
+-  }
++  // Downcast index vector to a type agnostic shuffle representation i.e. a ByteVector
++  // which will be massaged to an integral index vector by subsequent VectorLoadShuffle[s]
++  int cast_vopc = VectorCastNode::opcode(0, index_elem_bt, true);
++  Node* index_byte_vec = phase->transform(VectorCastNode::make(cast_vopc, index_vec, T_BYTE, num_elem));
++  index_vec = phase->transform(new VectorLoadShuffleNode(index_byte_vec, index_vect_type));
+ 
+-  int opc = VectorSupport::vop2ideal(VectorSupport::VECTOR_OP_SUB, integral_elem_bt);
+-  int sopc = VectorNode::opcode(opc, integral_elem_bt);
++  Node* lane_cnt = phase->makecon(TypeInt::make(num_elem));
++  Node* bcast_lane_cnt_vec = phase->transform(VectorNode::scalar2vector(lane_cnt, num_elem, Type::get_const_basic_type(T_BYTE), false));
+ 
+   BoolTest::mask pred = BoolTest::lt;
+   ConINode* pred_node = (ConINode*)phase->makecon(TypeInt::make(pred));
+-  Node* lane_cnt = phase->makecon(lane_count_type);
+-  Node* bcast_lane_cnt_vec = phase->transform(VectorNode::scalar2vector(lane_cnt, num_elem, Type::get_const_basic_type(integral_elem_bt), false));
+-
+-  // Comparison over integral vectors weeds out emitting additional
+-  // instructions for checking special floating point values.
+-  const TypeVect* vmask_type = TypeVect::makemask(integral_elem_bt, num_elem);
+-  Node* mask = phase->transform(new VectorMaskCmpNode(pred, integral_index_vec, bcast_lane_cnt_vec, pred_node, vmask_type));
++  const TypeVect* vmask_type = TypeVect::makemask(T_BYTE, num_elem);
++  Node* mask = phase->transform(new VectorMaskCmpNode(pred, index_byte_vec, bcast_lane_cnt_vec, pred_node, vmask_type));
+ 
+   vmask_type = TypeVect::makemask(elem_bt, num_elem);
+   mask = phase->transform(new VectorMaskCastNode(mask, vmask_type));
+ 
+-  Node* p1 = phase->transform(new VectorRearrangeNode(src1, integral_index_vec));
+-  Node* normalized_index_vec = phase->transform(VectorNode::make(sopc, integral_index_vec, bcast_lane_cnt_vec, vect_type()));
+-  Node* p2 = phase->transform(new VectorRearrangeNode(src2, normalized_index_vec));
++  Node* p1 = phase->transform(new VectorRearrangeNode(src1, index_vec));
++  Node* p2 = phase->transform(new VectorRearrangeNode(src2, index_vec));
+ 
+   return new VectorBlendNode(p2, p1, mask);
+ }
+ 
+-Node* VectorRearrangeNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+-  BasicType elem_bt = vect_type()->element_basic_type();
+-  int num_elem = vect_type()->length();
+-  if (in(2)->Opcode() != Op_VectorUnbox &&
+-      in(2)->Opcode() != Op_VectorLoadShuffle &&
+-      Matcher::match_rule_supported_vector(Op_VectorRearrange, num_elem, elem_bt) &&
+-      Matcher::vector_indexes_needs_pruning(elem_bt, num_elem)) {
+-
+-    BasicType integral_elem_bt = elem_bt;
+-    if (elem_bt == T_FLOAT) {
+-      integral_elem_bt = T_INT;
+-    } else if (elem_bt == T_DOUBLE) {
+-      integral_elem_bt = T_LONG;
+-    }
+-
+-    // Targets emulating unsupported permutation for certain vector types
+-    // may need to massage the indexes to match the users intent.
+-    // Lowering index vector to a bytevector followed by an explicit loadshuffle
+-    // will bring the indexes in the consumable format.
+-    int cast_opc = VectorCastNode::opcode(-1, elem_bt, true);
+-    Node* pack_shuf = phase->transform(VectorCastNode::make(cast_opc, in(2), T_BYTE, num_elem));
+-    const TypeVect* newvt = TypeVect::make(integral_elem_bt, num_elem);
+-    Node* unpack_shuf = phase->transform(new VectorLoadShuffleNode(pack_shuf, newvt));
+-    return new VectorRearrangeNode(in(1), unpack_shuf);
+-  }
+-  return nullptr;
+-}
+ 
+ #ifndef PRODUCT
+ void VectorBoxAllocateNode::dump_spec(outputStream *st) const {
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index cb825b6bb9b..cc3a4185f7d 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -1607,7 +1607,6 @@ class VectorRearrangeNode : public VectorNode {
+     // assert(mask->is_VectorMask(), "VectorBlendNode requires that third argument be a mask");
+   }
+ 
+-  Node* Ideal(PhaseGVN* phase, bool can_reshape);
+   virtual int Opcode() const;
+   Node* vec1() const { return in(1); }
+   Node* vec_shuffle() const { return in(2); }
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index c0e285d537c..a6b89077c24 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -383,17 +383,20 @@ VM binaryOp(int oprId,
+     }
+     /* ============================================================================ */
+ 
+-    public interface SelectFromTwoVector<V extends Vector<?>> {
+-        V apply(V v1, V v2, V v3);
++    public interface SelectFromTwoVector<V extends Vector<?>, VI extends Vector<?>> {
++        V apply(VI v1, V v2, V v3);
+     }
+ 
+     @IntrinsicCandidate
+     public static
+-    <V extends Vector<E>,
+-     E>
+-    V selectFromTwoVectorOp(Class<? extends V> vClass, Class<E> eClass, int length,
+-                             V v1, V v2, V v3,
+-                             SelectFromTwoVector<V> defaultImpl) {
++    <V extends Vector<E1>,
++     VI extends Vector<E2>,
++     E1,
++     E2>
++    V selectFromTwoVectorOp(Class<? extends V> vClass, Class<? extends VI> viClass,
++                            Class<E1> eClass, Class<E2> iClass, int length,
++                            VI v1, V v2, V v3,
++                            SelectFromTwoVector<V,VI> defaultImpl) {
+         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+         return defaultImpl.apply(v1, v2, v3);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+index 07f719db2d4..7ab8e60aa2d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+@@ -511,7 +511,7 @@ public Byte128Vector selectFrom(Vector<Byte> v,
+     public Byte128Vector selectFrom(Vector<Byte> v1,
+                                    Vector<Byte> v2) {
+         return (Byte128Vector)
+-            super.selectFromTemplate((Byte128Vector) v1, (Byte128Vector) v2);  // specialize
++            super.selectFromTemplate(Byte128Vector.class, (Byte128Vector) v1, (Byte128Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+index 52ffdc99e7e..698fa704388 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+@@ -511,7 +511,7 @@ public Byte256Vector selectFrom(Vector<Byte> v,
+     public Byte256Vector selectFrom(Vector<Byte> v1,
+                                    Vector<Byte> v2) {
+         return (Byte256Vector)
+-            super.selectFromTemplate((Byte256Vector) v1, (Byte256Vector) v2);  // specialize
++            super.selectFromTemplate(Byte256Vector.class, (Byte256Vector) v1, (Byte256Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+index a6ca8a73229..c301e53552d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+@@ -511,7 +511,7 @@ public Byte512Vector selectFrom(Vector<Byte> v,
+     public Byte512Vector selectFrom(Vector<Byte> v1,
+                                    Vector<Byte> v2) {
+         return (Byte512Vector)
+-            super.selectFromTemplate((Byte512Vector) v1, (Byte512Vector) v2);  // specialize
++            super.selectFromTemplate(Byte512Vector.class, (Byte512Vector) v1, (Byte512Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+index 6fe24c2d581..785be47be79 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+@@ -511,7 +511,7 @@ public Byte64Vector selectFrom(Vector<Byte> v,
+     public Byte64Vector selectFrom(Vector<Byte> v1,
+                                    Vector<Byte> v2) {
+         return (Byte64Vector)
+-            super.selectFromTemplate((Byte64Vector) v1, (Byte64Vector) v2);  // specialize
++            super.selectFromTemplate(Byte64Vector.class, (Byte64Vector) v1, (Byte64Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+index 36eecdc60fe..2fea8b286ac 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+@@ -511,7 +511,7 @@ public ByteMaxVector selectFrom(Vector<Byte> v,
+     public ByteMaxVector selectFrom(Vector<Byte> v1,
+                                    Vector<Byte> v2) {
+         return (ByteMaxVector)
+-            super.selectFromTemplate((ByteMaxVector) v1, (ByteMaxVector) v2);  // specialize
++            super.selectFromTemplate(ByteMaxVector.class, (ByteMaxVector) v1, (ByteMaxVector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index 145b6e6e9b7..9887ddeb3db 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -539,14 +539,14 @@ static ByteVector compressHelper(Vector<Byte> v, VectorMask<Byte> m) {
+     static ByteVector selectFromTwoVectorHelper(Vector<Byte> v1, Vector<Byte> v2, Vector<Byte> v3) {
+         int vlen = v1.length();
+         byte[] res = new byte[vlen];
+-        byte[] vpayload1 = ((ByteVector)v1).vec();
+-        byte[] vpayload2 = ((ByteVector)v2).vec();
+-        byte[] vpayload3 = ((ByteVector)v3).vec();
++        byte[] vecPayload1 = ((ByteVector)v1).vec();
++        byte[] vecPayload2 = ((ByteVector)v2).vec();
++        byte[] vecPayload3 = ((ByteVector)v3).vec();
+         for (int i = 0; i < vlen; i++) {
+-            int index = ((int)vpayload1[i]);
+-            res[i] = index >= vlen ? vpayload3[index & (vlen - 1)] : vpayload2[index];
++            int index = ((int)vecPayload1[i]);
++            res[i] = index >= vlen ? vecPayload3[index & (vlen - 1)] : vecPayload2[index];
+         }
+-        return ((ByteVector)v1).vectorFactory(res);
++        return ((ByteVector)v2).vectorFactory(res);
+     }
+ 
+     // Static factories (other than memory operations)
+@@ -2589,13 +2589,16 @@ final ByteVector selectFromTemplate(ByteVector v,
+     public abstract
+     ByteVector selectFrom(Vector<Byte> v1, Vector<Byte> v2);
+ 
++
+     /*package-private*/
+     @ForceInline
+-    final ByteVector selectFromTemplate(ByteVector v1, ByteVector v2) {
++    final ByteVector selectFromTemplate(Class<? extends Vector<Byte>> indexVecClass,
++                                                  ByteVector v1, ByteVector v2) {
+         int twoVectorLen = length() * 2;
+         ByteVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return (ByteVector)VectorSupport.selectFromTwoVectorOp(getClass(), byte.class, length(), wrapped_indexes, v1, v2,
+-            (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        return (ByteVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, byte.class, byte.class,
++                                                              length(), wrapped_indexes, v1, v2,
++                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+index f606eb81566..cbbaf1e1286 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+@@ -498,7 +498,7 @@ public Double128Vector selectFrom(Vector<Double> v,
+     public Double128Vector selectFrom(Vector<Double> v1,
+                                    Vector<Double> v2) {
+         return (Double128Vector)
+-            super.selectFromTemplate((Double128Vector) v1, (Double128Vector) v2);  // specialize
++            super.selectFromTemplate(Long128Vector.class, (Double128Vector) v1, (Double128Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+index b629a5604f2..0044f0aa324 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+@@ -498,7 +498,7 @@ public Double256Vector selectFrom(Vector<Double> v,
+     public Double256Vector selectFrom(Vector<Double> v1,
+                                    Vector<Double> v2) {
+         return (Double256Vector)
+-            super.selectFromTemplate((Double256Vector) v1, (Double256Vector) v2);  // specialize
++            super.selectFromTemplate(Long256Vector.class, (Double256Vector) v1, (Double256Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+index 012879cfc88..6ad5a6e80ad 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+@@ -498,7 +498,7 @@ public Double512Vector selectFrom(Vector<Double> v,
+     public Double512Vector selectFrom(Vector<Double> v1,
+                                    Vector<Double> v2) {
+         return (Double512Vector)
+-            super.selectFromTemplate((Double512Vector) v1, (Double512Vector) v2);  // specialize
++            super.selectFromTemplate(Long512Vector.class, (Double512Vector) v1, (Double512Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+index 1bc19c4bea8..4f443a2358f 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+@@ -498,7 +498,7 @@ public Double64Vector selectFrom(Vector<Double> v,
+     public Double64Vector selectFrom(Vector<Double> v1,
+                                    Vector<Double> v2) {
+         return (Double64Vector)
+-            super.selectFromTemplate((Double64Vector) v1, (Double64Vector) v2);  // specialize
++            super.selectFromTemplate(Long64Vector.class, (Double64Vector) v1, (Double64Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+index 63b9da9b305..b6a99e9ffd2 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+@@ -498,7 +498,7 @@ public DoubleMaxVector selectFrom(Vector<Double> v,
+     public DoubleMaxVector selectFrom(Vector<Double> v1,
+                                    Vector<Double> v2) {
+         return (DoubleMaxVector)
+-            super.selectFromTemplate((DoubleMaxVector) v1, (DoubleMaxVector) v2);  // specialize
++            super.selectFromTemplate(LongMaxVector.class, (DoubleMaxVector) v1, (DoubleMaxVector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index ffde22b2114..fca46e1850f 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -525,17 +525,17 @@ static DoubleVector compressHelper(Vector<Double> v, VectorMask<Double> m) {
+         return r;
+     }
+ 
+-    static DoubleVector selectFromTwoVectorHelper(Vector<Double> v1, Vector<Double> v2, Vector<Double> v3) {
++    static DoubleVector selectFromTwoVectorHelper(Vector<Long> v1, Vector<Double> v2, Vector<Double> v3) {
+         int vlen = v1.length();
+         double[] res = new double[vlen];
+-        double[] vpayload1 = ((DoubleVector)v1).vec();
+-        double[] vpayload2 = ((DoubleVector)v2).vec();
+-        double[] vpayload3 = ((DoubleVector)v3).vec();
++        long[] vecPayload1 = ((LongVector)v1).vec();
++        double[] vecPayload2 = ((DoubleVector)v2).vec();
++        double[] vecPayload3 = ((DoubleVector)v3).vec();
+         for (int i = 0; i < vlen; i++) {
+-            int index = ((int)vpayload1[i]);
+-            res[i] = index >= vlen ? vpayload3[index & (vlen - 1)] : vpayload2[index];
++            int index = ((int)vecPayload1[i]);
++            res[i] = index >= vlen ? vecPayload3[index & (vlen - 1)] : vecPayload2[index];
+         }
+-        return ((DoubleVector)v1).vectorFactory(res);
++        return ((DoubleVector)v2).vectorFactory(res);
+     }
+ 
+     // Static factories (other than memory operations)
+@@ -2431,17 +2431,18 @@ final DoubleVector selectFromTemplate(DoubleVector v,
+     public abstract
+     DoubleVector selectFrom(Vector<Double> v1, Vector<Double> v2);
+ 
++
+     /*package-private*/
+     @ForceInline
+-    final DoubleVector selectFromTemplate(DoubleVector v1, DoubleVector v2) {
++    final DoubleVector selectFromTemplate(Class<? extends Vector<Long>> indexVecClass,
++                                                  DoubleVector v1, DoubleVector v2) {
+         int twoVectorLen = length() * 2;
+-        DoubleVector wrapped_indexes = this.convert(VectorOperators.D2I, 0)
+-                                               .lanewise(VectorOperators.AND, twoVectorLen - 1)
+-                                               .reinterpretAsInts()
+-                                               .convert(VectorOperators.I2D, 0)
+-                                               .reinterpretAsDoubles();
+-        return (DoubleVector)VectorSupport.selectFromTwoVectorOp(getClass(), double.class, length(), wrapped_indexes, v1, v2,
+-            (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        LongVector wrapped_indexes = this.convert(VectorOperators.D2L, 0)
++                                                   .lanewise(VectorOperators.AND, twoVectorLen - 1)
++                                                   .reinterpretAsLongs();
++        return (DoubleVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , double.class,
++                                                              long.class, length(), wrapped_indexes, v1, v2,
++                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+index 11ea2a7ed25..fa26b92039d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+@@ -498,7 +498,7 @@ public Float128Vector selectFrom(Vector<Float> v,
+     public Float128Vector selectFrom(Vector<Float> v1,
+                                    Vector<Float> v2) {
+         return (Float128Vector)
+-            super.selectFromTemplate((Float128Vector) v1, (Float128Vector) v2);  // specialize
++            super.selectFromTemplate(Int128Vector.class, (Float128Vector) v1, (Float128Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+index 17d13293731..22df7dabb55 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+@@ -498,7 +498,7 @@ public Float256Vector selectFrom(Vector<Float> v,
+     public Float256Vector selectFrom(Vector<Float> v1,
+                                    Vector<Float> v2) {
+         return (Float256Vector)
+-            super.selectFromTemplate((Float256Vector) v1, (Float256Vector) v2);  // specialize
++            super.selectFromTemplate(Int256Vector.class, (Float256Vector) v1, (Float256Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+index b4fbc241b7b..b8cea12704b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+@@ -498,7 +498,7 @@ public Float512Vector selectFrom(Vector<Float> v,
+     public Float512Vector selectFrom(Vector<Float> v1,
+                                    Vector<Float> v2) {
+         return (Float512Vector)
+-            super.selectFromTemplate((Float512Vector) v1, (Float512Vector) v2);  // specialize
++            super.selectFromTemplate(Int512Vector.class, (Float512Vector) v1, (Float512Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+index 571ae9709f8..62b08729599 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+@@ -498,7 +498,7 @@ public Float64Vector selectFrom(Vector<Float> v,
+     public Float64Vector selectFrom(Vector<Float> v1,
+                                    Vector<Float> v2) {
+         return (Float64Vector)
+-            super.selectFromTemplate((Float64Vector) v1, (Float64Vector) v2);  // specialize
++            super.selectFromTemplate(Int64Vector.class, (Float64Vector) v1, (Float64Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+index 599d2a5c143..aafff6c09b9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+@@ -498,7 +498,7 @@ public FloatMaxVector selectFrom(Vector<Float> v,
+     public FloatMaxVector selectFrom(Vector<Float> v1,
+                                    Vector<Float> v2) {
+         return (FloatMaxVector)
+-            super.selectFromTemplate((FloatMaxVector) v1, (FloatMaxVector) v2);  // specialize
++            super.selectFromTemplate(IntMaxVector.class, (FloatMaxVector) v1, (FloatMaxVector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index c5a1cc11e4c..6515dcdf9a9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -525,17 +525,17 @@ static FloatVector compressHelper(Vector<Float> v, VectorMask<Float> m) {
+         return r;
+     }
+ 
+-    static FloatVector selectFromTwoVectorHelper(Vector<Float> v1, Vector<Float> v2, Vector<Float> v3) {
++    static FloatVector selectFromTwoVectorHelper(Vector<Integer> v1, Vector<Float> v2, Vector<Float> v3) {
+         int vlen = v1.length();
+         float[] res = new float[vlen];
+-        float[] vpayload1 = ((FloatVector)v1).vec();
+-        float[] vpayload2 = ((FloatVector)v2).vec();
+-        float[] vpayload3 = ((FloatVector)v3).vec();
++        int[] vecPayload1 = ((IntVector)v1).vec();
++        float[] vecPayload2 = ((FloatVector)v2).vec();
++        float[] vecPayload3 = ((FloatVector)v3).vec();
+         for (int i = 0; i < vlen; i++) {
+-            int index = ((int)vpayload1[i]);
+-            res[i] = index >= vlen ? vpayload3[index & (vlen - 1)] : vpayload2[index];
++            int index = ((int)vecPayload1[i]);
++            res[i] = index >= vlen ? vecPayload3[index & (vlen - 1)] : vecPayload2[index];
+         }
+-        return ((FloatVector)v1).vectorFactory(res);
++        return ((FloatVector)v2).vectorFactory(res);
+     }
+ 
+     // Static factories (other than memory operations)
+@@ -2443,17 +2443,18 @@ final FloatVector selectFromTemplate(FloatVector v,
+     public abstract
+     FloatVector selectFrom(Vector<Float> v1, Vector<Float> v2);
+ 
++
+     /*package-private*/
+     @ForceInline
+-    final FloatVector selectFromTemplate(FloatVector v1, FloatVector v2) {
++    final FloatVector selectFromTemplate(Class<? extends Vector<Integer>> indexVecClass,
++                                                  FloatVector v1, FloatVector v2) {
+         int twoVectorLen = length() * 2;
+-        FloatVector wrapped_indexes = this.convert(VectorOperators.F2I, 0)
+-                                               .lanewise(VectorOperators.AND, twoVectorLen - 1)
+-                                               .reinterpretAsInts()
+-                                               .convert(VectorOperators.I2F, 0)
+-                                               .reinterpretAsFloats();
+-        return (FloatVector)VectorSupport.selectFromTwoVectorOp(getClass(), float.class, length(), wrapped_indexes, v1, v2,
+-            (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        IntVector wrapped_indexes = this.convert(VectorOperators.F2I, 0)
++                                                   .lanewise(VectorOperators.AND, twoVectorLen - 1)
++                                                   .reinterpretAsInts();
++        return (FloatVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , float.class,
++                                                              int.class, length(), wrapped_indexes, v1, v2,
++                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+index d469b73b264..c720b389caa 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+@@ -511,7 +511,7 @@ public Int128Vector selectFrom(Vector<Integer> v,
+     public Int128Vector selectFrom(Vector<Integer> v1,
+                                    Vector<Integer> v2) {
+         return (Int128Vector)
+-            super.selectFromTemplate((Int128Vector) v1, (Int128Vector) v2);  // specialize
++            super.selectFromTemplate(Int128Vector.class, (Int128Vector) v1, (Int128Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+index 3e41dc4fbad..61ffef2ba2e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+@@ -511,7 +511,7 @@ public Int256Vector selectFrom(Vector<Integer> v,
+     public Int256Vector selectFrom(Vector<Integer> v1,
+                                    Vector<Integer> v2) {
+         return (Int256Vector)
+-            super.selectFromTemplate((Int256Vector) v1, (Int256Vector) v2);  // specialize
++            super.selectFromTemplate(Int256Vector.class, (Int256Vector) v1, (Int256Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+index a9a1cadbf9b..bd5f7fb4a06 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+@@ -511,7 +511,7 @@ public Int512Vector selectFrom(Vector<Integer> v,
+     public Int512Vector selectFrom(Vector<Integer> v1,
+                                    Vector<Integer> v2) {
+         return (Int512Vector)
+-            super.selectFromTemplate((Int512Vector) v1, (Int512Vector) v2);  // specialize
++            super.selectFromTemplate(Int512Vector.class, (Int512Vector) v1, (Int512Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+index 5cd1d5af79e..6f4c084afcf 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+@@ -511,7 +511,7 @@ public Int64Vector selectFrom(Vector<Integer> v,
+     public Int64Vector selectFrom(Vector<Integer> v1,
+                                    Vector<Integer> v2) {
+         return (Int64Vector)
+-            super.selectFromTemplate((Int64Vector) v1, (Int64Vector) v2);  // specialize
++            super.selectFromTemplate(Int64Vector.class, (Int64Vector) v1, (Int64Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+index eb11400e856..118b4c99028 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+@@ -511,7 +511,7 @@ public IntMaxVector selectFrom(Vector<Integer> v,
+     public IntMaxVector selectFrom(Vector<Integer> v1,
+                                    Vector<Integer> v2) {
+         return (IntMaxVector)
+-            super.selectFromTemplate((IntMaxVector) v1, (IntMaxVector) v2);  // specialize
++            super.selectFromTemplate(IntMaxVector.class, (IntMaxVector) v1, (IntMaxVector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index 21690fd374a..f26495f5bcd 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -539,14 +539,14 @@ static IntVector compressHelper(Vector<Integer> v, VectorMask<Integer> m) {
+     static IntVector selectFromTwoVectorHelper(Vector<Integer> v1, Vector<Integer> v2, Vector<Integer> v3) {
+         int vlen = v1.length();
+         int[] res = new int[vlen];
+-        int[] vpayload1 = ((IntVector)v1).vec();
+-        int[] vpayload2 = ((IntVector)v2).vec();
+-        int[] vpayload3 = ((IntVector)v3).vec();
++        int[] vecPayload1 = ((IntVector)v1).vec();
++        int[] vecPayload2 = ((IntVector)v2).vec();
++        int[] vecPayload3 = ((IntVector)v3).vec();
+         for (int i = 0; i < vlen; i++) {
+-            int index = ((int)vpayload1[i]);
+-            res[i] = index >= vlen ? vpayload3[index & (vlen - 1)] : vpayload2[index];
++            int index = ((int)vecPayload1[i]);
++            res[i] = index >= vlen ? vecPayload3[index & (vlen - 1)] : vecPayload2[index];
+         }
+-        return ((IntVector)v1).vectorFactory(res);
++        return ((IntVector)v2).vectorFactory(res);
+     }
+ 
+     // Static factories (other than memory operations)
+@@ -2574,13 +2574,16 @@ final IntVector selectFromTemplate(IntVector v,
+     public abstract
+     IntVector selectFrom(Vector<Integer> v1, Vector<Integer> v2);
+ 
++
+     /*package-private*/
+     @ForceInline
+-    final IntVector selectFromTemplate(IntVector v1, IntVector v2) {
++    final IntVector selectFromTemplate(Class<? extends Vector<Integer>> indexVecClass,
++                                                  IntVector v1, IntVector v2) {
+         int twoVectorLen = length() * 2;
+         IntVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return (IntVector)VectorSupport.selectFromTwoVectorOp(getClass(), int.class, length(), wrapped_indexes, v1, v2,
+-            (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        return (IntVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, int.class, int.class,
++                                                              length(), wrapped_indexes, v1, v2,
++                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+index d5ecb377007..9d59e4cc226 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+@@ -501,7 +501,7 @@ public Long128Vector selectFrom(Vector<Long> v,
+     public Long128Vector selectFrom(Vector<Long> v1,
+                                    Vector<Long> v2) {
+         return (Long128Vector)
+-            super.selectFromTemplate((Long128Vector) v1, (Long128Vector) v2);  // specialize
++            super.selectFromTemplate(Long128Vector.class, (Long128Vector) v1, (Long128Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+index adfcb87df05..dc53f8f68a1 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+@@ -501,7 +501,7 @@ public Long256Vector selectFrom(Vector<Long> v,
+     public Long256Vector selectFrom(Vector<Long> v1,
+                                    Vector<Long> v2) {
+         return (Long256Vector)
+-            super.selectFromTemplate((Long256Vector) v1, (Long256Vector) v2);  // specialize
++            super.selectFromTemplate(Long256Vector.class, (Long256Vector) v1, (Long256Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+index 2e31d76aca5..90405729737 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+@@ -501,7 +501,7 @@ public Long512Vector selectFrom(Vector<Long> v,
+     public Long512Vector selectFrom(Vector<Long> v1,
+                                    Vector<Long> v2) {
+         return (Long512Vector)
+-            super.selectFromTemplate((Long512Vector) v1, (Long512Vector) v2);  // specialize
++            super.selectFromTemplate(Long512Vector.class, (Long512Vector) v1, (Long512Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+index 4784b5a6fd2..97fbfb17a61 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+@@ -501,7 +501,7 @@ public Long64Vector selectFrom(Vector<Long> v,
+     public Long64Vector selectFrom(Vector<Long> v1,
+                                    Vector<Long> v2) {
+         return (Long64Vector)
+-            super.selectFromTemplate((Long64Vector) v1, (Long64Vector) v2);  // specialize
++            super.selectFromTemplate(Long64Vector.class, (Long64Vector) v1, (Long64Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+index a29f049fe66..7982958e18d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+@@ -501,7 +501,7 @@ public LongMaxVector selectFrom(Vector<Long> v,
+     public LongMaxVector selectFrom(Vector<Long> v1,
+                                    Vector<Long> v2) {
+         return (LongMaxVector)
+-            super.selectFromTemplate((LongMaxVector) v1, (LongMaxVector) v2);  // specialize
++            super.selectFromTemplate(LongMaxVector.class, (LongMaxVector) v1, (LongMaxVector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index 7f61874f887..974e94b7e2f 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -539,14 +539,14 @@ static LongVector compressHelper(Vector<Long> v, VectorMask<Long> m) {
+     static LongVector selectFromTwoVectorHelper(Vector<Long> v1, Vector<Long> v2, Vector<Long> v3) {
+         int vlen = v1.length();
+         long[] res = new long[vlen];
+-        long[] vpayload1 = ((LongVector)v1).vec();
+-        long[] vpayload2 = ((LongVector)v2).vec();
+-        long[] vpayload3 = ((LongVector)v3).vec();
++        long[] vecPayload1 = ((LongVector)v1).vec();
++        long[] vecPayload2 = ((LongVector)v2).vec();
++        long[] vecPayload3 = ((LongVector)v3).vec();
+         for (int i = 0; i < vlen; i++) {
+-            int index = ((int)vpayload1[i]);
+-            res[i] = index >= vlen ? vpayload3[index & (vlen - 1)] : vpayload2[index];
++            int index = ((int)vecPayload1[i]);
++            res[i] = index >= vlen ? vecPayload3[index & (vlen - 1)] : vecPayload2[index];
+         }
+-        return ((LongVector)v1).vectorFactory(res);
++        return ((LongVector)v2).vectorFactory(res);
+     }
+ 
+     // Static factories (other than memory operations)
+@@ -2440,13 +2440,16 @@ final LongVector selectFromTemplate(LongVector v,
+     public abstract
+     LongVector selectFrom(Vector<Long> v1, Vector<Long> v2);
+ 
++
+     /*package-private*/
+     @ForceInline
+-    final LongVector selectFromTemplate(LongVector v1, LongVector v2) {
++    final LongVector selectFromTemplate(Class<? extends Vector<Long>> indexVecClass,
++                                                  LongVector v1, LongVector v2) {
+         int twoVectorLen = length() * 2;
+         LongVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return (LongVector)VectorSupport.selectFromTwoVectorOp(getClass(), long.class, length(), wrapped_indexes, v1, v2,
+-            (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        return (LongVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, long.class, long.class,
++                                                              length(), wrapped_indexes, v1, v2,
++                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+index fc2920c4727..7db5df45ed2 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+@@ -511,7 +511,7 @@ public Short128Vector selectFrom(Vector<Short> v,
+     public Short128Vector selectFrom(Vector<Short> v1,
+                                    Vector<Short> v2) {
+         return (Short128Vector)
+-            super.selectFromTemplate((Short128Vector) v1, (Short128Vector) v2);  // specialize
++            super.selectFromTemplate(Short128Vector.class, (Short128Vector) v1, (Short128Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+index 52c825a4394..36059381103 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+@@ -511,7 +511,7 @@ public Short256Vector selectFrom(Vector<Short> v,
+     public Short256Vector selectFrom(Vector<Short> v1,
+                                    Vector<Short> v2) {
+         return (Short256Vector)
+-            super.selectFromTemplate((Short256Vector) v1, (Short256Vector) v2);  // specialize
++            super.selectFromTemplate(Short256Vector.class, (Short256Vector) v1, (Short256Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+index f1cc51fdee4..dd7213a4512 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+@@ -511,7 +511,7 @@ public Short512Vector selectFrom(Vector<Short> v,
+     public Short512Vector selectFrom(Vector<Short> v1,
+                                    Vector<Short> v2) {
+         return (Short512Vector)
+-            super.selectFromTemplate((Short512Vector) v1, (Short512Vector) v2);  // specialize
++            super.selectFromTemplate(Short512Vector.class, (Short512Vector) v1, (Short512Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+index 1c1d90a5af3..e2cc981941b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+@@ -511,7 +511,7 @@ public Short64Vector selectFrom(Vector<Short> v,
+     public Short64Vector selectFrom(Vector<Short> v1,
+                                    Vector<Short> v2) {
+         return (Short64Vector)
+-            super.selectFromTemplate((Short64Vector) v1, (Short64Vector) v2);  // specialize
++            super.selectFromTemplate(Short64Vector.class, (Short64Vector) v1, (Short64Vector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+index 63e18172b46..14ff186c6ac 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+@@ -511,7 +511,7 @@ public ShortMaxVector selectFrom(Vector<Short> v,
+     public ShortMaxVector selectFrom(Vector<Short> v1,
+                                    Vector<Short> v2) {
+         return (ShortMaxVector)
+-            super.selectFromTemplate((ShortMaxVector) v1, (ShortMaxVector) v2);  // specialize
++            super.selectFromTemplate(ShortMaxVector.class, (ShortMaxVector) v1, (ShortMaxVector) v2);  // specialize
+     }
+ 
+     @ForceInline
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index c64e92a1505..764f77303d9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -539,14 +539,14 @@ static ShortVector compressHelper(Vector<Short> v, VectorMask<Short> m) {
+     static ShortVector selectFromTwoVectorHelper(Vector<Short> v1, Vector<Short> v2, Vector<Short> v3) {
+         int vlen = v1.length();
+         short[] res = new short[vlen];
+-        short[] vpayload1 = ((ShortVector)v1).vec();
+-        short[] vpayload2 = ((ShortVector)v2).vec();
+-        short[] vpayload3 = ((ShortVector)v3).vec();
++        short[] vecPayload1 = ((ShortVector)v1).vec();
++        short[] vecPayload2 = ((ShortVector)v2).vec();
++        short[] vecPayload3 = ((ShortVector)v3).vec();
+         for (int i = 0; i < vlen; i++) {
+-            int index = ((int)vpayload1[i]);
+-            res[i] = index >= vlen ? vpayload3[index & (vlen - 1)] : vpayload2[index];
++            int index = ((int)vecPayload1[i]);
++            res[i] = index >= vlen ? vecPayload3[index & (vlen - 1)] : vecPayload2[index];
+         }
+-        return ((ShortVector)v1).vectorFactory(res);
++        return ((ShortVector)v2).vectorFactory(res);
+     }
+ 
+     // Static factories (other than memory operations)
+@@ -2590,13 +2590,16 @@ final ShortVector selectFromTemplate(ShortVector v,
+     public abstract
+     ShortVector selectFrom(Vector<Short> v1, Vector<Short> v2);
+ 
++
+     /*package-private*/
+     @ForceInline
+-    final ShortVector selectFromTemplate(ShortVector v1, ShortVector v2) {
++    final ShortVector selectFromTemplate(Class<? extends Vector<Short>> indexVecClass,
++                                                  ShortVector v1, ShortVector v2) {
+         int twoVectorLen = length() * 2;
+         ShortVector wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-        return (ShortVector)VectorSupport.selectFromTwoVectorOp(getClass(), short.class, length(), wrapped_indexes, v1, v2,
+-            (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        return (ShortVector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, short.class, short.class,
++                                                              length(), wrapped_indexes, v1, v2,
++                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
+     }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index 24dba675e28..a3a98ac2946 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -550,17 +550,17 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         return r;
+     }
+ 
+-    static $abstractvectortype$ selectFromTwoVectorHelper(Vector<$Boxtype$> v1, Vector<$Boxtype$> v2, Vector<$Boxtype$> v3) {
++    static $abstractvectortype$ selectFromTwoVectorHelper(Vector<$Boxbitstype$> v1, Vector<$Boxtype$> v2, Vector<$Boxtype$> v3) {
+         int vlen = v1.length();
+         $type$[] res = new $type$[vlen];
+-        $type$[] vecPayload1 = (($abstractvectortype$)v1).vec();
++        $bitstype$[] vecPayload1 = (($abstractbitsvectortype$)v1).vec();
+         $type$[] vecPayload2 = (($abstractvectortype$)v2).vec();
+         $type$[] vecPayload3 = (($abstractvectortype$)v3).vec();
+         for (int i = 0; i < vlen; i++) {
+             int index = ((int)vecPayload1[i]);
+             res[i] = index >= vlen ? vecPayload3[index & (vlen - 1)] : vecPayload2[index];
+         }
+-        return (($abstractvectortype$)v1).vectorFactory(res);
++        return (($abstractvectortype$)v2).vectorFactory(res);
+     }
+ 
+     // Static factories (other than memory operations)
+@@ -2966,30 +2966,27 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     public abstract
+     $abstractvectortype$ selectFrom(Vector<$Boxtype$> v1, Vector<$Boxtype$> v2);
+ 
++
+     /*package-private*/
+     @ForceInline
+-    final $abstractvectortype$ selectFromTemplate($abstractvectortype$ v1, $abstractvectortype$ v2) {
++    final $abstractvectortype$ selectFromTemplate(Class<? extends Vector<$Boxbitstype$>> indexVecClass,
++                                                  $abstractvectortype$ v1, $abstractvectortype$ v2) {
+         int twoVectorLen = length() * 2;
+ #if[FP]
+-#if[intOrFloat]
+-        $abstractvectortype$ wrapped_indexes = this.convert(VectorOperators.F2I, 0)
+-                                               .lanewise(VectorOperators.AND, twoVectorLen - 1)
+-                                               .reinterpretAsInts()
+-                                               .convert(VectorOperators.I2F, 0)
+-                                               .reinterpretAsFloats();
+-#else[intOrFloat]
+-        $abstractvectortype$ wrapped_indexes = this.convert(VectorOperators.D2I, 0)
+-                                               .lanewise(VectorOperators.AND, twoVectorLen - 1)
+-                                               .reinterpretAsInts()
+-                                               .convert(VectorOperators.I2D, 0)
+-                                               .reinterpretAsDoubles();
+-#end[intOrFloat]
++        $abstractbitsvectortype$ wrapped_indexes = this.convert(VectorOperators.{#if[intOrFloat]?F2I:D2L}, 0)
++                                                   .lanewise(VectorOperators.AND, twoVectorLen - 1)
++                                                   .reinterpretAs$Bitstype$s();
++        return ($Type$Vector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass , $type$.class,
++                                                              $bitstype$.class, length(), wrapped_indexes, v1, v2,
++                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        );
+ #else[FP]
+         $abstractvectortype$ wrapped_indexes = this.lanewise(VectorOperators.AND, twoVectorLen - 1);
+-#end[FP]
+-        return ($Type$Vector)VectorSupport.selectFromTwoVectorOp(getClass(), $type$.class, length(), wrapped_indexes, v1, v2,
+-            (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
++        return ($Type$Vector)VectorSupport.selectFromTwoVectorOp(getClass(), indexVecClass, $type$.class, $type$.class,
++                                                              length(), wrapped_indexes, v1, v2,
++                                                              (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3)
+         );
++#end[FP]
+     }
+ 
+     /// Ternary operations
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+index 63af5307233..eccbcc3cd27 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+@@ -517,7 +517,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+     public $vectortype$ selectFrom(Vector<$Boxtype$> v1,
+                                    Vector<$Boxtype$> v2) {
+         return ($vectortype$)
+-            super.selectFromTemplate(($vectortype$) v1, ($vectortype$) v2);  // specialize
++            super.selectFromTemplate($Bitstype$$bits$Vector.class, ($vectortype$) v1, ($vectortype$) v2);  // specialize
+     }
+ 
+ #if[FP]

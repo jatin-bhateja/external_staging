@@ -1,0 +1,478 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 40e8ccb626a..68e4e52727b 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -3293,6 +3293,19 @@ void Assembler::evmovdquw(XMMRegister dst, Address src, int vector_len) {
+   evmovdquw(dst, k0, src, /*merge*/ false, vector_len);
+ }
+ 
++// Move Unaligned EVEX enabled Vector (programmable : 8,16,32,64)
++void Assembler::evmovdquw(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512vlbw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_embedded_opmask_register_specifier(mask);
++  attributes.set_is_evex_instruction();
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F2, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x7F, (0xC0 | encode));
++}
++
+ void Assembler::evmovdquw(XMMRegister dst, KRegister mask, Address src, bool merge, int vector_len) {
+   assert(VM_Version::supports_avx512vlbw(), "");
+   InstructionMark im(this);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index f93793115f3..a66c28e7e8a 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -1569,6 +1569,193 @@ void C2_MacroAssembler::vinsert(BasicType typ, XMMRegister dst, XMMRegister src,
+   }
+ }
+ 
++void C2_MacroAssembler::vpackI2X(BasicType elem_bt, XMMRegister dst,
++                                 XMMRegister ones, XMMRegister xtmp,
++                                 int vlen_enc) {
++  if (VM_Version::supports_avx512vl()) {
++    if (elem_bt == T_SHORT) {
++      evpmovdw(dst, dst, vlen_enc);
++    } else if (elem_bt == T_BYTE) {
++      evpmovdb(dst, dst, vlen_enc);
++    }
++  } else {
++    vpsrld(xtmp, ones, elem_bt == T_BYTE ? 24 : 16, vlen_enc);
++    vpand(dst, dst, xtmp, vlen_enc);
++    if (vlen_enc == Assembler::AVX_256bit) {
++      vextractf128_high(xtmp, dst);
++      vpackusdw(dst, dst, xtmp, Assembler::AVX_128bit);
++      if (elem_bt == T_BYTE) {
++        vpxor(xtmp, xtmp, xtmp, vlen_enc);
++        vpackuswb(dst, dst, xtmp, vlen_enc);
++      }
++    } else {
++      vpxor(xtmp, xtmp, xtmp, vlen_enc);
++      vpackusdw(dst, dst, xtmp, vlen_enc);
++      if (elem_bt == T_BYTE) {
++        vpackuswb(dst, dst, xtmp, vlen_enc);
++      }
++    }
++  }
++}
++
++void C2_MacroAssembler::vgather_subword_avx3(BasicType elem_bt, XMMRegister dst, Register base, XMMRegister offset,
++                                             Register idx_base, int idx_off, XMMRegister idx_vec, XMMRegister ones,
++                                             XMMRegister xtmp, KRegister gmask, int vlen_enc) {
++  if (elem_bt == T_SHORT) {
++    evmovdquq(idx_vec, Address(idx_base, idx_off, Address::times_4), vlen_enc);
++    if (offset != xnoreg) {
++      vpaddd(idx_vec, idx_vec, offset, vlen_enc);
++    }
++    // Normalize the indices to multiple of 2.
++    vpslld(xtmp, ones, 1, vlen_enc);
++    vpand(xtmp, idx_vec, xtmp, vlen_enc);
++    // Load double words from normalized indices.
++    evpgatherdd(dst, gmask, Address(base, xtmp, Address::times_2), vlen_enc);
++    // Compute bit level offset of actual short value with in each double word
++    // lane.
++    vpsrld(xtmp, ones, 31, vlen_enc);
++    vpand(xtmp, idx_vec, xtmp, vlen_enc);
++    vpslld(xtmp, xtmp, 4, vlen_enc);
++    // Move the short value at respective bit offset to lower 16 bits of each
++    // double word lane.
++    vpsrlvd(dst, dst, xtmp, vlen_enc);
++    // Pack double word vector into short vector.
++    vpackI2X(T_SHORT, dst, ones, xtmp, vlen_enc);
++  } else {
++    assert(elem_bt == T_BYTE, "");
++    evmovdquq(idx_vec, Address(idx_base, idx_off, Address::times_4), vlen_enc);
++    if (offset != xnoreg) {
++      vpaddd(idx_vec, idx_vec, offset, vlen_enc);
++    }
++    // Normalize the indices to multiple of 4.
++    vpslld(xtmp, ones, 2, vlen_enc);
++    vpand(xtmp, idx_vec, xtmp, vlen_enc);
++    // Load double words from normalized indices.
++    evpgatherdd(dst, gmask, Address(base, xtmp, Address::times_1), vlen_enc);
++    // Compute bit level offset of actual byte value with in each double word
++    // lane.
++    vpsrld(xtmp, ones, 30, vlen_enc);
++    vpand(xtmp, idx_vec, xtmp, vlen_enc);
++    vpslld(xtmp, xtmp, 3, vlen_enc);
++    // Move the byte value at respective bit offset to lower 8 bits of each
++    // double word lane.
++    vpsrlvd(dst, dst, xtmp, vlen_enc);
++    // Pack double word vector into byte vector.
++    vpackI2X(T_BYTE, dst, ones, xtmp, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::vgather_subword_masked_avx3(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
++                                                    Register offset, XMMRegister offset_vec, XMMRegister idx_vec, XMMRegister xtmp1,
++                                                    XMMRegister xtmp2, XMMRegister xtmp3, KRegister mask, KRegister gmask,
++                                                    int vlen_enc, int vlen) {
++  int shuf_mask[] = {0xFC, 0xF3, 0xCF, 0x3F};
++  int lane_count_subwords = vlen;
++  int lane_count_ints = MIN2(Matcher::max_vector_size(T_INT), vlen);
++  Assembler::AvxVectorLen int_vec_enc =
++      vector_length_encoding(lane_count_ints * type2aelembytes(T_INT));
++
++  if (offset != noreg) {
++    evpbroadcastd(offset_vec, offset, int_vec_enc);
++  }
++  vpxor(dst, dst, dst, int_vec_enc);
++  vallones(xtmp1, int_vec_enc);
++
++  if (elem_bt == T_BYTE) {
++    // Loop to gather 8(64bit), 16(128bit), 32(256bit) or 64(512bit) bytes from
++    // memory into vector using integral gather instructions. Number of loop
++    // iterations depends on the maximum integral vector size supported by
++    // target capped by the gather count i.e. in order to gather 8 bytes over
++    // AVX-512 targets we need to use 256bit integer gather even though target
++    // supports 512 bit integral gather operation.
++    for (int i = 0, j = 0; i < lane_count_subwords; i += lane_count_ints, j++) {
++      vpxor(xtmp2, xtmp2, xtmp2, int_vec_enc);
++      kxnorwl(gmask, gmask, gmask);
++      vgather_subword_avx3(elem_bt, xtmp2, base, offset_vec, idx_base, i, idx_vec,
++                           xtmp1, xtmp3, gmask, int_vec_enc);
++      if (vlen_enc == Assembler::AVX_512bit) {
++        // Case to handle 64 byte gather operation.
++        assert(int_vec_enc == Assembler::AVX_512bit, "");
++        // Appropriately permute 128 bit lane holding 16 bytes accumulated using
++        // 512 bit integral gather operation.
++        vinserti32x4(dst, dst, xtmp2, j);
++      } else if (vlen_enc == Assembler::AVX_256bit) {
++        // Case to handle 32 byte gather operation.
++        if (j > 0) {
++          if (int_vec_enc == Assembler::AVX_512bit) {
++            vinserti32x4(dst, dst, xtmp2, j);
++          } else {
++            assert(int_vec_enc == Assembler::AVX_256bit, "");
++            // Permute 8 bytes loaded using 256 bit integral gather.
++            vpermq(xtmp2, xtmp2, shuf_mask[j], vlen_enc);
++            vpor(dst, dst, xtmp2, vlen_enc);
++          }
++        } else {
++          vpor(dst, dst, xtmp2, vlen_enc);
++        }
++      } else if (vlen_enc == Assembler::AVX_128bit) {
++        // Case to handle 16 byte gather operation.
++        if (j > 0) {
++          // We enter here only if maximum integer vector size is less than 512
++          // bits.
++          if (int_vec_enc == Assembler::AVX_256bit) {
++            vpermq(xtmp2, xtmp2, shuf_mask[j], vlen_enc);
++          } else {
++            assert(int_vec_enc == Assembler::AVX_128bit, "");
++            vpshufd(xtmp2, xtmp2, shuf_mask[j], vlen_enc);
++          }
++        }
++        vpor(dst, dst, xtmp2, vlen_enc);
++      }
++    }
++  } else {
++    assert(elem_bt == T_SHORT, "");
++    // Loop to gather 4(64bit), 8(128bit), 16(256bit) or 32(512bit) short values
++    // from memory into vector using integral gather instruction.
++    for (int i = 0, j = 0; i < lane_count_subwords; i += lane_count_ints, j++) {
++      vpxor(xtmp2, xtmp2, xtmp2, int_vec_enc);
++      kxnorwl(gmask, gmask, gmask);
++      vgather_subword_avx3(elem_bt, xtmp2, base, offset_vec, idx_base, i, idx_vec,
++                           xtmp1, xtmp3, gmask, int_vec_enc);
++      if (vlen_enc == Assembler::AVX_512bit) {
++        // Case to handle 32 byte gather operation.
++        assert(int_vec_enc == Assembler::AVX_512bit, "");
++        // Appropriately permute 256 bit lane holding 16 shorts accumulated
++        // using 512 bit integral gather operation.
++        vinserti64x4(dst, dst, xtmp2, j);
++      } else if (vlen_enc == Assembler::AVX_256bit) {
++        // Case to handle 16 byte gather operation.
++        if (int_vec_enc == Assembler::AVX_512bit) {
++          // All 16 short values are loaded in one short by 512 bit integral
++          // gather.
++          vmovdqu(dst, xtmp2);
++        } else {
++          assert(int_vec_enc == Assembler::AVX_256bit, "");
++          // Permute 8 short values loaded using 256 bit integral gather.
++          vinserti32x4(dst, dst, xtmp2, j);
++        }
++      } else if (vlen_enc == Assembler::AVX_128bit) {
++        if (j > 0) {
++          // We enter here only if maximum integer vector size is less than 256
++          // bits.
++          assert(int_vec_enc == Assembler::AVX_128bit, "");
++          vpslldq(xtmp2, xtmp2, 8, vlen_enc);
++        }
++        vpor(dst, dst, xtmp2, vlen_enc);
++      }
++    }
++  }
++
++  if (mask != knoreg) {
++    if (elem_bt == T_BYTE) {
++      evmovdqub(dst, mask, dst, false, vlen_enc);
++    } else {
++      assert(elem_bt == T_SHORT, "");
++      evmovdquw(dst, mask, dst, false, vlen_enc);
++    }
++  }
++}
++
+ #ifdef _LP64
+ void C2_MacroAssembler::vgather8b_masked(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
+                                           Register mask, Register midx, Register rtmp, int vlen_enc) {
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index ff7015eb28f..c19feac75c7 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -492,6 +492,16 @@
+   void vector_rearrange_int_float(BasicType bt, XMMRegister dst, XMMRegister shuffle,
+                                   XMMRegister src, int vlen_enc);
+ 
++  void vpackI2X(BasicType elem_bt, XMMRegister dst, XMMRegister mask, XMMRegister xtmp, int vlen_enc);
++
++  void vgather_subword_avx3(BasicType elem_bt, XMMRegister dst, Register base, XMMRegister offset,
++                            Register idx_base, int idx_off, XMMRegister idx_vec, XMMRegister ones,
++                            XMMRegister xtmp, KRegister gmask, int vlen_enc);
++
++  void vgather_subword_masked_avx3(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
++                                   Register offset, XMMRegister offset_vec, XMMRegister idx_vec, XMMRegister xtmp1,
++                                   XMMRegister xtmp2, XMMRegister xtmp3, KRegister mask, KRegister ktmp, int vlen_enc, int vlen);
++
+   void vgather_subword(BasicType elem_ty, XMMRegister dst,  Register base, Register idx_base, Register offset,
+                        Register mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3, Register rtmp,
+                        Register midx, Register length, int vector_len, int vlen_enc);
+diff --git a/src/hotspot/cpu/x86/matcher_x86.hpp b/src/hotspot/cpu/x86/matcher_x86.hpp
+index ecee5eda451..d7a37a19e55 100644
+--- a/src/hotspot/cpu/x86/matcher_x86.hpp
++++ b/src/hotspot/cpu/x86/matcher_x86.hpp
+@@ -216,7 +216,7 @@
+         return VM_Version::supports_avx512vldq() ? 0 : 6;
+       case Op_LoadVectorGather:
+       case Op_LoadVectorGatherMasked:
+-        return is_subword_type(ety) ? 50 : 0;
++        return is_subword_type(ety) ? 70 : 0;
+       case Op_VectorCastF2X: // fall through
+       case Op_VectorCastD2X:
+         return is_floating_point_type(ety) ? 0 : (is_subword_type(ety) ? 35 : 30);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index eefe1e58f89..e14eb60e5d7 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -4110,150 +4110,140 @@ instruct evgather_masked(vec dst, memory mem, vec idx, kReg mask, kReg ktmp, rRe
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vgather_subwordLE8B(vec dst, memory mem, rRegP idx, immI_0 offset, rRegP tmp, rRegI rtmp) %{
+-  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
++instruct vgather_subword_avx3(vec dst, memory mem, rRegP idx, immI_0 offset, rRegP tmp, kReg ktmp, rRegP idx_base_temp, vec idx_vec, vec xtmp1, vec xtmp2, vec xtmp3, rFlagsReg cr) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && VM_Version::supports_avx512vl());
+   match(Set dst (LoadVectorGather mem (Binary idx offset)));
+-  effect(TEMP tmp, TEMP rtmp);
+-  format %{ "vector_gatherLE8 $dst, $mem, $idx\t! using $tmp and $rtmp as TEMP" %}
++  effect(TEMP_DEF dst, TEMP tmp, TEMP ktmp, TEMP idx_base_temp, TEMP idx_vec, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, KILL cr);
++  format %{ "vector_gather_subword $dst, $mem, $idx\t! using $tmp, $ktmp, $idx_base_temp, $idx_vec, $xtmp1, $xtmp2 and  $xtmp3 as TEMP" %}
+   ins_encode %{
++    uint vlen = Matcher::vector_length(this);
+     int vlen_enc = vector_length_encoding(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+     __ lea($tmp$$Register, $mem$$Address);
+-    __ vgather8b(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$Register, $rtmp$$Register, vlen_enc);
++    __ movptr($idx_base_temp$$Register, $idx$$Register);
++    __ vgather_subword_masked_avx3(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, noreg, xnoreg, $idx_vec$$XMMRegister,
++                                   $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, knoreg, $ktmp$$KRegister, vlen_enc, vlen);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vgather_subwordGT8B(vec dst, memory mem, rRegP idx, immI_0 offset, rRegP tmp, rRegP idx_base_temp,
+-                             vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI length, rFlagsReg cr) %{
+-  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
++instruct vgather_subword_off_avx3(vec dst, memory mem, rRegP idx, rRegI offset, rRegP tmp, kReg ktmp, rRegP idx_base_temp, vec idx_vec, vec offset_vec, vec xtmp1, vec xtmp2, vec xtmp3, rFlagsReg cr) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && VM_Version::supports_avx512vl());
+   match(Set dst (LoadVectorGather mem (Binary idx offset)));
+-  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP length, KILL cr);
+-  format %{ "vector_gatherGT8 $dst, $mem, $idx\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp and $length as TEMP" %}
++  effect(TEMP_DEF dst, TEMP tmp, TEMP ktmp, TEMP idx_base_temp, TEMP idx_vec, TEMP offset_vec, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, KILL cr);
++  format %{ "vector_gather_subword $dst, $mem, $idx, $offset\t! using $tmp, $ktmp, $idx_base_temp, $idx_vec, $xtmp1, $xtmp2, $xtmp3 as TEMP" %}
+   ins_encode %{
++    uint vlen = Matcher::vector_length(this);
+     int vlen_enc = vector_length_encoding(this);
+-    int vector_len = Matcher::vector_length(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+-    __ lea($tmp$$Register, $mem$$Address);
+     __ movptr($idx_base_temp$$Register, $idx$$Register);
+-    __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, noreg, noreg, $xtmp1$$XMMRegister,
+-                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $rtmp$$Register, noreg, $length$$Register, vector_len, vlen_enc);
++    __ lea($tmp$$Register, $mem$$Address);
++    __ vgather_subword_masked_avx3(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, $offset$$Register, $offset_vec$$XMMRegister, $idx_vec$$XMMRegister,
++                                   $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, knoreg, $ktmp$$KRegister, vlen_enc, vlen);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vgather_subwordLE8B_off(vec dst, memory mem, rRegP idx, rRegI offset, rRegP tmp, rRegI rtmp, rFlagsReg cr) %{
+-  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
+-  match(Set dst (LoadVectorGather mem (Binary idx offset)));
+-  ins_cost(200);
+-  effect(TEMP tmp, TEMP rtmp, KILL cr);
+-  format %{ "vector_gatherLE8 $dst, $mem, $idx, $offset\t! using $tmp and $rtmp as TEMP" %}
++instruct vgather_subword_mask_avx3(vec dst, memory mem, rRegP idx, kReg mask, immI_0 offset, rRegP tmp, kReg ktmp, rRegP idx_base_temp, vec idx_vec, vec xtmp1, vec xtmp2, vec xtmp3, rFlagsReg cr) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && n->in(MemNode::ValueIn)->in(2)->in(1)->bottom_type()->isa_vectmask());
++  match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
++  effect(TEMP_DEF dst, TEMP tmp, TEMP ktmp, TEMP idx_base_temp, TEMP idx_vec, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, KILL cr);
++  format %{ "vector_gather_subword $dst, $mem, $idx, $offset\t! using $tmp, $ktmp, $idx_base_temp, $idx_vec, $xtmp1, $xtmp2, $xtmp3 as TEMP" %}
+   ins_encode %{
++    uint vlen = Matcher::vector_length(this);
+     int vlen_enc = vector_length_encoding(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+     __ lea($tmp$$Register, $mem$$Address);
+-    __ vgather8b_offset(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$Register, $offset$$Register, $rtmp$$Register, vlen_enc);
++    __ movptr($idx_base_temp$$Register, $idx$$Register);
++    __ vgather_subword_masked_avx3(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, noreg, xnoreg, $idx_vec$$XMMRegister,
++                                   $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $mask$$KRegister, $ktmp$$KRegister, vlen_enc, vlen);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-
+-instruct vgather_subwordGT8B_off(vec dst, memory mem, rRegP idx, rRegI offset, rRegP tmp, rRegP idx_base_temp,
+-                                 vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI length, rFlagsReg cr) %{
+-  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
+-  match(Set dst (LoadVectorGather mem (Binary idx offset)));
+-  ins_cost(200);
+-  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP length, KILL cr);
+-  format %{ "vector_gatherGT8 $dst, $mem, $idx, $offset\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp and $length as TEMP" %}
++instruct vgather_subword_mask_off_avx3(vec dst, memory mem, rRegP idx, kReg mask, rRegI offset, rRegP tmp, kReg ktmp, rRegP idx_base_temp, vec idx_vec, vec offset_vec, vec xtmp1, vec xtmp2, vec xtmp3, rFlagsReg cr) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && n->in(MemNode::ValueIn)->in(2)->in(1)->bottom_type()->isa_vectmask());
++  match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
++  effect(TEMP_DEF dst, TEMP tmp, TEMP ktmp, TEMP idx_base_temp, TEMP idx_vec, TEMP offset_vec, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, KILL cr);
++  format %{ "vector_gather_subword $dst, $mem, $idx, $offset, $mask\t! using $tmp, $ktmp, $idx_base_temp, $idx_vec, $xtmp1, $xtmp2, $xtmp3 as TEMP" %}
+   ins_encode %{
++    uint vlen = Matcher::vector_length(this);
+     int vlen_enc = vector_length_encoding(this);
+-    int vector_len = Matcher::vector_length(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+-    __ lea($tmp$$Register, $mem$$Address);
+     __ movptr($idx_base_temp$$Register, $idx$$Register);
+-    __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, $offset$$Register, noreg, $xtmp1$$XMMRegister,
+-                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $rtmp$$Register, noreg, $length$$Register, vector_len, vlen_enc);
++    __ lea($tmp$$Register, $mem$$Address);
++    __ vgather_subword_masked_avx3(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, $offset$$Register, $offset_vec$$XMMRegister, $idx_vec$$XMMRegister,
++                                   $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $mask$$KRegister, $ktmp$$KRegister, vlen_enc, vlen);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-
+-#ifdef _LP64
+-instruct vgather_masked_subwordLE8B_avx3(vec dst, memory mem, rRegP idx, immI_0 offset, kReg mask, rRegL midx, rRegP tmp, rRegI rtmp, rRegL rtmp2, rFlagsReg cr) %{
+-  predicate(VM_Version::supports_avx512bw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
+-  match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  effect(TEMP midx, TEMP tmp, TEMP rtmp, TEMP rtmp2, KILL cr);
+-  format %{ "vector_masked_gatherLE8 $dst, $mem, $idx, $mask\t! using $midx, $tmp, $rtmp and $rtmp2 as TEMP" %}
++instruct vgather_subwordLE8B_avx2(vec dst, memory mem, rRegP idx, immI_0 offset, rRegP tmp, rRegI rtmp) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && !VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n) <= 8);
++  match(Set dst (LoadVectorGather mem (Binary idx offset)));
++  effect(TEMP tmp, TEMP rtmp);
++  format %{ "vector_gatherLE8 $dst, $mem, $idx\t! using $tmp and $rtmp as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+-    __ xorq($midx$$Register, $midx$$Register);
+     __ lea($tmp$$Register, $mem$$Address);
+-    __ kmovql($rtmp2$$Register, $mask$$KRegister);
+-    __ vgather8b_masked(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$Register, $rtmp2$$Register, $midx$$Register, $rtmp$$Register, vlen_enc);
++    __ vgather8b(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$Register, $rtmp$$Register, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vgather_masked_subwordGT8B_avx3(vec dst, memory mem, rRegP idx, immI_0 offset, kReg mask, rRegP tmp, rRegP idx_base_temp,
+-                                         vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegL rtmp2, rRegL midx, rRegI length, rFlagsReg cr) %{
+-  predicate(VM_Version::supports_avx512bw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
+-  match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  ins_cost(200);
+-  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP rtmp2, TEMP midx, TEMP length, KILL cr);
+-  format %{ "vector_gatherGT8_masked $dst, $mem, $idx, $mask\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp, $rtmp2, $midx and $length as TEMP" %}
++instruct vgather_subwordGT8B_avx2(vec dst, memory mem, rRegP idx, immI_0 offset, rRegP tmp, rRegP idx_base_temp,
++                             vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI length, rFlagsReg cr) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && !VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n) > 8);
++  match(Set dst (LoadVectorGather mem (Binary idx offset)));
++  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP length, KILL cr);
++  format %{ "vector_gatherGT8 $dst, $mem, $idx\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp and $length as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+     int vector_len = Matcher::vector_length(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+-    __ xorq($midx$$Register, $midx$$Register);
+     __ lea($tmp$$Register, $mem$$Address);
+     __ movptr($idx_base_temp$$Register, $idx$$Register);
+-    __ kmovql($rtmp2$$Register, $mask$$KRegister);
+-    __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, noreg, $rtmp2$$Register, $xtmp1$$XMMRegister,
+-                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $rtmp$$Register, $midx$$Register, $length$$Register, vector_len, vlen_enc);
++    __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, noreg, noreg, $xtmp1$$XMMRegister,
++                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $rtmp$$Register, noreg, $length$$Register, vector_len, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vgather_masked_subwordLE8B_off_avx3(vec dst, memory mem, rRegP idx, rRegI offset, kReg mask, rRegL midx, rRegP tmp, rRegI rtmp, rRegL rtmp2, rFlagsReg cr) %{
+-  predicate(VM_Version::supports_avx512bw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
+-  match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  effect(TEMP midx, TEMP tmp, TEMP rtmp, TEMP rtmp2, KILL cr);
+-  format %{ "vector_masked_gatherLE8_off $dst, $mem, $idx, $offset, $mask\t! using $midx, $tmp, $rtmp and $rtmp2 as TEMP" %}
++instruct vgather_subwordLE8B_off_avx2(vec dst, memory mem, rRegP idx, rRegI offset, rRegP tmp, rRegI rtmp, rFlagsReg cr) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && !VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n) <= 8);
++  match(Set dst (LoadVectorGather mem (Binary idx offset)));
++  ins_cost(200);
++  effect(TEMP tmp, TEMP rtmp, KILL cr);
++  format %{ "vector_gatherLE8 $dst, $mem, $idx, $offset\t! using $tmp and $rtmp as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+-    __ xorq($midx$$Register, $midx$$Register);
+     __ lea($tmp$$Register, $mem$$Address);
+-    __ kmovql($rtmp2$$Register, $mask$$KRegister);
+-    __ vgather8b_masked_offset(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$Register, $offset$$Register,
+-                                $rtmp2$$Register, $midx$$Register, $rtmp$$Register, vlen_enc);
++    __ vgather8b_offset(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$Register, $offset$$Register, $rtmp$$Register, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vgather_masked_subwordGT8B_off_avx3(vec dst, memory mem, rRegP idx, rRegI offset, kReg mask, rRegP tmp, rRegP idx_base_temp,
+-                                             vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegL rtmp2, rRegL midx, rRegI length, rFlagsReg cr) %{
+-  predicate(VM_Version::supports_avx512bw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
+-  match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
++
++instruct vgather_subwordGT8B_off_avx2(vec dst, memory mem, rRegP idx, rRegI offset, rRegP tmp, rRegP idx_base_temp,
++                                 vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI length, rFlagsReg cr) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && !VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n) > 8);
++  match(Set dst (LoadVectorGather mem (Binary idx offset)));
+   ins_cost(200);
+-  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP rtmp2, TEMP midx, TEMP length, KILL cr);
+-  format %{ "vector_gatherGT8_masked_off $dst, $mem, $idx, $offset, $mask\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp, $rtmp2, $midx and $length as TEMP" %}
++  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP length, KILL cr);
++  format %{ "vector_gatherGT8 $dst, $mem, $idx, $offset\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp and $length as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+     int vector_len = Matcher::vector_length(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+-    __ xorq($midx$$Register, $midx$$Register);
+     __ lea($tmp$$Register, $mem$$Address);
+     __ movptr($idx_base_temp$$Register, $idx$$Register);
+-    __ kmovql($rtmp2$$Register, $mask$$KRegister);
+-    __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, $offset$$Register, $rtmp2$$Register, $xtmp1$$XMMRegister,
+-                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $rtmp$$Register, $midx$$Register, $length$$Register, vector_len, vlen_enc);
++    __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, $offset$$Register, noreg, $xtmp1$$XMMRegister,
++                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $rtmp$$Register, noreg, $length$$Register, vector_len, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+-#endif
+ 
+ // ====================Scatter=======================================
+ 

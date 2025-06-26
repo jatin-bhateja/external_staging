@@ -1,0 +1,40 @@
+
+#set tdesc filename /opt/intel/system_studio_2019/debugger_2019/gdb/src/gdb/features/i386/amd64-avx-avx512-linux.xml
+
+define ssl
+  set scheduler-locking on
+end
+
+define rsl 
+  set scheduler-locking off
+end
+
+define rmpf
+  shell rm -rf vm.paused.*
+end
+
+define dumpg 
+  p this->root()->dump($arg0)
+end
+
+define dumpn 
+  p $arg0->dump(0)
+end
+
+define cname
+  p $arg0->get_Method()->name_and_sig_as_C_string()
+end
+
+directory /home/jatinbha/sandboxes/jdk/build/linux-x86_64-server-slowdebug/hotspot/variant-server/gensrc/adfiles
+
+
+define print_stack_trace
+  set $caller_base_ptr = *(long*)((char*)$rbp)
+  set $caller_inst_ptr = *(long*)((char*)$rbp + 8)
+  while ($caller_inst_ptr)
+    p (void (*))$caller_inst_ptr
+    set $caller_inst_ptr = *(long*)((char*)$caller_base_ptr + 8)
+    set $caller_base_ptr = *(long*)((char*)$caller_base_ptr)
+  end
+end
+

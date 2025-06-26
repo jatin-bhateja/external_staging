@@ -1,0 +1,107 @@
+warning: found a return instruction in the input assembly sequence.
+note: program counter updates are ignored.
+Iterations:        100
+Instructions:      3200
+Total Cycles:      1505
+Total uOps:        4600
+
+Dispatch Width:    6
+uOps Per Cycle:    3.06
+IPC:               2.13
+Block RThroughput: 7.7
+
+
+Instruction Info:
+[1]: #uOps
+[2]: Latency
+[3]: RThroughput
+[4]: MayLoad
+[5]: MayStore
+[6]: HasSideEffects (U)
+
+[1]    [2]    [3]    [4]    [5]    [6]    Instructions:
+ 1      1     0.50                        leaq	64(%rdi), %rcx
+ 1      1     0.50                        leaq	64(%rsi), %rax
+ 1      1     0.50                        leaq	64(%rdx), %r8
+ 1      1     0.25                        cmpq	%rdi, %rax
+ 2      2     1.00                        seta	%r9b
+ 1      1     0.25                        cmpq	%rsi, %rcx
+ 2      2     1.00                        seta	%r10b
+ 1      1     0.25                        cmpq	%rdi, %r8
+ 2      2     1.00                        seta	%al
+ 1      1     0.25                        cmpq	%rdx, %rcx
+ 2      2     1.00                        seta	%cl
+ 1      1     0.25                        testb	%r10b, %r9b
+ 1      1     0.50                        jne	.LBB0_5
+ 1      1     0.25                        andb	%cl, %al
+ 1      1     0.50                        jne	.LBB0_5
+ 1      1     0.25                        xorl	%eax, %eax
+ 2      8     0.50    *                   vmovups	(%rsi,%rax,4), %zmm0
+ 2      11    0.50    *                   vaddps	(%rdx,%rax,4), %zmm0, %zmm0
+ 2      1     1.00           *            vmovups	%zmm0, (%rdi,%rax,4)
+ 1      1     0.25                        addq	$16, %rax
+ 1      1     0.25                        cmpq	$16, %rax
+ 1      1     0.50                        jne	.LBB0_3
+ 1      1     0.50                        jmp	.LBB0_4
+ 1      1     0.25                        xorl	%eax, %eax
+ 1      5     0.50    *                   vmovss	(%rsi,%rax,4), %xmm0
+ 2      9     0.50    *                   vaddss	(%rdx,%rax,4), %xmm0, %xmm0
+ 2      1     1.00           *            vmovss	%xmm0, (%rdi,%rax,4)
+ 1      1     0.25                        addq	$1, %rax
+ 1      1     0.25                        cmpq	$16, %rax
+ 1      1     0.50                        jne	.LBB0_6
+ 4      0     0.67    *      *      U     vzeroupper
+ 3      7     1.00                  U     retq
+
+
+Resources:
+[0]   - SKXDivider
+[1]   - SKXFPDivider
+[2]   - SKXPort0
+[3]   - SKXPort1
+[4]   - SKXPort2
+[5]   - SKXPort3
+[6]   - SKXPort4
+[7]   - SKXPort5
+[8]   - SKXPort6
+[9]   - SKXPort7
+
+
+Resource pressure per iteration:
+[0]    [1]    [2]    [3]    [4]    [5]    [6]    [7]    [8]    [9]    
+ -      -     9.00   7.07   2.50   2.50   2.00   7.08   9.85   2.00   
+
+Resource pressure by instruction:
+[0]    [1]    [2]    [3]    [4]    [5]    [6]    [7]    [8]    [9]    Instructions:
+ -      -      -     0.10    -      -      -     0.90    -      -     leaq	64(%rdi), %rcx
+ -      -      -     0.93    -      -      -     0.07    -      -     leaq	64(%rsi), %rax
+ -      -      -     0.12    -      -      -     0.88    -      -     leaq	64(%rdx), %r8
+ -      -     0.01   0.87    -      -      -     0.09   0.03    -     cmpq	%rdi, %rax
+ -      -     1.88    -      -      -      -      -     0.12    -     seta	%r9b
+ -      -     0.02   0.05    -      -      -     0.06   0.87    -     cmpq	%rsi, %rcx
+ -      -     0.16    -      -      -      -      -     1.84    -     seta	%r10b
+ -      -      -     0.03    -      -      -     0.97    -      -     cmpq	%rdi, %r8
+ -      -     1.86    -      -      -      -      -     0.14    -     seta	%al
+ -      -      -     0.94    -      -      -     0.06    -      -     cmpq	%rdx, %rcx
+ -      -     0.10    -      -      -      -      -     1.90    -     seta	%cl
+ -      -      -     0.04    -      -      -     0.96    -      -     testb	%r10b, %r9b
+ -      -     0.93    -      -      -      -      -     0.07    -     jne	.LBB0_5
+ -      -     0.05   0.92    -      -      -     0.03    -      -     andb	%cl, %al
+ -      -     0.05    -      -      -      -      -     0.95    -     jne	.LBB0_5
+ -      -     0.02   0.91    -      -      -     0.04   0.03    -     xorl	%eax, %eax
+ -      -     0.03   0.03   0.48   0.52    -     0.94    -      -     vmovups	(%rsi,%rax,4), %zmm0
+ -      -     0.97    -     0.48   0.52    -     0.03    -      -     vaddps	(%rdx,%rax,4), %zmm0, %zmm0
+ -      -      -      -      -      -     1.00    -      -     1.00   vmovups	%zmm0, (%rdi,%rax,4)
+ -      -      -     0.07    -      -      -     0.91   0.02    -     addq	$16, %rax
+ -      -     0.88   0.03    -      -      -     0.06   0.03    -     cmpq	$16, %rax
+ -      -     0.08    -      -      -      -      -     0.92    -     jne	.LBB0_3
+ -      -     0.06    -      -      -      -      -     0.94    -     jmp	.LBB0_4
+ -      -     0.01   0.06    -      -      -     0.92   0.01    -     xorl	%eax, %eax
+ -      -      -      -     0.52   0.48    -      -      -      -     vmovss	(%rsi,%rax,4), %xmm0
+ -      -      -     1.00   0.51   0.49    -      -      -      -     vaddss	(%rdx,%rax,4), %xmm0, %xmm0
+ -      -      -      -      -      -     1.00    -      -     1.00   vmovss	%xmm0, (%rdi,%rax,4)
+ -      -      -     0.91    -      -      -     0.07   0.02    -     addq	$1, %rax
+ -      -     0.92   0.05    -      -      -     0.01   0.02    -     cmpq	$16, %rax
+ -      -     0.06    -      -      -      -      -     0.94    -     jne	.LBB0_6
+ -      -      -      -      -      -      -      -      -      -     vzeroupper
+ -      -     0.91   0.01   0.51   0.49    -     0.08   1.00    -     retq

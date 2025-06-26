@@ -1,0 +1,359 @@
+
+-app <application name> [-args <"list of application arguments">]
+
+	Specify the application to be launched with SEP. You need to specify
+	the full path to the application.
+	NOTE:	The -d | -duration option is not supported with this option.
+		The SEP data collection continues indefinitely until the
+		launched application terminates or SEP is stopped explicitly
+		with the sep -stop command.
+
+
+-atype <atype name1>, <atype name2>,...
+
+	Pre-defined analysis types (atypes) corresponding to a certain set of
+	events.
+	Use this instead of -ec. Do not use -ec and -atype together.
+	Only one atype can be specified per PMU type. For example, core, or imc.
+	To get a list of atypes (along with PMU type) for a platform,
+	run "sep -atypelist".
+
+
+-all
+
+	When used with sep -el this option lists all
+	supported events on the given platform
+	including experimental and deprecated events.
+
+
+-cec | -chipset-event-config "<event name1>,<event name2>,..."
+
+	Chipset event configuration options begin with -cec or
+	-chipset-event-config switch. Specify the events to monitor and embed
+	the event names within double quotes(").
+	Each event should be delimited by a comma (,).
+	To get a list of supported chipset events, run "sep -el"
+	The chipset event counts data will be available in a .csv  file (the
+	file name is the same as the tb7 file name except for the file
+	extension). The .csv file contains multiple data points with comma
+	separated list of chipset and CPU event counts along with CPU number,
+	timestamp and IP in each line as shown below:
+	CPU number,Timestamp,Instruction Pointer,<event name1>,
+	<event-name2>...,<cpu event name1>,<cpu event name2>
+
+	NOTE:	The CPU event names can differ from processor to processor.
+
+	NOTE:	The chipset support in SEP requires that the chipset counters
+		(for example, CHAP) are enabled through BIOS or some other
+		means. The SEP tool will not work if the chipset counters
+		are disabled.
+
+
+-cm  | -cpu-mask <"processor numbers">
+
+	Specify which cpu(s) to collect data on.  Enter the processor numbers
+	or processor ranges separated by commas. For example "2-5, 10, 12-14".
+	In this example the only following processors are sampled:
+	2, 3, 4, 5, 10, 12, 13, 14.
+
+
+
+-d   | -duration <in seconds>
+
+	Specify duration for the sampling collection.  Default is 20 seconds.
+	Set duration to zero to run collection for an indefinite amount of
+	time until it is stopped explicitly with the "sep -stop" command.
+
+
+-ebc | -event-based-counts
+
+	Enable sampling with additional event count data.
+	Use this option to collect sampling data and event counts data for the
+	list of events specified in -ec option. The event count information is
+	collected and added at the end of each sample.
+
+	NOTE:   The -ebc option can be used in conjunction with the -em option.
+
+
+-ec  | -event-config
+		[-dc | -data-config <optional-data1>,<optional-data2>...]
+		"<event name1>":modifier1=val:modifier2=val/constraint1=
+			{:modifier3=val:modifier4=val}...,
+		"<event name2>":...
+
+	Event configuration options begin with -ec/-event-config switch.
+	Specify the events(s) to monitor and embed the event names within
+	double quotes("). If no events are specified, the platform's default
+	clockticks and instructions retired events are used.
+
+	[:modifier=val] specifies individual event modifiers along with the
+	respective values for a given platform.  Note that the modifiers can be
+	generic to an event as well as specific to a constraint (or an event
+	qualifier).  The constraint modifiers appear after [/constraint=].
+	The modifier values can be in decimal or hexadecimal format. Only
+	certain modifiers will accept the value as a string.  Each event
+	specification is delimited by a comma (,).
+
+	Uncore events can also be specified on supported platforms.
+
+	For a list of supported modifiers and constraints, refer to
+	the documentation.
+
+
+-em  | -event-multiplexing  [dts=<time in milliseconds>]
+		| [trigger=<fixed counter> factor=<value>]
+
+	Enable event multiplexing.
+	Two trigger modes are available, depending on the platform:
+	- Time-based event multiplexing for Intel(R) Core(TM) and Pentium(R)
+	processor families. For this type of multiplexing, the dts (default
+	time slice) specifies the duration between cycles for each event
+	group.
+
+	- Trigger-based event multiplexing for all others. For this type of
+	multiplexing, the trigger should be a fixed counter.
+	- On Intel(R) Atom(TM) and Intel Core(TM)2 processor families, the
+	  default trigger event is CPU_CLK_UNHALTED.CORE.
+	- On Intel Core i7 and microarchitecture code name Sandy Bridge, the
+	  default trigger event is CPU_CLK_UNHALTED.THREAD.
+	The default factor is 50 milliseconds on all platforms.
+
+	When the -ebc option is specified along with -em -trigger <event_name>:
+	-  The trigger event specified in -em trigger="<trigger-event>" is used
+	   for triggering the interrupt.
+	-  No other events interrupt or overflow. The counts for all the events
+	   are recorded when the trigger event overflows along with other
+	   sampling profile data.
+	-  In case of multiple EM groups, groups are scheduled in round-robin
+	   fashion. The groups are swapped for every overflow of the trigger
+	   event (with factor=1). This can be controlled by changing factor
+	   value. The default value for factor is 50. The counters for all
+	   non-trigger events are reset to zero when the group is swapped.
+	   With factor=1, since the groups are swapped on every interrupt
+	   (per CPU), the event counts are the increments since the last
+	   interrupt for a specific CPU.
+	-  The data is available in the tb7 file, which can be dumped using
+	   sfdump.
+	-  Only fixed counter events can be used as trigger events in EM mode.
+	-  The event counts can be displayed with the following command:
+	   sfdump <tb7 filename> /dumpsamples
+	-  Event group id is added as a separate column for each sample with
+	   a prefix gid-xxxx, just before the extra columns.
+	-  The event counts are listed in sfdump /dumpsamples output as
+	   values in extra_0... with one event count in each extra entry.
+	   The events are listed in the ascending order of event id (event id
+	   is available from /dumpevents). But the values in these extra
+	   entries are filled only for the events scheduled in a group.
+
+	   For example:
+	   sep –start -d 10 -ec "BR_INST_RETIRED.MISPRED","L1D_SPLIT.LOADS",
+	   "L1D_SPLIT.STORES","MUL","DIV","L1D_ALL_REF","L1D_REPL" -ebc
+	   -em trigger="INST_RETIRED.ANY" factor=1 -out data1
+
+	This option is not supported in Intel Xeon Phi Software Development
+	Vehicle (formerly known as “Knights Ferry”).
+
+	Example for Intel Core or Pentium processor families (time-based
+	trigger):
+		    sep -start -em dts=100 -ec "Instructions Retired",
+		        "Branch Instructions Executed", "Clockticks",
+		        "L2 Cache Request Misses"
+
+	Example for Intel Atom or Intel Core2 processor family (event-based
+	trigger)
+		    sep -start -em trigger="CPU_CLK_UNHALTED.CORE" factor=100
+		        -ec "<event 1>","<event 2>", ... "<event n>"
+		            "UOPS_RETIRED.ANY:sa=0:int=no"
+
+	Note: Event multiplexing is carried out by default on all platforms
+	if -em is not specified.
+
+	Refer to the user documentation for more details.
+
+
+-experimental
+
+	Specify this option to list experimental events or
+	collect data on them.
+	When used with sep -el, all available experimental events
+	are displayed along with regular events.
+	Example command:
+		sep -el -experimental.
+	Use with sep -start to collect data for experimental events.
+	For example:
+		sep -start -d 10 -ec "LONGEST_LAT_CACHE.MISS"
+			-experimental
+
+
+
+-lbr | -last-branch-records <capture_mode>
+
+   Collect last branch records (LBR) information.
+   This option is valid only for Intel Core2 processor family and for
+  Intel Core i7 processors, LBR filter mode is supported.
+   The following lbr capture modes are supported:
+   no_filter         Capture everything, do not filter any branches
+   near_call         Capture Near relative & indirect Calls
+   near_call_jmp     Capture Near relative & indirect Calls along with
+                     Near relative & indirect Jumps (Available only on
+                     Intel(R) microarchitecture code name Nehalem)
+   near_call_ret     Capture Near relative, indirect, & return Calls
+   near_call_jmp_ret Capture near_call_jmp branches along with return Calls
+                     (Available only on Nehalem microarchitecture)
+   call_stack        Capture Call Stack information (available on 4th
+                     Generation Intel(R) Core(TM) Processors and and Intel Atom
+                     processors based on Silvermont microarchitecture)
+
+   In addition to the capture mode, you can also filter by the following:
+       :usr          Captures only user mode branches
+       :os           Captures only operating system mode branches.
+
+   For example: -lbr call_stack:os captures only OS mode call stack information
+
+   The supported capture modes depend on the architecture.
+   SEP will print a warning message if a capture mode is not supported.
+
+
+-lbr-filter | -last-branch-records-filter <filter1>:<filter2>:<filter3>
+
+   Enable last branch records (LBR) Filtering in sampling.
+   The below lbr filter modes are supported:
+   JCC           - Filter conditional branches
+   NEAR_REL_CALL - Filter near relative calls
+   NEAR_IND_CALL - Filter near indirect calls
+   NEAR_RET      - Filter near returns
+   NEAR_IND_JMP  - Filter near unconditional indirect jumps except near
+                   indirect calls and near returns
+   NEAR_REL_JMP  - Filter near unconditional relative branches except near
+                   relative calls
+   FAR_BRANCH    - Filter far branches
+   SEP does not support collecting LBR information on Fixed Counter events.
+   So, be sure to specify at least one General Purpose event in the event
+   configuration to trigger LBR collection.
+
+
+-fpc | -full-pebs-capture
+
+   Enable capturing full PEBS record in sampling data
+   for PEBSable events provided in the command line.
+   PEBS fields may include eventing IP, Time Stamp Counter,
+   General Purpose Registers (GPRs) and others
+
+
+-multipebs <# of PEBS records>
+
+   Configure PEBS buffer threshold to cause an interrupt(PMI)
+   only after specified # of records
+
+
+-mr  | -multi-run
+
+   Enable separate run per event-group. This option overrides the
+   default event multiplexing in case of multiple event groups and
+   does a separate application run per event group.
+   –em and –mr options CANNOT be specified together.
+
+
+-nb  | -non-blocking
+
+   Use the –nb option to switch SEP to non-blocking mode. SEP starts in
+   the background. You regain control after data collection starts. When
+   SEP is in background the default behavior is “blocking”.
+
+
+-of  | -options-from-file <file>
+
+   Read SEP options from the specified file and apply them.
+   NOTE: Command-line options will override options from a file.
+
+
+-osm | -os-mode
+
+   Collect sampling data for operating system processes only.
+
+
+-out | -output-file <filename>
+
+   Specify the name of the output file where the data is collected.
+   The file extension depends on the type of data collection.
+    -  For a sampling run, the extension is .tb7
+    -  For a counting run, the the extension is .txt
+   If the option is not specified, the base file name of the output file
+   starts with tbs followed by a string of up to 10 random digits.
+
+   In the case of multiple runs, an output file is generated for each run
+   and the specified file name is appended with a unique identifier to
+   generate distinct file names.
+
+
+-p-state
+
+   Enables capturing of the APERF and MPERF MSR data and fixed counter
+   events. This option can be used independently of all other options.
+   The APERF/MPERF ratio provides actual CPU performance over marked
+   (rated) performance which is useful in performance and power
+   measurements.
+   This option also counts fixed counter events
+   CPU_CLK_UNHALTED.THREAD/CORE and INST_RETIRED.ANY on PMI trigger of
+   CPU_CLK_UNHALTED.REF_TSC event.
+   This feature provides a more accurate P-State/Turbo-State frequency
+   Profile and CPI value.
+
+
+-pc  | -profile-chipset
+
+   Enables chipset profiling, limited to chipset event counts data.
+   This option is applicable to -el command and -cec options.
+   When entered with the -el command, the –pc option lists the supported
+   chipset event names along with CPU event names.
+   When entered with -start command, it enables support for collecting
+   the chipset event data.
+
+
+-sam | -sample-after-multiplier <value>
+
+   Specify a value between 0.01 and 100.0 to scale the sample after
+   values.
+
+
+-sd  | -sampling-delay <in seconds>
+
+   Specify the number of seconds to delay sampling while the application
+   executes.  Default is 0 seconds.
+   The sampling delay is a separate time interval value that is not a part
+   of collection. For example, if you have an activity with duration of 60
+   seconds and a start delay of 10 seconds, SEP starts collecting samples
+   after 10 seconds and runs for 60 seconds, taking a total time of 70
+   seconds.
+
+
+-sp  | -start-paused
+
+   Start the collection in "paused" mode.  Use -resume to begin
+   collecting data.
+
+
+-uem  | -uncore-event-multiplexing  [factor=<value>]
+		[timer=<value in ms>]
+
+    Enable time-trigger based uncore event multiplexing.
+    SEP switches groups in each Uncore unit every 1s.
+    - Use factor option to specify # of times to poll
+     counters before switching to next group.
+     Default factor is 100.
+    - Use timer option to specify frequency of polling
+    Default is every 10ms. For example:
+    sep -start -d 10 -uem timer=20 factor=200
+          -ec "UNC_CBO_CACHE_LOOKUP.READ_I"
+
+
+-um  | -user-mode
+
+   Enable sampling data collection for user mode processes only.
+   This option is supported on Windows* and Linux* OS only.
+
+
+-verbose
+
+   Display information on actions performed during collection.
+

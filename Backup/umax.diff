@@ -1,0 +1,46 @@
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index e2aaabfe1d8..0a10da67868 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -608,6 +608,8 @@ class UMinVNode : public VectorNode {
+   UMinVNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2 ,vt) {
+     assert(is_integral_type(vt->element_basic_type()), "");
+   }
++  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
++  virtual Node* Identity(PhaseGVN* phase);
+   virtual int Opcode() const;
+ };
+ 
+@@ -624,6 +626,8 @@ class UMaxVNode : public VectorNode {
+   UMaxVNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {
+     assert(is_integral_type(vt->element_basic_type()), "");
+   }
++  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
++  virtual Node* Identity(PhaseGVN* phase);
+   virtual int Opcode() const;
+ };
+ 
+@@ -2039,23 +2043,4 @@ class ExpandBitsVNode : public VectorNode {
+   : VectorNode(in, mask, vt) {}
+   virtual int Opcode() const;
+ };
+-
+-class UMinVNode : public VectorNode {
+- public:
+-  UMinVNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2 ,vt) {
+-    assert(is_integral_type(vt->element_basic_type()), "");
+-  }
+-  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
+-  virtual Node* Identity(PhaseGVN* phase);
+-  virtual int Opcode() const;
+-};
+-
+-	@@ -614,6 +626,8 @@ class UMaxVNode : public VectorNode {
+-  UMaxVNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {
+-    assert(is_integral_type(vt->element_basic_type()), "");
+-  }
+-  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
+-  virtual Node* Identity(PhaseGVN* phase);
+-  virtual int Opcode() const;
+-};
+ #endif // SHARE_OPTO_VECTORNODE_HPP

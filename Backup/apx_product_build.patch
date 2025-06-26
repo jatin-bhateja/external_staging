@@ -1,0 +1,113 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index 2549feb8a40..554eca4b2d9 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -453,6 +453,7 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     __ movq(Address(rsi, 8), r31);
+ 
+     UseAPX = save_apx;
++    mark.PrintCode();
+ #endif
+     __ bind(vector_save_restore);
+     //
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.hpp b/src/hotspot/cpu/x86/vm_version_x86.hpp
+index d58b5a9c099..7d82f5d6feb 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.hpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.hpp
+@@ -630,9 +630,15 @@ class VM_Version : public Abstract_VM_Version {
+   static void set_cpuinfo_cont_addr(address pc) { _cpuinfo_cont_addr = pc; }
+   static address  cpuinfo_cont_addr()           { return _cpuinfo_cont_addr; }
+ 
+-  static void set_cpuinfo_segv_addr_apx(address pc) { _cpuinfo_segv_addr_apx = pc; }
++  static void set_cpuinfo_segv_addr_apx(address pc) {
++    if (getenv("DEBUG_APX")) { printf("_cpuinfo_segv_addr_apx = %p \n", pc);}
++    _cpuinfo_segv_addr_apx = pc;
++  }
+   static bool  is_cpuinfo_segv_addr_apx(address pc) { return _cpuinfo_segv_addr_apx == pc; }
+-  static void set_cpuinfo_cont_addr_apx(address pc) { _cpuinfo_cont_addr_apx = pc; }
++  static void set_cpuinfo_cont_addr_apx(address pc) {
++    if (getenv("DEBUG_APX")) { printf("_cpuinfo_cont_addr_apx = %p \n", pc);}
++    _cpuinfo_cont_addr_apx = pc;
++  }
+   static address  cpuinfo_cont_addr_apx()           { return _cpuinfo_cont_addr_apx; }
+ 
+   LP64_ONLY(static void clear_apx_test_state());
+diff --git a/src/hotspot/os/windows/os_windows.cpp b/src/hotspot/os/windows/os_windows.cpp
+index 0d5727b98f4..9c6fdf27698 100644
+--- a/src/hotspot/os/windows/os_windows.cpp
++++ b/src/hotspot/os/windows/os_windows.cpp
+@@ -2762,7 +2762,7 @@ LONG WINAPI topLevelExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo) {
+     return Handle_Exception(exceptionInfo, VM_Version::cpuinfo_cont_addr());
+   }
+ 
+-#if !defined(PRODUCT) && defined(_LP64)
++#if defined(_LP64)
+   if ((exception_code == EXCEPTION_ACCESS_VIOLATION) &&
+       VM_Version::is_cpuinfo_segv_addr_apx(pc)) {
+     // Verify that OS save/restore APX registers.
+diff --git a/src/hotspot/os_cpu/bsd_x86/os_bsd_x86.cpp b/src/hotspot/os_cpu/bsd_x86/os_bsd_x86.cpp
+index 437274a2cb1..cb871b6ca83 100644
+--- a/src/hotspot/os_cpu/bsd_x86/os_bsd_x86.cpp
++++ b/src/hotspot/os_cpu/bsd_x86/os_bsd_x86.cpp
+@@ -416,7 +416,7 @@ bool PosixSignals::pd_hotspot_signal_handler(int sig, siginfo_t* info,
+       stub = VM_Version::cpuinfo_cont_addr();
+     }
+ 
+-#if !defined(PRODUCT) && defined(_LP64)
++#if defined(_LP64)
+     if ((sig == SIGSEGV || sig == SIGBUS) && VM_Version::is_cpuinfo_segv_addr_apx(pc)) {
+       // Verify that OS save/restore APX registers.
+       stub = VM_Version::cpuinfo_cont_addr_apx();
+diff --git a/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp b/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
+index 0d5d07fc8a8..6b796096e7e 100644
+--- a/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
++++ b/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
+@@ -248,7 +248,7 @@ bool PosixSignals::pd_hotspot_signal_handler(int sig, siginfo_t* info,
+       stub = VM_Version::cpuinfo_cont_addr();
+     }
+ 
+-#if !defined(PRODUCT) && defined(_LP64)
++#if defined(_LP64)
+     if ((sig == SIGSEGV) && VM_Version::is_cpuinfo_segv_addr_apx(pc)) {
+       // Verify that OS save/restore APX registers.
+       stub = VM_Version::cpuinfo_cont_addr_apx();
+diff --git a/src/hotspot/share/runtime/stubCodeGenerator.cpp b/src/hotspot/share/runtime/stubCodeGenerator.cpp
+index d070e493e91..8ce8ad9ea8b 100644
+--- a/src/hotspot/share/runtime/stubCodeGenerator.cpp
++++ b/src/hotspot/share/runtime/stubCodeGenerator.cpp
+@@ -122,6 +122,20 @@ StubCodeMark::StubCodeMark(StubCodeGenerator* cgen, const char* group, const cha
+   _cdesc->set_begin(_cgen->assembler()->pc());
+ }
+ 
++void StubCodeMark::PrintCode() {
++  if (getenv("DEBUG_APX")) {
++    _cgen->assembler()->flush();
++    _cdesc->set_end(_cgen->assembler()->pc());
++    ttyLocker ttyl;
++    tty->print_cr("- - - [BEGIN] - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -");
++    _cdesc->print_on(tty);
++    tty->cr();
++    Disassembler::decode(_cdesc->begin(), _cdesc->end(), tty);
++    tty->print_cr("- - - [END] - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -");
++    tty->cr();
++  }
++}
++
+ StubCodeMark::~StubCodeMark() {
+   _cgen->assembler()->flush();
+   _cdesc->set_end(_cgen->assembler()->pc());
+diff --git a/src/hotspot/share/runtime/stubCodeGenerator.hpp b/src/hotspot/share/runtime/stubCodeGenerator.hpp
+index c085e9fc38c..dc2cd6bdca6 100644
+--- a/src/hotspot/share/runtime/stubCodeGenerator.hpp
++++ b/src/hotspot/share/runtime/stubCodeGenerator.hpp
+@@ -145,6 +145,7 @@ class StubCodeMark: public StackObj {
+  public:
+   StubCodeMark(StubCodeGenerator* cgen, const char* group, const char* name);
+   ~StubCodeMark();
++  void PrintCode();
+ 
+ };
+ 

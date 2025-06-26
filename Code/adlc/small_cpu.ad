@@ -1,0 +1,153 @@
+//
+// Copyright
+
+register %{
+reg_def XMM0(SOC, SOC , Op_RegD, 1 ,);
+reg_def XMM1(SOC, SOC , Op_RegF, 1 ,);
+reg_def XMM2(SOC, SOC , Op_RegF, 1 ,);
+reg_def rax(SOC, SOC, Op_RegI, 1, );
+reg_def rbx(SOC, SOC, Op_RegI, 1, );
+reg_def rcx(SOC, SOC, Op_RegI, 1, );
+
+alloc_class RA1 (XMM0, XMM1, XMM2);
+alloc_class RA2 (rax, rbx, rcx);
+
+reg_class RC1 (XMM0 , XMM1, XMM2);
+reg_class RC2 (rax, rbx, rcx);
+
+%}
+
+source_hpp %{
+#define CPU 1
+char cbuf[1024];
+int  cbuf_itr = 0;
+%}
+
+encode %{
+  enc_class RC1_enc(RC1 reg)
+  %{
+     cbuf[cbuf_itr++] = 0x1;
+  %}
+%} 
+
+operand legXmm0() %{
+  constraint(ALLOC_IN_RC(RC1));
+  match(RegF);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand legXmm1() %{
+  constraint(ALLOC_IN_RC(RC1));
+  match(RegF);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand rRegI() %{
+  constraint(ALLOC_IN_RC(RC2));
+  match(RegI);
+  format %{ %}
+  interface(REG_INTER);
+
+%}
+
+pipeline %{
+
+attributes %{
+ max_instructions_per_bundle = 3;
+ instruction_unit_size=1;
+ instruction_fetch_unit_size=3;
+ instruction_fetch_units=2;
+ variable_size_instructions;
+
+%}
+
+//----------RESOURCES----------------------------------------------------------
+// Resources are the functional units available to the machine
+
+// Generic P2/P3 pipeline
+// 3 decoders, only D0 handles big operands; a "bundle" is the limit of
+// 3 instructions decoded per cycle.
+// 2 load/store ops per cycle, 1 branch, 1 FPU,
+// 3 ALU op, only ALU0 handles mul instructions.
+resources( D0, D1, D2, DECODE = D0 | D1 | D2,
+           MS0, MS1, MS2, MEM = MS0 | MS1 | MS2,
+           BR, FPU,
+           ALU0, ALU1, ALU2, ALU = ALU0 | ALU1 | ALU2);
+
+//----------PIPELINE DESCRIPTION-----------------------------------------------
+// Pipeline Description specifies the stages in the machine's pipeline
+
+// Generic P2/P3 pipeline
+pipe_desc(S0, S1, S2, S3, S4, S5);
+
+// The real do-nothing guy
+pipe_class alu_2op(legXmm0 dst, legXmm1 src)
+%{
+    single_instruction;
+    dst    : S4(write);
+    src    : S3(read);
+    DECODE : S0;        // any decoder
+    ALU    : S3;        // any alu
+%}
+
+%}
+
+ins_attrib ins_cost(100);
+op_attrib  op_cost(100);
+
+source %{
+
+%}
+
+encode %{
+
+%}
+
+frame %{
+//  stack_direction(TOWARDS_LOW);
+  frame_pointer(XMM0);
+  interpreter_frame_pointer(XMM0);
+  stack_alignment(4);
+  return_addr(STACK,0); 
+  in_preserve_stack_slots(0);
+  varargs_C_out_slots_killed(0);
+  //calling_convention
+  //%{
+  //%}
+
+  //c_calling_convention
+  //%{
+  //%}
+
+  // Location of compiled Java return values.  Same as C for now.
+  return_value
+  %{
+  %}
+
+%}
+
+instruct addF_reg (legXmm0 dst, legXmm1 src) %{
+  predicate(1);
+  match(Set dst (AddF dst src));
+  effect(USE_DEF dst);  // ComponenList population is based on both effect and match forms.
+  format %{ "addss   $dst, $src" %}
+  ins_cost(150);
+  ins_encode %{
+     0xF
+  %}
+  ins_pipe(alu_2op);
+%}
+
+instruct addI_reg (rRegI dst, rRegI src2) %{
+  predicate(1);
+  match(Set dst (AddI dst src2));
+  effect(DEF dst);  // ComponenList population is based on both effect and match forms.
+  format %{ "addl   $dst, $src2" %}
+  ins_cost(150);
+  ins_encode %{
+     0xF
+  %}
+  ins_pipe(alu_2op);
+%}

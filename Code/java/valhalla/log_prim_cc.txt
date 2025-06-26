@@ -1,0 +1,255 @@
+CompileCommand: print calling_conv.micro bool print = true
+Layout of class MyBox
+Instance fields:
+ @0 12/- RESERVED
+ @12 4/1 PADDING
+ @16 "f1" J 8/8 REGULAR
+ @24 "f2" J 8/8 REGULAR
+ @32 "f3" J 8/8 REGULAR
+ @40 "f4" J 8/8 REGULAR
+Static fields:
+ @0 120/- RESERVED
+ @120 ".default" Ljava/lang/Object; 4/4 REGULAR
+Instance size = 48 bytes
+First field offset = 16
+Alignment = 8 bytes
+Exact size = 32 bytes
+---
+
+============================= C2-compiled nmethod ==============================
+#r018 rsi:rsi   : parm 0: long
+#r016 rdx:rdx   : parm 2: long
+#r010 rcx:rcx   : parm 4: long
+#r004 r8:r8   : parm 6: long
+# -- Old rsp -- Framesize: 32 --
+#r591 rsp+28: in_preserve
+#r590 rsp+24: return address
+#r589 rsp+20: in_preserve
+#r588 rsp+16: saved fp register
+#r587 rsp+12: Fixed slot 3
+#r586 rsp+ 8: Fixed slot 2
+#r585 rsp+ 4: Fixed slot 1
+#r584 rsp+ 0: Fixed slot 0
+#
+----------------------- MetaData before Compile_id = 2 ------------------------
+{method}
+ - this oop:          0x00007f2a2f400458
+ - method holder:     'calling_conv'
+ - constants:         0x00007f2a2f400050 constant pool [71]/operands[5] {0x00007f2a2f400050} for 'calling_conv' cache=0x00007f2a2f400a80
+ - access:            0x9  public static 
+ - flags:             0x4080   queued_for_compilation  has_loops_flag_init 
+ - name:              'micro'
+ - signature:         '(QMyBox;)J'
+ - max stack:         5
+ - max locals:        1
+ - size of params:    1
+ - method size:       16
+ - vtable index:      -2
+ - i2i entry:         0x00007f2abc883620
+ - adapters:          AHE@0x00007f2ac8386f50: 0xebfbfbfbff000000 i2c: 0x00007f2abc9af880 c2i: 0x00007f2abc9affbe c2iVE: 0x00007f2abc9b067b c2iVROE: 0x00007f2abc9af96d c2iUE: 0x00007f2abc9af93b c2iUVE: 0x00007f2abc9b0649 c2iNCI: 0x00007f2abc9b06b5
+ - compiled entry           0x00007f2abc9affbe
+ - compiled inline entry    0x00007f2abc9b067b
+ - compiled inline ro entry 0x00007f2abc9af96d
+ - code size:         20
+ - code start:        0x00007f2a2f400440
+ - code end (excl):   0x00007f2a2f400454
+ - method data:       0x00007f2a2f400f00
+ - checked ex length: 0
+ - linenumber start:  0x00007f2a2f400454
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 2 -----------------------
+#
+#  long/half ( MyBox:NotNull:exact * )
+#
+000     N26: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     MachVEPNode
+
+
+040     B1: #	out( N26 ) <- BLOCK HEAD IS JUNK  Freq: 1
+040     # stack bang (96 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #16	# Create frame
+
+05a     addq    RSI, RDX	# long
+05d     addq    RCX, RSI	# long
+060     leaq    RAX, [R8 + RCX]
+064     addq    rsp, 16	# Destroy frame
+	popq    rbp
+	cmpq    rsp, poll_offset[r15_thread] 
+	ja      #safepoint_stub	# Safepoint: poll for GC
+
+076     ret
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)     174    2             calling_conv::micro (20 bytes)
+ total in heap  [0x00007f2abc9baa90,0x00007f2abc9bad50] = 704
+ relocation     [0x00007f2abc9bac18,0x00007f2abc9bac30] = 24
+ main code      [0x00007f2abc9bac40,0x00007f2abc9bace8] = 168
+ stub code      [0x00007f2abc9bace8,0x00007f2abc9bad00] = 24
+ oops           [0x00007f2abc9bad00,0x00007f2abc9bad08] = 8
+ metadata       [0x00007f2abc9bad08,0x00007f2abc9bad10] = 8
+ scopes data    [0x00007f2abc9bad10,0x00007f2abc9bad18] = 8
+ scopes pcs     [0x00007f2abc9bad18,0x00007f2abc9bad48] = 48
+ dependencies   [0x00007f2abc9bad48,0x00007f2abc9bad50] = 8
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Inline Entry Point]
+[Verified Inline Entry Point]
+  # {method} {0x00007f2a2f400458} 'micro' '(QMyBox;)J' in 'calling_conv'
+  # parm0:    rsi:rsi   = 'MyBox'
+  #           [sp+0x20]  (sp of caller)
+ ;; N26: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f2abc9bac40:   mov    %eax,-0x18000(%rsp)
+  0x00007f2abc9bac47:   push   %rbp
+  0x00007f2abc9bac48:   sub    $0x10,%rsp
+  0x00007f2abc9bac4c:   cmpl   $0x1,0x20(%r15)
+  0x00007f2abc9bac54:   jne    0x00007f2abc9bacd7
+  0x00007f2abc9bac5a:   add    $0x10,%rsp
+  0x00007f2abc9bac5e:   pop    %rbp
+  0x00007f2abc9bac5f:   mov    0x28(%rsi),%r8
+  0x00007f2abc9bac63:   mov    0x20(%rsi),%rcx
+  0x00007f2abc9bac67:   mov    0x18(%rsi),%rdx
+  0x00007f2abc9bac6b:   mov    0x10(%rsi),%rsi
+  0x00007f2abc9bac6f:   mov    %eax,-0x18000(%rsp)
+  0x00007f2abc9bac76:   push   %rbp
+  0x00007f2abc9bac77:   sub    $0x10,%rsp
+  0x00007f2abc9bac7b:   jmpq   0x00007f2abc9bac9a
+[Entry Point]
+[Verified Entry Point]
+[Verified Inline Entry Point (RO)]
+  # parm0:    rsi:rsi   = long
+  # parm1:    rdx:rdx   = long
+  # parm2:    rcx:rcx   = long
+  # parm3:    r8:r8     = long
+  #           [sp+0x20]  (sp of caller)
+ ;; B1: #	out( N26 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f2abc9bac80:   mov    %eax,-0x18000(%rsp)
+  0x00007f2abc9bac87:   push   %rbp
+  0x00007f2abc9bac88:   sub    $0x10,%rsp
+  0x00007f2abc9bac8c:   cmpl   $0x1,0x20(%r15)
+  0x00007f2abc9bac94:   jne    0x00007f2abc9baccd           ;*synchronization entry
+                                                            ; - calling_conv::micro@-1 (line 19)
+  0x00007f2abc9bac9a:   add    %rdx,%rsi
+  0x00007f2abc9bac9d:   add    %rsi,%rcx
+  0x00007f2abc9baca0:   lea    (%r8,%rcx,1),%rax
+  0x00007f2abc9baca4:   add    $0x10,%rsp
+  0x00007f2abc9baca8:   pop    %rbp
+  0x00007f2abc9baca9:   cmp    0x498(%r15),%rsp             ;   {poll_return}
+  0x00007f2abc9bacb0:   ja     0x00007f2abc9bacb7
+  0x00007f2abc9bacb6:   retq   
+  0x00007f2abc9bacb7:   movabs $0x7f2abc9baca9,%r10         ;   {internal_word}
+  0x00007f2abc9bacc1:   mov    %r10,0x4b0(%r15)
+  0x00007f2abc9bacc8:   jmpq   0x00007f2abc9a9d20           ;   {runtime_call SafepointBlob}
+  0x00007f2abc9baccd:   callq  Stub::nmethod_entry_barrier  ;   {runtime_call StubRoutines (final stubs)}
+  0x00007f2abc9bacd2:   jmpq   0x00007f2abc9bac9a
+  0x00007f2abc9bacd7:   callq  Stub::nmethod_entry_barrier  ;   {runtime_call StubRoutines (final stubs)}
+  0x00007f2abc9bacdc:   jmpq   0x00007f2abc9bac5a
+  0x00007f2abc9bace1:   hlt    
+  0x00007f2abc9bace2:   hlt    
+  0x00007f2abc9bace3:   hlt    
+  0x00007f2abc9bace4:   hlt    
+  0x00007f2abc9bace5:   hlt    
+  0x00007f2abc9bace6:   hlt    
+  0x00007f2abc9bace7:   hlt    
+[Exception Handler]
+  0x00007f2abc9bace8:   jmpq   0x00007f2abc8ab3a0           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007f2abc9baced:   callq  0x00007f2abc9bacf2
+  0x00007f2abc9bacf2:   subq   $0x5,(%rsp)
+  0x00007f2abc9bacf7:   jmpq   0x00007f2abc9ab1e0           ;   {runtime_call DeoptimizationBlob}
+  0x00007f2abc9bacfc:   hlt    
+  0x00007f2abc9bacfd:   hlt    
+  0x00007f2abc9bacfe:   hlt    
+  0x00007f2abc9bacff:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007f2abc9bad00:   0x00000007ff0ebd30 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff0ebd30}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007f2abc9bad08:   0x00007f2a2f400458 {method} {0x00007f2a2f400458} 'micro' '(QMyBox;)J' in 'calling_conv'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007f2abc9bac3f offset=ffffffff bits=0):
+PcDesc(pc=0x00007f2abc9bac9a offset=5a bits=0):
+   calling_conv::micro@-1 (line 19)
+PcDesc(pc=0x00007f2abc9bad01 offset=c1 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 0 OopMaps
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007f2abc9bac9a offset=5a):
+   calling_conv::micro@-1 (line 19)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007f2abc9bac18: 5869
+relocInfo@0x00007f2abc9bac18 [type=11(poll_return) addr=0x00007f2abc9baca9 offset=105]
+         @0x00007f2abc9bac1a: 780e400e
+relocInfo@0x00007f2abc9bac1c [type=8(internal_word) addr=0x00007f2abc9bacb7 offset=14 data=14] | [target=0x00007f2abc9baca9]
+         @0x00007f2abc9bac1e: 3111
+relocInfo@0x00007f2abc9bac1e [type=6(runtime_call) addr=0x00007f2abc9bacc8 offset=17 format=1] | [destination=0x00007f2abc9a9d20]
+         @0x00007f2abc9bac20: 3105
+relocInfo@0x00007f2abc9bac20 [type=6(runtime_call) addr=0x00007f2abc9baccd offset=5 format=1] | [destination=0x00007f2abc900ae0]
+         @0x00007f2abc9bac22: 310a
+relocInfo@0x00007f2abc9bac22 [type=6(runtime_call) addr=0x00007f2abc9bacd7 offset=10 format=1] | [destination=0x00007f2abc900ae0]
+         @0x00007f2abc9bac24: 0011
+relocInfo@0x00007f2abc9bac24 [type=0(none) addr=0x00007f2abc9bace8 offset=17]
+         @0x00007f2abc9bac26: 3100
+relocInfo@0x00007f2abc9bac26 [type=6(runtime_call) addr=0x00007f2abc9bace8 offset=0 format=1] | [destination=0x00007f2abc8ab3a0]
+         @0x00007f2abc9bac28: 310f
+relocInfo@0x00007f2abc9bac28 [type=6(runtime_call) addr=0x00007f2abc9bacf7 offset=15 format=1] | [destination=0x00007f2abc9ab1e0]
+         @0x00007f2abc9bac2a: 0000
+relocInfo@0x00007f2abc9bac2a [type=0(none) addr=0x00007f2abc9bacf7 offset=0]
+         @0x00007f2abc9bac2c: 0000
+relocInfo@0x00007f2abc9bac2c [type=0(none) addr=0x00007f2abc9bacf7 offset=0]
+         @0x00007f2abc9bac2e: 0000
+relocInfo@0x00007f2abc9bac2e [type=0(none) addr=0x00007f2abc9bacf7 offset=0]
+         @0x00007f2abc9bac30: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable is empty
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00000007ff0ebd30 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff0ebd30}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00007f2a2f400458 {method} {0x00007f2a2f400458} 'micro' '(QMyBox;)J' in 'calling_conv'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+[res] 20009800000
+------------------------------------------------------------------------
+static calling_conv::micro(QMyBox;)J
+  interpreter_invocation_count:       18298
+  invocation_counter:                 18298
+  backedge_counter:                       0
+  decompile_count:                        0
+  mdo size: 400 bytes
+
+   0 fast_aload_0
+   1 fast_lgetfield 7 <MyBox.f1:J> 
+   4 fast_aload_0
+   5 fast_lgetfield 13 <MyBox.f2:J> 
+   8 ladd
+   9 fast_aload_0
+  10 fast_lgetfield 16 <MyBox.f3:J> 
+  13 ladd
+  14 fast_aload_0
+  15 fast_lgetfield 19 <MyBox.f4:J> 
+  18 ladd
+  19 lreturn
+------------------------------------------------------------------------
+Total MDO size: 400 bytes

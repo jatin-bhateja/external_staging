@@ -1,0 +1,888 @@
+CompileCommand: print test.* bool print = true
+
+============================= C2-compiled nmethod ==============================
+----------------------- MetaData before Compile_id = 130 ------------------------
+{method}
+ - this oop:          0x00007f232c411608
+ - method holder:     'test'
+ - constants:         0x00007f232c411078 constant pool [108]/operands[10] {0x00007f232c411078} for 'test' cache=0x00007f232c411880
+ - access:            0x81000009  public static 
+ - name:              'species'
+ - signature:         '(Ljdk/incubator/vector/VectorShape;)Ljdk/incubator/vector/VectorSpecies;'
+ - max stack:         4
+ - max locals:        1
+ - size of params:    1
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007f239500db80
+ - adapters:          AHE@0x00007f2398257180: 0xb i2c: 0x00007f2395114d60 c2i: 0x00007f2395114e1a c2iUV: 0x00007f2395114de4 c2iNCI: 0x00007f2395114e57
+ - compiled entry     0x00007f2395114e1a
+ - code size:         78
+ - code start:        0x00007f232c4115a8
+ - code end (excl):   0x00007f232c4115f6
+ - method data:       0x00007f232c700128
+ - checked ex length: 0
+ - linenumber start:  0x00007f232c4115f6
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 130 -----------------------
+#
+#  jdk/incubator/vector/VectorSpecies * ( jdk/incubator/vector/VectorShape:exact * )
+#
+#r018 rsi:rsi   : parm 0: jdk/incubator/vector/VectorShape:exact *
+# -- Old rsp -- Framesize: 48 --
+#r591 rsp+44: in_preserve
+#r590 rsp+40: return address
+#r589 rsp+36: in_preserve
+#r588 rsp+32: saved fp register
+#r587 rsp+28: pad2, stack alignment
+#r586 rsp+24: pad2, stack alignment
+#r585 rsp+20: Fixed slot 1
+#r584 rsp+16: Fixed slot 0
+#r595 rsp+12: spill
+#r594 rsp+ 8: spill
+#r593 rsp+ 4: spill
+#r592 rsp+ 0: spill
+#
+000     N1: #	out( B1 ) <- in( B7 B5 B6 B4 )  Freq: 1
+
+000     B1: #	out( B7 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (128 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #32	# Create frame
+
+00c     movl    R11, [RSI + #12 (8-bit)]	# int ! Field: java/lang/Enum.ordinal (constant)
+010     NullCheck RSI
+
+010     B2: #	out( B5 B3 ) <- in( B1 )  Freq: 0.999999
+010     cmpl    R11, #5	# unsigned
+014     jnb,us  B5  P=0.000001 C=-1.000000
+
+016     B3: #	out( B6 B4 ) <- in( B2 )  Freq: 0.999998
+016     movq    R10, int[int:5]<ciTypeArray length=5 type=<ciTypeArrayKlass name=[I ident=1257 address=0x00007f231001c248> ident=1273 address=0x00007f2398533468> *	# ptr
+020     movl    RBP, [R10 + #16 + R11 << #2]	# int
+025     cmpl    RBP, #3
+028     jne,s   B6  P=0.000001 C=5481.000000
+
+02a     B4: #	out( N1 ) <- in( B3 )  Freq: 0.999997
+02a     movq    RAX, jdk/incubator/vector/IntVector$IntSpecies:exact *	# ptr
+034     addq    rsp, 32	# Destroy frame
+	popq    rbp
+	cmpq     rsp, poll_offset[r15_thread] 
+	ja       #safepoint_stub	# Safepoint: poll for GC
+
+046     ret
+
+047     B5: #	out( N1 ) <- in( B2 )  Freq: 1.01328e-06
+047     movq    RBP, RSI	# spill
+04a     movl    [rsp + #0], R11	# spill
+04e     movl    RSI, #-28	# int
+053     call,static  wrapper for: uncommon_trap(reason='range_check' action='make_not_entrant' debug_id='0')
+        # test::species @ bci:7 (line 8) L[0]=RBP STK[0]=#Ptr0x00007f2398533468 STK[1]=rsp + #0
+        # OopMap {rbp=Oop off=88/0x58}
+058     stop	# ShouldNotReachHere
+
+06c     B6: #	out( N1 ) <- in( B3 )  Freq: 9.99998e-07
+06c     movq    [rsp + #0], RSI	# spill
+070     movl    RSI, #-187	# int
+        nop 	# 2 bytes pad for loops and calls
+077     call,static  wrapper for: uncommon_trap(reason='unstable_if' action='reinterpret' debug_id='0')
+        # test::species @ bci:8 (line 8) L[0]=rsp + #0 STK[0]=RBP
+        # OopMap {[0]=Oop off=124/0x7c}
+07c     stop	# ShouldNotReachHere
+
+090     B7: #	out( N1 ) <- in( B1 )  Freq: 1.01328e-06
+090     movl    RSI, #-10	# int
+        nop 	# 2 bytes pad for loops and calls
+097     call,static  wrapper for: uncommon_trap(reason='null_check' action='maybe_recompile' debug_id='0')
+        # test::species @ bci:4 (line 8) L[0]=_ STK[0]=_ STK[1]=#NULL
+        # OopMap {off=156/0x9c}
+09c     stop	# ShouldNotReachHere
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)     487  130             test::species (78 bytes)
+ total in heap  [0x00007f2395120510,0x00007f2395120900] = 1008
+ relocation     [0x00007f2395120680,0x00007f23951206c0] = 64
+ main code      [0x00007f23951206c0,0x00007f23951207a0] = 224
+ stub code      [0x00007f23951207a0,0x00007f23951207b8] = 24
+ oops           [0x00007f23951207b8,0x00007f23951207c8] = 16
+ metadata       [0x00007f23951207c8,0x00007f23951207d8] = 16
+ scopes data    [0x00007f23951207d8,0x00007f2395120828] = 80
+ scopes pcs     [0x00007f2395120828,0x00007f23951208e8] = 192
+ dependencies   [0x00007f23951208e8,0x00007f23951208f0] = 8
+ nul chk table  [0x00007f23951208f0,0x00007f2395120900] = 16
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007f232c411608} 'species' '(Ljdk/incubator/vector/VectorShape;)Ljdk/incubator/vector/VectorSpecies;' in 'test'
+  # parm0:    rsi:rsi   = 'jdk/incubator/vector/VectorShape'
+  #           [sp+0x30]  (sp of caller)
+ ;; N1: #	out( B1 ) <- in( B7 B5 B6 B4 )  Freq: 1
+ ;; B1: #	out( B7 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f23951206c0:   mov    %eax,-0x16000(%rsp)
+  0x00007f23951206c7:   push   %rbp
+  0x00007f23951206c8:   sub    $0x20,%rsp                   ;*synchronization entry
+                                                            ; - test::species@-1 (line 8)
+  0x00007f23951206cc:   mov    0xc(%rsi),%r11d              ; implicit exception: dispatches to 0x00007f2395120750
+                                                            ;*getfield ordinal {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Enum::ordinal@1 (line 124)
+                                                            ; - test::species@4 (line 8)
+ ;; B2: #	out( B5 B3 ) <- in( B1 )  Freq: 0.999999
+  0x00007f23951206d0:   cmp    $0x5,%r11d
+  0x00007f23951206d4:   jae    0x00007f2395120707
+ ;; B3: #	out( B6 B4 ) <- in( B2 )  Freq: 0.999998
+  0x00007f23951206d6:   movabs $0x11f5abd90,%r10            ;   {oop([I{0x000000011f5abd90})}
+  0x00007f23951206e0:   mov    0x10(%r10,%r11,4),%ebp       ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::species@7 (line 8)
+  0x00007f23951206e5:   cmp    $0x3,%ebp
+  0x00007f23951206e8:   jne    0x00007f239512072c           ;*tableswitch {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::species@8 (line 8)
+ ;; B4: #	out( N1 ) <- in( B3 )  Freq: 0.999997
+  0x00007f23951206ea:   movabs $0x11f5a4410,%rax            ;   {oop(a 'jdk/incubator/vector/IntVector$IntSpecies'{0x000000011f5a4410})}
+  0x00007f23951206f4:   add    $0x20,%rsp
+  0x00007f23951206f8:   pop    %rbp
+  0x00007f23951206f9:   cmp    0x388(%r15),%rsp             ;   {poll_return}
+  0x00007f2395120700:   ja     0x00007f2395120770
+  0x00007f2395120706:   retq   
+ ;; B5: #	out( N1 ) <- in( B2 )  Freq: 1.01328e-06
+  0x00007f2395120707:   mov    %rsi,%rbp
+  0x00007f239512070a:   mov    %r11d,(%rsp)
+  0x00007f239512070e:   mov    $0xffffffe4,%esi
+  0x00007f2395120713:   callq  0x00007f239511e9a0           ; ImmutableOopMap {rbp=Oop }
+                                                            ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::species@7 (line 8)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f2395120718:   movabs $0x7f239e83a0e8,%rdi         ;   {external_word}
+  0x00007f2395120722:   and    $0xfffffffffffffff0,%rsp
+  0x00007f2395120726:   callq  0x00007f239deed6c0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f239512072b:   hlt                                 ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::species@7 (line 8)
+ ;; B6: #	out( N1 ) <- in( B3 )  Freq: 9.99998e-07
+  0x00007f239512072c:   mov    %rsi,(%rsp)
+  0x00007f2395120730:   mov    $0xffffff45,%esi
+  0x00007f2395120735:   nop
+  0x00007f2395120736:   nop
+  0x00007f2395120737:   callq  0x00007f239511e9a0           ; ImmutableOopMap {[0]=Oop }
+                                                            ;*tableswitch {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) test::species@8 (line 8)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f239512073c:   movabs $0x7f239e83a0e8,%rdi         ;   {external_word}
+  0x00007f2395120746:   and    $0xfffffffffffffff0,%rsp
+  0x00007f239512074a:   callq  0x00007f239deed6c0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f239512074f:   hlt                                 ;*tableswitch {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::species@8 (line 8)
+ ;; B7: #	out( N1 ) <- in( B1 )  Freq: 1.01328e-06
+  0x00007f2395120750:   mov    $0xfffffff6,%esi
+  0x00007f2395120755:   nop
+  0x00007f2395120756:   nop
+  0x00007f2395120757:   callq  0x00007f239511e9a0           ; ImmutableOopMap {}
+                                                            ;*invokevirtual ordinal {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::species@4 (line 8)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f239512075c:   movabs $0x7f239e83a0e8,%rdi         ;   {external_word}
+  0x00007f2395120766:   and    $0xfffffffffffffff0,%rsp
+  0x00007f239512076a:   callq  0x00007f239deed6c0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f239512076f:   hlt                                 ;*invokevirtual ordinal {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::species@4 (line 8)
+  0x00007f2395120770:   movabs $0x7f23951206f9,%r10         ;   {internal_word}
+  0x00007f239512077a:   mov    %r10,0x3a0(%r15)
+  0x00007f2395120781:   jmpq   0x00007f239511d720           ;   {runtime_call SafepointBlob}
+  0x00007f2395120786:   hlt    
+  0x00007f2395120787:   hlt    
+  0x00007f2395120788:   hlt    
+  0x00007f2395120789:   hlt    
+  0x00007f239512078a:   hlt    
+  0x00007f239512078b:   hlt    
+  0x00007f239512078c:   hlt    
+  0x00007f239512078d:   hlt    
+  0x00007f239512078e:   hlt    
+  0x00007f239512078f:   hlt    
+  0x00007f2395120790:   hlt    
+  0x00007f2395120791:   hlt    
+  0x00007f2395120792:   hlt    
+  0x00007f2395120793:   hlt    
+  0x00007f2395120794:   hlt    
+  0x00007f2395120795:   hlt    
+  0x00007f2395120796:   hlt    
+  0x00007f2395120797:   hlt    
+  0x00007f2395120798:   hlt    
+  0x00007f2395120799:   hlt    
+  0x00007f239512079a:   hlt    
+  0x00007f239512079b:   hlt    
+  0x00007f239512079c:   hlt    
+  0x00007f239512079d:   hlt    
+  0x00007f239512079e:   hlt    
+  0x00007f239512079f:   hlt    
+[Exception Handler]
+  0x00007f23951207a0:   jmpq   0x00007f2395081a20           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007f23951207a5:   callq  0x00007f23951207aa
+  0x00007f23951207aa:   subq   $0x5,(%rsp)
+  0x00007f23951207af:   jmpq   0x00007f239511ece0           ;   {runtime_call DeoptimizationBlob}
+  0x00007f23951207b4:   hlt    
+  0x00007f23951207b5:   hlt    
+  0x00007f23951207b6:   hlt    
+  0x00007f23951207b7:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007f23951207b8:   0x000000011f5abd90 [I{0x000000011f5abd90}
+  0x00007f23951207c0:   0x000000011f4d02c0 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f4d02c0}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007f23951207c8:   0x00007f232c411608 {method} {0x00007f232c411608} 'species' '(Ljdk/incubator/vector/VectorShape;)Ljdk/incubator/vector/VectorSpecies;' in 'test'
+  0x00007f23951207d0:   0x00007f232c0f3ef8 {method} {0x00007f232c0f3ef8} 'ordinal' '()I' in 'java/lang/Enum'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007f23951206bf offset=ffffffff bits=0):
+PcDesc(pc=0x00007f23951206cc offset=c bits=0):
+   test::species@-1 (line 8)
+PcDesc(pc=0x00007f23951206d0 offset=10 bits=0):
+   java.lang.Enum::ordinal@1 (line 124)
+   test::species@4 (line 8)
+PcDesc(pc=0x00007f23951206e5 offset=25 bits=0):
+   test::species@7 (line 8)
+PcDesc(pc=0x00007f23951206ea offset=2a bits=0):
+   test::species@8 (line 8)
+PcDesc(pc=0x00007f2395120718 offset=58 bits=0):
+   test::species@7 (line 8)
+   Locals
+    - l0: reg rbp [10],oop
+   Expression stack
+    - @0: [I{0x000000011f5abd90}
+    - @1: stack[0]
+PcDesc(pc=0x00007f239512072c offset=6c bits=0):
+   test::species@7 (line 8)
+PcDesc(pc=0x00007f239512073c offset=7c bits=1):
+   test::species@8 (line 8)  reexecute=true
+   Locals
+    - l0: stack[0],oop
+   Expression stack
+    - @0: reg rbp [10],int
+PcDesc(pc=0x00007f2395120750 offset=90 bits=0):
+   test::species@8 (line 8)
+PcDesc(pc=0x00007f239512075c offset=9c bits=0):
+   test::species@4 (line 8)
+   Locals
+    - l0: empty
+   Expression stack
+    - @0: empty
+    - @1: NULL
+PcDesc(pc=0x00007f2395120770 offset=b0 bits=0):
+   test::species@4 (line 8)
+PcDesc(pc=0x00007f23951207b9 offset=f9 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 3 OopMaps
+
+ImmutableOopMap {rbp=Oop } pc offsets: 88 
+ImmutableOopMap {[0]=Oop } pc offsets: 124 
+ImmutableOopMap {} pc offsets: 156 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007f23951206cc offset=c):
+   test::species@-1 (line 8)
+ScopeDesc(pc=0x00007f23951206d0 offset=10):
+   java.lang.Enum::ordinal@1 (line 124)
+ScopeDesc(pc=0x00007f23951206d0 offset=10):
+   test::species@4 (line 8)
+ScopeDesc(pc=0x00007f23951206e5 offset=25):
+   test::species@7 (line 8)
+ScopeDesc(pc=0x00007f23951206ea offset=2a):
+   test::species@8 (line 8)
+ScopeDesc(pc=0x00007f2395120718 offset=58):
+   test::species@7 (line 8)
+   Locals
+    - l0: reg rbp [10],oop
+   Expression stack
+    - @0: [I{0x000000011f5abd90}
+    - @1: stack[0]
+ScopeDesc(pc=0x00007f239512072c offset=6c):
+   test::species@7 (line 8)
+ScopeDesc(pc=0x00007f239512073c offset=7c):
+   test::species@8 (line 8)  reexecute=true
+   Locals
+    - l0: stack[0],oop
+   Expression stack
+    - @0: reg rbp [10],int
+ScopeDesc(pc=0x00007f2395120750 offset=90):
+   test::species@8 (line 8)
+ScopeDesc(pc=0x00007f239512075c offset=9c):
+   test::species@4 (line 8)
+   Locals
+    - l0: empty
+   Expression stack
+    - @0: empty
+    - @1: NULL
+ScopeDesc(pc=0x00007f2395120770 offset=b0):
+   test::species@4 (line 8)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007f2395120680: 1016
+relocInfo@0x00007f2395120680 [type=1(oop) addr=0x00007f23951206d6 offset=22] | [oop_addr=0x00007f23951206d8 *=0x000000011f5abd90 offset=0]
+         @0x00007f2395120682: 1014
+relocInfo@0x00007f2395120682 [type=1(oop) addr=0x00007f23951206ea offset=20] | [oop_addr=0x00007f23951206ec *=0x000000011f5a4410 offset=0]
+         @0x00007f2395120684: b00f
+relocInfo@0x00007f2395120684 [type=11(poll_return) addr=0x00007f23951206f9 offset=15]
+         @0x00007f2395120686: 641a
+relocInfo@0x00007f2395120686 [type=6(runtime_call) addr=0x00007f2395120713 offset=26 format=1] | [destination=0x00007f239511e9a0]
+         @0x00007f2395120688: f8039e83a0e87f237005
+relocInfo@0x00007f2395120690 [type=7(external_word) addr=0x00007f2395120718 offset=5 data={9e83a0e87f23}] | [target=0x00007f239e83a0e8]
+         @0x00007f2395120692: 640e
+relocInfo@0x00007f2395120692 [type=6(runtime_call) addr=0x00007f2395120726 offset=14 format=1] | [destination=0x00007f239deed6c0]
+         @0x00007f2395120694: 6411
+relocInfo@0x00007f2395120694 [type=6(runtime_call) addr=0x00007f2395120737 offset=17 format=1] | [destination=0x00007f239511e9a0]
+         @0x00007f2395120696: f8039e83a0e87f237005
+relocInfo@0x00007f239512069e [type=7(external_word) addr=0x00007f239512073c offset=5 data={9e83a0e87f23}] | [target=0x00007f239e83a0e8]
+         @0x00007f23951206a0: 640e
+relocInfo@0x00007f23951206a0 [type=6(runtime_call) addr=0x00007f239512074a offset=14 format=1] | [destination=0x00007f239deed6c0]
+         @0x00007f23951206a2: 640d
+relocInfo@0x00007f23951206a2 [type=6(runtime_call) addr=0x00007f2395120757 offset=13 format=1] | [destination=0x00007f239511e9a0]
+         @0x00007f23951206a4: f8039e83a0e87f237005
+relocInfo@0x00007f23951206ac [type=7(external_word) addr=0x00007f239512075c offset=5 data={9e83a0e87f23}] | [target=0x00007f239e83a0e8]
+         @0x00007f23951206ae: 640e
+relocInfo@0x00007f23951206ae [type=6(runtime_call) addr=0x00007f239512076a offset=14 format=1] | [destination=0x00007f239deed6c0]
+         @0x00007f23951206b0: f0778006
+relocInfo@0x00007f23951206b2 [type=8(internal_word) addr=0x00007f2395120770 offset=6 data=119] | [target=0x00007f23951206f9]
+         @0x00007f23951206b4: 6411
+relocInfo@0x00007f23951206b4 [type=6(runtime_call) addr=0x00007f2395120781 offset=17 format=1] | [destination=0x00007f239511d720]
+         @0x00007f23951206b6: 001f
+relocInfo@0x00007f23951206b6 [type=0(none) addr=0x00007f23951207a0 offset=31]
+         @0x00007f23951206b8: 6400
+relocInfo@0x00007f23951206b8 [type=6(runtime_call) addr=0x00007f23951207a0 offset=0 format=1] | [destination=0x00007f2395081a20]
+         @0x00007f23951206ba: 640f
+relocInfo@0x00007f23951206ba [type=6(runtime_call) addr=0x00007f23951207af offset=15 format=1] | [destination=0x00007f239511ece0]
+         @0x00007f23951206bc: 0000
+relocInfo@0x00007f23951206bc [type=0(none) addr=0x00007f23951207af offset=0]
+         @0x00007f23951206be: 0000
+relocInfo@0x00007f23951206be [type=0(none) addr=0x00007f23951207af offset=0]
+         @0x00007f23951206c0: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable (size = 1 entries, 12 bytes):
+{
+   < 0x00007f23951206cc, 0x00007f2395120750 > 
+}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x000000011f5abd90 [I{0x000000011f5abd90}
+#2: 0x000000011f4d02c0 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f4d02c0}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x00007f232c411608 {method} {0x00007f232c411608} 'species' '(Ljdk/incubator/vector/VectorShape;)Ljdk/incubator/vector/VectorSpecies;' in 'test'
+#2: 0x00007f232c0f3ef8 {method} {0x00007f232c0f3ef8} 'ordinal' '()I' in 'java/lang/Enum'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+============================= C2-compiled nmethod ==============================
+----------------------- MetaData before Compile_id = 131 ------------------------
+{method}
+ - this oop:          0x00007f232c4116f8
+ - method holder:     'test'
+ - constants:         0x00007f232c411078 constant pool [108]/operands[10] {0x00007f232c411078} for 'test' cache=0x00007f232c411880
+ - access:            0xc1000009  public static 
+ - name:              'main'
+ - signature:         '([Ljava/lang/String;)V'
+ - max stack:         3
+ - max locals:        3
+ - size of params:    1
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007f239500db80
+ - adapters:          AHE@0x00007f2398257180: 0xb i2c: 0x00007f2395114d60 c2i: 0x00007f2395114e1a c2iUV: 0x00007f2395114de4 c2iNCI: 0x00007f2395114e57
+ - compiled entry     0x00007f2395114e1a
+ - code size:         48
+ - code start:        0x00007f232c4116b8
+ - code end (excl):   0x00007f232c4116e8
+ - method data:       0x00007f232c7003c0
+ - checked ex length: 0
+ - linenumber start:  0x00007f232c4116e8
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 131 -----------------------
+#
+#  void ( rawptr:BotPTR )
+#
+#r018 rsi:rsi   : parm 0: rawptr:BotPTR
+# -- Old rsp -- Framesize: 48 --
+#r591 rsp+44: in_preserve
+#r590 rsp+40: return address
+#r589 rsp+36: in_preserve
+#r588 rsp+32: saved fp register
+#r587 rsp+28: pad2, stack alignment
+#r586 rsp+24: pad2, stack alignment
+#r585 rsp+20: Fixed slot 1
+#r584 rsp+16: Fixed slot 0
+#r595 rsp+12: spill
+#r594 rsp+ 8: spill
+#r593 rsp+ 4: spill
+#r592 rsp+ 0: spill
+#
+000     N111: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # breakpoint
+        nop 	# 11 bytes pad for loops and calls
+
+010     B1: #	out( B8 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+010     # stack bang (136 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #32	# Create frame
+
+01c     movl    R13, [RSI + #8 (8-bit)]	# int
+020     movl    RBX, [RSI]	# int
+022     movq    RDI, RSI	# spill
+025     call_leaf,runtime  OSR_migration_end
+        No JVM State Info
+        # 
+032     movq    R10, int[int:5]<ciTypeArray length=5 type=<ciTypeArrayKlass name=[I ident=1257 address=0x00007f231001c248> ident=1287 address=0x00007f2310290e90> *	# ptr
+03c     movl    R10, [R10 + #24 (8-bit)]	# int
+040     cmpl    R10, #3
+044     jne     B8  P=0.000001 C=-1.000000
+
+04a     B2: #	out( B6 B3 ) <- in( B1 )  Freq: 0.999999
+04a     cmpl    RBX, #100000
+050     jge,s   B6  P=0.000001 C=-1.000000
+
+052     B3: #	out( B7 B4 ) <- in( B2 )  Freq: 0.999998
+052     movl    R11, RBX	# spill
+055     sall    R11, #3
+059     movl    R8, R13	# spill
+05c     subl    R8, R11	# int
+05f     incl    RBX	# int
+061     cmpl    RBX, #99999
+067     jge,s   B7  P=0.000001 C=-1.000000
+
+069     B4: #	out( B5 ) <- in( B3 )  Freq: 0.999997
+069     # castII of RBX
+069     movslq  R10, RBX	# i2l
+06c     movl    R11, #100000	# long (unsigned 32-bit)
+072     subq    R11, R10	# long
+075     andq    R11, #-2	# long
+079     movl    R11, R11	# l2i
+07c     addl    R11, RBX	# int
+07f     movl    R13, R11	# spill
+082     sall    R13, #3
+086     addl    R13, R8	# int
+
+089     B5: #	out( B9 B6 ) <- in( B7 B4 )  Freq: 0.999998
+089     cmpl    R11, #100000
+090     jl,s   B9  P=0.000001 C=-1.000000
+
+092     B6: #	out( N111 ) <- in( B2 B9 B5 )  Freq: 0.999999
+092     movl    RSI, #66	# int
+097     movl    RBP, R13	# spill
+        nop 	# 1 bytes pad for loops and calls
+09b     call,static  wrapper for: uncommon_trap(reason='unloaded' action='reinterpret' index='66' debug_id='0')
+        # test::main @ bci:35 (line 23) L[0]=_ L[1]=RBP L[2]=_
+        # OopMap {off=160/0xa0}
+0a0     stop	# ShouldNotReachHere
+
+0b4     B7: #	out( B5 ) <- in( B3 )  Freq: 1.01328e-06
+0b4     addl    R13, #8	# int
+0b8     movl    R11, RBX	# spill
+0bb     jmp,s   B5
+
+0bd     B8: #	out( N111 ) <- in( B1 )  Freq: 1e-06
+0bd     movl    RSI, #-138	# int
+0c2     movl    RBP, R13	# spill
+0c5     movl    [rsp + #0], RBX	# spill
+        nop 	# 3 bytes pad for loops and calls
+0cb     call,static  wrapper for: uncommon_trap(reason='predicate' action='maybe_recompile' debug_id='0')
+        # test::main @ bci:4 (line 20) L[0]=_ L[1]=RBP L[2]=rsp + #0
+        # OopMap {off=208/0xd0}
+0d0     stop	# ShouldNotReachHere
+
+0e4     B9: #	out( B6 ) <- in( B5 )  Freq: 9.99998e-07
+0e4     addl    R8, #799992	# int
+0eb     movl    R13, R8	# spill
+0ee     addl    R13, #8	# int
+0f2     jmp,s   B6
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)     497  131 %           test::main @ 4 (48 bytes)
+ total in heap  [0x00007f239511fa90,0x00007f239511fed0] = 1088
+ relocation     [0x00007f239511fc00,0x00007f239511fc28] = 40
+ main code      [0x00007f239511fc40,0x00007f239511fd40] = 256
+ stub code      [0x00007f239511fd40,0x00007f239511fd58] = 24
+ oops           [0x00007f239511fd58,0x00007f239511fd60] = 8
+ metadata       [0x00007f239511fd60,0x00007f239511fda0] = 64
+ scopes data    [0x00007f239511fda0,0x00007f239511fde0] = 64
+ scopes pcs     [0x00007f239511fde0,0x00007f239511fec0] = 224
+ dependencies   [0x00007f239511fec0,0x00007f239511fed0] = 16
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007f232c4116f8} 'main' '([Ljava/lang/String;)V' in 'test'
+ ;; N111: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f239511fc40:   callq  0x00007f239e130130           ;   {runtime_call os::breakpoint()}
+  0x00007f239511fc45:   nop
+  0x00007f239511fc46:   nop
+  0x00007f239511fc47:   nop
+  0x00007f239511fc48:   nop
+  0x00007f239511fc49:   nop
+  0x00007f239511fc4a:   nop
+  0x00007f239511fc4b:   nop
+  0x00007f239511fc4c:   nop
+  0x00007f239511fc4d:   nop
+  0x00007f239511fc4e:   nop
+  0x00007f239511fc4f:   nop
+ ;; B1: #	out( B8 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f239511fc50:   mov    %eax,-0x16000(%rsp)
+  0x00007f239511fc57:   push   %rbp
+  0x00007f239511fc58:   sub    $0x20,%rsp
+  0x00007f239511fc5c:   mov    0x8(%rsi),%r13d
+  0x00007f239511fc60:   mov    (%rsi),%ebx
+  0x00007f239511fc62:   mov    %rsi,%rdi
+  0x00007f239511fc65:   movabs $0x7f239e2b38c0,%r10
+  0x00007f239511fc6f:   callq  *%r10                        ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@4 (line 20)
+  0x00007f239511fc72:   movabs $0x11f5abd90,%r10            ;   {oop([I{0x000000011f5abd90})}
+  0x00007f239511fc7c:   mov    0x18(%r10),%r10d
+  0x00007f239511fc80:   cmp    $0x3,%r10d
+  0x00007f239511fc84:   jne    0x00007f239511fcfd
+ ;; B2: #	out( B6 B3 ) <- in( B1 )  Freq: 0.999999
+  0x00007f239511fc8a:   cmp    $0x186a0,%ebx
+  0x00007f239511fc90:   jge    0x00007f239511fcd2           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@7 (line 20)
+ ;; B3: #	out( B7 B4 ) <- in( B2 )  Freq: 0.999998
+  0x00007f239511fc92:   mov    %ebx,%r11d
+  0x00007f239511fc95:   shl    $0x3,%r11d
+  0x00007f239511fc99:   mov    %r13d,%r8d
+  0x00007f239511fc9c:   sub    %r11d,%r8d                   ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@4 (line 20)
+  0x00007f239511fc9f:   inc    %ebx
+  0x00007f239511fca1:   cmp    $0x1869f,%ebx
+  0x00007f239511fca7:   jge    0x00007f239511fcf4
+ ;; B4: #	out( B5 ) <- in( B3 )  Freq: 0.999997
+  0x00007f239511fca9:   movslq %ebx,%r10
+  0x00007f239511fcac:   mov    $0x186a0,%r11d
+  0x00007f239511fcb2:   sub    %r10,%r11
+  0x00007f239511fcb5:   and    $0xfffffffffffffffe,%r11
+  0x00007f239511fcb9:   mov    %r11d,%r11d
+  0x00007f239511fcbc:   add    %ebx,%r11d                   ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@29 (line 20)
+  0x00007f239511fcbf:   mov    %r11d,%r13d
+  0x00007f239511fcc2:   shl    $0x3,%r13d
+  0x00007f239511fcc6:   add    %r8d,%r13d                   ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@27 (line 21)
+ ;; B5: #	out( B9 B6 ) <- in( B7 B4 )  Freq: 0.999998
+  0x00007f239511fcc9:   cmp    $0x186a0,%r11d
+  0x00007f239511fcd0:   jl     0x00007f239511fd24           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@7 (line 20)
+ ;; B6: #	out( N111 ) <- in( B2 B9 B5 )  Freq: 0.999999
+  0x00007f239511fcd2:   mov    $0x42,%esi
+  0x00007f239511fcd7:   mov    %r13d,%ebp
+  0x00007f239511fcda:   nop
+  0x00007f239511fcdb:   callq  0x00007f239511e9a0           ; ImmutableOopMap {}
+                                                            ;*getstatic out {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) test::main@35 (line 23)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f239511fce0:   movabs $0x7f239e83a0e8,%rdi         ;   {external_word}
+  0x00007f239511fcea:   and    $0xfffffffffffffff0,%rsp
+  0x00007f239511fcee:   callq  0x00007f239deed6c0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f239511fcf3:   hlt                                 ;*getstatic out {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@35 (line 23)
+ ;; B7: #	out( B5 ) <- in( B3 )  Freq: 1.01328e-06
+  0x00007f239511fcf4:   add    $0x8,%r13d                   ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@27 (line 21)
+  0x00007f239511fcf8:   mov    %ebx,%r11d
+  0x00007f239511fcfb:   jmp    0x00007f239511fcc9
+ ;; B8: #	out( N111 ) <- in( B1 )  Freq: 1e-06
+  0x00007f239511fcfd:   mov    $0xffffff76,%esi
+  0x00007f239511fd02:   mov    %r13d,%ebp
+  0x00007f239511fd05:   mov    %ebx,(%rsp)
+  0x00007f239511fd08:   nop
+  0x00007f239511fd09:   nop
+  0x00007f239511fd0a:   nop
+  0x00007f239511fd0b:   callq  0x00007f239511e9a0           ; ImmutableOopMap {}
+                                                            ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@4 (line 20)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f239511fd10:   movabs $0x7f239e83a0e8,%rdi         ;   {external_word}
+  0x00007f239511fd1a:   and    $0xfffffffffffffff0,%rsp
+  0x00007f239511fd1e:   callq  0x00007f239deed6c0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f239511fd23:   hlt                                 ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@4 (line 20)
+ ;; B9: #	out( B6 ) <- in( B5 )  Freq: 9.99998e-07
+  0x00007f239511fd24:   add    $0xc34f8,%r8d
+  0x00007f239511fd2b:   mov    %r8d,%r13d
+  0x00007f239511fd2e:   add    $0x8,%r13d                   ;*iadd {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - test::main@27 (line 21)
+  0x00007f239511fd32:   jmp    0x00007f239511fcd2
+  0x00007f239511fd34:   hlt    
+  0x00007f239511fd35:   hlt    
+  0x00007f239511fd36:   hlt    
+  0x00007f239511fd37:   hlt    
+  0x00007f239511fd38:   hlt    
+  0x00007f239511fd39:   hlt    
+  0x00007f239511fd3a:   hlt    
+  0x00007f239511fd3b:   hlt    
+  0x00007f239511fd3c:   hlt    
+  0x00007f239511fd3d:   hlt    
+  0x00007f239511fd3e:   hlt    
+  0x00007f239511fd3f:   hlt    
+[Exception Handler]
+  0x00007f239511fd40:   jmpq   0x00007f2395081a20           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007f239511fd45:   callq  0x00007f239511fd4a
+  0x00007f239511fd4a:   subq   $0x5,(%rsp)
+  0x00007f239511fd4f:   jmpq   0x00007f239511ece0           ;   {runtime_call DeoptimizationBlob}
+  0x00007f239511fd54:   hlt    
+  0x00007f239511fd55:   hlt    
+  0x00007f239511fd56:   hlt    
+  0x00007f239511fd57:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007f239511fd58:   0x000000011f4d02c0 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f4d02c0}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007f239511fd60:   0x00007f232c4116f8 {method} {0x00007f232c4116f8} 'main' '([Ljava/lang/String;)V' in 'test'
+  0x00007f239511fd68:   0x00000008000cc728 'jdk/incubator/vector/AbstractSpecies'
+  0x00007f239511fd70:   0x00000008000ccaf8 'jdk/incubator/vector/IntVector$IntSpecies'
+  0x00007f239511fd78:   0x00007f232c603180 {method} {0x00007f232c603180} 'vectorShape' '()Ljdk/incubator/vector/VectorShape;' in 'jdk/incubator/vector/AbstractSpecies'
+  0x00007f239511fd80:   0x00000008000ca568 'jdk/incubator/vector/VectorSpecies'
+  0x00007f239511fd88:   0x00007f232c47a1d8 {method} {0x00007f232c47a1d8} 'vectorShape' '()Ljdk/incubator/vector/VectorShape;' in 'jdk/incubator/vector/VectorSpecies'
+  0x00007f239511fd90:   0x00007f232c6029f8 {method} {0x00007f232c6029f8} 'length' '()I' in 'jdk/incubator/vector/AbstractSpecies'
+  0x00007f239511fd98:   0x00007f232c47a278 {method} {0x00007f232c47a278} 'length' '()I' in 'jdk/incubator/vector/VectorSpecies'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007f239511fc3f offset=ffffffff bits=0):
+PcDesc(pc=0x00007f239511fc72 offset=32 bits=0):
+   test::main@4 (line 20)
+PcDesc(pc=0x00007f239511fc92 offset=52 bits=0):
+   test::main@7 (line 20)
+PcDesc(pc=0x00007f239511fc9f offset=5f bits=0):
+   test::main@4 (line 20)
+PcDesc(pc=0x00007f239511fcbf offset=7f bits=0):
+   test::main@29 (line 20)
+PcDesc(pc=0x00007f239511fcc9 offset=89 bits=0):
+   test::main@27 (line 21)
+PcDesc(pc=0x00007f239511fcd2 offset=92 bits=0):
+   test::main@7 (line 20)
+PcDesc(pc=0x00007f239511fce0 offset=a0 bits=1):
+   test::main@35 (line 23)  reexecute=true
+   Locals
+    - l0: empty
+    - l1: reg rbp [10],int
+    - l2: empty
+PcDesc(pc=0x00007f239511fcf4 offset=b4 bits=0):
+   test::main@35 (line 23)
+PcDesc(pc=0x00007f239511fcf8 offset=b8 bits=0):
+   test::main@27 (line 21)
+PcDesc(pc=0x00007f239511fd10 offset=d0 bits=0):
+   test::main@4 (line 20)
+   Locals
+    - l0: empty
+    - l1: reg rbp [10],int
+    - l2: stack[0]
+PcDesc(pc=0x00007f239511fd24 offset=e4 bits=0):
+   test::main@4 (line 20)
+PcDesc(pc=0x00007f239511fd32 offset=f2 bits=0):
+   test::main@27 (line 21)
+PcDesc(pc=0x00007f239511fd59 offset=119 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 2 OopMaps
+
+ImmutableOopMap {} pc offsets: 160 208 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007f239511fc72 offset=32):
+   test::main@4 (line 20)
+ScopeDesc(pc=0x00007f239511fc92 offset=52):
+   test::main@7 (line 20)
+ScopeDesc(pc=0x00007f239511fc9f offset=5f):
+   test::main@4 (line 20)
+ScopeDesc(pc=0x00007f239511fcbf offset=7f):
+   test::main@29 (line 20)
+ScopeDesc(pc=0x00007f239511fcc9 offset=89):
+   test::main@27 (line 21)
+ScopeDesc(pc=0x00007f239511fcd2 offset=92):
+   test::main@7 (line 20)
+ScopeDesc(pc=0x00007f239511fce0 offset=a0):
+   test::main@35 (line 23)  reexecute=true
+   Locals
+    - l0: empty
+    - l1: reg rbp [10],int
+    - l2: empty
+ScopeDesc(pc=0x00007f239511fcf4 offset=b4):
+   test::main@35 (line 23)
+ScopeDesc(pc=0x00007f239511fcf8 offset=b8):
+   test::main@27 (line 21)
+ScopeDesc(pc=0x00007f239511fd10 offset=d0):
+   test::main@4 (line 20)
+   Locals
+    - l0: empty
+    - l1: reg rbp [10],int
+    - l2: stack[0]
+ScopeDesc(pc=0x00007f239511fd24 offset=e4):
+   test::main@4 (line 20)
+ScopeDesc(pc=0x00007f239511fd32 offset=f2):
+   test::main@27 (line 21)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007f239511fc00: 6400
+relocInfo@0x00007f239511fc00 [type=6(runtime_call) addr=0x00007f239511fc40 offset=0 format=1] | [destination=0x00007f239e130130]
+         @0x00007f239511fc02: 1032
+relocInfo@0x00007f239511fc02 [type=1(oop) addr=0x00007f239511fc72 offset=50] | [oop_addr=0x00007f239511fc74 *=0x000000011f5abd90 offset=0]
+         @0x00007f239511fc04: 6469
+relocInfo@0x00007f239511fc04 [type=6(runtime_call) addr=0x00007f239511fcdb offset=105 format=1] | [destination=0x00007f239511e9a0]
+         @0x00007f239511fc06: f8039e83a0e87f237005
+relocInfo@0x00007f239511fc0e [type=7(external_word) addr=0x00007f239511fce0 offset=5 data={9e83a0e87f23}] | [target=0x00007f239e83a0e8]
+         @0x00007f239511fc10: 640e
+relocInfo@0x00007f239511fc10 [type=6(runtime_call) addr=0x00007f239511fcee offset=14 format=1] | [destination=0x00007f239deed6c0]
+         @0x00007f239511fc12: 641d
+relocInfo@0x00007f239511fc12 [type=6(runtime_call) addr=0x00007f239511fd0b offset=29 format=1] | [destination=0x00007f239511e9a0]
+         @0x00007f239511fc14: f8039e83a0e87f237005
+relocInfo@0x00007f239511fc1c [type=7(external_word) addr=0x00007f239511fd10 offset=5 data={9e83a0e87f23}] | [target=0x00007f239e83a0e8]
+         @0x00007f239511fc1e: 640e
+relocInfo@0x00007f239511fc1e [type=6(runtime_call) addr=0x00007f239511fd1e offset=14 format=1] | [destination=0x00007f239deed6c0]
+         @0x00007f239511fc20: 0022
+relocInfo@0x00007f239511fc20 [type=0(none) addr=0x00007f239511fd40 offset=34]
+         @0x00007f239511fc22: 6400
+relocInfo@0x00007f239511fc22 [type=6(runtime_call) addr=0x00007f239511fd40 offset=0 format=1] | [destination=0x00007f2395081a20]
+         @0x00007f239511fc24: 640f
+relocInfo@0x00007f239511fc24 [type=6(runtime_call) addr=0x00007f239511fd4f offset=15 format=1] | [destination=0x00007f239511ece0]
+         @0x00007f239511fc26: 0000
+relocInfo@0x00007f239511fc26 [type=0(none) addr=0x00007f239511fd4f offset=0]
+         @0x00007f239511fc28: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+Dependency of type abstract_with_unique_concrete_subtype
+  context = *jdk.incubator.vector.AbstractSpecies
+  class   = jdk.incubator.vector.IntVector$IntSpecies
+   [nmethod<=klass]jdk.incubator.vector.AbstractSpecies
+Dependency of type unique_concrete_method_4
+  context = jdk.incubator.vector.IntVector$IntSpecies
+  method  = {method} {0x00007f232c603180} 'vectorShape' '()Ljdk/incubator/vector/VectorShape;' in 'jdk/incubator/vector/AbstractSpecies'
+  class   = jdk.incubator.vector.VectorSpecies
+  method  = *{method} {0x00007f232c47a1d8} 'vectorShape' '()Ljdk/incubator/vector/VectorShape;' in 'jdk/incubator/vector/VectorSpecies'
+   [nmethod<=klass]jdk.incubator.vector.IntVector$IntSpecies
+Dependency of type unique_concrete_method_4
+  context = jdk.incubator.vector.IntVector$IntSpecies
+  method  = {method} {0x00007f232c6029f8} 'length' '()I' in 'jdk/incubator/vector/AbstractSpecies'
+  class   = jdk.incubator.vector.VectorSpecies
+  method  = *{method} {0x00007f232c47a278} 'length' '()I' in 'jdk/incubator/vector/VectorSpecies'
+   [nmethod<=klass]jdk.incubator.vector.IntVector$IntSpecies
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable is empty
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x000000011f4d02c0 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f4d02c0}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x00007f232c4116f8 {method} {0x00007f232c4116f8} 'main' '([Ljava/lang/String;)V' in 'test'
+#2: 0x00000008000cc728 'jdk/incubator/vector/AbstractSpecies'
+#3: 0x00000008000ccaf8 'jdk/incubator/vector/IntVector$IntSpecies'
+#4: 0x00007f232c603180 {method} {0x00007f232c603180} 'vectorShape' '()Ljdk/incubator/vector/VectorShape;' in 'jdk/incubator/vector/AbstractSpecies'
+#5: 0x00000008000ca568 'jdk/incubator/vector/VectorSpecies'
+#6: 0x00007f232c47a1d8 {method} {0x00007f232c47a1d8} 'vectorShape' '()Ljdk/incubator/vector/VectorShape;' in 'jdk/incubator/vector/VectorSpecies'
+#7: 0x00007f232c6029f8 {method} {0x00007f232c6029f8} 'length' '()I' in 'jdk/incubator/vector/AbstractSpecies'
+#8: 0x00007f232c47a278 {method} {0x00007f232c47a278} 'length' '()I' in 'jdk/incubator/vector/VectorSpecies'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+[RES] 800000
+------------------------------------------------------------------------
+static test::species(Ljdk/incubator/vector/VectorShape;)Ljdk/incubator/vector/VectorSpecies;
+  interpreter_invocation_count:       21497
+  invocation_counter:                 21497
+  backedge_counter:                       0
+  decompile_count:                        0
+  mdo size: 664 bytes
+
+0 getstatic 7 <test$1.$SwitchMap$jdk$incubator$vector$VectorShape/[I> 
+3 fast_aload_0
+4 invokevirtual 13 <jdk/incubator/vector/VectorShape.ordinal()I> 
+  0   bci: 4    VirtualCallData     count(19834) nonprofiled_count(0) entries(0)
+7 iaload
+8 tableswitch 64 1 5  1:44 (delta: 36), 2:48 (delta: 40), 3:52 (delta: 44), 4:56 (delta: 48), 5:60 (delta: 52)
+  56  bci: 8    MultiBranchData     default_count(0) displacement(112)
+                                    count(0) displacement(112)
+                                    count(0) displacement(112)
+                                    count(19834) displacement(112)
+                                    count(0) displacement(112)
+                                    count(0) displacement(112)
+44 getstatic 19 <jdk/incubator/vector/IntVector.SPECIES_64/Ljdk/incubator/vector/VectorSpecies;> 
+47 areturn
+48 getstatic 25 <jdk/incubator/vector/IntVector.SPECIES_128/Ljdk/incubator/vector/VectorSpecies;> 
+51 areturn
+52 getstatic 28 <jdk/incubator/vector/IntVector.SPECIES_256/Ljdk/incubator/vector/VectorSpecies;> 
+55 areturn
+56 getstatic 31 <jdk/incubator/vector/IntVector.SPECIES_512/Ljdk/incubator/vector/VectorSpecies;> 
+59 areturn
+60 getstatic 34 <jdk/incubator/vector/IntVector.SPECIES_MAX/Ljdk/incubator/vector/VectorSpecies;> 
+63 areturn
+64 new 37 <java/lang/IllegalArgumentException>
+67 dup
+68 aload_0
+69 invokedynamic bsm=92 39 <makeConcatWithConstants(Ljdk/incubator/vector/VectorShape;)Ljava/lang/String;>
+  168 bci: 69   CounterData         count(0)
+                argument types      0: stack(0) none
+                return type         none
+74 invokespecial 43 <java/lang/IllegalArgumentException.<init>(Ljava/lang/String;)V> 
+  216 bci: 74   CounterData         count(0)
+77 athrow
+------------------------------------------------------------------------
+static test::main([Ljava/lang/String;)V
+  interpreter_invocation_count:           1
+  invocation_counter:                     1
+  backedge_counter:                  100000
+  decompile_count:                        0
+  mdo size: 704 bytes
+
+0 iconst_0
+1 istore_1
+2 iconst_0
+3 istore_2
+4 iload_2
+5 ldc 100000
+7 if_icmpge 35
+  0   bci: 7    BranchData          taken(1) displacement(184)
+                                    not taken(94880)
+10 iload_1
+11 getstatic 47 <test.SPECIES/Ljdk/incubator/vector/VectorSpecies;> 
+14 invokeinterface 52 <jdk/incubator/vector/VectorSpecies.vectorShape()Ljdk/incubator/vector/VectorShape;> 
+  32  bci: 14   VirtualCallData     count(0) nonprofiled_count(0) entries(1)
+                                    'jdk/incubator/vector/IntVector$IntSpecies'(94880 1.00)
+19 invokestatic 58 <test.species(Ljdk/incubator/vector/VectorShape;)Ljdk/incubator/vector/VectorSpecies;> 
+  88  bci: 19   CounterData         count(94880)
+22 invokeinterface 62 <jdk/incubator/vector/VectorSpecies.length()I> 
+  104 bci: 22   VirtualCallData     count(0) nonprofiled_count(0) entries(1)
+                                    'jdk/incubator/vector/IntVector$IntSpecies'(94880 1.00)
+27 iadd
+28 istore_1
+29 iinc #2 1
+32 goto 4
+  160 bci: 32   JumpData            taken(94880) displacement(-160)
+35 getstatic 65 <java/lang/System.out/Ljava/io/PrintStream;> 
+38 iload_1
+39 invokedynamic bsm=92 71 <makeConcatWithConstants(I)Ljava/lang/String;>
+  184 bci: 39   CounterData         count(1)
+                return type         'java/lang/String'
+44 invokevirtual 74 <java/io/PrintStream.println(Ljava/lang/String;)V> 
+  216 bci: 44   VirtualCallData     count(0) nonprofiled_count(0) entries(1)
+                                    'java/io/PrintStream'(1 1.00)
+47 return
+------------------------------------------------------------------------
+Total MDO size: 1368 bytes

@@ -1,0 +1,1060 @@
+diff --git a/make/common/JavaCompilation.gmk b/make/common/JavaCompilation.gmk
+index f48aefcd517..6317c528afa 100644
+--- a/make/common/JavaCompilation.gmk
++++ b/make/common/JavaCompilation.gmk
+@@ -265,7 +265,7 @@ define SetupJavaCompilationBody
+   endif
+ 
+   # Allow overriding on the command line
+-  JAVA_WARNINGS_ARE_ERRORS ?= -Werror
++  JAVA_WARNINGS_ARE_ERRORS ?=
+ 
+   # Tell javac to do exactly as told and no more
+   PARANOIA_FLAGS := -implicit:none -Xprefer:source -XDignore.symbol.file=true -encoding ascii
+diff --git a/src/hotspot/cpu/aarch64/matcher_aarch64.hpp b/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
+index 447c5f57a8a..7b2280fdad5 100644
+--- a/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/matcher_aarch64.hpp
+@@ -153,6 +153,11 @@
+     return true;
+   }
+ 
++  // Does the CPU supports vector slice from non-constant index?
++  static constexpr bool supports_vector_slice_with_non_constant_index(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Some microarchitectures have mask registers used on vectors
+   static bool has_predicated_vectors(void) {
+     return UseSVE > 0;
+diff --git a/src/hotspot/cpu/arm/matcher_arm.hpp b/src/hotspot/cpu/arm/matcher_arm.hpp
+index a4436b7eab4..a8dc5d9cb7d 100644
+--- a/src/hotspot/cpu/arm/matcher_arm.hpp
++++ b/src/hotspot/cpu/arm/matcher_arm.hpp
+@@ -146,6 +146,11 @@
+     return false;
+   }
+ 
++  // Does the CPU supports vector slice from non-constant index?
++  static constexpr bool supports_vector_slice_with_non_constant_index(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Some microarchitectures have mask registers used on vectors
+   static constexpr bool has_predicated_vectors(void) {
+     return false;
+diff --git a/src/hotspot/cpu/ppc/matcher_ppc.hpp b/src/hotspot/cpu/ppc/matcher_ppc.hpp
+index 441339b94c6..76854aae42f 100644
+--- a/src/hotspot/cpu/ppc/matcher_ppc.hpp
++++ b/src/hotspot/cpu/ppc/matcher_ppc.hpp
+@@ -155,6 +155,11 @@
+     return false;
+   }
+ 
++  // Does the CPU supports vector slice from non-constant index?
++  static constexpr bool supports_vector_slice_with_non_constant_index(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Some microarchitectures have mask registers used on vectors
+   static constexpr bool has_predicated_vectors(void) {
+     return false;
+diff --git a/src/hotspot/cpu/riscv/matcher_riscv.hpp b/src/hotspot/cpu/riscv/matcher_riscv.hpp
+index ed1519ec150..2663b18a31f 100644
+--- a/src/hotspot/cpu/riscv/matcher_riscv.hpp
++++ b/src/hotspot/cpu/riscv/matcher_riscv.hpp
+@@ -152,6 +152,11 @@
+     return UseRVV;
+   }
+ 
++  // Does the CPU supports vector slice from non-constant index?
++  static constexpr bool supports_vector_slice_with_non_constant_index(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Some microarchitectures have mask registers used on vectors
+   static bool has_predicated_vectors(void) {
+     return UseRVV;
+diff --git a/src/hotspot/cpu/s390/matcher_s390.hpp b/src/hotspot/cpu/s390/matcher_s390.hpp
+index d8b1ae68f6f..7dc8612ef66 100644
+--- a/src/hotspot/cpu/s390/matcher_s390.hpp
++++ b/src/hotspot/cpu/s390/matcher_s390.hpp
+@@ -149,6 +149,11 @@
+     return false;
+   }
+ 
++  // Does the CPU supports vector slice from non-constant index?
++  static constexpr bool supports_vector_slice_with_non_constant_index(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Some microarchitectures have mask registers used on vectors
+   static constexpr bool has_predicated_vectors(void) {
+     return false;
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 085ae4a6ddd..a6ddb342356 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -6778,6 +6778,14 @@ void Assembler::vpalignr(XMMRegister dst, XMMRegister nds, XMMRegister src, int
+   emit_int24(0x0F, (0xC0 | encode), imm8);
+ }
+ 
++void Assembler::evalignd(XMMRegister dst, XMMRegister nds, XMMRegister src, uint8_t imm8, int vector_len) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int24(0x3, (0xC0 | encode), imm8);
++}
++
+ void Assembler::evalignq(XMMRegister dst, XMMRegister nds, XMMRegister src, uint8_t imm8) {
+   assert(VM_Version::supports_evex(), "");
+   InstructionAttr attributes(AVX_512bit, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 1eb12fb93f0..8f5ec3b54a0 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -2350,6 +2350,7 @@ class Assembler : public AbstractAssembler  {
+   void palignr(XMMRegister dst, XMMRegister src, int imm8);
+   void vpalignr(XMMRegister dst, XMMRegister src1, XMMRegister src2, int imm8, int vector_len);
+   void evalignq(XMMRegister dst, XMMRegister nds, XMMRegister src, uint8_t imm8);
++  void evalignd(XMMRegister dst, XMMRegister nds, XMMRegister src, uint8_t imm8, int vector_len);
+ 
+   void pblendw(XMMRegister dst, XMMRegister src, int imm8);
+   void vblendps(XMMRegister dst, XMMRegister src1, XMMRegister src2, int imm8, int vector_len);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 8cf721f5b20..1e4fd47b70e 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -7091,3 +7091,132 @@ void C2_MacroAssembler::vector_saturating_op(int ideal_opc, BasicType elem_bt, X
+     vector_saturating_op(ideal_opc, elem_bt, dst, src1, src2, vlen_enc);
+   }
+ }
++
++void C2_MacroAssembler::vector_slice_32B_op(XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                            XMMRegister xtmp, int origin, int vlen_enc) {
++   assert(vlen_enc == Assembler::AVX_256bit, "");
++   if (origin <= 16) {
++     // ALIGNR instruction concatenates the corresponding 128 bit
++     // lanes of two source vectors and then performs the right
++     // shift operation over intermediate value. Thus source vectors
++     // lanes needs to shuffled to a format consumable by ALIGNR.
++     // i.e.
++     // Initial source vectors
++     //         0...256            0...256
++     // src1 = [v1 v2]   and src2= [v3  v4]
++     // Formatted source vectors when SHIFT < 16 bytes
++     //         0...256            0...256
++     // src1 = [v1  v2] and src2 = [v2  v3]
++     // Higher 128bit lane of src2 will not impact result, which will be
++     // sliced from lower and higher 128 bit lane of src1 and lower 128 bit
++     // lane of src2.
++     // i.e.
++     // Result lanes
++     // res[127:0]   = {src1[255:128] , src1[127:0]}    >> SHIFT
++     // res[255:128] = {src2[127:0]   , src1[255:128]}  >> SHIFT
++     vextracti128_high(xtmp, src1);
++     vinserti128_high(xtmp, src2);
++     vpalignr(dst, xtmp, src1, origin, Assembler::AVX_256bit);
++   } else {
++     assert(origin > 16 && origin <= 32, "");
++     // Similarly, when SHIFT >= 16 bytes, lower 128bit lane of
++     // src1 will not impact result, which will be sliced from
++     // higher 128 bit lane of src1 and lower and upper 128 bit
++     // lanes of src2.
++     // Thus, two source vector should have following format
++     //         0...256            0...256
++     // src1 = [v2  v3] and src2 = [v3  v4]
++     // Result lanes
++     // res[127:0]   = {src2[127:0]   , src1[255:127]}  >> SHIFT
++     // res[255:128] = {src2[255:128] , src2[127:0]}    >> SHIFT
++     vextracti128_high(xtmp, src1);
++     vinserti128_high(xtmp, src2);
++     vpalignr(dst, src2, xtmp, origin, Assembler::AVX_256bit);
++   }
++}
++
++
++void C2_MacroAssembler::vector_slice_64B_op(XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                            XMMRegister xtmp, int origin, int vlen_enc) {
++  if (origin <= 16) {
++    // Initial source vectors
++    //        0.........512            0.........512
++    // src1 = [v1 v2 v3 v4] and src2 = [v5 v6 v7 v8]
++    // where v* represents 128 bit wide vector lanes.
++    // When SHIFT <= 16 result will be sliced out from src1 and
++    // lowest 128 bit vector lane
++    // of src2.
++    // ALIGNR will consider following source vector lanes pairs
++    // spread across two source vectors in order to compute 128 bit
++    // lanes of result vector.
++    // res[127:0]   = {src1[255:128], src1[127:0]}
++    // res[255:128] = {src1[383:256], src1[255:128]}
++    // res[383:256] = {src1[511:384], src1[383:256]}
++    // res[511:384] = {src2[127:0],   src1[511:384]}
++    //
++    // ALIGNR concatenates corresponding lanes across source vectors
++    // before right shifting the intermediate result. Therefore, source
++    // vector lanes should be shuffled to have following format
++    // src1 = {v1, v2, v3, v4} and src2 = {v2, v3, v4, v5}
++    //
++    //                       |-------------|
++    //                 |-----|--------|    |
++    // alignr ->  [v1 v2 v3 v4] [v2 v3 v4 v5]
++    //            |_____|________|    |
++    //                  |_____________|
++     evalignd(xtmp, src2, src1, 4, vlen_enc);
++     vpalignr(dst, xtmp, src1, origin, vlen_enc);
++   } else if (origin > 16 && origin <= 32) {
++    // Similarly, for SHIFT between 16 and 32 bytes
++    // result will be sliced out of src1 and lower
++    // two 128 bit lanes of src2.
++    // i.e.
++    // res[127:0]   = {src1[383:256], src1[255:128]}
++    // res[255:128] = {src1[511:384], src1[383:256]}
++    // res[383:256] = {src2[127:0],   src1[511:384]}
++    // res[511:384] = {src2[255:128], src2[127:0]}
++    // Thus, source vector lanes should have following format.
++    // src1 = {v2, v3, v4, v5} and src2 = {v3, v4, v5, v6}
++     evalignd(xtmp, src2, src1, 4, vlen_enc);
++     evalignd(dst, src2, src1, 8, vlen_enc);
++     vpalignr(dst, dst, xtmp, origin, vlen_enc);
++   } else if (origin > 32 && origin <= 48) {
++    // For SHIFT between 32 and 48 bytes
++    // result will be sliced out of src1 and lower
++    // four 128 bit lanes of src2.
++    // i.e.
++    // res[127:0]   = {src1[511:384], src1[383:255]}
++    // res[255:128] = {src2[127:0],   src1[511:384]}
++    // res[383:256] = {src2[255:128], src2[127:0]}
++    // res[511:384] = {src2[383:256], src2[255:128]}
++    // Thus, source vector lanes should have following format.
++    // src1 = {v3, v4, v5, v6} and src2 = {v4, v5, v6, v7}
++     evalignd(xtmp, src2, src1, 8, vlen_enc);
++     evalignd(dst, src2, src1, 12, vlen_enc);
++     vpalignr(dst, dst, xtmp, origin, vlen_enc);
++   } else {
++    // Finally, for SHIFT greater than 48 bytes
++    // result will be sliced out of upper 128 bit lane of src1 and
++    // src2.
++    // i.e.
++    // res[127:0]   = {src2[127:0],   src1[511:383]}
++    // res[255:128] = {src2[255:127], src2[127:0]}
++    // res[383:256] = {src2[383:256], src2[255:128]}
++    // res[511:384] = {src2[511:384], src2[383:256]}
++    // Thus, source vector lanes should have following format.
++    // src1 = {v4, v5, v6, v7} and src2 = {v5, v6, v7, v8}
++     assert(origin > 48 && origin <= 64, "");
++     evalignd(xtmp, src2, src1, 12, vlen_enc);
++     vpalignr(dst, src2, xtmp, origin, vlen_enc);
++   }
++}
++
++void C2_MacroAssembler::vector_slice_op(XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                        XMMRegister xtmp, int origin, int vlen_enc) {
++  if (VM_Version::supports_avx512vl() || vlen_enc == Assembler::AVX_512bit) {
++    vector_slice_64B_op(dst, src1, src2, xtmp, origin, vlen_enc);
++  } else {
++    assert(vlen_enc == Assembler::AVX_256bit, "");
++    vector_slice_32B_op(dst, src1, src2, xtmp, origin, vlen_enc);
++  }
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 4fe2cc397b5..20b22c31165 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -584,4 +584,10 @@
+ 
+   void select_from_two_vectors_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc);
+ 
++  void vector_slice_32B_op(XMMRegister dst, XMMRegister src1, XMMRegister src2, XMMRegister xtmp, int origin, int vlen_enc);
++
++  void vector_slice_64B_op(XMMRegister dst, XMMRegister src1, XMMRegister src2, XMMRegister xtmp, int origin, int vlen_enc);
++
++  void vector_slice_op(XMMRegister dst, XMMRegister src1, XMMRegister src2, XMMRegister xtmp, int origin, int vlen_enc);
++
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/matcher_x86.hpp b/src/hotspot/cpu/x86/matcher_x86.hpp
+index b311f4144b2..88df2f65f6a 100644
+--- a/src/hotspot/cpu/x86/matcher_x86.hpp
++++ b/src/hotspot/cpu/x86/matcher_x86.hpp
+@@ -179,6 +179,11 @@
+     return true;
+   }
+ 
++  // Does the CPU supports vector slice from non-constant index?
++  static constexpr bool supports_vector_slice_with_non_constant_index(int vlen, BasicType bt) {
++    return false;
++  }
++
+   // Some microarchitectures have mask registers used on vectors
+   static bool has_predicated_vectors(void) {
+     return VM_Version::supports_evex();
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 8b2c5835544..18d7beeca99 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1856,6 +1856,11 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+         return false; // Implementation limitation
+       }
+       break;
++    case Op_VectorSlice:
++      if (UseAVX < 1 || size_in_bits < 128) {
++        return false;
++      }
++      break;
+     case Op_VectorLoadShuffle:
+     case Op_VectorRearrange:
+       if(vlen == 2) {
+@@ -10957,3 +10962,28 @@ instruct scalar_fma_HF_reg(regF dst, regF src1, regF src2)
+   %}
+   ins_pipe( pipe_slow );
+ %}
++
++instruct vector_slice_const_origin_LT16B_reg(vec dst, vec src1, vec src2, immI origin)
++%{
++  predicate(Matcher::vector_length_in_bytes(n) == 16);
++  match(Set dst (VectorSlice (Binary src1 src2) origin));
++  format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vpalignr($dst$$XMMRegister, $src2$$XMMRegister, $src1$$XMMRegister, $origin$$constant, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI origin, vec xtmp)
++%{
++  predicate(Matcher::vector_length_in_bytes(n) >= 32);
++  match(Set dst (VectorSlice (Binary src1 src2) origin));
++  effect(TEMP xtmp);
++  format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vector_slice_op($dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, $xtmp$$XMMRegister, $origin$$constant, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index 2edec13c0ff..b98ac002b1e 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -4365,7 +4365,7 @@ bool MatchRule::is_vector() const {
+     "VectorRearrange", "VectorLoadShuffle", "VectorLoadConst",
+     "VectorCastB2X", "VectorCastS2X", "VectorCastI2X",
+     "VectorCastL2X", "VectorCastF2X", "VectorCastD2X", "VectorCastF2HF", "VectorCastHF2F",
+-    "VectorUCastB2X", "VectorUCastS2X", "VectorUCastI2X",
++    "VectorUCastB2X", "VectorUCastS2X", "VectorUCastI2X", "VectorSlice",
+     "VectorMaskWrapper","VectorMaskCmp","VectorReinterpret","LoadVectorMasked","StoreVectorMasked",
+     "FmaVD","FmaVF","PopCountVI","PopCountVL","PopulateIndex","VectorLongToMask",
+     "CountLeadingZerosV", "CountTrailingZerosV", "SignumVF", "SignumVD", "SaturatingAddV", "SaturatingSubV",
+diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
+index a5846ee3a19..cfe46519bd9 100644
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@ -1121,6 +1121,18 @@ class methodHandle;
+                                   "Z")                                                                                                         \
+    do_name(vector_test_name, "test")                                                                                                           \
+                                                                                                                                                \
++  do_intrinsic(_VectorSlice, jdk_internal_vm_vector_VectorSupport, vector_slice_name, vector_slice_sig, F_S)                                   \
++   do_signature(vector_slice_sig, "(I"                                                                                                         \
++                                   "Ljava/lang/Class;"                                                                                         \
++                                   "Ljava/lang/Class;"                                                                                         \
++                                   "I"                                                                                                         \
++                                   "Ljdk/internal/vm/vector/VectorSupport$Vector;"                                                             \
++                                   "Ljdk/internal/vm/vector/VectorSupport$Vector;"                                                             \
++                                   "Ljdk/internal/vm/vector/VectorSupport$VectorSliceOp;)"                                                     \
++                                   "Ljdk/internal/vm/vector/VectorSupport$Vector;")                                                     \
++   do_name(vector_slice_name, "sliceOp")                                                                                                         \
++                                                                                                                                               \
++                                                                                                                                               \
+   do_intrinsic(_VectorBlend, jdk_internal_vm_vector_VectorSupport, vector_blend_name, vector_blend_sig, F_S)                                   \
+    do_signature(vector_blend_sig, "(Ljava/lang/Class;"                                                                                         \
+                                    "Ljava/lang/Class;"                                                                                         \
+diff --git a/src/hotspot/share/opto/c2compiler.cpp b/src/hotspot/share/opto/c2compiler.cpp
+index 3effa8eee04..71452ef6300 100644
+--- a/src/hotspot/share/opto/c2compiler.cpp
++++ b/src/hotspot/share/opto/c2compiler.cpp
+@@ -827,6 +827,7 @@ bool C2Compiler::is_intrinsic_supported(vmIntrinsics::ID id) {
+   case vmIntrinsics::_VectorSelectFromTwoVectorOp:
+   case vmIntrinsics::_VectorGatherOp:
+   case vmIntrinsics::_VectorScatterOp:
++  case vmIntrinsics::_VectorSlice:
+   case vmIntrinsics::_VectorReductionCoerced:
+   case vmIntrinsics::_VectorTest:
+   case vmIntrinsics::_VectorBlend:
+diff --git a/src/hotspot/share/opto/callGenerator.cpp b/src/hotspot/share/opto/callGenerator.cpp
+index ec7117e3568..e2b2fe72df8 100644
+--- a/src/hotspot/share/opto/callGenerator.cpp
++++ b/src/hotspot/share/opto/callGenerator.cpp
+@@ -441,6 +441,23 @@ CallGenerator* CallGenerator::for_mh_late_inline(ciMethod* caller, ciMethod* cal
+   return cg;
+ }
+ 
++class LateInlineVectorCallGenerator : public LateInlineCallGenerator {
++ protected:
++ CallGenerator* _inline_cg;
++
++ public:
++  LateInlineVectorCallGenerator(ciMethod* method, CallGenerator* intrinsic_cg, CallGenerator* inline_cg) :
++    LateInlineCallGenerator(method, intrinsic_cg) , _inline_cg(inline_cg) {}
++
++  CallGenerator* inline_cg2() const { return _inline_cg; }
++  virtual bool      is_vector_late_inline() const  { return true; }
++};
++
++CallGenerator* CallGenerator::for_vector_late_inline(ciMethod* m, CallGenerator* intrinsic_cg, CallGenerator* inline_cg) {
++  return new LateInlineVectorCallGenerator(m, intrinsic_cg, inline_cg);
++}
++
++
+ // Allow inlining decisions to be delayed
+ class LateInlineVirtualCallGenerator : public VirtualCallGenerator {
+  private:
+@@ -673,6 +690,8 @@ void CallGenerator::do_late_inline_helper() {
+ 
+     // Now perform the inlining using the synthesized JVMState
+     JVMState* new_jvms = inline_cg()->generate(jvms);
++    new_jvms = new_jvms == nullptr && is_vector_late_inline() ?
++        static_cast<const LateInlineVectorCallGenerator*>(this)->inline_cg2()->generate(jvms) : new_jvms;
+     if (new_jvms == nullptr)  return;  // no change
+     if (C->failing())      return;
+ 
+diff --git a/src/hotspot/share/opto/callGenerator.hpp b/src/hotspot/share/opto/callGenerator.hpp
+index 82b195e0c76..46a08f98ebb 100644
+--- a/src/hotspot/share/opto/callGenerator.hpp
++++ b/src/hotspot/share/opto/callGenerator.hpp
+@@ -75,6 +75,7 @@ class CallGenerator : public ArenaObj {
+   // same but for method handle calls
+   virtual bool      is_mh_late_inline() const      { return false; }
+   virtual bool      is_string_late_inline() const  { return false; }
++  virtual bool      is_vector_late_inline() const  { return false; }
+   virtual bool      is_boxing_late_inline() const  { return false; }
+   virtual bool      is_vector_reboxing_late_inline() const  { return false; }
+   virtual bool      is_virtual_late_inline() const { return false; }
+@@ -141,6 +142,7 @@ class CallGenerator : public ArenaObj {
+   static CallGenerator* for_late_inline(ciMethod* m, CallGenerator* inline_cg);
+   static CallGenerator* for_mh_late_inline(ciMethod* caller, ciMethod* callee, bool input_not_const);
+   static CallGenerator* for_string_late_inline(ciMethod* m, CallGenerator* inline_cg);
++  static CallGenerator* for_vector_late_inline(ciMethod* m, CallGenerator* intrinsic_cg, CallGenerator* inline_cg);
+   static CallGenerator* for_boxing_late_inline(ciMethod* m, CallGenerator* inline_cg);
+   static CallGenerator* for_vector_reboxing_late_inline(ciMethod* m, CallGenerator* inline_cg);
+   static CallGenerator* for_late_inline_virtual(ciMethod* m, int vtable_index, float expected_uses);
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 41b621dfce9..40028d8897d 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -513,6 +513,7 @@ macro(VectorRearrange)
+ macro(VectorLoadMask)
+ macro(VectorLoadShuffle)
+ macro(VectorLoadConst)
++macro(VectorSlice)
+ macro(VectorStoreMask)
+ macro(VectorReinterpret)
+ macro(VectorCast)
+diff --git a/src/hotspot/share/opto/doCall.cpp b/src/hotspot/share/opto/doCall.cpp
+index f4b36674968..87d237d9404 100644
+--- a/src/hotspot/share/opto/doCall.cpp
++++ b/src/hotspot/share/opto/doCall.cpp
+@@ -164,7 +164,9 @@ CallGenerator* Compile::call_generator(ciMethod* callee, int vtable_index, bool
+         cg_intrinsic = cg;
+         cg = nullptr;
+       } else if (IncrementalInline && should_delay_vector_inlining(callee, jvms)) {
+-        return CallGenerator::for_late_inline(callee, cg);
++        float expected_uses = jvms->method()->scale_count(site_count, prof_factor);
++        CallGenerator* inline_cg = CallGenerator::for_inline(callee, expected_uses);
++        return CallGenerator::for_vector_late_inline(callee, cg, inline_cg);
+       } else {
+         return cg;
+       }
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index d5e33e7f9ed..be664806f4e 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -753,6 +753,8 @@ bool LibraryCallKit::try_to_inline(int predicate) {
+     return inline_index_vector();
+   case vmIntrinsics::_IndexPartiallyInUpperRange:
+     return inline_index_partially_in_upper_range();
++  case vmIntrinsics::_VectorSlice:
++    return inline_vector_slice();
+ 
+   case vmIntrinsics::_getObjectSize:
+     return inline_getObjectSize();
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index 790c03be7ca..8ed6631bf7c 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -378,6 +378,7 @@ class LibraryCallKit : public GraphKit {
+   bool inline_vector_convert();
+   bool inline_vector_extract();
+   bool inline_vector_insert();
++  bool inline_vector_slice();
+   bool inline_vector_compress_expand();
+   bool inline_index_vector();
+   bool inline_index_partially_in_upper_range();
+diff --git a/src/hotspot/share/opto/matcher.cpp b/src/hotspot/share/opto/matcher.cpp
+index fd89a6e5431..bc3253c707d 100644
+--- a/src/hotspot/share/opto/matcher.cpp
++++ b/src/hotspot/share/opto/matcher.cpp
+@@ -2507,6 +2507,7 @@ void Matcher::find_shared_post_visit(Node* n, uint opcode) {
+       n->del_req(3);
+       break;
+     }
++    case Op_VectorSlice:
+     case Op_VectorBlend:
+     case Op_VectorInsert: {
+       Node* pair = new BinaryNode(n->in(1), n->in(2));
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index e33d7b19686..ddb437e34e3 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -1599,6 +1599,75 @@ bool LibraryCallKit::inline_vector_blend() {
+   return true;
+ }
+ 
++
++// public interface VectorSliceOp<V extends Vector<?>> {
++//     VectorPayload apply(int origin, V v1, V v2);
++// }
++//
++// public static
++// <V extends Vector<E>,
++//  E>
++// VectorPayload sliceOp(int origin,
++//                       Class<? extends V> vClass, Class<E> eClass, int length, V v1, V v2,
++//                       VectorSliceOp<V> defaultImpl)
++bool LibraryCallKit::inline_vector_slice() {
++  const TypeInt*     origin         = gvn().type(argument(0))->isa_int();
++  const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
++  const TypeInstPtr* elem_klass   = gvn().type(argument(2))->isa_instptr();
++  const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
++
++  if (origin == nullptr || vector_klass == nullptr || elem_klass == nullptr || vlen == nullptr) {
++    return false; // dead code
++  }
++  if (vector_klass->const_oop() == nullptr || elem_klass->const_oop() == nullptr || !vlen->is_con()) {
++    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s",
++                    NodeClassNames[argument(1)->Opcode()],
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()]);
++    return false; // not enough info for intrinsification
++  }
++  if (!is_klass_initialized(vector_klass)) {
++    log_if_needed("  ** klass argument not initialized");
++    return false;
++  }
++  ciType* elem_type = elem_klass->const_oop()->as_instance()->java_mirror_type();
++  if (!elem_type->is_primitive_type()) {
++    log_if_needed("  ** not a primitive bt=%d", elem_type->basic_type());
++    return false; // should be primitive type
++  }
++
++  int num_elem = vlen->get_con();
++  BasicType elem_bt = elem_type->basic_type();
++
++  if (!Matcher::supports_vector_slice_with_non_constant_index(num_elem, elem_bt) && !origin->is_con()) {
++    log_if_needed("  ** vector slice from non-constant index not supported");
++    return false;
++  }
++
++  if (!arch_supports_vector(Op_VectorSlice, num_elem, elem_bt, VecMaskNotUsed)) {
++    log_if_needed("  ** not supported: arity=2 op=slice vlen=%d etype=%s ismask=useload/none",
++                    num_elem, type2name(elem_bt));
++    return false; // not supported
++  }
++
++  ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
++  const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
++
++  Node* v1 = unbox_vector(argument(4), vbox_type, elem_bt, num_elem);
++  Node* v2 = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++  if (v1 == nullptr || v2 == nullptr) {
++    return false; // operand unboxing failed
++  }
++
++  Node* origin_node = gvn().intcon(origin->get_con() * type2aelembytes(elem_bt));
++  const TypeVect* vector_type = TypeVect::make(elem_bt, num_elem);
++  Node* operation = gvn().transform(new VectorSliceNode(v1, v2, origin_node, vector_type));
++  Node* box = box_vector(operation, vbox_type, elem_bt, num_elem);
++  set_result(box);
++  C->set_max_vector_size(MAX2(C->max_vector_size(), (uint)(num_elem * type2aelembytes(elem_bt))));
++  return true;
++}
++
+ //  public static
+ //  <V extends Vector<E>,
+ //   M extends VectorMask<E>,
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 50220c9362b..1f4bb784cdd 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -1653,6 +1653,19 @@ class VectorTestNode : public CmpNode {
+   }
+ };
+ 
++class VectorSliceNode : public VectorNode {
++ public:
++  VectorSliceNode(Node* vec1, Node* vec2, Node* origin, const TypeVect* vt)
++    : VectorNode(vec1, vec2, origin, vt) {
++  }
++
++  virtual int Opcode() const;
++  Node* vec1() const { return in(1); }
++  Node* vec2() const { return in(2); }
++  Node* origin() const { return in(3); }
++};
++
++
+ class VectorBlendNode : public VectorNode {
+  public:
+   VectorBlendNode(Node* vec1, Node* vec2, Node* mask)
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index 6e1c363f3d9..a50be5467b8 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -727,6 +727,23 @@ long maskReductionCoerced(int oper,
+        return defaultImpl.apply(m);
+     }
+ 
++    /* ============================================================================ */
++
++    public interface VectorSliceOp<V extends Vector<E>, E> {
++        V apply(int origin, V v1, V v2);
++    }
++
++    @IntrinsicCandidate
++    public static
++    <V extends Vector<E>,
++     E>
++    V sliceOp(int origin, Class<?> vClass, Class<E> eClass, int length, V v1, V v2,
++              VectorSliceOp<V, E> defaultImpl) {
++        assert isNonCapturingLambda(defaultImpl) : defaultImpl;
++        return defaultImpl.apply(origin, v1, v2);
++    }
++
++
+     /* ============================================================================ */
+ 
+     // query the JVM's supported vector sizes and types
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index ed8d273ff37..8a86b0b2ff7 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -2301,18 +2301,24 @@ public final ByteVector blend(long e,
+     public abstract
+     ByteVector slice(int origin, Vector<Byte> v1);
+ 
++
+     /*package-private*/
+     final
+     @ForceInline
+-    ByteVector sliceTemplate(int origin, Vector<Byte> v1) {
++    <V extends Vector<Byte>>
++    ByteVector sliceTemplate(int origin, V v1) {
+         ByteVector that = (ByteVector) v1;
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+-        ByteVector iotaVector = (ByteVector) iotaShuffle().toBitsVector();
+-        ByteVector filter = broadcast((byte)(length() - origin));
+-        VectorMask<Byte> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+-        AbstractShuffle<Byte> iota = iotaShuffle(origin, 1, true);
+-        return that.rearrange(iota).blend(this.rearrange(iota), blendMask);
++        return (ByteVector)VectorSupport.sliceOp(origin, getClass(), byte.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                ByteVector iotaVector = (ByteVector) vec1.iotaShuffle().toBitsVector();
++                ByteVector filter = vec1.broadcast((byte)(vec1.length() - index));
++                VectorMask<Byte> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                AbstractShuffle<Byte> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.rearrange(iota).blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+@@ -2339,11 +2345,16 @@ ByteVector slice(int origin,
+     @ForceInline
+     ByteVector sliceTemplate(int origin) {
+         Objects.checkIndex(origin, length() + 1);
+-        ByteVector iotaVector = (ByteVector) iotaShuffle().toBitsVector();
+-        ByteVector filter = broadcast((byte)(length() - origin));
+-        VectorMask<Byte> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+-        AbstractShuffle<Byte> iota = iotaShuffle(origin, 1, true);
+-        return vspecies().zero().blend(this.rearrange(iota), blendMask);
++        ByteVector that = (ByteVector) vspecies().zero();
++        return (ByteVector)VectorSupport.sliceOp(origin, getClass(), byte.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                ByteVector iotaVector = (ByteVector) vec1.iotaShuffle().toBitsVector();
++                ByteVector filter = vec1.broadcast((byte)(vec1.length() - index));
++                VectorMask<Byte> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                AbstractShuffle<Byte> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index 5fbf02f87bd..d076f2c1a3b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -2131,18 +2131,25 @@ public final DoubleVector blend(long e,
+     public abstract
+     DoubleVector slice(int origin, Vector<Double> v1);
+ 
++
+     /*package-private*/
+     final
+     @ForceInline
+-    DoubleVector sliceTemplate(int origin, Vector<Double> v1) {
++    <V extends Vector<Double>>
++    DoubleVector sliceTemplate(int origin, V v1) {
+         DoubleVector that = (DoubleVector) v1;
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+-        LongVector iotaVector = (LongVector) iotaShuffle().toBitsVector();
+-        LongVector filter = LongVector.broadcast((LongVector.LongSpecies) vspecies().asIntegral(), (long)(length() - origin));
+-        VectorMask<Double> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vspecies());
+-        AbstractShuffle<Double> iota = iotaShuffle(origin, 1, true);
+-        return that.rearrange(iota).blend(this.rearrange(iota), blendMask);
++        return (DoubleVector)VectorSupport.sliceOp(origin, getClass(), double.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                LongVector iotaVector = (LongVector) vec1.iotaShuffle().toBitsVector();
++                LongVector filter = LongVector.broadcast((LongVector.LongSpecies) vec1.vspecies().asIntegral(),
++                                                                     (long)(vec1.length() - index));
++                VectorMask<Double> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vec1.vspecies());
++                AbstractShuffle<Double> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.rearrange(iota).blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+@@ -2169,11 +2176,17 @@ DoubleVector slice(int origin,
+     @ForceInline
+     DoubleVector sliceTemplate(int origin) {
+         Objects.checkIndex(origin, length() + 1);
+-        LongVector iotaVector = (LongVector) iotaShuffle().toBitsVector();
+-        LongVector filter = LongVector.broadcast((LongVector.LongSpecies) vspecies().asIntegral(), (long)(length() - origin));
+-        VectorMask<Double> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vspecies());
+-        AbstractShuffle<Double> iota = iotaShuffle(origin, 1, true);
+-        return vspecies().zero().blend(this.rearrange(iota), blendMask);
++        DoubleVector that = (DoubleVector) vspecies().zero();
++        return (DoubleVector)VectorSupport.sliceOp(origin, getClass(), double.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                LongVector iotaVector = (LongVector) vec1.iotaShuffle().toBitsVector();
++                LongVector filter = LongVector.broadcast((LongVector.LongSpecies) vec1.vspecies().asIntegral(),
++                                                                     (long)(vec1.length() - index));
++                VectorMask<Double> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vec1.vspecies());
++                AbstractShuffle<Double> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index 26fbe64742d..b8c7147c27c 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -2143,18 +2143,25 @@ public final FloatVector blend(long e,
+     public abstract
+     FloatVector slice(int origin, Vector<Float> v1);
+ 
++
+     /*package-private*/
+     final
+     @ForceInline
+-    FloatVector sliceTemplate(int origin, Vector<Float> v1) {
++    <V extends Vector<Float>>
++    FloatVector sliceTemplate(int origin, V v1) {
+         FloatVector that = (FloatVector) v1;
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+-        IntVector iotaVector = (IntVector) iotaShuffle().toBitsVector();
+-        IntVector filter = IntVector.broadcast((IntVector.IntSpecies) vspecies().asIntegral(), (int)(length() - origin));
+-        VectorMask<Float> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vspecies());
+-        AbstractShuffle<Float> iota = iotaShuffle(origin, 1, true);
+-        return that.rearrange(iota).blend(this.rearrange(iota), blendMask);
++        return (FloatVector)VectorSupport.sliceOp(origin, getClass(), float.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                IntVector iotaVector = (IntVector) vec1.iotaShuffle().toBitsVector();
++                IntVector filter = IntVector.broadcast((IntVector.IntSpecies) vec1.vspecies().asIntegral(),
++                                                                     (int)(vec1.length() - index));
++                VectorMask<Float> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vec1.vspecies());
++                AbstractShuffle<Float> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.rearrange(iota).blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+@@ -2181,11 +2188,17 @@ FloatVector slice(int origin,
+     @ForceInline
+     FloatVector sliceTemplate(int origin) {
+         Objects.checkIndex(origin, length() + 1);
+-        IntVector iotaVector = (IntVector) iotaShuffle().toBitsVector();
+-        IntVector filter = IntVector.broadcast((IntVector.IntSpecies) vspecies().asIntegral(), (int)(length() - origin));
+-        VectorMask<Float> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vspecies());
+-        AbstractShuffle<Float> iota = iotaShuffle(origin, 1, true);
+-        return vspecies().zero().blend(this.rearrange(iota), blendMask);
++        FloatVector that = (FloatVector) vspecies().zero();
++        return (FloatVector)VectorSupport.sliceOp(origin, getClass(), float.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                IntVector iotaVector = (IntVector) vec1.iotaShuffle().toBitsVector();
++                IntVector filter = IntVector.broadcast((IntVector.IntSpecies) vec1.vspecies().asIntegral(),
++                                                                     (int)(vec1.length() - index));
++                VectorMask<Float> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vec1.vspecies());
++                AbstractShuffle<Float> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index 076a66ed6a5..bef0f62f3a0 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -2286,18 +2286,24 @@ public final IntVector blend(long e,
+     public abstract
+     IntVector slice(int origin, Vector<Integer> v1);
+ 
++
+     /*package-private*/
+     final
+     @ForceInline
+-    IntVector sliceTemplate(int origin, Vector<Integer> v1) {
++    <V extends Vector<Integer>>
++    IntVector sliceTemplate(int origin, V v1) {
+         IntVector that = (IntVector) v1;
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+-        IntVector iotaVector = (IntVector) iotaShuffle().toBitsVector();
+-        IntVector filter = broadcast((int)(length() - origin));
+-        VectorMask<Integer> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+-        AbstractShuffle<Integer> iota = iotaShuffle(origin, 1, true);
+-        return that.rearrange(iota).blend(this.rearrange(iota), blendMask);
++        return (IntVector)VectorSupport.sliceOp(origin, getClass(), int.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                IntVector iotaVector = (IntVector) vec1.iotaShuffle().toBitsVector();
++                IntVector filter = vec1.broadcast((int)(vec1.length() - index));
++                VectorMask<Integer> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                AbstractShuffle<Integer> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.rearrange(iota).blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+@@ -2324,11 +2330,16 @@ IntVector slice(int origin,
+     @ForceInline
+     IntVector sliceTemplate(int origin) {
+         Objects.checkIndex(origin, length() + 1);
+-        IntVector iotaVector = (IntVector) iotaShuffle().toBitsVector();
+-        IntVector filter = broadcast((int)(length() - origin));
+-        VectorMask<Integer> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+-        AbstractShuffle<Integer> iota = iotaShuffle(origin, 1, true);
+-        return vspecies().zero().blend(this.rearrange(iota), blendMask);
++        IntVector that = (IntVector) vspecies().zero();
++        return (IntVector)VectorSupport.sliceOp(origin, getClass(), int.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                IntVector iotaVector = (IntVector) vec1.iotaShuffle().toBitsVector();
++                IntVector filter = vec1.broadcast((int)(vec1.length() - index));
++                VectorMask<Integer> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                AbstractShuffle<Integer> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index 21903aa6794..155e6165d41 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -2152,18 +2152,24 @@ public final LongVector blend(long e,
+     public abstract
+     LongVector slice(int origin, Vector<Long> v1);
+ 
++
+     /*package-private*/
+     final
+     @ForceInline
+-    LongVector sliceTemplate(int origin, Vector<Long> v1) {
++    <V extends Vector<Long>>
++    LongVector sliceTemplate(int origin, V v1) {
+         LongVector that = (LongVector) v1;
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+-        LongVector iotaVector = (LongVector) iotaShuffle().toBitsVector();
+-        LongVector filter = broadcast((long)(length() - origin));
+-        VectorMask<Long> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+-        AbstractShuffle<Long> iota = iotaShuffle(origin, 1, true);
+-        return that.rearrange(iota).blend(this.rearrange(iota), blendMask);
++        return (LongVector)VectorSupport.sliceOp(origin, getClass(), long.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                LongVector iotaVector = (LongVector) vec1.iotaShuffle().toBitsVector();
++                LongVector filter = vec1.broadcast((long)(vec1.length() - index));
++                VectorMask<Long> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                AbstractShuffle<Long> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.rearrange(iota).blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+@@ -2190,11 +2196,16 @@ LongVector slice(int origin,
+     @ForceInline
+     LongVector sliceTemplate(int origin) {
+         Objects.checkIndex(origin, length() + 1);
+-        LongVector iotaVector = (LongVector) iotaShuffle().toBitsVector();
+-        LongVector filter = broadcast((long)(length() - origin));
+-        VectorMask<Long> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+-        AbstractShuffle<Long> iota = iotaShuffle(origin, 1, true);
+-        return vspecies().zero().blend(this.rearrange(iota), blendMask);
++        LongVector that = (LongVector) vspecies().zero();
++        return (LongVector)VectorSupport.sliceOp(origin, getClass(), long.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                LongVector iotaVector = (LongVector) vec1.iotaShuffle().toBitsVector();
++                LongVector filter = vec1.broadcast((long)(vec1.length() - index));
++                VectorMask<Long> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                AbstractShuffle<Long> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index 0bb97da8244..771ade1a3f9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -2302,18 +2302,24 @@ public final ShortVector blend(long e,
+     public abstract
+     ShortVector slice(int origin, Vector<Short> v1);
+ 
++
+     /*package-private*/
+     final
+     @ForceInline
+-    ShortVector sliceTemplate(int origin, Vector<Short> v1) {
++    <V extends Vector<Short>>
++    ShortVector sliceTemplate(int origin, V v1) {
+         ShortVector that = (ShortVector) v1;
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+-        ShortVector iotaVector = (ShortVector) iotaShuffle().toBitsVector();
+-        ShortVector filter = broadcast((short)(length() - origin));
+-        VectorMask<Short> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+-        AbstractShuffle<Short> iota = iotaShuffle(origin, 1, true);
+-        return that.rearrange(iota).blend(this.rearrange(iota), blendMask);
++        return (ShortVector)VectorSupport.sliceOp(origin, getClass(), short.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                ShortVector iotaVector = (ShortVector) vec1.iotaShuffle().toBitsVector();
++                ShortVector filter = vec1.broadcast((short)(vec1.length() - index));
++                VectorMask<Short> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                AbstractShuffle<Short> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.rearrange(iota).blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+@@ -2340,11 +2346,16 @@ ShortVector slice(int origin,
+     @ForceInline
+     ShortVector sliceTemplate(int origin) {
+         Objects.checkIndex(origin, length() + 1);
+-        ShortVector iotaVector = (ShortVector) iotaShuffle().toBitsVector();
+-        ShortVector filter = broadcast((short)(length() - origin));
+-        VectorMask<Short> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+-        AbstractShuffle<Short> iota = iotaShuffle(origin, 1, true);
+-        return vspecies().zero().blend(this.rearrange(iota), blendMask);
++        ShortVector that = (ShortVector) vspecies().zero();
++        return (ShortVector)VectorSupport.sliceOp(origin, getClass(), short.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                ShortVector iotaVector = (ShortVector) vec1.iotaShuffle().toBitsVector();
++                ShortVector filter = vec1.broadcast((short)(vec1.length() - index));
++                VectorMask<Short> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                AbstractShuffle<Short> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index 8084cc307e8..772dd1f0d60 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -2678,23 +2678,30 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     public abstract
+     $abstractvectortype$ slice(int origin, Vector<$Boxtype$> v1);
+ 
++
+     /*package-private*/
+     final
+     @ForceInline
+-    $abstractvectortype$ sliceTemplate(int origin, Vector<$Boxtype$> v1) {
++    <V extends Vector<$Boxtype$>>
++    $abstractvectortype$ sliceTemplate(int origin, V v1) {
+         $abstractvectortype$ that = ($abstractvectortype$) v1;
+         that.check(this);
+         Objects.checkIndex(origin, length() + 1);
+-        $Bitstype$Vector iotaVector = ($Bitstype$Vector) iotaShuffle().toBitsVector();
++        return ($abstractvectortype$)VectorSupport.sliceOp(origin, getClass(), $type$.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                $Bitstype$Vector iotaVector = ($Bitstype$Vector) vec1.iotaShuffle().toBitsVector();
+ #if[FP]
+-        $Bitstype$Vector filter = $Bitstype$Vector.broadcast(($Bitstype$Vector.$Bitstype$Species) vspecies().asIntegral(), ($bitstype$)(length() - origin));
+-        VectorMask<$Boxtype$> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vspecies());
++                $Bitstype$Vector filter = $Bitstype$Vector.broadcast(($Bitstype$Vector.$Bitstype$Species) vec1.vspecies().asIntegral(),
++                                                                     ($bitstype$)(vec1.length() - index));
++                VectorMask<$Boxtype$> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vec1.vspecies());
+ #else[FP]
+-        $abstractvectortype$ filter = broadcast(($type$)(length() - origin));
+-        VectorMask<$Boxtype$> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                $abstractvectortype$ filter = vec1.broadcast(($type$)(vec1.length() - index));
++                VectorMask<$Boxtype$> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+ #end[FP]
+-        AbstractShuffle<$Boxtype$> iota = iotaShuffle(origin, 1, true);
+-        return that.rearrange(iota).blend(this.rearrange(iota), blendMask);
++                AbstractShuffle<$Boxtype$> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.rearrange(iota).blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+@@ -2721,16 +2728,22 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     @ForceInline
+     $abstractvectortype$ sliceTemplate(int origin) {
+         Objects.checkIndex(origin, length() + 1);
+-        $Bitstype$Vector iotaVector = ($Bitstype$Vector) iotaShuffle().toBitsVector();
++        $abstractvectortype$ that = ($abstractvectortype$) vspecies().zero();
++        return ($abstractvectortype$)VectorSupport.sliceOp(origin, getClass(), $type$.class, length(), this, that,
++            (index, vec1, vec2) ->  {
++                $Bitstype$Vector iotaVector = ($Bitstype$Vector) vec1.iotaShuffle().toBitsVector();
+ #if[FP]
+-        $Bitstype$Vector filter = $Bitstype$Vector.broadcast(($Bitstype$Vector.$Bitstype$Species) vspecies().asIntegral(), ($bitstype$)(length() - origin));
+-        VectorMask<$Boxtype$> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vspecies());
++                $Bitstype$Vector filter = $Bitstype$Vector.broadcast(($Bitstype$Vector.$Bitstype$Species) vec1.vspecies().asIntegral(),
++                                                                     ($bitstype$)(vec1.length() - index));
++                VectorMask<$Boxtype$> blendMask = iotaVector.compare(VectorOperators.LT, filter).cast(vec1.vspecies());
+ #else[FP]
+-        $abstractvectortype$ filter = broadcast(($type$)(length() - origin));
+-        VectorMask<$Boxtype$> blendMask = iotaVector.compare(VectorOperators.LT, filter);
++                $abstractvectortype$ filter = vec1.broadcast(($type$)(vec1.length() - index));
++                VectorMask<$Boxtype$> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+ #end[FP]
+-        AbstractShuffle<$Boxtype$> iota = iotaShuffle(origin, 1, true);
+-        return vspecies().zero().blend(this.rearrange(iota), blendMask);
++                AbstractShuffle<$Boxtype$> iota = vec1.iotaShuffle(index, 1, true);
++                return vec2.blend(vec1.rearrange(iota), blendMask);
++            }
++        );
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+old mode 100644
+new mode 100755

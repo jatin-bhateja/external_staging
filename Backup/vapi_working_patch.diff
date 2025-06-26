@@ -1,0 +1,1544 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
+index 86d5cc9ce5f..cf602a06baf 100644
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@ -965,6 +965,16 @@ class methodHandle;
+                                                "Ljdk/internal/vm/vector/VectorSupport$VectorPayload;")                                         \
+    do_name(vector_frombits_coerced_name, "fromBitsCoerced")                                                                                    \
+                                                                                                                                                \
++                                                                                                                                               \
++  do_intrinsic(_VectorShuffleIota, jdk_internal_vm_vector_VectorSupport, vector_shuffle_step_iota_name, vector_shuffle_step_iota_sig, F_S)     \
++   do_signature(vector_shuffle_step_iota_sig, "(Ljava/lang/Class;"                                                                             \
++                                               "Ljava/lang/Class;"                                                                             \
++                                               "Ljdk/internal/vm/vector/VectorSupport$VectorSpecies;"                                          \
++                                               "IIII"                                                                                          \
++                                               "Ljdk/internal/vm/vector/VectorSupport$ShuffleIotaOperation;)"                                  \
++                                               "Ljdk/internal/vm/vector/VectorSupport$VectorShuffle;")                                         \
++   do_name(vector_shuffle_step_iota_name, "shuffleIota")                                                                                       \
++                                                                                                                                               \
+   do_intrinsic(_VectorLoadOp, jdk_internal_vm_vector_VectorSupport, vector_load_op_name, vector_load_op_sig, F_S)                              \
+    do_signature(vector_load_op_sig, "(Ljava/lang/Class;"                                                                                       \
+                                      "Ljava/lang/Class;"                                                                                       \
+diff --git a/src/hotspot/share/opto/c2compiler.cpp b/src/hotspot/share/opto/c2compiler.cpp
+index e26c992d558..402a0f9cb7a 100644
+--- a/src/hotspot/share/opto/c2compiler.cpp
++++ b/src/hotspot/share/opto/c2compiler.cpp
+@@ -754,6 +754,7 @@ bool C2Compiler::is_intrinsic_supported(const methodHandle& method) {
+   case vmIntrinsics::_VectorBinaryOp:
+   case vmIntrinsics::_VectorTernaryOp:
+   case vmIntrinsics::_VectorFromBitsCoerced:
++  case vmIntrinsics::_VectorShuffleIota:
+   case vmIntrinsics::_VectorLoadOp:
+   case vmIntrinsics::_VectorLoadMaskedOp:
+   case vmIntrinsics::_VectorStoreOp:
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index f2e095a4d17..bfda38ea5f8 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -698,6 +698,8 @@ bool LibraryCallKit::try_to_inline(int predicate) {
+     return inline_vector_nary_operation(3);
+   case vmIntrinsics::_VectorFromBitsCoerced:
+     return inline_vector_frombits_coerced();
++  case vmIntrinsics::_VectorShuffleIota:
++    return inline_vector_shuffle_iota();
+   case vmIntrinsics::_VectorMaskOp:
+     return inline_vector_mask_operation();
+   case vmIntrinsics::_VectorLoadOp:
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index 46dd51bf654..df67da4a618 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -345,6 +345,7 @@ class LibraryCallKit : public GraphKit {
+   // Vector API support
+   bool inline_vector_nary_operation(int n);
+   bool inline_vector_frombits_coerced();
++  bool inline_vector_shuffle_iota();
+   bool inline_vector_mask_operation();
+   bool inline_vector_mem_operation(bool is_store);
+   bool inline_vector_mem_masked_operation(bool is_store);
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 51b531e42c0..d104d4130d8 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -578,6 +578,141 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   return true;
+ }
+ 
++// <Sh extends VectorShuffle<E>,  E>
++//  Sh ShuffleIota(Class<?> E, Class<?> shuffleClass, Vector.Species<E> s, int length,
++//                  int start, int step, int wrap, ShuffleIotaOperation<Sh, E> defaultImpl)
++bool LibraryCallKit::inline_vector_shuffle_iota() {
++  const TypeInstPtr* elem_klass = gvn().type(argument(0))->isa_instptr();
++  const TypeInstPtr* shuffle_klass = gvn().type(argument(1))->isa_instptr();
++  const TypeInt*     vlen          = gvn().type(argument(3))->isa_int();
++  const TypeInt*     start_val     = gvn().type(argument(4))->isa_int();
++  const TypeInt*     step_val      = gvn().type(argument(5))->isa_int();
++  const TypeInt*     wrap          = gvn().type(argument(6))->isa_int();
++
++  Node* start = argument(4);
++  Node* step  = argument(5);
++
++  if (shuffle_klass == nullptr || vlen == nullptr || start_val == nullptr || step_val == nullptr || wrap == nullptr) {
++    return false; // dead code
++  }
++  if (!vlen->is_con() || !is_power_of_2(vlen->get_con()) ||
++      shuffle_klass->const_oop() == nullptr || !wrap->is_con()) {
++    return false; // not enough info for intrinsification
++  }
++  if (!is_klass_initialized(shuffle_klass)) {
++    if (C->print_intrinsics()) {
++      tty->print_cr("  ** klass argument not initialized");
++    }
++    return false;
++  }
++  ciType* elem_type = elem_klass->const_oop()->as_instance()->java_mirror_type();
++  if (!elem_type->is_primitive_type()) {
++    if (C->print_intrinsics()) {
++      tty->print_cr("  ** not a primitive bt=%d", elem_type->basic_type());
++    }
++    return false; // should be primitive type
++  }
++  BasicType elem_bt = elem_type->basic_type();
++  assert(!is_floating_point_type(elem_bt), "");
++  BasicType elem_bt_wide = is_subword_type(elem_bt) ? T_INT : elem_bt;
++
++  int do_wrap = wrap->get_con();
++  int num_elem = vlen->get_con();
++
++  auto sadd_opcode = [&] () {
++     return type2aelembytes(elem_bt) <= 4 ? Op_AddI : Op_AddL;
++  };
++  auto smul_opcode = [&] () {
++     return type2aelembytes(elem_bt) <= 4 ? Op_MulI : Op_MulL;
++  };
++  auto ssub_opcode = [&] () {
++     return type2aelembytes(elem_bt) <= 4 ? Op_SubI : Op_SubL;
++  };
++  auto slshift_opcode = [&] () {
++     return type2aelembytes(elem_bt) <= 4 ? Op_LShiftI : Op_LShiftL;
++  };
++  if (!arch_supports_vector(VectorNode::replicate_opcode(elem_bt), num_elem, elem_bt, VecMaskNotUsed)) {
++    return false;
++  }
++  if (!arch_supports_vector(sadd_opcode(), num_elem, elem_bt, VecMaskNotUsed)) {
++    return false;
++  }
++  if (!arch_supports_vector(ssub_opcode(), num_elem, elem_bt, VecMaskNotUsed)) {
++    return false;
++  }
++  if (!arch_supports_vector(smul_opcode(), num_elem, elem_bt, VecMaskNotUsed)) {
++    return false;
++  }
++  if (!arch_supports_vector(slshift_opcode(), num_elem, elem_bt, VecMaskNotUsed)) {
++    return false;
++  }
++  if (!arch_supports_vector(Op_AndV, num_elem, elem_bt, VecMaskNotUsed)) {
++    return false;
++  }
++  if (!arch_supports_vector(Op_VectorLoadConst, num_elem, elem_bt, VecMaskNotUsed)) {
++    return false;
++  }
++  if (!arch_supports_vector(Op_VectorBlend, num_elem, elem_bt, VecMaskUseLoad)) {
++    return false;
++  }
++  if (!arch_supports_vector(Op_VectorMaskCmp, num_elem, elem_bt, VecMaskUseStore)) {
++    return false;
++  }
++
++  const Type * type_bt = Type::get_const_basic_type(elem_bt);
++  const TypeVect * vt  = TypeVect::make(type_bt, num_elem);
++
++  Node* res =  gvn().transform(new VectorLoadConstNode(gvn().makecon(TypeInt::ZERO), vt));
++
++  if (elem_bt == T_LONG) {
++    step = gvn().transform(new ConvI2LNode(step));
++    start = gvn().transform(new ConvI2LNode(start));
++  }
++
++  if(!step_val->is_con() || !is_power_of_2(step_val->get_con())) {
++    Node* bcast_step     = gvn().transform(VectorNode::scalar2vector(step, num_elem, type_bt));
++    res = gvn().transform(VectorNode::make(smul_opcode(), res, bcast_step, num_elem, elem_bt));
++  } else if (step_val->get_con() > 1) {
++    jlong  val = log2i_exact(step_val->get_con());
++    Node* cnt = gvn().makecon(TypeInteger::make(val, val, Type::WidenMin, elem_bt_wide));
++    Node* shift_cnt = vector_shift_count(cnt, slshift_opcode(), elem_bt, num_elem);
++    res = gvn().transform(VectorNode::make(VectorNode::opcode(slshift_opcode(), elem_bt), res, shift_cnt, vt));
++  }
++
++  if (!start_val->is_con() || start_val->get_con() != 0) {
++    Node* bcast_start    = gvn().transform(VectorNode::scalar2vector(start, num_elem, type_bt));
++    res = gvn().transform(VectorNode::make(sadd_opcode(), res, bcast_start, num_elem, elem_bt));
++  }
++
++  Node * mod_val = gvn().makecon(TypeInteger::make(num_elem-1, num_elem-1, Type::WidenMin, elem_bt_wide));
++  Node * bcast_mod  = gvn().transform(VectorNode::scalar2vector(mod_val, num_elem, type_bt));
++  if(do_wrap)  {
++    // Wrap the indices greater than lane count.
++    res = gvn().transform(VectorNode::make(Op_AndI, res, bcast_mod, num_elem, elem_bt));
++  } else {
++    ConINode* pred_node = (ConINode*)gvn().makecon(TypeInt::make(BoolTest::gt));
++    Node * lane_cnt  = gvn().makecon(TypeInteger::make(num_elem, num_elem, Type::WidenMin, elem_bt_wide));
++    Node * bcast_lane_cnt = gvn().transform(VectorNode::scalar2vector(lane_cnt, num_elem, type_bt));
++    const TypeVect* vmask_type = TypeVect::makemask(elem_bt, num_elem);
++    Node* mask = gvn().transform(new VectorMaskCmpNode(BoolTest::gt, bcast_lane_cnt, res, pred_node, vmask_type));
++
++    // Make the indices greater than lane count as -ve values. This matches the java side implementation.
++    res = gvn().transform(VectorNode::make(Op_AndI, res, bcast_mod, num_elem, elem_bt));
++    Node * biased_val = gvn().transform(VectorNode::make(ssub_opcode(), res, bcast_lane_cnt, num_elem, elem_bt));
++    res = gvn().transform(new VectorBlendNode(biased_val, res, mask));
++  }
++
++  ciKlass* sbox_klass = shuffle_klass->const_oop()->as_instance()->java_lang_Class_klass();
++  const TypeInstPtr* shuffle_box_type = TypeInstPtr::make_exact(TypePtr::NotNull, sbox_klass);
++
++  // Wrap it up in VectorBox to keep object type information.
++  res = box_vector(res, shuffle_box_type, elem_bt, num_elem);
++  set_result(res);
++  C->set_max_vector_size(MAX2(C->max_vector_size(), (uint)(num_elem * type2aelembytes(elem_bt))));
++  return true;
++}
++
++
+ // <E, M>
+ // long maskReductionCoerced(int oper, Class<? extends M> maskClass, Class<?> elemClass,
+ //                          int length, M m, VectorMaskOp<M> defaultImpl)
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index 9e04798a898..4147819d23f 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -685,6 +685,25 @@ public class VectorSupport {
+        return defaultImpl.apply(m);
+     }
+ 
++    /* ============================================================================ */
++    public interface ShuffleIotaOperation<S extends VectorSpecies<?>,
++                                          SH extends VectorShuffle<?>> {
++        SH apply(int length, int start, int step, S s);
++    }
++
++    @IntrinsicCandidate
++    public static
++    <E,
++     S extends VectorSpecies<E>,
++     SH extends VectorShuffle<E>>
++    SH shuffleIota(Class<E> eClass, Class<? extends SH> shClass, S s,
++                   int length,
++                   int start, int step, int wrap,
++                   ShuffleIotaOperation<S, SH> defaultImpl) {
++       assert isNonCapturingLambda(defaultImpl) : defaultImpl;
++       return defaultImpl.apply(length, start, step, s);
++    }
++
+     /* ============================================================================ */
+ 
+     // query the JVM's supported vector sizes and types
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractShuffle.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractShuffle.java
+index da20207e168..47bb9f27c01 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractShuffle.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractShuffle.java
+@@ -50,17 +50,6 @@ abstract class AbstractShuffle<E> extends VectorShuffle<E> {
+     /*package-private*/
+     abstract AbstractVector<?> toBitsVector();
+ 
+-    final AbstractVector<?> toBitsVectorTemplate() {
+-        AbstractSpecies<?> dsp = vspecies().asIntegral();
+-        Class<?> etype = dsp.elementType();
+-        Class<?> rvtype = dsp.dummyVector().getClass();
+-        return VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
+-                                     getClass(), etype, length(),
+-                                     rvtype, etype, length(),
+-                                     this, dsp,
+-                                     (v, s) -> v.toBitsVector0());
+-    }
+-
+     abstract AbstractVector<?> toBitsVector0();
+ 
+     @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractVector.java
+index 8df84cdd892..2b3033972e3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractVector.java
+@@ -214,31 +214,7 @@ abstract class AbstractVector<E> extends Vector<E> {
+ 
+     abstract VectorShuffle<E> iotaShuffle();
+ 
+-    @ForceInline
+-    @SuppressWarnings({"rawtypes", "unchecked"})
+-    final VectorShuffle<E> iotaShuffle(int start, int step, boolean wrap) {
+-        if (start == 0 && step == 1) {
+-            return iotaShuffle();
+-        }
+-
+-        if ((length() & (length() - 1)) != 0) {
+-            return wrap ? shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i * step + start, length())))
+-                        : shuffleFromOp(i -> i * step + start);
+-        }
+-
+-        AbstractSpecies<?> species = vspecies().asIntegral();
+-        Vector iota = species.iota();
+-        iota = iota.lanewise(VectorOperators.MUL, step)
+-                   .lanewise(VectorOperators.ADD, start);
+-        Vector wrapped = iota.lanewise(VectorOperators.AND, length() - 1);
+-
+-        if (!wrap) {
+-            Vector wrappedEx = wrapped.lanewise(VectorOperators.SUB, length());
+-            VectorMask<?> mask = wrapped.compare(VectorOperators.EQ, iota);
+-            wrapped = wrappedEx.blend(wrapped, mask);
+-        }
+-        return ((AbstractVector) wrapped).toShuffle(vspecies());
+-    }
++    abstract VectorShuffle<E> iotaShuffle(int start, int step, boolean wrap);
+ 
+     abstract AbstractShuffle<E> shuffleFromArray(int[] indexes, int i);
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+index 9a2f65e60d3..fba3fa2ca23 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+@@ -141,6 +141,20 @@ final class Byte128Vector extends ByteVector {
+     @ForceInline
+     Byte128Shuffle iotaShuffle() { return Byte128Shuffle.IOTA; }
+ 
++    @ForceInline
++    Byte128Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Byte> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(byte.class, Byte128Vector.Byte128Shuffle.class, (AbstractSpecies<Byte>)Byte128Vector.SPECIES_128, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(byte.class, Byte128Vector.Byte128Shuffle.class, (AbstractSpecies<Byte>)Byte128Vector.SPECIES_128, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Byte128Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Byte128Shuffle shuffleFromArray(int[] indices, int i) { return new Byte128Shuffle(indices, i); }
+@@ -826,7 +840,12 @@ final class Byte128Vector extends ByteVector {
+         @Override
+         @ForceInline
+         Byte128Vector toBitsVector() {
+-            return (Byte128Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Byte>) (ByteVector.SPECIES_128);
++            return (Byte128Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Byte128Vector.class, byte.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+index 4df022b7afd..0158f2deb86 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+@@ -141,6 +141,20 @@ final class Byte256Vector extends ByteVector {
+     @ForceInline
+     Byte256Shuffle iotaShuffle() { return Byte256Shuffle.IOTA; }
+ 
++    @ForceInline
++    Byte256Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Byte> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(byte.class, Byte256Vector.Byte256Shuffle.class, (AbstractSpecies<Byte>)Byte256Vector.SPECIES_256, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(byte.class, Byte256Vector.Byte256Shuffle.class, (AbstractSpecies<Byte>)Byte256Vector.SPECIES_256, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Byte256Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Byte256Shuffle shuffleFromArray(int[] indices, int i) { return new Byte256Shuffle(indices, i); }
+@@ -858,7 +872,12 @@ final class Byte256Vector extends ByteVector {
+         @Override
+         @ForceInline
+         Byte256Vector toBitsVector() {
+-            return (Byte256Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Byte>) (ByteVector.SPECIES_256);
++            return (Byte256Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Byte256Vector.class, byte.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+index b70b890cb1f..2af63979475 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+@@ -141,6 +141,20 @@ final class Byte512Vector extends ByteVector {
+     @ForceInline
+     Byte512Shuffle iotaShuffle() { return Byte512Shuffle.IOTA; }
+ 
++    @ForceInline
++    Byte512Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Byte> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(byte.class, Byte512Vector.Byte512Shuffle.class, (AbstractSpecies<Byte>)Byte512Vector.SPECIES_512, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(byte.class, Byte512Vector.Byte512Shuffle.class, (AbstractSpecies<Byte>)Byte512Vector.SPECIES_512, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Byte512Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Byte512Shuffle shuffleFromArray(int[] indices, int i) { return new Byte512Shuffle(indices, i); }
+@@ -922,7 +936,12 @@ final class Byte512Vector extends ByteVector {
+         @Override
+         @ForceInline
+         Byte512Vector toBitsVector() {
+-            return (Byte512Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Byte>) (ByteVector.SPECIES_512);
++            return (Byte512Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Byte512Vector.class, byte.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+index 34f35a36205..ab7f171e3dd 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+@@ -141,6 +141,20 @@ final class Byte64Vector extends ByteVector {
+     @ForceInline
+     Byte64Shuffle iotaShuffle() { return Byte64Shuffle.IOTA; }
+ 
++    @ForceInline
++    Byte64Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Byte> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(byte.class, Byte64Vector.Byte64Shuffle.class, (AbstractSpecies<Byte>)Byte64Vector.SPECIES_64, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(byte.class, Byte64Vector.Byte64Shuffle.class, (AbstractSpecies<Byte>)Byte64Vector.SPECIES_64, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Byte64Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Byte64Shuffle shuffleFromArray(int[] indices, int i) { return new Byte64Shuffle(indices, i); }
+@@ -810,7 +824,12 @@ final class Byte64Vector extends ByteVector {
+         @Override
+         @ForceInline
+         Byte64Vector toBitsVector() {
+-            return (Byte64Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Byte>) (ByteVector.SPECIES_64);
++            return (Byte64Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Byte64Vector.class, byte.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+index 22fd69563d8..3dd39cb2d2d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+@@ -141,6 +141,20 @@ final class ByteMaxVector extends ByteVector {
+     @ForceInline
+     ByteMaxShuffle iotaShuffle() { return ByteMaxShuffle.IOTA; }
+ 
++    @ForceInline
++    ByteMaxShuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Byte> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(byte.class, ByteMaxVector.ByteMaxShuffle.class, (AbstractSpecies<Byte>)ByteMaxVector.SPECIES_MAX, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(byte.class, ByteMaxVector.ByteMaxShuffle.class, (AbstractSpecies<Byte>)ByteMaxVector.SPECIES_MAX, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (ByteMaxShuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     ByteMaxShuffle shuffleFromArray(int[] indices, int i) { return new ByteMaxShuffle(indices, i); }
+@@ -796,7 +810,12 @@ final class ByteMaxVector extends ByteVector {
+         @Override
+         @ForceInline
+         ByteMaxVector toBitsVector() {
+-            return (ByteMaxVector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Byte>) (ByteVector.SPECIES_MAX);
++            return (ByteMaxVector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            ByteMaxVector.class, byte.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+index 93febadf3e3..7518a7c2f98 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+@@ -141,6 +141,20 @@ final class Double128Vector extends DoubleVector {
+     @ForceInline
+     Double128Shuffle iotaShuffle() { return Double128Shuffle.IOTA; }
+ 
++    @ForceInline
++    Double128Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, Long128Vector.Long128Shuffle.class, (AbstractSpecies<Long>)Long128Vector.SPECIES_128, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, Long128Vector.Long128Shuffle.class, (AbstractSpecies<Long>)Long128Vector.SPECIES_128, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Double128Shuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     Double128Shuffle shuffleFromArray(int[] indices, int i) { return new Double128Shuffle(indices, i); }
+@@ -787,7 +801,12 @@ final class Double128Vector extends DoubleVector {
+         @Override
+         @ForceInline
+         Long128Vector toBitsVector() {
+-            return (Long128Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_128);
++            return (Long128Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Long128Vector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+index 6b0b847f485..2da6590d520 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+@@ -141,6 +141,20 @@ final class Double256Vector extends DoubleVector {
+     @ForceInline
+     Double256Shuffle iotaShuffle() { return Double256Shuffle.IOTA; }
+ 
++    @ForceInline
++    Double256Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, Long256Vector.Long256Shuffle.class, (AbstractSpecies<Long>)Long256Vector.SPECIES_256, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, Long256Vector.Long256Shuffle.class, (AbstractSpecies<Long>)Long256Vector.SPECIES_256, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Double256Shuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     Double256Shuffle shuffleFromArray(int[] indices, int i) { return new Double256Shuffle(indices, i); }
+@@ -791,7 +805,12 @@ final class Double256Vector extends DoubleVector {
+         @Override
+         @ForceInline
+         Long256Vector toBitsVector() {
+-            return (Long256Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_256);
++            return (Long256Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Long256Vector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+index addbc17c14f..de238fb1687 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+@@ -141,6 +141,20 @@ final class Double512Vector extends DoubleVector {
+     @ForceInline
+     Double512Shuffle iotaShuffle() { return Double512Shuffle.IOTA; }
+ 
++    @ForceInline
++    Double512Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, Long512Vector.Long512Shuffle.class, (AbstractSpecies<Long>)Long512Vector.SPECIES_512, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, Long512Vector.Long512Shuffle.class, (AbstractSpecies<Long>)Long512Vector.SPECIES_512, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Double512Shuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     Double512Shuffle shuffleFromArray(int[] indices, int i) { return new Double512Shuffle(indices, i); }
+@@ -799,7 +813,12 @@ final class Double512Vector extends DoubleVector {
+         @Override
+         @ForceInline
+         Long512Vector toBitsVector() {
+-            return (Long512Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_512);
++            return (Long512Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Long512Vector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+index c7e41bd382d..423e91d2cde 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+@@ -141,6 +141,20 @@ final class Double64Vector extends DoubleVector {
+     @ForceInline
+     Double64Shuffle iotaShuffle() { return Double64Shuffle.IOTA; }
+ 
++    @ForceInline
++    Double64Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, Long64Vector.Long64Shuffle.class, (AbstractSpecies<Long>)Long64Vector.SPECIES_64, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, Long64Vector.Long64Shuffle.class, (AbstractSpecies<Long>)Long64Vector.SPECIES_64, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Double64Shuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     Double64Shuffle shuffleFromArray(int[] indices, int i) { return new Double64Shuffle(indices, i); }
+@@ -785,7 +799,12 @@ final class Double64Vector extends DoubleVector {
+         @Override
+         @ForceInline
+         Long64Vector toBitsVector() {
+-            return (Long64Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_64);
++            return (Long64Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Long64Vector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+index 61dea4bcf8b..4b3d318f3e3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+@@ -141,6 +141,20 @@ final class DoubleMaxVector extends DoubleVector {
+     @ForceInline
+     DoubleMaxShuffle iotaShuffle() { return DoubleMaxShuffle.IOTA; }
+ 
++    @ForceInline
++    DoubleMaxShuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, LongMaxVector.LongMaxShuffle.class, (AbstractSpecies<Long>)LongMaxVector.SPECIES_MAX, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, LongMaxVector.LongMaxShuffle.class, (AbstractSpecies<Long>)LongMaxVector.SPECIES_MAX, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (DoubleMaxShuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     DoubleMaxShuffle shuffleFromArray(int[] indices, int i) { return new DoubleMaxShuffle(indices, i); }
+@@ -784,7 +798,12 @@ final class DoubleMaxVector extends DoubleVector {
+         @Override
+         @ForceInline
+         LongMaxVector toBitsVector() {
+-            return (LongMaxVector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_MAX);
++            return (LongMaxVector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            LongMaxVector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+index c71ca7ae463..ca6aef0609c 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+@@ -141,6 +141,20 @@ final class Float128Vector extends FloatVector {
+     @ForceInline
+     Float128Shuffle iotaShuffle() { return Float128Shuffle.IOTA; }
+ 
++    @ForceInline
++    Float128Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, Int128Vector.Int128Shuffle.class, (AbstractSpecies<Integer>)Int128Vector.SPECIES_128, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, Int128Vector.Int128Shuffle.class, (AbstractSpecies<Integer>)Int128Vector.SPECIES_128, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Float128Shuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     Float128Shuffle shuffleFromArray(int[] indices, int i) { return new Float128Shuffle(indices, i); }
+@@ -791,7 +805,12 @@ final class Float128Vector extends FloatVector {
+         @Override
+         @ForceInline
+         Int128Vector toBitsVector() {
+-            return (Int128Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_128);
++            return (Int128Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Int128Vector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+index 2eeec9044b4..40222ae3dc5 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+@@ -141,6 +141,20 @@ final class Float256Vector extends FloatVector {
+     @ForceInline
+     Float256Shuffle iotaShuffle() { return Float256Shuffle.IOTA; }
+ 
++    @ForceInline
++    Float256Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, Int256Vector.Int256Shuffle.class, (AbstractSpecies<Integer>)Int256Vector.SPECIES_256, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, Int256Vector.Int256Shuffle.class, (AbstractSpecies<Integer>)Int256Vector.SPECIES_256, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Float256Shuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     Float256Shuffle shuffleFromArray(int[] indices, int i) { return new Float256Shuffle(indices, i); }
+@@ -799,7 +813,12 @@ final class Float256Vector extends FloatVector {
+         @Override
+         @ForceInline
+         Int256Vector toBitsVector() {
+-            return (Int256Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_256);
++            return (Int256Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Int256Vector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+index 0ee8a76689e..ebc6f7813b6 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+@@ -141,6 +141,20 @@ final class Float512Vector extends FloatVector {
+     @ForceInline
+     Float512Shuffle iotaShuffle() { return Float512Shuffle.IOTA; }
+ 
++    @ForceInline
++    Float512Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, Int512Vector.Int512Shuffle.class, (AbstractSpecies<Integer>)Int512Vector.SPECIES_512, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, Int512Vector.Int512Shuffle.class, (AbstractSpecies<Integer>)Int512Vector.SPECIES_512, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Float512Shuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     Float512Shuffle shuffleFromArray(int[] indices, int i) { return new Float512Shuffle(indices, i); }
+@@ -815,7 +829,12 @@ final class Float512Vector extends FloatVector {
+         @Override
+         @ForceInline
+         Int512Vector toBitsVector() {
+-            return (Int512Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_512);
++            return (Int512Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Int512Vector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+index 516d1db24aa..504ebafaf6c 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+@@ -141,6 +141,20 @@ final class Float64Vector extends FloatVector {
+     @ForceInline
+     Float64Shuffle iotaShuffle() { return Float64Shuffle.IOTA; }
+ 
++    @ForceInline
++    Float64Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, Int64Vector.Int64Shuffle.class, (AbstractSpecies<Integer>)Int64Vector.SPECIES_64, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, Int64Vector.Int64Shuffle.class, (AbstractSpecies<Integer>)Int64Vector.SPECIES_64, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Float64Shuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     Float64Shuffle shuffleFromArray(int[] indices, int i) { return new Float64Shuffle(indices, i); }
+@@ -787,7 +801,12 @@ final class Float64Vector extends FloatVector {
+         @Override
+         @ForceInline
+         Int64Vector toBitsVector() {
+-            return (Int64Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_64);
++            return (Int64Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Int64Vector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+index efb172f8885..0420c6f53c3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+@@ -141,6 +141,20 @@ final class FloatMaxVector extends FloatVector {
+     @ForceInline
+     FloatMaxShuffle iotaShuffle() { return FloatMaxShuffle.IOTA; }
+ 
++    @ForceInline
++    FloatMaxShuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, IntMaxVector.IntMaxShuffle.class, (AbstractSpecies<Integer>)IntMaxVector.SPECIES_MAX, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, IntMaxVector.IntMaxShuffle.class, (AbstractSpecies<Integer>)IntMaxVector.SPECIES_MAX, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (FloatMaxShuffle)shuf.cast(VSPECIES);
++
++    }
++
+     @Override
+     @ForceInline
+     FloatMaxShuffle shuffleFromArray(int[] indices, int i) { return new FloatMaxShuffle(indices, i); }
+@@ -784,7 +798,12 @@ final class FloatMaxVector extends FloatVector {
+         @Override
+         @ForceInline
+         IntMaxVector toBitsVector() {
+-            return (IntMaxVector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_MAX);
++            return (IntMaxVector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            IntMaxVector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+index c63f922cf59..d08445a06a9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+@@ -141,6 +141,20 @@ final class Int128Vector extends IntVector {
+     @ForceInline
+     Int128Shuffle iotaShuffle() { return Int128Shuffle.IOTA; }
+ 
++    @ForceInline
++    Int128Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, Int128Vector.Int128Shuffle.class, (AbstractSpecies<Integer>)Int128Vector.SPECIES_128, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, Int128Vector.Int128Shuffle.class, (AbstractSpecies<Integer>)Int128Vector.SPECIES_128, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Int128Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Int128Shuffle shuffleFromArray(int[] indices, int i) { return new Int128Shuffle(indices, i); }
+@@ -802,7 +816,12 @@ final class Int128Vector extends IntVector {
+         @Override
+         @ForceInline
+         Int128Vector toBitsVector() {
+-            return (Int128Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_128);
++            return (Int128Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Int128Vector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+index efc57422926..9fa6dcb5d1d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+@@ -141,6 +141,20 @@ final class Int256Vector extends IntVector {
+     @ForceInline
+     Int256Shuffle iotaShuffle() { return Int256Shuffle.IOTA; }
+ 
++    @ForceInline
++    Int256Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, Int256Vector.Int256Shuffle.class, (AbstractSpecies<Integer>)Int256Vector.SPECIES_256, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, Int256Vector.Int256Shuffle.class, (AbstractSpecies<Integer>)Int256Vector.SPECIES_256, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Int256Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Int256Shuffle shuffleFromArray(int[] indices, int i) { return new Int256Shuffle(indices, i); }
+@@ -810,7 +824,12 @@ final class Int256Vector extends IntVector {
+         @Override
+         @ForceInline
+         Int256Vector toBitsVector() {
+-            return (Int256Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_256);
++            return (Int256Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Int256Vector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+index fdd0c8b605e..6590023bce5 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+@@ -141,6 +141,20 @@ final class Int512Vector extends IntVector {
+     @ForceInline
+     Int512Shuffle iotaShuffle() { return Int512Shuffle.IOTA; }
+ 
++    @ForceInline
++    Int512Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, Int512Vector.Int512Shuffle.class, (AbstractSpecies<Integer>)Int512Vector.SPECIES_512, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, Int512Vector.Int512Shuffle.class, (AbstractSpecies<Integer>)Int512Vector.SPECIES_512, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Int512Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Int512Shuffle shuffleFromArray(int[] indices, int i) { return new Int512Shuffle(indices, i); }
+@@ -826,7 +840,12 @@ final class Int512Vector extends IntVector {
+         @Override
+         @ForceInline
+         Int512Vector toBitsVector() {
+-            return (Int512Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_512);
++            return (Int512Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Int512Vector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+index 8f3d608858b..c22f51f4586 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+@@ -141,6 +141,20 @@ final class Int64Vector extends IntVector {
+     @ForceInline
+     Int64Shuffle iotaShuffle() { return Int64Shuffle.IOTA; }
+ 
++    @ForceInline
++    Int64Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, Int64Vector.Int64Shuffle.class, (AbstractSpecies<Integer>)Int64Vector.SPECIES_64, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, Int64Vector.Int64Shuffle.class, (AbstractSpecies<Integer>)Int64Vector.SPECIES_64, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Int64Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Int64Shuffle shuffleFromArray(int[] indices, int i) { return new Int64Shuffle(indices, i); }
+@@ -798,7 +812,12 @@ final class Int64Vector extends IntVector {
+         @Override
+         @ForceInline
+         Int64Vector toBitsVector() {
+-            return (Int64Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_64);
++            return (Int64Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Int64Vector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+index 72975c88bd0..7023f5de0c6 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+@@ -141,6 +141,20 @@ final class IntMaxVector extends IntVector {
+     @ForceInline
+     IntMaxShuffle iotaShuffle() { return IntMaxShuffle.IOTA; }
+ 
++    @ForceInline
++    IntMaxShuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Integer> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(int.class, IntMaxVector.IntMaxShuffle.class, (AbstractSpecies<Integer>)IntMaxVector.SPECIES_MAX, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(int.class, IntMaxVector.IntMaxShuffle.class, (AbstractSpecies<Integer>)IntMaxVector.SPECIES_MAX, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (IntMaxShuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     IntMaxShuffle shuffleFromArray(int[] indices, int i) { return new IntMaxShuffle(indices, i); }
+@@ -807,7 +821,12 @@ final class IntMaxVector extends IntVector {
+         @Override
+         @ForceInline
+         IntMaxVector toBitsVector() {
+-            return (IntMaxVector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Integer>) (IntVector.SPECIES_MAX);
++            return (IntMaxVector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            IntMaxVector.class, int.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+index 87d5bc36253..d61ab9baf9b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+@@ -136,6 +136,20 @@ final class Long128Vector extends LongVector {
+     @ForceInline
+     Long128Shuffle iotaShuffle() { return Long128Shuffle.IOTA; }
+ 
++    @ForceInline
++    Long128Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, Long128Vector.Long128Shuffle.class, (AbstractSpecies<Long>)Long128Vector.SPECIES_128, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, Long128Vector.Long128Shuffle.class, (AbstractSpecies<Long>)Long128Vector.SPECIES_128, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Long128Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Long128Shuffle shuffleFromArray(int[] indices, int i) { return new Long128Shuffle(indices, i); }
+@@ -788,7 +802,12 @@ final class Long128Vector extends LongVector {
+         @Override
+         @ForceInline
+         Long128Vector toBitsVector() {
+-            return (Long128Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_128);
++            return (Long128Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Long128Vector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+index 4de92041ea8..919dcd73e1e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+@@ -136,6 +136,20 @@ final class Long256Vector extends LongVector {
+     @ForceInline
+     Long256Shuffle iotaShuffle() { return Long256Shuffle.IOTA; }
+ 
++    @ForceInline
++    Long256Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, Long256Vector.Long256Shuffle.class, (AbstractSpecies<Long>)Long256Vector.SPECIES_256, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, Long256Vector.Long256Shuffle.class, (AbstractSpecies<Long>)Long256Vector.SPECIES_256, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Long256Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Long256Shuffle shuffleFromArray(int[] indices, int i) { return new Long256Shuffle(indices, i); }
+@@ -792,7 +806,12 @@ final class Long256Vector extends LongVector {
+         @Override
+         @ForceInline
+         Long256Vector toBitsVector() {
+-            return (Long256Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_256);
++            return (Long256Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Long256Vector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+index 5bbe81f4c7c..b36d1e4f05e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+@@ -136,6 +136,20 @@ final class Long512Vector extends LongVector {
+     @ForceInline
+     Long512Shuffle iotaShuffle() { return Long512Shuffle.IOTA; }
+ 
++    @ForceInline
++    Long512Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, Long512Vector.Long512Shuffle.class, (AbstractSpecies<Long>)Long512Vector.SPECIES_512, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, Long512Vector.Long512Shuffle.class, (AbstractSpecies<Long>)Long512Vector.SPECIES_512, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Long512Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Long512Shuffle shuffleFromArray(int[] indices, int i) { return new Long512Shuffle(indices, i); }
+@@ -800,7 +814,12 @@ final class Long512Vector extends LongVector {
+         @Override
+         @ForceInline
+         Long512Vector toBitsVector() {
+-            return (Long512Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_512);
++            return (Long512Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Long512Vector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+index cf0246f670e..57fbe3728c1 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+@@ -136,6 +136,20 @@ final class Long64Vector extends LongVector {
+     @ForceInline
+     Long64Shuffle iotaShuffle() { return Long64Shuffle.IOTA; }
+ 
++    @ForceInline
++    Long64Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, Long64Vector.Long64Shuffle.class, (AbstractSpecies<Long>)Long64Vector.SPECIES_64, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, Long64Vector.Long64Shuffle.class, (AbstractSpecies<Long>)Long64Vector.SPECIES_64, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Long64Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Long64Shuffle shuffleFromArray(int[] indices, int i) { return new Long64Shuffle(indices, i); }
+@@ -786,7 +800,12 @@ final class Long64Vector extends LongVector {
+         @Override
+         @ForceInline
+         Long64Vector toBitsVector() {
+-            return (Long64Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_64);
++            return (Long64Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Long64Vector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+index 54a8cb6537c..124a7a92860 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+@@ -136,6 +136,20 @@ final class LongMaxVector extends LongVector {
+     @ForceInline
+     LongMaxShuffle iotaShuffle() { return LongMaxShuffle.IOTA; }
+ 
++    @ForceInline
++    LongMaxShuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Long> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(long.class, LongMaxVector.LongMaxShuffle.class, (AbstractSpecies<Long>)LongMaxVector.SPECIES_MAX, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(long.class, LongMaxVector.LongMaxShuffle.class, (AbstractSpecies<Long>)LongMaxVector.SPECIES_MAX, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (LongMaxShuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     LongMaxShuffle shuffleFromArray(int[] indices, int i) { return new LongMaxShuffle(indices, i); }
+@@ -786,7 +800,12 @@ final class LongMaxVector extends LongVector {
+         @Override
+         @ForceInline
+         LongMaxVector toBitsVector() {
+-            return (LongMaxVector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Long>) (LongVector.SPECIES_MAX);
++            return (LongMaxVector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            LongMaxVector.class, long.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+index 9e13e0f1825..921f0ed69fd 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+@@ -141,6 +141,20 @@ final class Short128Vector extends ShortVector {
+     @ForceInline
+     Short128Shuffle iotaShuffle() { return Short128Shuffle.IOTA; }
+ 
++    @ForceInline
++    Short128Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Short> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(short.class, Short128Vector.Short128Shuffle.class, (AbstractSpecies<Short>)Short128Vector.SPECIES_128, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(short.class, Short128Vector.Short128Shuffle.class, (AbstractSpecies<Short>)Short128Vector.SPECIES_128, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Short128Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Short128Shuffle shuffleFromArray(int[] indices, int i) { return new Short128Shuffle(indices, i); }
+@@ -810,7 +824,12 @@ final class Short128Vector extends ShortVector {
+         @Override
+         @ForceInline
+         Short128Vector toBitsVector() {
+-            return (Short128Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Short>) (ShortVector.SPECIES_128);
++            return (Short128Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Short128Vector.class, short.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+index 65f43678317..a21abfb6a7e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+@@ -141,6 +141,20 @@ final class Short256Vector extends ShortVector {
+     @ForceInline
+     Short256Shuffle iotaShuffle() { return Short256Shuffle.IOTA; }
+ 
++    @ForceInline
++    Short256Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Short> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(short.class, Short256Vector.Short256Shuffle.class, (AbstractSpecies<Short>)Short256Vector.SPECIES_256, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(short.class, Short256Vector.Short256Shuffle.class, (AbstractSpecies<Short>)Short256Vector.SPECIES_256, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Short256Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Short256Shuffle shuffleFromArray(int[] indices, int i) { return new Short256Shuffle(indices, i); }
+@@ -826,7 +840,12 @@ final class Short256Vector extends ShortVector {
+         @Override
+         @ForceInline
+         Short256Vector toBitsVector() {
+-            return (Short256Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Short>) (ShortVector.SPECIES_256);
++            return (Short256Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Short256Vector.class, short.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+index 9d4c13dd3e9..1715b968e4c 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+@@ -141,6 +141,20 @@ final class Short512Vector extends ShortVector {
+     @ForceInline
+     Short512Shuffle iotaShuffle() { return Short512Shuffle.IOTA; }
+ 
++    @ForceInline
++    Short512Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Short> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(short.class, Short512Vector.Short512Shuffle.class, (AbstractSpecies<Short>)Short512Vector.SPECIES_512, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(short.class, Short512Vector.Short512Shuffle.class, (AbstractSpecies<Short>)Short512Vector.SPECIES_512, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Short512Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Short512Shuffle shuffleFromArray(int[] indices, int i) { return new Short512Shuffle(indices, i); }
+@@ -858,7 +872,12 @@ final class Short512Vector extends ShortVector {
+         @Override
+         @ForceInline
+         Short512Vector toBitsVector() {
+-            return (Short512Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Short>) (ShortVector.SPECIES_512);
++            return (Short512Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Short512Vector.class, short.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+index c624cf7fb62..f20e81576f5 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+@@ -141,6 +141,20 @@ final class Short64Vector extends ShortVector {
+     @ForceInline
+     Short64Shuffle iotaShuffle() { return Short64Shuffle.IOTA; }
+ 
++    @ForceInline
++    Short64Shuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Short> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(short.class, Short64Vector.Short64Shuffle.class, (AbstractSpecies<Short>)Short64Vector.SPECIES_64, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(short.class, Short64Vector.Short64Shuffle.class, (AbstractSpecies<Short>)Short64Vector.SPECIES_64, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (Short64Shuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     Short64Shuffle shuffleFromArray(int[] indices, int i) { return new Short64Shuffle(indices, i); }
+@@ -802,7 +816,12 @@ final class Short64Vector extends ShortVector {
+         @Override
+         @ForceInline
+         Short64Vector toBitsVector() {
+-            return (Short64Vector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Short>) (ShortVector.SPECIES_64);
++            return (Short64Vector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            Short64Vector.class, short.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+index ff640333c71..e8a3925b557 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+@@ -141,6 +141,20 @@ final class ShortMaxVector extends ShortVector {
+     @ForceInline
+     ShortMaxShuffle iotaShuffle() { return ShortMaxShuffle.IOTA; }
+ 
++    @ForceInline
++    ShortMaxShuffle iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<Short> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota(short.class, ShortMaxVector.ShortMaxShuffle.class, (AbstractSpecies<Short>)ShortMaxVector.SPECIES_MAX, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota(short.class, ShortMaxVector.ShortMaxShuffle.class, (AbstractSpecies<Short>)ShortMaxVector.SPECIES_MAX, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++      return (ShortMaxShuffle)shuf;
++
++    }
++
+     @Override
+     @ForceInline
+     ShortMaxShuffle shuffleFromArray(int[] indices, int i) { return new ShortMaxShuffle(indices, i); }
+@@ -796,7 +810,12 @@ final class ShortMaxVector extends ShortVector {
+         @Override
+         @ForceInline
+         ShortMaxVector toBitsVector() {
+-            return (ShortMaxVector) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<Short>) (ShortVector.SPECIES_MAX);
++            return (ShortMaxVector) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            ShortMaxVector.class, short.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorShape.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorShape.java
+index 89e0d38bcb0..01da0d29a8a 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorShape.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorShape.java
+@@ -105,6 +105,7 @@ public enum VectorShape {
+      * @return a species for the given element type and this shape
+      * @see VectorSpecies#of(Class, VectorShape)
+      */
++    @ForceInline
+     public <E>
+     VectorSpecies<E> withLanes(Class<E> elementType) {
+         return VectorSpecies.of(elementType, this);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+index 8f0632a8b73..ff5ef190758 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+@@ -143,6 +143,24 @@ final class $vectortype$ extends $abstractvectortype$ {
+     @ForceInline
+     $shuffletype$ iotaShuffle() { return $shuffletype$.IOTA; }
+ 
++    @ForceInline
++    $shuffletype$ iotaShuffle(int start, int step, boolean wrap) {
++      VectorShuffle<$Boxbitstype$> shuf = null;
++      if (wrap) {
++          shuf = VectorSupport.shuffleIota($bitstype$.class, $bitsvectortype$.$bitsshuffletype$.class, (AbstractSpecies<$Boxbitstype$>)$bitsvectortype$.SPECIES_$BITS$, VLENGTH, start, step, 1,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      } else {
++          shuf = VectorSupport.shuffleIota($bitstype$.class, $bitsvectortype$.$bitsshuffletype$.class, (AbstractSpecies<$Boxbitstype$>)$bitsvectortype$.SPECIES_$BITS$, VLENGTH, start, step, 0,
++                (l, lstart, lstep, s) -> s.shuffleFromOp(i -> (VectorIntrinsics.wrapToRange(i*lstep + lstart, l))));
++      }
++#if[FP]
++      return ($shuffletype$)shuf.cast(VSPECIES);
++#else[FP]
++      return ($shuffletype$)shuf;
++#end[FP]
++
++    }
++
+     @Override
+     @ForceInline
+     $shuffletype$ shuffleFromArray(int[] indices, int i) { return new $shuffletype$(indices, i); }
+@@ -1084,7 +1102,12 @@ final class $vectortype$ extends $abstractvectortype$ {
+         @Override
+         @ForceInline
+         $bitsvectortype$ toBitsVector() {
+-            return ($bitsvectortype$) super.toBitsVectorTemplate();
++            AbstractSpecies<?> dsp = (AbstractSpecies<$Boxbitstype$>) ($Bitstype$Vector.SPECIES_$BITS$);
++            return ($bitsvectortype$) VectorSupport.convert(VectorSupport.VECTOR_OP_REINTERPRET,
++                                                            getClass(), ETYPE, VLENGTH,
++                                                            $bitsvectortype$.class, $bitstype$.class, VLENGTH,
++                                                            this, dsp,
++                                                            (v, s) -> v.toBitsVector0());
+         }
+ 
+         @Override
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+old mode 100644
+new mode 100755
+index 6841a47c757..a345bdd49f6
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+@@ -149,6 +149,7 @@ do
+     vectortype=${typeprefix}${Type}${bits}Vector
+     masktype=${typeprefix}${Type}${bits}Mask
+     shuffletype=${typeprefix}${Type}${bits}Shuffle
++    bitsshuffletype=${typeprefix}${Bitstype}${bits}Shuffle
+     bitsvectortype=${typeprefix}${Bitstype}${bits}Vector
+     fpvectortype=${typeprefix}${Fptype}${bits}Vector
+     vectorindexbits=$((bits * 4 / sizeInBytes))
+@@ -190,7 +191,7 @@ do
+     if [[ "${vectortype}" == "IntMaxVector" ]]; then
+       args="$args -KintAndMax"
+     fi
+-    bitargs="$args -Dbits=$bits -DBITS=$BITS -Dvectortype=$vectortype -Dmasktype=$masktype -Dshuffletype=$shuffletype -Dbitsvectortype=$bitsvectortype -Dfpvectortype=$fpvectortype -Dvectorindextype=$vectorindextype -Dshape=$shape -DShape=$Shape"
++    bitargs="$args -Dbits=$bits -DBITS=$BITS -Dvectortype=$vectortype -Dmasktype=$masktype -Dshuffletype=$shuffletype -Dbitsvectortype=$bitsvectortype -Dfpvectortype=$fpvectortype -Dvectorindextype=$vectorindextype -Dshape=$shape -DShape=$Shape -Dbitsshuffletype=$bitsshuffletype"
+ 
+     case $vectortype in
+     $CLASS_FILTER)

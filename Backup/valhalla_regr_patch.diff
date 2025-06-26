@@ -1,0 +1,516 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/c1/c1_GraphBuilder.cpp b/src/hotspot/share/c1/c1_GraphBuilder.cpp
+index 71318e6f945..035ad8f51be 100644
+--- a/src/hotspot/share/c1/c1_GraphBuilder.cpp
++++ b/src/hotspot/share/c1/c1_GraphBuilder.cpp
+@@ -1867,7 +1867,7 @@ void GraphBuilder::copy_inline_content(ciInlineKlass* vk, Value src, int src_off
+       assert(!inner_field->is_flattened(), "the iteration over nested fields is handled by the loop itself");
+       int off = inner_field->offset_in_bytes() + sec_offset - vk->first_field_offset();
+       LoadField* load = new LoadField(src, src_off + off, inner_field, false, state_before, false);
+-      sec_offset += type2aelembytes(as_BasicType(load->type()));
++      sec_offset += type2aelembytes(inner_field->type()->basic_type());
+       Value replacement = append(load);
+       StoreField* store = new StoreField(dest, dest_off + off, inner_field, replacement, false, state_before, false);
+       store->set_enclosing_field(enclosing_field);
+@@ -2197,10 +2197,14 @@ void GraphBuilder::withfield(int field_index) {
+             copy_inline_content(vk, obj, offset, new_instance, vk->first_field_offset(), state_before, field);
+           }
+         } else {
+-          LoadField* load = new LoadField(obj, offset, field, false, state_before, false);
+-          Value replacement = append(load);
+-          StoreField* store = new StoreField(new_instance, offset, field, replacement, false, state_before, false);
+-          append(store);
++          for (int i = 0, sec_offset = 0; i < field->secondary_fields_count(); i++) {
++            ciField* temp = i > 0 ? static_cast<ciMultiField*>(field)->secondary_field_at(i-1) : field;
++            LoadField* load = new LoadField(obj, offset + sec_offset, temp, false, state_before, false);
++            sec_offset += type2aelembytes(as_BasicType(load->type()));
++            Value replacement = append(load);
++            StoreField* store = new StoreField(new_instance, offset + sec_offset, temp, replacement, false, state_before, false);
++            append(store);
++          }
+         }
+       }
+     }
+@@ -2218,8 +2222,12 @@ void GraphBuilder::withfield(int field_index) {
+       copy_inline_content(vk, val, vk->first_field_offset(), new_instance, offset_modify, state_before, field_modify);
+     }
+   } else {
+-    StoreField* store = new StoreField(new_instance, offset_modify, field_modify, val, false, state_before, needs_patching);
+-    append(store);
++    int sec_field_size = type2aelembytes(field_type);
++    for (int i = 0; i < field_modify->secondary_fields_count(); i++) {
++      ciField* temp = i > 0 ? static_cast<ciMultiField*>(field_modify)->secondary_field_at(i-1) : field_modify;
++      StoreField* store = new StoreField(new_instance, offset_modify + i * sec_field_size, temp, val, false, state_before, needs_patching);
++      append(store);
++    }
+   }
+ }
+ 
+diff --git a/src/hotspot/share/ci/ciField.cpp b/src/hotspot/share/ci/ciField.cpp
+index 87b11d92835..5f07e5ac20f 100644
+--- a/src/hotspot/share/ci/ciField.cpp
++++ b/src/hotspot/share/ci/ciField.cpp
+@@ -89,6 +89,8 @@ ciField::ciField(ciInstanceKlass* klass, int index, Bytecodes::Code bc) :
+   int sig_index = cpool->signature_ref_index_at(nt_index);
+   Symbol* signature = cpool->symbol_at(sig_index);
+   _signature = ciEnv::current(THREAD)->get_symbol(signature);
++  _is_multifield = false;
++  _is_multifield_base = false;
+ 
+   BasicType field_type = Signature::basic_type(signature);
+ 
+diff --git a/src/hotspot/share/ci/ciField.hpp b/src/hotspot/share/ci/ciField.hpp
+index 94f735b272b..f5407d9114a 100644
+--- a/src/hotspot/share/ci/ciField.hpp
++++ b/src/hotspot/share/ci/ciField.hpp
+@@ -209,8 +209,19 @@ private:
+   ciMultiField(ciField* field, ciInstanceKlass* holder, int offset, bool is_final) :
+        ciField(field, holder, offset, is_final) {}
+ public:
++  void set_secondary_fields(GrowableArray<ciField*>* fields) {
++     Arena* arena = CURRENT_ENV->arena();
++     _secondary_fields = new (arena) GrowableArray<ciField*>(arena, fields->length(), 0, nullptr);
++     for (int i = 0; i < fields->length(); i++) {
++       ciField* field = fields->at(i);
++       _secondary_fields->append(new (arena) ciField(field, field->holder(), field->offset_in_bytes(), field->is_final()));
++     }
++  }
++
+   void add_secondary_fields(GrowableArray<ciField*>* fields) { _secondary_fields = fields; }
++
+   GrowableArray<ciField*>* secondary_fields() { return _secondary_fields; }
++
+   ciField* secondary_field_at(int i) {
+     assert(_secondary_fields->length() > i, "");
+     return _secondary_fields->at(i);
+diff --git a/src/hotspot/share/ci/ciInstanceKlass.cpp b/src/hotspot/share/ci/ciInstanceKlass.cpp
+index 49cd22995da..1a66c788479 100644
+--- a/src/hotspot/share/ci/ciInstanceKlass.cpp
++++ b/src/hotspot/share/ci/ciInstanceKlass.cpp
+@@ -534,6 +534,43 @@ int ciInstanceKlass::compute_nonstatic_fields() {
+   return fields->length();
+ }
+ 
++
++// Generic routine to handle synthetic field population for both static
++// and non-static base multifields.
++ciField* ciInstanceKlass::populate_synthetic_multifields(ciField* field) {
++  ASSERT_IN_VM;
++  if (!field->is_multifield_base()) {
++    return field;
++  }
++  int sec_fields_count = 0;
++  ciMultiField* mfield = static_cast<ciMultiField*>(field);
++  Arena* arena = CURRENT_ENV->arena();
++  InstanceKlass* k = get_instanceKlass();
++
++  for (JavaFieldStream fs(k); !fs.done(); fs.next()) {
++    if (fs.offset() == field->offset_in_bytes()) {
++      assert(mfield == field, "Duplicate multifield for a given offset");
++      fieldDescriptor& fd = fs.field_descriptor();
++      assert(fd.is_multifield_base(), "");
++      mfield = new (arena) ciMultiField(&fd);
++      sec_fields_count = fd.secondary_fields_count(fd.index()) - 1;
++      mfield->add_secondary_fields(new (arena) GrowableArray<ciField*>(arena, sec_fields_count, 0, NULL));
++      if (sec_fields_count == 0) {
++        break;
++      }
++    } else if (sec_fields_count && fs.is_multifield()) {
++      fieldDescriptor& fd = fs.field_descriptor();
++      mfield->secondary_fields()->append(new (arena) ciField(&fd));
++      sec_fields_count--;
++      if (sec_fields_count == 0) {
++        break;
++      }
++    }
++  }
++
++  return mfield;
++}
++
+ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(GrowableArray<ciField*>* super_fields, bool flatten) {
+   ASSERT_IN_VM;
+   Arena* arena = CURRENT_ENV->arena();
+@@ -586,7 +623,7 @@ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(Growable
+         ciField* field = NULL;
+         if (flattened_field->is_multifield_base()) {
+           field = new (arena) ciMultiField(flattened_field, this, offset, is_final);
+-          static_cast<ciMultiField*>(field)->add_secondary_fields(static_cast<ciMultiField*>(flattened_field)->secondary_fields());
++          static_cast<ciMultiField*>(field)->set_secondary_fields(static_cast<ciMultiField*>(flattened_field)->secondary_fields());
+         } else {
+           field = new (arena) ciField(flattened_field, this, offset, is_final);
+         }
+diff --git a/src/hotspot/share/ci/ciInstanceKlass.hpp b/src/hotspot/share/ci/ciInstanceKlass.hpp
+index 808e8bdcaf8..a2bb5c04252 100644
+--- a/src/hotspot/share/ci/ciInstanceKlass.hpp
++++ b/src/hotspot/share/ci/ciInstanceKlass.hpp
+@@ -211,6 +211,7 @@ public:
+   ciField* get_field_by_name(ciSymbol* name, ciSymbol* signature, bool is_static);
+   // get field descriptor at field_offset ignoring flattening
+   ciField* get_non_flattened_field_by_offset(int field_offset);
++  ciField* populate_synthetic_multifields(ciField* field);
+ 
+   // total number of nonstatic fields (including inherited):
+   int nof_nonstatic_fields() {
+diff --git a/src/hotspot/share/ci/ciStreams.cpp b/src/hotspot/share/ci/ciStreams.cpp
+index ed5e4b5165a..b4932375332 100644
+--- a/src/hotspot/share/ci/ciStreams.cpp
++++ b/src/hotspot/share/ci/ciStreams.cpp
+@@ -321,6 +321,9 @@ int ciBytecodeStream::get_field_index() {
+ // or put_static, get the referenced field.
+ ciField* ciBytecodeStream::get_field(bool& will_link) {
+   ciField* f = CURRENT_ENV->get_field_by_index(_holder, get_field_index(), _bc);
++  if (f && f->is_multifield_base()) {
++    GUARDED_VM_ENTRY(f = _holder->populate_synthetic_multifields(f);)
++  }
+   will_link = f->will_link(_method, _bc);
+   return f;
+ }
+diff --git a/src/hotspot/share/classfile/classFileParser.cpp b/src/hotspot/share/classfile/classFileParser.cpp
+index 3a6a1670491..8a384526fa9 100644
+--- a/src/hotspot/share/classfile/classFileParser.cpp
++++ b/src/hotspot/share/classfile/classFileParser.cpp
+@@ -1640,6 +1640,7 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+         FieldInfo::FieldFlags fflags(0);
+         // fflags.update_injected(true);
+         AccessFlags aflags;
++        aflags.set_flags(flags);
+         FieldInfo fi(aflags, (u2)(mfi_idx), (u2)signature_index, 0, fflags);
+         fi.set_index(field_index);
+ 
+diff --git a/src/hotspot/share/classfile/javaClasses.cpp b/src/hotspot/share/classfile/javaClasses.cpp
+index 54b190e5672..3948dc69d80 100644
+--- a/src/hotspot/share/classfile/javaClasses.cpp
++++ b/src/hotspot/share/classfile/javaClasses.cpp
+@@ -1128,9 +1128,14 @@ oop java_lang_Class::create_secondary_mirror(Klass* k, Handle mirror, TRAPS) {
+ // latter may contain dumptime-specific information that cannot be archived
+ // (e.g., ClassLoaderData*, or static fields that are modified by Java code execution).
+ void java_lang_Class::create_scratch_mirror(Klass* k, TRAPS) {
+-  if (k->class_loader() != nullptr &&
+-      k->class_loader() != SystemDictionary::java_platform_loader() &&
+-      k->class_loader() != SystemDictionary::java_system_loader()) {
++  // Inline classes encapsulate two mirror objects, a value mirror (primitive value mirror)
++  // and a reference mirror (primitive class mirror), skip over scratch mirror allocation
++  // for inline classes, they will not be part of shared archive and will be created while
++  // restoring unshared fileds. Refer Klass::restore_unshareable_info() for more details.
++  if (k->is_inline_klass() ||
++      (k->class_loader() != nullptr &&
++       k->class_loader() != SystemDictionary::java_platform_loader() &&
++       k->class_loader() != SystemDictionary::java_system_loader())) {
+     // We only archive the mirrors of classes loaded by the built-in loaders
+     return;
+   }
+@@ -4963,30 +4968,6 @@ void java_util_concurrent_locks_AbstractOwnableSynchronizer::serialize_offsets(S
+ }
+ #endif
+ 
+-int vector_VectorPayload::_payload_offset;
+-
+-#define VECTORPAYLOAD_FIELDS_DO(macro) \
+-  macro(_payload_offset, k, "payload", object_signature, false)
+-
+-void vector_VectorPayload::compute_offsets() {
+-  InstanceKlass* k = vmClasses::vector_VectorPayload_klass();
+-  //FIXME: VectorPayload class no longer holds the Object payload.
+-  //Multi-field based payloads have been moved to leaf level
+-  //concrete classes. Offset recorded here is used for object
+-  //re-construction during de-opt.
+-  // VECTORPAYLOAD_FIELDS_DO(FIELD_COMPUTE_OFFSET);
+-}
+-
+-#if INCLUDE_CDS
+-void vector_VectorPayload::serialize_offsets(SerializeClosure* f) {
+-  VECTORPAYLOAD_FIELDS_DO(FIELD_SERIALIZE_OFFSET);
+-}
+-#endif
+-
+-void vector_VectorPayload::set_payload(oop o, oop val) {
+-  o->obj_field_put(_payload_offset, val);
+-}
+-
+ bool vector_VectorPayload::is_instance(oop obj) {
+   return obj != nullptr && is_subclass(obj->klass());
+ }
+diff --git a/src/hotspot/share/classfile/javaClasses.hpp b/src/hotspot/share/classfile/javaClasses.hpp
+index d76fd11787e..1b6a6ce9b6a 100644
+--- a/src/hotspot/share/classfile/javaClasses.hpp
++++ b/src/hotspot/share/classfile/javaClasses.hpp
+@@ -1746,15 +1746,10 @@ class jdk_internal_misc_UnsafeConstants : AllStatic {
+ // Interface to jdk.internal.vm.vector.VectorSupport.VectorPayload objects
+ 
+ class vector_VectorPayload : AllStatic {
+- private:
+-  static int _payload_offset;
+  public:
+-  static void set_payload(oop o, oop val);
+-
+-  static void compute_offsets();
+-  static void serialize_offsets(SerializeClosure* f) NOT_CDS_RETURN;
+-
+   // Testers
++  static void compute_offsets() { }
++  static void serialize_offsets(SerializeClosure* f) { }
+   static bool is_subclass(Klass* klass) {
+     return klass->is_subclass_of(vmClasses::vector_VectorPayload_klass());
+   }
+diff --git a/src/hotspot/share/opto/inlinetypenode.cpp b/src/hotspot/share/opto/inlinetypenode.cpp
+index 8f4c257e2b0..6356f4b84ad 100644
+--- a/src/hotspot/share/opto/inlinetypenode.cpp
++++ b/src/hotspot/share/opto/inlinetypenode.cpp
+@@ -509,11 +509,11 @@ void InlineTypeNode::load(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass*
+       const TypeOopPtr* oop_ptr = kit->gvn().type(base)->isa_oopptr();
+       bool is_array = (oop_ptr->isa_aryptr() != NULL);
+       bool mismatched = (decorators & C2_MISMATCHED) != 0;
+-      if (base->is_Con() && !is_array && !mismatched && ft->bundle_size() == 1) {
++      ciField* field = holder->get_field_by_offset(offset, false);
++      if (base->is_Con() && !is_array && !mismatched && !field->is_multifield_base() && ft->bundle_size() == 1) {
+         // If the oop to the inline type is constant (static final field), we can
+         // also treat the fields as constants because the inline type is immutable.
+         ciObject* constant_oop = oop_ptr->const_oop();
+-        ciField* field = holder->get_field_by_offset(offset, false);
+         assert(field != NULL, "field not found");
+         ciConstant constant = constant_oop->as_instance()->field_value(field);
+         const Type* con_type = Type::make_from_constant(constant, /*require_const=*/ true);
+@@ -527,7 +527,6 @@ void InlineTypeNode::load(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass*
+       } else {
+         // Load field value from memory
+         BasicType bt = type2field[ft->basic_type()];
+-        ciField* field = holder->get_field_by_offset(offset, false);
+         const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
+         Node* adr = kit->basic_plus_adr(base, ptr, offset);
+         assert(is_java_primitive(bt) || adr->bottom_type()->is_ptr_to_narrowoop() == UseCompressedOops, "inconsistent");
+@@ -853,11 +852,13 @@ Node* InlineTypeNode::default_oop(PhaseGVN& gvn, ciInlineKlass* vk) {
+   return gvn.makecon(TypeInstPtr::make(vk->default_instance()));
+ }
+ 
+-Node* InlineTypeNode::default_value(PhaseGVN& gvn, ciType* field_type) {
++Node* InlineTypeNode::default_value(PhaseGVN& gvn, ciType* field_type, ciInlineKlass* klass, int index) {
+   BasicType bt = field_type->basic_type();
+-  Node* value = gvn.zerocon(field_type->basic_type());
+   int vec_len = field_type->bundle_size();
+-  if (is_java_primitive(bt) &&
++  Node* value = gvn.zerocon(field_type->basic_type());
++  int is_multifield = klass->declared_nonstatic_field_at(index)->is_multifield_base();
++  if (is_multifield &&
++      is_java_primitive(bt) &&
+       Matcher::match_rule_supported_vector(VectorNode::replicate_opcode(bt), vec_len, bt)) {
+       value = gvn.transform(VectorNode::scalar2vector(value, vec_len, Type::get_const_type(field_type), false));
+   }
+@@ -878,7 +879,7 @@ InlineTypeNode* InlineTypeNode::make_default_impl(PhaseGVN& gvn, ciInlineKlass*
+   vt->set_is_init(gvn);
+   for (uint i = 0; i < vt->field_count(); ++i) {
+     ciType* ft = vt->field_type(i);
+-    Node* value = default_value(gvn, ft);
++    Node* value = default_value(gvn, ft, vk, i);
+     if (!vt->field_is_flattened(i) && visited.contains(ft)) {
+       gvn.C->set_has_circular_inline_type(true);
+     } else if (ft->is_inlinetype()) {
+@@ -1245,7 +1246,7 @@ void InlineTypeNode::initialize_fields(GraphKit* kit, MultiNode* multi, uint& ba
+           parm = field_value(i);
+         } else if (multi->is_Start()) {
+           assert(in, "return from start?");
+-          parm = default_value(gvn, type);
++          parm = default_value(gvn, type, ik, i);
+         } else {
+           assert(false, "unhandled case");
+         }
+@@ -1345,7 +1346,7 @@ InlineTypeNode* InlineTypeNode::make_null_impl(PhaseGVN& gvn, ciInlineKlass* vk,
+   vt->set_is_init(gvn, false);
+   for (uint i = 0; i < vt->field_count(); i++) {
+     ciType* ft = vt->field_type(i);
+-    Node* value = default_value(gvn, ft);
++    Node* value = default_value(gvn, ft, vk, i);
+     if (!vt->field_is_flattened(i) && visited.contains(ft)) {
+       gvn.C->set_has_circular_inline_type(true);
+     } else if (ft->is_inlinetype()) {
+diff --git a/src/hotspot/share/opto/inlinetypenode.hpp b/src/hotspot/share/opto/inlinetypenode.hpp
+index 91da6fa9e87..527d1c1f9d8 100644
+--- a/src/hotspot/share/opto/inlinetypenode.hpp
++++ b/src/hotspot/share/opto/inlinetypenode.hpp
+@@ -101,7 +101,7 @@ public:
+   // Returns the constant oop of the default inline type allocation
+   static Node* default_oop(PhaseGVN& gvn, ciInlineKlass* vk);
+ 
+-  static Node* default_value(PhaseGVN& gvn, ciType* field_type);
++  static Node* default_value(PhaseGVN& gvn, ciType* field_type, ciInlineKlass* klass, int index);
+ 
+   // Support for control flow merges
+   bool has_phi_inputs(Node* region);
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index c0bc4314e61..f11fa7db225 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -2340,6 +2340,7 @@ bool LibraryCallKit::inline_unsafe_access(bool is_store, const BasicType type, c
+   if (base->is_InlineType()) {
+     InlineTypeNode* vt = base->as_InlineType();
+     if (is_store) {
++      ciInlineKlass* vk = vt->type()->inline_klass();
+       if (!vt->is_allocated(&_gvn)) {
+         return false;
+       }
+@@ -2361,9 +2362,11 @@ bool LibraryCallKit::inline_unsafe_access(bool is_store, const BasicType type, c
+         }
+ 
+         ciField* field = vk->get_non_flattened_field_by_offset(off);
+-        // Skip over direct field access for VectorPayloadMF* class instancs since
++        // Skip over direct field access for VectorPayloadMF* class instances since
+         // multifield is loaded into vector, alternatively we can create a lane
+-        // extraction logic.
++        // extraction logic. Given that unsafe put operations over vector payloads are part
++        // of fallback implementation, for the time being suboptimality should not be major
++        // concern.
+         if (field != nullptr && !VectorSupport::is_vector_payload_mf(vk->get_InlineKlass())) {
+           BasicType bt = type2field[field->type()->basic_type()];
+           if (bt == T_ARRAY || bt == T_NARROWOOP || (bt == T_PRIMITIVE_OBJECT && !field->is_flattened())) {
+@@ -2652,7 +2655,7 @@ bool LibraryCallKit::inline_unsafe_finish_private_buffer() {
+     return false;
+   }
+   InlineTypeNode* vt = buffer->as_InlineType();
+-  if (!vt->is_allocated(&_gvn)) {
++  if (!vt->is_allocated(&_gvn) || VectorSupport::is_vector_payload_mf(vt->inline_klass()->get_InlineKlass())) {
+     return false;
+   }
+   // TODO 8239003 Why is this needed?
+diff --git a/src/hotspot/share/opto/memnode.cpp b/src/hotspot/share/opto/memnode.cpp
+index 5ce009a9203..52615e73c0d 100644
+--- a/src/hotspot/share/opto/memnode.cpp
++++ b/src/hotspot/share/opto/memnode.cpp
+@@ -1243,7 +1243,12 @@ Node* LoadNode::Identity(PhaseGVN* phase) {
+   Node* addr = in(Address);
+   intptr_t offset;
+   Node* base = AddPNode::Ideal_base_and_offset(addr, phase, offset);
+-  if (base != nullptr && base->is_InlineType() && offset > oopDesc::klass_offset_in_bytes()) {
++  if (base != nullptr && base->is_InlineType() && 
++      // Multifields are loaded into vectors and lane level loads needs
++      // an explicit extraction operation.
++      (bottom_type()->isa_vect() ||
++       !VectorSupport::is_vector_payload_mf(base->as_InlineType()->inline_klass()->get_InlineKlass())) &&
++      offset > oopDesc::klass_offset_in_bytes()) {
+     Node* value = base->as_InlineType()->field_value_by_offset((int)offset, true);
+     if (value != nullptr) {
+       if (Opcode() == Op_LoadN) {
+diff --git a/src/hotspot/share/opto/parse1.cpp b/src/hotspot/share/opto/parse1.cpp
+index 7d897b4b47c..53bca6bd7e9 100644
+--- a/src/hotspot/share/opto/parse1.cpp
++++ b/src/hotspot/share/opto/parse1.cpp
+@@ -926,8 +926,11 @@ void Compile::return_values(JVMState* jvms) {
+     Node* res = kit.argument(0);
+     if (res->isa_InlineType() && VectorSupport::skip_value_scalarization(res->as_InlineType()->inline_klass()->get_InlineKlass())) {
+       InlineTypeNode* vt = res->as_InlineType();
+-      assert(vt->get_is_buffered() && vt->get_is_buffered()->get_int() == 1, "");
+-      ret->add_req(vt->get_oop());
++      // Prevent returning uninitialized VBA, this will make associated box useless and
++      // will be swept by dead code eliminator. Once VBA is expanded and initialized during
++      // PhaseVector box users will be tied to newly allocated and initialized objects.
++      assert(vt->get_is_buffered(), "");
++      ret->add_req(vt->get_is_buffered()->get_int() ? vt->get_oop() : res);
+     } else if (tf()->returns_inline_type_as_fields()) {
+       // Multiple return values (inline type fields): add as many edges
+       // to the Return node as returned values.
+@@ -2371,20 +2374,18 @@ void Parse::return_current(Node* value) {
+     Node* phi = _exits.argument(0);
+     const Type* return_type = phi->bottom_type();
+     const TypeInstPtr* tr = return_type->isa_instptr();
+-    if ((tf()->returns_inline_type_as_fields() || (_caller->has_method() && !Compile::current()->inlining_incrementally())) &&
+-        return_type->is_inlinetypeptr()) {
++    // Buffer the vector return types, for regular inline object caller
++    // expects scalarized fields to be passed back.
++    bool is_vector_value = value->is_InlineType() &&
++                           VectorSupport::skip_value_scalarization(value->as_InlineType()->inline_klass()->get_InlineKlass());
++    bool skip_scalarization = is_vector_value && Compile::current()->inlining_incrementally();
++    if (!is_vector_value && ((tf()->returns_inline_type_as_fields() || (_caller->has_method() && !Compile::current()->inlining_incrementally())) &&
++        return_type->is_inlinetypeptr())) {
+       // Inline type is returned as fields, make sure it is scalarized
+       if (!value->is_InlineType()) {
+         value = InlineTypeNode::make_from_oop(this, value, return_type->inline_klass(), method()->signature()->returns_null_free_inline_type());
+       }
+-      if (VectorSupport::skip_value_scalarization(value->as_InlineType()->inline_klass()->get_InlineKlass())) {
+-        // Buffer the vector return types, for regular inline object caller expects
+-        // scalarized fields to be passed back.
+-        PreserveReexecuteState preexecs(this);
+-        jvms()->set_should_reexecute(true);
+-        inc_sp(1);
+-        value = value->as_InlineType()->buffer(this);
+-      } else if (!_caller->has_method() || Compile::current()->inlining_incrementally()) {
++      if (!_caller->has_method() || Compile::current()->inlining_incrementally()) {
+         // Returning from root or an incrementally inlined method. Make sure all non-flattened
+         // fields are buffered and re-execute if allocation triggers deoptimization.
+         PreserveReexecuteState preexecs(this);
+@@ -2393,7 +2394,8 @@ void Parse::return_current(Node* value) {
+         inc_sp(1);
+         value = value->as_InlineType()->allocate_fields(this);
+       }
+-    } else if (value->is_InlineType()) {
++    } else if ((is_vector_value && skip_scalarization) ||
++               (value->Opcode() != Op_VectorBox && value->is_InlineType())) {
+       // Inline type is returned as oop, make sure it is buffered and re-execute
+       // if allocation triggers deoptimization.
+       PreserveReexecuteState preexecs(this);
+diff --git a/src/hotspot/share/opto/parse2.cpp b/src/hotspot/share/opto/parse2.cpp
+index e10f24abe00..68e4c120fe7 100644
+--- a/src/hotspot/share/opto/parse2.cpp
++++ b/src/hotspot/share/opto/parse2.cpp
+@@ -2437,6 +2437,10 @@ void Parse::sharpen_type_after_if(BoolTest::mask btest,
+             // at the control merge.
+             _gvn.set_type_bottom(ccast);
+             record_for_igvn(ccast);
++            if (tboth->is_inlinetypeptr()) {
++              assert(tboth->exact_klass(true)->is_inlinetype(), "");
++              ccast = InlineTypeNode::make_from_oop(this, ccast, tboth->exact_klass(true)->as_inline_klass());
++            }
+             // Here's the payoff.
+             replace_in_map(obj, ccast);
+           }
+diff --git a/src/hotspot/share/opto/parseHelper.cpp b/src/hotspot/share/opto/parseHelper.cpp
+index 066a72fb585..5ec8cedd75b 100644
+--- a/src/hotspot/share/opto/parseHelper.cpp
++++ b/src/hotspot/share/opto/parseHelper.cpp
+@@ -369,7 +369,8 @@ void Parse::do_withfield() {
+ 
+   BasicType bt = field->type()->basic_type();
+   int vec_len = field->secondary_fields_count();
+-  bool scalarize_fields = !is_java_primitive(bt) || !Matcher::match_rule_supported_vector(VectorNode::replicate_opcode(bt), vec_len, bt);
++  bool scalarize_fields = !field->is_multifield_base() || !is_java_primitive(bt) ||
++                          !Matcher::match_rule_supported_vector(VectorNode::replicate_opcode(bt), vec_len, bt);
+   if (scalarize_fields) {
+     for(int i = 0; i < vec_len; i++) {
+       new_vt->set_field_value_by_offset(field->offset_in_bytes() + i * type2aelembytes(bt), val);
+diff --git a/src/hotspot/share/opto/vector.cpp b/src/hotspot/share/opto/vector.cpp
+index 7dd566c17de..140caa12600 100644
+--- a/src/hotspot/share/opto/vector.cpp
++++ b/src/hotspot/share/opto/vector.cpp
+@@ -333,7 +333,7 @@ Node* PhaseVector::expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
+   vector = gvn.transform(vector)->as_InlineType();
+ 
+   Node* klass_node = kit.makecon(TypeKlassPtr::make(vk));
+-  Node* alloc_oop  = kit.new_instance(klass_node, NULL, NULL, /* deoptimize_on_exception */ true, vector);
++  Node* alloc_oop  = kit.new_instance(klass_node, NULL, NULL, /* deoptimize_on_exception */ true);
+   vector->store(&kit, alloc_oop, alloc_oop, vk);
+ 
+   C->set_max_vector_size(MAX2(C->max_vector_size(), vect_type->length_in_bytes()));
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index c6670d3b303..ce07432afa5 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -1719,6 +1719,7 @@ class VectorBoxNode : public InlineTypeNode {
+     payload_value = gvn.transform(payload_value);
+ 
+     box_node->set_field_value(0, payload_value);
++    box_node->set_is_buffered(gvn, false);
+     box_node->set_is_init(gvn);
+ 
+     return box_node;
+diff --git a/test/hotspot/jtreg/compiler/vectorapi/TestNoInline.java b/test/hotspot/jtreg/compiler/vectorapi/TestNoInline.java
+index f200323a92e..0830b6bc4dd 100644
+--- a/test/hotspot/jtreg/compiler/vectorapi/TestNoInline.java
++++ b/test/hotspot/jtreg/compiler/vectorapi/TestNoInline.java
+@@ -31,7 +31,6 @@ import jdk.incubator.vector.VectorSpecies;
+  * @bug 8244675
+  * @modules jdk.incubator.vector
+  *
+- * @run main/othervm -Xbatch -XX:-Inline            compiler.vectorapi.TestNoInline
+  * @run main/othervm -Xbatch -XX:-IncrementalInline compiler.vectorapi.TestNoInline
+  */
+ public class TestNoInline {

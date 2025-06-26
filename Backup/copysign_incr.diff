@@ -1,0 +1,267 @@
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 2b8a89cde4e..31e3b200298 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -7126,8 +7126,22 @@ void C2_MacroAssembler::vector_saturating_op(int ideal_opc, BasicType elem_bt, X
+ //
+ // ----------------------------------------------------------------------
+ 
+-void C2_MacroAssembler::vector_copy_sign_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src,
+-                                              XMMRegister xtmp, int vlen_enc) {
++void C2_MacroAssembler::scalar_copysign_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src, Register rtmp) {
++  assert(is_floating_point_type(elem_bt), "");
++  if (elem_bt == T_FLOAT) {
++    movl(rtmp, 0x7FFFFFFF);
++    movdl(dst, rtmp);
++    vpternlogd(dst, 0xE4, src, dst, Assembler::AVX_128bit);
++  } else {
++    assert(elem_bt == T_DOUBLE, "");
++    mov64(rtmp, 0x7FFFFFFFFFFFFFFFL);
++    movq(dst, rtmp);
++    vpternlogq(dst, 0xE4, src, dst, Assembler::AVX_128bit);
++  }
++}
++
++void C2_MacroAssembler::vector_copysign_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src,
++                                             XMMRegister xtmp, int vlen_enc) {
+   assert(is_floating_point_type(elem_bt), "");
+   vpternlogq(xtmp, 0xFF, xtmp, xtmp, vlen_enc);
+   if (elem_bt == T_FLOAT) {
+@@ -7175,7 +7189,7 @@ void C2_MacroAssembler::vpsrldq_imm(BasicType elem_bt, XMMRegister dst, XMMRegis
+   }
+ }
+ 
+-void C2_MacroAssembler::vector_copy_sign_avx(BasicType elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp, int vlen_enc) {
++void C2_MacroAssembler::vector_copysign_avx(BasicType elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp, int vlen_enc) {
+   int sign_mask_shift = elem_bt == T_DOUBLE ? 63 : 31;
+   // set all double lanes of temporary vector to 0xFFFFFFFF
+   vcmpps(xtmp, xtmp, xtmp, Assembler::EQ_UQ, vlen_enc);
+@@ -7191,6 +7205,10 @@ void C2_MacroAssembler::vector_copy_sign_avx(BasicType elem_bt, XMMRegister dst,
+   vpor(dst, dst, xtmp, vlen_enc);
+ }
+ 
++void C2_MacroAssembler::scalar_copysign_avx(BasicType elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp) {
++  vector_copysign_avx(elem_bt, dst, src, xtmp, Assembler::AVX_128bit);
++}
++
+ void C2_MacroAssembler::evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc) {
+   switch(opcode) {
+     case Op_AddVHF: evaddph(dst, src1, src2, vlen_enc); break;
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 06cc40f68dd..6d01aa47317 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -574,9 +574,13 @@
+ 
+   void vpslldq_imm(BasicType elem_bt, XMMRegister dst, XMMRegister src, int shift, int vlen_enc);
+ 
+-  void vector_copy_sign_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp, int vlen_enc);
++  void scalar_copysign_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src, Register rtmp);
+ 
+-  void vector_copy_sign_avx(BasicType elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp, int vlen_enc);
++  void vector_copysign_evex(BasicType elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp, int vlen_enc);
++
++  void scalar_copysign_avx(BasicType elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp);
++  
++  void vector_copysign_avx(BasicType elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp, int vlen_enc);
+ 
+   void evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc);
+ 
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 7ba550bdddb..90050263f5c 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1538,7 +1538,7 @@ bool Matcher::match_rule_supported(int opcode) {
+       break;
+     case Op_CopySignD:
+     case Op_CopySignF:
+-      if (UseAVX < 1 || !is_LP64)  {
++      if (UseAVX < 1)  {
+         return false;
+       }
+       break;
+@@ -1668,7 +1668,7 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+       break;
+     case Op_CopySignVD:
+     case Op_CopySignVF:
+-      if (UseAVX < 1 || !is_LP64)  {
++      if (UseAVX < 1)  {
+         return false;
+       }
+       break;
+@@ -6522,68 +6522,75 @@ instruct signumV_reg_evex(vec dst, vec src, vec zero, vec one, kReg ktmp1) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-#ifdef _LP64
+-instruct copySignF_reg(regF dst, regF src, regF xtmp) %{
++instruct copySignF_reg(regF dst, regF src, rRegI rtmp) %{
+   predicate(VM_Version::supports_avx512vl());
+   match(Set dst (CopySignF dst src));
+-  effect(TEMP xtmp);
+-  format %{ "CopySignF $dst, $src\t! using $xtmp as TEMP" %}
++  effect(TEMP dst, TEMP rtmp);
++  format %{ "CopySignF $dst, $src\t! using $rtmp as TEMP" %}
+   ins_encode %{
+-    __ vector_copy_sign_evex(T_FLOAT, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
++    __ scalar_copysign_evex(T_FLOAT, $dst$$XMMRegister, $src$$XMMRegister, $rtmp$$Register);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct copySignD_imm(regD dst, regD src, regD xtmp, immD zero) %{
++instruct copySignD_reg(regD dst, regD src, rRegL rtmp, immD zero) %{
+   predicate(VM_Version::supports_avx512vl());
+   match(Set dst (CopySignD dst (Binary src zero)));
+   ins_cost(100);
+-  effect(TEMP xtmp);
+-  format %{ "CopySignD  $dst, $src\t! using $xtmp as TEMP" %}
++  effect(TEMP dst, TEMP rtmp);
++  format %{ "CopySignD  $dst, $src\t! using $rtmp as TEMP" %}
+   ins_encode %{
+-    __ vector_copy_sign_evex(T_DOUBLE, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
++    __ scalar_copysign_evex(T_DOUBLE, $dst$$XMMRegister, $src$$XMMRegister, $rtmp$$Register);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-#endif // _LP64
+-
+-instruct copySignF_reg_avx(regF dst, regF src, regF xtmp) %{
++instruct copySignF_reg_avx(legRegF dst, legRegF src, legRegF xtmp) %{
+   predicate(!VM_Version::supports_avx512vl());
+   match(Set dst (CopySignF dst src));
+   effect(TEMP_DEF dst,TEMP xtmp);
+   format %{ "CopySignF $dst, $src\t! using $xtmp as TEMP" %}
+   ins_encode %{
+-    __ vector_copy_sign_avx(T_FLOAT, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
++    __ scalar_copysign_avx(T_FLOAT, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct copySignD_imm_avx(regD dst, regD src, regD xtmp, immD zero) %{
++instruct copySignD_reg_avx(legRegD dst, legRegD src, legRegD xtmp, immD zero) %{
+   predicate(!VM_Version::supports_avx512vl());
+   match(Set dst (CopySignD dst (Binary src zero)));
+   ins_cost(100);
+   effect(TEMP_DEF dst,TEMP xtmp);
+   format %{ "CopySignD  $dst, $src\t! using $xtmp as TEMP" %}
+   ins_encode %{
+-    __ vector_copy_sign_avx(T_DOUBLE, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
++    __ scalar_copysign_avx(T_DOUBLE, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct copySignV_reg(vec dst, vec src, vec xtmp) %{
++instruct copySignV_reg_evex(vec dst, vec src, vec xtmp) %{
++  predicate(VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n) == 64);
+   match(Set dst (CopySignVF dst src));
+   match(Set dst (CopySignVD dst src));
+   effect(TEMP xtmp);
+   format %{ "vector_copysign $dst, $src\t! using $xtmp as TEMP" %}
+   ins_encode %{
++    BasicType bt = Matcher::vector_element_basic_type(this);
+     int vlen_enc = vector_length_encoding(this);
++    __ vector_copysign_evex(bt, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct copySignV_reg_avx(legVec dst, legVec src, legVec xtmp) %{
++  predicate(!VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n) <= 32);
++  match(Set dst (CopySignVF dst src));
++  match(Set dst (CopySignVD dst src));
++  effect(TEMP dst, TEMP xtmp);
++  format %{ "vector_copysign $dst, $src\t! using $xtmp as TEMP" %}
++  ins_encode %{
+     BasicType bt = Matcher::vector_element_basic_type(this);
+-    if (VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(this) == 64) {
+-      __ vector_copy_sign_evex(bt, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
+-    } else {
+-      __ vector_copy_sign_avx(bt, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
+-    }
++    __ vector_copysign_avx(bt, $dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_256bit);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/math/TestCopySignIntrinsic.java b/test/hotspot/jtreg/compiler/intrinsics/math/TestCopySignIntrinsic.java
+index c39656dcc4d..0aa66cdcf80 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/math/TestCopySignIntrinsic.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/math/TestCopySignIntrinsic.java
+@@ -38,9 +38,12 @@
+ import compiler.lib.ir_framework.Test;
+ import compiler.lib.ir_framework.TestFramework;
+ import compiler.lib.ir_framework.Setup;
++import compiler.lib.verify.*;
+ import java.util.stream.IntStream;
+ import java.util.Random;
+ import jdk.test.lib.Utils;
++import compiler.lib.generators.Generator;
++import static compiler.lib.generators.Generators.G;
+ 
+ public class TestCopySignIntrinsic {
+     private static final Random rd = Utils.getRandomInstance();
+@@ -73,28 +76,11 @@ public TestCopySignIntrinsic() {
+         adresult = new double[SIZE];
+         edresult = new double[SIZE];
+ 
+-        IntStream.range(0, SIZE - 8).forEach(i -> { fmagnitude[i] = rd.nextFloat(-Float.MAX_VALUE, Float.MAX_VALUE); });
+-        IntStream.range(0, SIZE - 8).forEach(i -> { dmagnitude[i] = rd.nextFloat(-Float.MAX_VALUE, Float.MAX_VALUE); });
+-        IntStream.range(0, SIZE).forEach(i -> { fsign[i] = rd.nextFloat(-Float.MAX_VALUE, Float.MAX_VALUE); });
+-        IntStream.range(0, SIZE).forEach(i -> { dsign[i] = rd.nextFloat(-Float.MAX_VALUE, Float.MAX_VALUE); });
+-
+-        fmagnitude[SIZE - 1] = Float.NaN;
+-        fmagnitude[SIZE - 2] = Float.NaN;
+-        fmagnitude[SIZE - 3] = 0.0f;
+-        fmagnitude[SIZE - 4] = -0.0f;
+-        fmagnitude[SIZE - 5] = Float.NEGATIVE_INFINITY;
+-        fmagnitude[SIZE - 6] = Float.POSITIVE_INFINITY;
+-        fmagnitude[SIZE - 7] = -Float.MIN_VALUE;
+-        fmagnitude[SIZE - 8] = Float.MIN_VALUE;
+-
+-        dmagnitude[SIZE - 1] = Double.NaN;
+-        dmagnitude[SIZE - 2] = Double.NaN;
+-        dmagnitude[SIZE - 3] = 0.0;
+-        dmagnitude[SIZE - 4] = -0.0;
+-        dmagnitude[SIZE - 5] = Double.NEGATIVE_INFINITY;
+-        dmagnitude[SIZE - 6] = Double.POSITIVE_INFINITY;
+-        dmagnitude[SIZE - 7] = -Double.MIN_VALUE;
+-        dmagnitude[SIZE - 8] = Double.MIN_VALUE;
++        G.fill(G.floats(), fmagniture);
++        G.fill(G.floats(), fsign);
++
++        G.fill(G.doubles(), dmagniture);
++        G.fill(G.doubles(), dsign);
+ 
+         for (int i = 0; i < SIZE; i++) {
+             efresult[i] = Math.copySign(fmagnitude[i], fsign[i]);
+@@ -113,12 +99,7 @@ public void testCopySignF() {
+     @Check(test = "testCopySignF")
+     public void checkCopySignF() {
+         for (int i = 0; i < SIZE; i++) {
+-            if (afresult[i] != efresult[i]) {
+-                if (Float.isNaN(afresult[i]) ^ Float.isNaN(efresult[i]))  {
+-                    throw new RuntimeException("Incorrect result, Math.copySign(" + fmagnitude[i] + " , " + fsign[i] + ") => " +
+-                                               "expected : " + efresult[i] + " != " + " actual : " + afresult[i]);
+-                }
+-            }
++            Verify.checkEQ(afresult[i], efresult[i]);
+         }
+     }
+ 
+@@ -133,12 +114,7 @@ public void testCopySignD() {
+     @Check(test = "testCopySignD")
+     public void checkCopySignD() {
+         for (int i = 0; i < SIZE; i++) {
+-            if (Double.isNaN(adresult[i]) ^ Double.isNaN(edresult[i])) {
+-                if (adresult[i] != edresult[i]) {
+-                    throw new RuntimeException("Incorrect result, Math.copySign(" + dmagnitude[i] + " , " + dsign[i] + ") => " +
+-                                               "expected : " + edresult[i] + " != " + " actual : " + adresult[i]);
+-                }
+-            }
++            Verify.checkEQ(adresult[i], edresult[i]);
+         }
+     }
+ }

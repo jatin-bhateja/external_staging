@@ -1,0 +1,4185 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index c1679cd111f..dff1df6efa6 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -3446,6 +3446,22 @@ void Assembler::vmovdqu(XMMRegister dst, XMMRegister src) {
+   emit_int16(0x6F, (0xC0 | encode));
+ }
+ 
++void Assembler::vmovw(XMMRegister dst, Register src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x6E, (0xC0 | encode));
++}
++
++void Assembler::vmovw(Register dst, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(src->encoding(), 0, dst->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x7E, (0xC0 | encode));
++}
++
+ void Assembler::vmovdqu(XMMRegister dst, Address src) {
+   assert(UseAVX > 0, "");
+   InstructionMark im(this);
+@@ -8353,6 +8369,222 @@ void Assembler::vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector
+   emit_operand(dst, src, 0);
+ }
+ 
++void Assembler::evaddph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x58, (0xC0 | encode));
++}
++
++void Assembler::evaddph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x58);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evsubph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x5C, (0xC0 | encode));
++}
++
++void Assembler::evsubph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x5C);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evmulph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x59, (0xC0 | encode));
++}
++
++void Assembler::evmulph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x59);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evminph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x5D, (0xC0 | encode));
++}
++
++void Assembler::evminph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x5D);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x5F, (0xC0 | encode));
++}
++
++void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x5F);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evdivph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x5E, (0xC0 | encode));
++}
++
++void Assembler::evdivph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x5E);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evsqrtph(XMMRegister dst, XMMRegister src1, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src1->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x51, (0xC0 | encode));
++}
++
++void Assembler::evsqrtph(XMMRegister dst, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, 0, dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x51);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evfmadd132ph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP6, &attributes);
++  emit_int16(0x98, (0xC0 | encode));
++}
++
++void Assembler::evfmadd132ph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP6, &attributes);
++  emit_int8(0x98);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::eaddsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x58, (0xC0 | encode));
++}
++
++void Assembler::esubsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x5C, (0xC0 | encode));
++}
++
++void Assembler::edivsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x5E, (0xC0 | encode));
++}
++
++void Assembler::emulsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x59, (0xC0 | encode));
++}
++
++void Assembler::emaxsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x5F, (0xC0 | encode));
++}
++
++void Assembler::eminsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x5D, (0xC0 | encode));
++}
++
++void Assembler::esqrtsh(XMMRegister dst, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x51, (0xC0 | encode));
++}
++
++void Assembler::efmadd132sh(XMMRegister dst, XMMRegister src1, XMMRegister src2) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionAttr attributes(AVX_128bit, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP6, &attributes);
++  emit_int16((unsigned char)0x99, (0xC0 | encode));
++}
++
+ void Assembler::psubb(XMMRegister dst, XMMRegister src) {
+   NOT_LP64(assert(VM_Version::supports_sse2(), ""));
+   InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index eace7bb9cc1..5140435517b 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -585,6 +585,8 @@ class Assembler : public AbstractAssembler  {
+     VEX_OPCODE_0F_38 = 0x2,
+     VEX_OPCODE_0F_3A = 0x3,
+     VEX_OPCODE_0F_3C = 0x4,
++    VEX_OPCODE_MAP5  = 0x5,
++    VEX_OPCODE_MAP6  = 0x6,
+     VEX_OPCODE_MASK  = 0x1F
+   };
+ 
+@@ -1808,6 +1810,9 @@ class Assembler : public AbstractAssembler  {
+   void movsbl(Register dst, Address src);
+   void movsbl(Register dst, Register src);
+ 
++  void vmovw(XMMRegister dst, Register src);
++  void vmovw(Register dst, XMMRegister src);
++
+ #ifdef _LP64
+   void movsbq(Register dst, Address src);
+   void movsbq(Register dst, Register src);
+@@ -2671,6 +2676,33 @@ class Assembler : public AbstractAssembler  {
+   void vpaddd(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+ 
++  // FP16 instructions
++  void eaddsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
++  void esubsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
++  void emulsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
++  void edivsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
++  void emaxsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
++  void eminsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
++  void esqrtsh(XMMRegister dst, XMMRegister src);
++  void efmadd132sh(XMMRegister dst, XMMRegister src1, XMMRegister src2);
++
++  void evaddph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evaddph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evsubph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evsubph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evdivph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evdivph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evmulph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evmulph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evminph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evminph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evmaxph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evmaxph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evfmadd132ph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evfmadd132ph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evsqrtph(XMMRegister dst, XMMRegister src1, int vector_len);
++  void evsqrtph(XMMRegister dst, Address src1, int vector_len);
++
+   // Leaf level assembler routines for masked operations.
+   void evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
+   void evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, Address src, bool merge, int vector_len);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index aba5344b7e4..42e04549e1c 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -6475,3 +6475,39 @@ void C2_MacroAssembler::vector_rearrange_int_float(BasicType bt, XMMRegister dst
+     vpermps(dst, shuffle, src, vlen_enc);
+   }
+ }
++
++void C2_MacroAssembler::efp16sh(int opcode, XMMRegister dst, XMMRegister src1, XMMRegister src2) {
++  switch(opcode) {
++    case Op_AddHF: eaddsh(dst, src1, src2); break;
++    case Op_SubHF: esubsh(dst, src1, src2); break;
++    case Op_MulHF: emulsh(dst, src1, src2); break;
++    case Op_DivHF: edivsh(dst, src1, src2); break;
++    case Op_MaxHF: emaxsh(dst, src1, src2); break;
++    case Op_MinHF: eminsh(dst, src1, src2); break;
++    default: assert(false, "%s", NodeClassNames[opcode]); break;
++  }
++}
++
++void C2_MacroAssembler::evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc) {
++  switch(opcode) {
++    case Op_AddVHF: evaddph(dst, src1, src2, vlen_enc); break;
++    case Op_SubVHF: evsubph(dst, src1, src2, vlen_enc); break;
++    case Op_MulVHF: evmulph(dst, src1, src2, vlen_enc); break;
++    case Op_DivVHF: evdivph(dst, src1, src2, vlen_enc); break;
++    case Op_MaxVHF: evmaxph(dst, src1, src2, vlen_enc); break;
++    case Op_MinVHF: evminph(dst, src1, src2, vlen_enc); break;
++    default: assert(false, "%s", NodeClassNames[opcode]); break;
++  }
++}
++
++void C2_MacroAssembler::evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc) {
++  switch(opcode) {
++    case Op_AddVHF: evaddph(dst, src1, src2, vlen_enc); break;
++    case Op_SubVHF: evsubph(dst, src1, src2, vlen_enc); break;
++    case Op_MulVHF: evmulph(dst, src1, src2, vlen_enc); break;
++    case Op_DivVHF: evdivph(dst, src1, src2, vlen_enc); break;
++    case Op_MaxVHF: evmaxph(dst, src1, src2, vlen_enc); break;
++    case Op_MinVHF: evminph(dst, src1, src2, vlen_enc); break;
++    default: assert(false, "%s", NodeClassNames[opcode]); break;
++  }
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index af57546b3d1..83b489539b1 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -493,6 +493,11 @@
+   void vector_rearrange_int_float(BasicType bt, XMMRegister dst, XMMRegister shuffle,
+                                   XMMRegister src, int vlen_enc);
+ 
++  void efp16sh(int opcode, XMMRegister dst, XMMRegister src1, XMMRegister src2);
++
++  void evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc);
++
++  void evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc);
+ 
+   void vgather_subword(BasicType elem_ty, XMMRegister dst,  Register base, Register idx_base, Register offset,
+                        Register mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3, Register rtmp,
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index 038797924a9..9b8cf2d3773 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -1036,6 +1036,7 @@ void VM_Version::get_processor_features() {
+     _features &= ~CPU_AVX512_BITALG;
+     _features &= ~CPU_AVX512_IFMA;
+     _features &= ~CPU_APX_F;
++    _features &= ~CPU_AVX512_FP16;
+   }
+ 
+   // Currently APX support is only enabled for targets supporting AVX512VL feature.
+@@ -1085,6 +1086,7 @@ void VM_Version::get_processor_features() {
+       _features &= ~CPU_AVX512_BITALG;
+       _features &= ~CPU_AVX512_IFMA;
+       _features &= ~CPU_AVX_IFMA;
++      _features &= ~CPU_AVX512_FP16;
+     }
+   }
+ 
+@@ -3108,6 +3110,9 @@ uint64_t VM_Version::CpuidInfo::feature_flags() const {
+     }
+     if (sef_cpuid7_edx.bits.serialize != 0)
+       result |= CPU_SERIALIZE;
++
++    if (_cpuid_info.sef_cpuid7_edx.bits.avx512_fp16 != 0)
++      result |= CPU_AVX512_FP16;
+   }
+ 
+   // ZX features.
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.hpp b/src/hotspot/cpu/x86/vm_version_x86.hpp
+index d58b5a9c099..968d98ef529 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.hpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.hpp
+@@ -276,7 +276,9 @@ class VM_Version : public Abstract_VM_Version {
+                  serialize : 1,
+                            : 5,
+                    cet_ibt : 1,
+-                           : 11;
++                           : 2,
++              avx512_fp16  : 1,
++                           : 8;
+     } bits;
+   };
+ 
+@@ -415,7 +417,8 @@ class VM_Version : public Abstract_VM_Version {
+     decl(CET_SS,            "cet_ss",            57) /* Control Flow Enforcement - Shadow Stack */ \
+     decl(AVX512_IFMA,       "avx512_ifma",       58) /* Integer Vector FMA instructions*/ \
+     decl(AVX_IFMA,          "avx_ifma",          59) /* 256-bit VEX-coded variant of AVX512-IFMA*/ \
+-    decl(APX_F,             "apx_f",             60) /* Intel Advanced Performance Extensions*/
++    decl(APX_F,             "apx_f",             60) /* Intel Advanced Performance Extensions*/ \
++    decl(AVX512_FP16,       "avx512_fp16",       61) /* AVX512 FP16 ISA support*/
+ 
+ #define DECLARE_CPU_FEATURE_FLAG(id, name, bit) CPU_##id = (1ULL << bit),
+     CPU_FEATURE_FLAGS(DECLARE_CPU_FEATURE_FLAG)
+@@ -750,6 +753,7 @@ class VM_Version : public Abstract_VM_Version {
+   static bool supports_avx512_bitalg()  { return (_features & CPU_AVX512_BITALG) != 0; }
+   static bool supports_avx512_vbmi()  { return (_features & CPU_AVX512_VBMI) != 0; }
+   static bool supports_avx512_vbmi2() { return (_features & CPU_AVX512_VBMI2) != 0; }
++  static bool supports_avx512_fp16()  { return (_features & CPU_AVX512_FP16) != 0; }
+   static bool supports_hv()           { return (_features & CPU_HV) != 0; }
+   static bool supports_serialize()    { return (_features & CPU_SERIALIZE) != 0; }
+   static bool supports_f16c()         { return (_features & CPU_F16C) != 0; }
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index b55a1208cf2..abd9a32f7ee 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1461,6 +1461,20 @@ bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
++    case Op_AddHF:
++    case Op_DivHF:
++    case Op_FmaHF:
++    case Op_MaxHF:
++    case Op_MinHF:
++    case Op_MulHF:
++    case Op_ReinterpretS2HF:
++    case Op_ReinterpretHF2S:
++    case Op_SubHF:
++    case Op_SqrtHF:
++      if (!VM_Version::supports_avx512_fp16()) {
++        return false;
++      }
++      break;
+     case Op_VectorLoadShuffle:
+     case Op_VectorRearrange:
+     case Op_MulReductionVI:
+@@ -1726,6 +1740,18 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+   //   * 128bit vroundpd instruction is present only in AVX1
+   int size_in_bits = vlen * type2aelembytes(bt) * BitsPerByte;
+   switch (opcode) {
++    case Op_AddVHF:
++    case Op_DivVHF:
++    case Op_FmaVHF:
++    case Op_MaxVHF:
++    case Op_MinVHF:
++    case Op_MulVHF:
++    case Op_SubVHF:
++    case Op_SqrtVHF:
++      if (!VM_Version::supports_avx512_fp16()) {
++        return false;
++      }
++      break;
+     case Op_AbsVF:
+     case Op_NegVF:
+       if ((vlen == 16) && (VM_Version::supports_avx512dq() == false)) {
+@@ -10472,3 +10498,161 @@ instruct DoubleClassCheck_reg_reg_vfpclass(rRegI dst, regD src, kReg ktmp, rFlag
+   %}
+   ins_pipe(pipe_slow);
+ %}
++
++instruct reinterpretS2H(regF dst, rRegI src)
++%{
++  match(Set dst (ReinterpretS2HF src));
++  format %{ "vmovw $dst, $src" %}
++  ins_encode %{
++    __ vmovw($dst$$XMMRegister, $src$$Register);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct convF2HFAndS2HF(regF dst, regF src)
++%{
++  match(Set dst (ReinterpretS2HF (ConvF2HF src)));
++  format %{ "convF2HFAndS2HF $dst, $src" %}
++  ins_encode %{
++    __ vcvtps2ph($dst$$XMMRegister, $src$$XMMRegister, 0x04, Assembler::AVX_128bit);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct reinterpretH2S(rRegI dst, regF src)
++%{
++  match(Set dst (ReinterpretHF2S src));
++  format %{ "vmovw $dst, $src" %}
++  ins_encode %{
++    __ vmovw($dst$$Register, $src$$XMMRegister);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct scalar_sqrt_fp16(regF dst, regF src)
++%{
++  match(Set dst (SqrtHF src));
++  format %{ "esqrtsh $dst, $src" %}
++  ins_encode %{
++    int opcode = this->ideal_Opcode();
++    __ esqrtsh($dst$$XMMRegister, $src$$XMMRegister);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct scalar_binOps_fp16(regF dst, regF src1, regF src2)
++%{
++  match(Set dst (AddHF src1 src2));
++  match(Set dst (DivHF src1 src2));
++  match(Set dst (MaxHF src1 src2));
++  match(Set dst (MinHF src1 src2));
++  match(Set dst (MulHF src1 src2));
++  match(Set dst (SubHF src1 src2));
++  format %{ "efp16sh $dst, $src1, $src2" %}
++  ins_encode %{
++    int opcode = this->ideal_Opcode();
++    __ efp16sh(opcode, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct scalar_fma_fp16(regF dst, regF src1, regF src2)
++%{
++  match(Set dst (FmaHF  src2 (Binary dst src1)));
++  effect(DEF dst);
++  format %{ "evfmash $dst, $src1, $src2\t# $dst = $dst * $src1 + $src2 fma packedH" %}
++  ins_cost(150);
++  ins_encode %{
++    __ efmadd132sh($dst$$XMMRegister, $src2$$XMMRegister, $src1$$XMMRegister);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vector_sqrt_fp16_reg(vec dst, vec src)
++%{
++  match(Set dst (SqrtVHF src));
++  format %{ "evsqrtph_reg $dst, $src" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opcode = this->ideal_Opcode();
++    __ evsqrtph($dst$$XMMRegister, $src$$Address, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_sqrt_fp16_mem(vec dst, memory src)
++%{
++  match(Set dst (SqrtVHF (VectorReinterpret (LoadVector src))));
++  format %{ "evsqrtph_mem $dst, $src" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opcode = this->ideal_Opcode();
++    __ evsqrtph($dst$$XMMRegister, $src$$Address, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_binOps_fp16_reg(vec dst, vec src1, vec src2)
++%{
++  match(Set dst (AddVHF src1 src2));
++  match(Set dst (DivVHF src1 src2));
++  match(Set dst (MaxVHF src1 src2));
++  match(Set dst (MinVHF src1 src2));
++  match(Set dst (MulVHF src1 src2));
++  match(Set dst (SubVHF src1 src2));
++  format %{ "evbinopfp16_reg $dst, $src1, $src2" %}
++  ins_cost(450);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opcode = this->ideal_Opcode();
++    __ evfp16ph(opcode, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_binOps_fp16_mem(vec dst, vec src1, memory src2)
++%{
++  match(Set dst (AddVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (DivVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (MaxVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (MinVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (MulVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (SubVHF src1 (VectorReinterpret (LoadVector src2))));
++  format %{ "evbinopfp16_mem $dst, $src1, $src2" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opcode = this->ideal_Opcode();
++    __ evfp16ph(opcode, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$Address, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++
++instruct vector_fma_fp16_reg(vec dst, vec src1, vec src2)
++%{
++  match(Set dst (FmaVHF src2 (Binary dst src1)));
++  effect(DEF dst);
++  format %{ "evfmaph_reg $dst, $src1, $src2\t# $dst = $dst * $src1 + $src2 fma packedH" %}
++  ins_cost(450);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ evfmadd132ph($dst$$XMMRegister, $src2$$XMMRegister, $src1$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vector_fmah_fp16_mem(vec dst, memory src1, vec src2)
++%{
++  match(Set dst (FmaVHF src2 (Binary dst (VectorReinterpret (LoadVector src1)))));
++  effect(DEF dst);
++  format %{ "evfmaph_mem $dst, $src1, $src2\t# $dst = $dst * $src1 + $src2 fma packedH" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ evfmadd132ph($dst$$XMMRegister, $src2$$XMMRegister, $src1$$Address, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
+diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
+index b6ce21797a6..27c435dcec5 100644
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@ -925,19 +925,40 @@ class methodHandle;
+    do_signature(getAndAddShort_signature,                               "(Ljava/lang/Object;JS)S" )                           \
+   do_intrinsic(_getAndSetInt,             jdk_internal_misc_Unsafe,     getAndSetInt_name, getAndSetInt_signature, F_R)       \
+    do_name(     getAndSetInt_name,                                      "getAndSetInt")                                       \
+-   do_alias(    getAndSetInt_signature,                                 /*"(Ljava/lang/Object;JI)I"*/ getAndAddInt_signature)   \
++   do_alias(    getAndSetInt_signature,                                 /*"(Ljava/lang/Object;JI)I"*/ getAndAddInt_signature) \
+   do_intrinsic(_getAndSetLong,            jdk_internal_misc_Unsafe,     getAndSetLong_name, getAndSetLong_signature, F_R)     \
+    do_name(     getAndSetLong_name,                                     "getAndSetLong")                                      \
+-   do_alias(    getAndSetLong_signature,                                /*"(Ljava/lang/Object;JJ)J"*/ getAndAddLong_signature)  \
++   do_alias(    getAndSetLong_signature,                                /*"(Ljava/lang/Object;JJ)J"*/ getAndAddLong_signature)\
+   do_intrinsic(_getAndSetByte,            jdk_internal_misc_Unsafe,     getAndSetByte_name, getAndSetByte_signature, F_R)     \
+    do_name(     getAndSetByte_name,                                     "getAndSetByte")                                      \
+-   do_alias(    getAndSetByte_signature,                                /*"(Ljava/lang/Object;JB)B"*/ getAndAddByte_signature)  \
++   do_alias(    getAndSetByte_signature,                                /*"(Ljava/lang/Object;JB)B"*/ getAndAddByte_signature)\
+   do_intrinsic(_getAndSetShort,           jdk_internal_misc_Unsafe,     getAndSetShort_name, getAndSetShort_signature, F_R)   \
+-   do_name(     getAndSetShort_name,                                    "getAndSetShort")                                     \
+-   do_alias(    getAndSetShort_signature,                               /*"(Ljava/lang/Object;JS)S"*/ getAndAddShort_signature) \
+-  do_intrinsic(_getAndSetReference,       jdk_internal_misc_Unsafe,     getAndSetReference_name, getAndSetReference_signature, F_R) \
+-   do_name(     getAndSetReference_name,                                "getAndSetReference")                                  \
++   do_name(     getAndSetShort_name,                                    "getAndSetShort")                                             \
++   do_alias(    getAndSetShort_signature,                               /*"(Ljava/lang/Object;JS)S"*/ getAndAddShort_signature)       \
++  do_intrinsic(_getAndSetReference,       jdk_internal_misc_Unsafe,     getAndSetReference_name, getAndSetReference_signature, F_R)   \
++   do_name(     getAndSetReference_name,                                "getAndSetReference")                                         \
+    do_signature(getAndSetReference_signature,                           "(Ljava/lang/Object;JLjava/lang/Object;)Ljava/lang/Object;" ) \
++                                                                                                           \
++  /* Float16Math API intrinsification support */                                                           \
++                                                                                                           \
++  do_name(add_name, "add")                                                                                 \
++  do_name(subtract_name, "subtract")                                                                       \
++  do_name(multiply_name, "multiply")                                                                       \
++  do_name(divide_name, "divide")                                                                           \
++  /* Float16 signatures */                                                                                                \
++  do_signature(short_2_short_signature,   "(SS)S")                                                                        \
++  do_signature(short_3_short_signature,  "(SSS)S")                                                                        \
++  /* Float16 intrinsics for binary operations */                                                                          \
++  do_intrinsic(_add_float16,              jdk_internal_math_Float16Math, add_name,         short_2_short_signature,  F_S) \
++  do_intrinsic(_subtract_float16,         jdk_internal_math_Float16Math, subtract_name,    short_2_short_signature,  F_S) \
++  do_intrinsic(_multiply_float16,         jdk_internal_math_Float16Math, multiply_name,    short_2_short_signature,  F_S) \
++  do_intrinsic(_divide_float16,           jdk_internal_math_Float16Math, divide_name,      short_2_short_signature,  F_S) \
++  do_intrinsic(_max_float16,              jdk_internal_math_Float16Math, max_name,         short_2_short_signature,  F_S) \
++  do_intrinsic(_min_float16,              jdk_internal_math_Float16Math, min_name,         short_2_short_signature,  F_S) \
++  /* Float16 intrinsics for unary operations */                                                                           \
++  do_intrinsic(_sqrt_float16,             jdk_internal_math_Float16Math, sqrt_name,        short_short_signature,   F_S)  \
++  /* Float16 intrinsics for ternary operations */                                                                         \
++  do_intrinsic(_fma_float16,              jdk_internal_math_Float16Math, fma_name,         short_3_short_signature,  F_S) \
+                                                                                                                                                \
+   /* Vector API intrinsification support */                                                                                                    \
+                                                                                                                                                \
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index a65ab86fa0a..12fca8b0a5b 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -80,6 +80,8 @@ class SerializeClosure;
+   template(java_lang_Character_CharacterCache,        "java/lang/Character$CharacterCache")       \
+   template(java_lang_CharacterDataLatin1,             "java/lang/CharacterDataLatin1")            \
+   template(java_lang_Float,                           "java/lang/Float")                          \
++  template(java_lang_Float16,                         "java/lang/Float16")                        \
++  template(java_lang_Float16_signature,               "Ljava/lang/Float16;")                      \
+   template(java_lang_Double,                          "java/lang/Double")                         \
+   template(java_lang_Byte,                            "java/lang/Byte")                           \
+   template(java_lang_Byte_ByteCache,                  "java/lang/Byte$ByteCache")                 \
+@@ -136,6 +138,7 @@ class SerializeClosure;
+   template(java_util_Properties,                      "java/util/Properties")                     \
+   template(java_util_DualPivotQuicksort,              "java/util/DualPivotQuicksort")             \
+   template(jdk_internal_misc_Signal,                  "jdk/internal/misc/Signal")                 \
++  template(jdk_internal_math_Float16Math,             "jdk/internal/math/Float16Math")            \
+   template(jdk_internal_util_Preconditions,           "jdk/internal/util/Preconditions")          \
+   template(java_lang_AssertionStatusDirectives,       "java/lang/AssertionStatusDirectives")      \
+   template(jdk_internal_vm_PostVMInitHook,            "jdk/internal/vm/PostVMInitHook")           \
+diff --git a/src/hotspot/share/opto/addnode.hpp b/src/hotspot/share/opto/addnode.hpp
+index 8afbb440572..6ac08c63ad2 100644
+--- a/src/hotspot/share/opto/addnode.hpp
++++ b/src/hotspot/share/opto/addnode.hpp
+@@ -162,6 +162,14 @@ class AddDNode : public AddNode {
+   virtual uint ideal_reg() const { return Op_RegD; }
+ };
+ 
++//------------------------------AddHFNode---------------------------------------
++// Add 2 half-precision floats
++class AddHFNode : public AddFNode {
++public:
++  AddHFNode( Node *in1, Node *in2 ) : AddFNode(in1,in2) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------AddPNode---------------------------------------
+ // Add pointer plus integer to get pointer.  NOT commutative, really.
+ // So not really an AddNode.  Lives here, because people associate it with
+@@ -406,6 +414,26 @@ class MinFNode : public MaxNode {
+   int min_opcode() const { return Op_MinF; }
+ };
+ 
++//------------------------------MaxHFNode--------------------------------------
++// Maximum of 2 half floats.
++class MaxHFNode : public MaxFNode {
++public:
++  MaxHFNode(Node* in1, Node* in2) : MaxFNode(in1, in2) {}
++  virtual int Opcode() const;
++  int max_opcode() const { return Op_MaxHF; }
++  int min_opcode() const { return Op_MinHF; }
++};
++
++//------------------------------MinHFNode---------------------------------------
++// Minimum of 2 half floats.
++class MinHFNode : public MinFNode {
++public:
++  MinHFNode(Node* in1, Node* in2) : MinFNode(in1, in2) {}
++  virtual int Opcode() const;
++  int max_opcode() const { return Op_MaxHF; }
++  int min_opcode() const { return Op_MinHF; }
++};
++
+ //------------------------------MaxDNode---------------------------------------
+ // Maximum of 2 doubles.
+ class MaxDNode : public MaxNode {
+diff --git a/src/hotspot/share/opto/c2compiler.cpp b/src/hotspot/share/opto/c2compiler.cpp
+index 151c320cadd..38f4324dce3 100644
+--- a/src/hotspot/share/opto/c2compiler.cpp
++++ b/src/hotspot/share/opto/c2compiler.cpp
+@@ -604,6 +604,30 @@ bool C2Compiler::is_intrinsic_supported(vmIntrinsics::ID id) {
+   case vmIntrinsics::_doubleIsFinite:
+     if (!Matcher::match_rule_supported(Op_IsFiniteD)) return false;
+     break;
++  case vmIntrinsics::_add_float16:
++    if (!Matcher::match_rule_supported(Op_AddHF)) return false;
++    break;
++  case vmIntrinsics::_subtract_float16:
++    if (!Matcher::match_rule_supported(Op_SubHF)) return false;
++    break;
++  case vmIntrinsics::_multiply_float16:
++    if (!Matcher::match_rule_supported(Op_MulHF)) return false;
++    break;
++  case vmIntrinsics::_divide_float16:
++    if (!Matcher::match_rule_supported(Op_DivHF)) return false;
++    break;
++    case vmIntrinsics::_max_float16:
++    if (!Matcher::match_rule_supported(Op_MaxHF)) return false;
++    break;
++  case vmIntrinsics::_min_float16:
++    if (!Matcher::match_rule_supported(Op_MinHF)) return false;
++    break;
++  case vmIntrinsics::_sqrt_float16:
++    if (!Matcher::match_rule_supported(Op_SqrtHF)) return false;
++    break;
++  case vmIntrinsics::_fma_float16:
++    if (!Matcher::match_rule_supported(Op_FmaHF)) return false;
++    break;
+   case vmIntrinsics::_hashCode:
+   case vmIntrinsics::_identityHashCode:
+   case vmIntrinsics::_getClass:
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 215e48ef9da..9647b6b49a7 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -36,6 +36,7 @@ macro(AddF)
+ macro(AddI)
+ macro(AddL)
+ macro(AddP)
++macro(AddHF)
+ macro(Allocate)
+ macro(AllocateArray)
+ macro(AndI)
+@@ -166,6 +167,7 @@ macro(CountTrailingZerosV)
+ macro(CreateEx)
+ macro(DecodeN)
+ macro(DecodeNKlass)
++macro(DivHF)
+ macro(DivD)
+ macro(DivF)
+ macro(DivI)
+@@ -184,6 +186,7 @@ macro(FastLock)
+ macro(FastUnlock)
+ macro(FmaD)
+ macro(FmaF)
++macro(FmaHF)
+ macro(ForwardException)
+ macro(Goto)
+ macro(Halt)
+@@ -222,6 +225,7 @@ macro(MachProj)
+ macro(MulAddS2I)
+ macro(MaxI)
+ macro(MaxL)
++macro(MaxHF)
+ macro(MaxD)
+ macro(MaxF)
+ macro(MemBarAcquire)
+@@ -237,6 +241,7 @@ macro(MemBarStoreStore)
+ macro(MergeMem)
+ macro(MinI)
+ macro(MinL)
++macro(MinHF)
+ macro(MinF)
+ macro(MinD)
+ macro(ModD)
+@@ -253,6 +258,7 @@ macro(IsInfiniteF)
+ macro(IsFiniteF)
+ macro(IsInfiniteD)
+ macro(IsFiniteD)
++macro(MulHF)
+ macro(MulD)
+ macro(MulF)
+ macro(MulHiL)
+@@ -335,6 +341,7 @@ macro(SignumVF)
+ macro(SignumVD)
+ macro(SqrtD)
+ macro(SqrtF)
++macro(SqrtHF)
+ macro(RoundF)
+ macro(RoundD)
+ macro(Start)
+@@ -354,6 +361,7 @@ macro(StrEquals)
+ macro(StrIndexOf)
+ macro(StrIndexOfChar)
+ macro(StrInflatedCopy)
++macro(SubHF)
+ macro(SubD)
+ macro(SubF)
+ macro(SubI)
+@@ -376,6 +384,7 @@ macro(AddVI)
+ macro(AddReductionVI)
+ macro(AddVL)
+ macro(AddReductionVL)
++macro(AddVHF)
+ macro(AddVF)
+ macro(AddReductionVF)
+ macro(AddVD)
+@@ -384,6 +393,7 @@ macro(SubVB)
+ macro(SubVS)
+ macro(SubVI)
+ macro(SubVL)
++macro(SubVHF)
+ macro(SubVF)
+ macro(SubVD)
+ macro(MulVB)
+@@ -392,6 +402,7 @@ macro(MulVI)
+ macro(MulReductionVI)
+ macro(MulVL)
+ macro(MulReductionVL)
++macro(MulVHF)
+ macro(MulVF)
+ macro(MulReductionVF)
+ macro(MulVD)
+@@ -399,6 +410,8 @@ macro(MulReductionVD)
+ macro(MulAddVS2VI)
+ macro(FmaVD)
+ macro(FmaVF)
++macro(FmaVHF)
++macro(DivVHF)
+ macro(DivVF)
+ macro(DivVD)
+ macro(AbsVB)
+@@ -413,6 +426,7 @@ macro(NegVF)
+ macro(NegVD)
+ macro(SqrtVD)
+ macro(SqrtVF)
++macro(SqrtVHF)
+ macro(LShiftCntV)
+ macro(RShiftCntV)
+ macro(LShiftVB)
+@@ -433,6 +447,8 @@ macro(OrV)
+ macro(OrReductionV)
+ macro(XorV)
+ macro(XorReductionV)
++macro(MinVHF)
++macro(MaxVHF)
+ macro(MinV)
+ macro(MaxV)
+ macro(MinReductionV)
+@@ -480,6 +496,8 @@ macro(ExtractF)
+ macro(ExtractD)
+ macro(Digit)
+ macro(LowerCase)
++macro(ReinterpretS2HF)
++macro(ReinterpretHF2S)
+ macro(UpperCase)
+ macro(Whitespace)
+ macro(VectorBox)
+diff --git a/src/hotspot/share/opto/convertnode.cpp b/src/hotspot/share/opto/convertnode.cpp
+index 0a2131782a2..d324743b6e2 100644
+--- a/src/hotspot/share/opto/convertnode.cpp
++++ b/src/hotspot/share/opto/convertnode.cpp
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014, 2023, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2014, 2024, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -249,6 +249,26 @@ const Type* ConvF2HFNode::Value(PhaseGVN* phase) const {
+   return TypeInt::make( StubRoutines::f2hf(tf->getf()) );
+ }
+ 
++//------------------------------Ideal------------------------------------------
++Node* ConvF2HFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
++  // Optimize pattern - ConvHF2F (SqrtF) ConvF2HF ==> ReinterpretS2HF (SqrtHF) ReinterpretHF2S.
++  // It is safe to do so as we do not lose any precision bits during ConvHF2F and ConvF2HF conversions.
++  // Eventually if the loop is vectorizable, ReinterpretS2HF/HF2S will be optimized away as they are
++  // of the same size and only the vectorized sqrt nodes for half-precision floats will be generated.
++  Node* hf2f; Node* sqrthf;
++  if (in(1)->Opcode() == Op_SqrtF && in(1)->in(1)->Opcode() == Op_ConvHF2F) {
++    Node* sqrtf = in(1);
++    Node* convhf2f = sqrtf->in(1);
++    if (Matcher::match_rule_supported(Op_SqrtHF) &&
++        Matcher::match_rule_supported(Op_ReinterpretS2HF) &&
++        Matcher::match_rule_supported(Op_ReinterpretHF2S)) {
++      hf2f = phase->transform(new ReinterpretS2HFNode(convhf2f->in(1)));
++      sqrthf = phase->transform(new SqrtHFNode(phase->C, sqrtf->in(0), hf2f));
++      return new ReinterpretHF2SNode(sqrthf);
++    }
++  }
++  return nullptr;
++}
+ //=============================================================================
+ //------------------------------Value------------------------------------------
+ const Type* ConvF2INode::Value(PhaseGVN* phase) const {
+@@ -897,3 +917,35 @@ const Type* RoundDoubleModeNode::Value(PhaseGVN* phase) const {
+   return Type::DOUBLE;
+ }
+ //=============================================================================
++
++const Type* ReinterpretS2HFNode::Value(PhaseGVN* phase) const {
++  const Type* type = phase->type( in(1) );
++  // Convert FP16 constant value to Float constant value, this will allow
++  // further constant folding to be done at float granularity by value routines
++  // of FP16 IR nodes.
++  if ((type->isa_int() && type->is_int()->is_con()) && StubRoutines::hf2f_adr() != nullptr) {
++     jshort hfval = type->is_int()->get_con();
++     jfloat fval = StubRoutines::hf2f(hfval);
++     return TypeF::make(fval);
++  }
++  return Type::FLOAT;
++}
++
++Node* ReinterpretS2HFNode::Identity(PhaseGVN* phase) {
++  if (in(1)->Opcode() == Op_ReinterpretHF2S) {
++     assert(in(1)->in(1)->bottom_type()->isa_float(), "");
++     return in(1)->in(1);
++  }
++  return this;
++}
++
++const Type* ReinterpretHF2SNode::Value(PhaseGVN* phase) const {
++  const Type* type = phase->type( in(1) );
++  // Convert Float constant value to FP16 constant value.
++  if (type->isa_float_constant() && StubRoutines::f2hf_adr() != nullptr) {
++     jfloat fval = type->is_float_constant()->_f;
++     jshort hfval = StubRoutines::f2hf(fval);
++     return TypeInt::make(hfval);
++  }
++  return TypeInt::SHORT;
++}
+diff --git a/src/hotspot/share/opto/convertnode.hpp b/src/hotspot/share/opto/convertnode.hpp
+index 9438176a9f9..386d7d17e20 100644
+--- a/src/hotspot/share/opto/convertnode.hpp
++++ b/src/hotspot/share/opto/convertnode.hpp
+@@ -112,6 +112,7 @@ class ConvF2HFNode : public ConvertNode {
+   virtual int Opcode() const;
+   virtual const Type* in_type() const { return TypeInt::FLOAT; }
+   virtual const Type* Value(PhaseGVN* phase) const;
++  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
+ };
+ 
+ //------------------------------ConvF2INode------------------------------------
+@@ -213,6 +214,30 @@ class ConvL2INode : public ConvertNode {
+   virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
+ };
+ 
++
++//-----------------------------ReinterpretS2HFNode ---------------------------
++// Reinterpret Short to Half Float
++class ReinterpretS2HFNode : public Node {
++  public:
++  ReinterpretS2HFNode(Node* in1) : Node(0, in1) {}
++  virtual int Opcode() const;
++  virtual const Type* bottom_type() const { return Type::FLOAT; }
++  virtual const Type* Value(PhaseGVN* phase) const;
++  virtual Node* Identity(PhaseGVN* phase);
++  virtual uint  ideal_reg() const { return Op_RegF; }
++};
++
++//-----------------------------ReinterpretS2HFNode ---------------------------
++// Reinterpret Half Float to Short
++class ReinterpretHF2SNode : public Node {
++  public:
++  ReinterpretHF2SNode( Node *in1 ) : Node(0,in1) {}
++  virtual int Opcode() const;
++  virtual const Type* Value(PhaseGVN* phase) const;
++  virtual const Type* bottom_type() const { return TypeInt::SHORT; }
++  virtual uint  ideal_reg() const { return Op_RegI; }
++};
++
+ class RoundDNode : public Node {
+ public:
+   RoundDNode(Node* in1) : Node(nullptr, in1) {}
+diff --git a/src/hotspot/share/opto/divnode.hpp b/src/hotspot/share/opto/divnode.hpp
+index b2298faee78..322aec18ec3 100644
+--- a/src/hotspot/share/opto/divnode.hpp
++++ b/src/hotspot/share/opto/divnode.hpp
+@@ -77,6 +77,15 @@ class DivFNode : public Node {
+   virtual uint ideal_reg() const { return Op_RegF; }
+ };
+ 
++
++//------------------------------DivHFNode--------------------------------------
++// Half float division
++class DivHFNode : public DivFNode {
++public:
++  DivHFNode(Node* c, Node* dividend, Node* divisor) : DivFNode(c, dividend, divisor) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------DivDNode---------------------------------------
+ // Double division
+ class DivDNode : public Node {
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index 4ab4eea6f8f..38117b2e168 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -543,7 +543,14 @@ bool LibraryCallKit::try_to_inline(int predicate) {
+   case vmIntrinsics::_longBitsToDouble:
+   case vmIntrinsics::_floatToFloat16:
+   case vmIntrinsics::_float16ToFloat:           return inline_fp_conversions(intrinsic_id());
+-
++  case vmIntrinsics::_sqrt_float16:             return inline_fp16_operations(intrinsic_id(), 1);
++  case vmIntrinsics::_add_float16:
++  case vmIntrinsics::_subtract_float16:
++  case vmIntrinsics::_multiply_float16:
++  case vmIntrinsics::_divide_float16:
++  case vmIntrinsics::_max_float16:
++  case vmIntrinsics::_min_float16:              return inline_fp16_operations(intrinsic_id(), 2);
++  case vmIntrinsics::_fma_float16:              return inline_fp16_operations(intrinsic_id(), 3);
+   case vmIntrinsics::_floatIsFinite:
+   case vmIntrinsics::_floatIsInfinite:
+   case vmIntrinsics::_doubleIsFinite:
+@@ -4901,6 +4908,59 @@ bool LibraryCallKit::inline_native_Reflection_getCallerClass() {
+   return false;  // bail-out; let JVM_GetCallerClass do the work
+ }
+ 
++bool LibraryCallKit::inline_fp16_operations(vmIntrinsics::ID id, int num_args) {
++  if (!Matcher::match_rule_supported(Op_ReinterpretS2HF) ||
++      !Matcher::match_rule_supported(Op_ReinterpretHF2S)) {
++    return false;
++  }
++
++  // Inputs
++  Node* val1 = nullptr;
++  Node* val2 = nullptr;
++  Node* val3 = nullptr;
++  // Transformed nodes
++  Node* fld1 = nullptr;
++  Node* fld2 = nullptr;
++  Node* fld3 = nullptr;
++  switch(num_args) {
++    case 3:
++      assert(argument(2)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      fld3 = _gvn.transform(new ReinterpretS2HFNode(argument(3)));
++    // fall-through
++    case 2:
++      assert(argument(1)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      fld2 = _gvn.transform(new ReinterpretS2HFNode(argument(1)));
++    // fall-through
++    case 1:
++      assert(argument(0)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      fld1 = _gvn.transform(new ReinterpretS2HFNode(argument(0)));
++      break;
++    default: fatal("Unsupported number of arguments %d", num_args);
++  }
++
++  Node* result = nullptr;
++  switch (id) {
++  // Unary operations
++  case vmIntrinsics::_sqrt_float16:      result = _gvn.transform(new SqrtHFNode(C, control(), fld1)); break;
++
++  // Binary operations
++  case vmIntrinsics::_add_float16:       result = _gvn.transform(new AddHFNode(fld1, fld2));    break;
++  case vmIntrinsics::_subtract_float16:  result = _gvn.transform(new SubHFNode(fld1, fld2));    break;
++  case vmIntrinsics::_multiply_float16:  result = _gvn.transform(new MulHFNode(fld1, fld2));    break;
++  case vmIntrinsics::_divide_float16:    result = _gvn.transform(new DivHFNode(0, fld1, fld2)); break;
++  case vmIntrinsics::_max_float16:       result = _gvn.transform(new MaxHFNode(fld1, fld2));    break;
++  case vmIntrinsics::_min_float16:       result = _gvn.transform(new MinHFNode(fld1, fld2));    break;
++
++  // Ternary operations
++  case vmIntrinsics::_fma_float16:       result = _gvn.transform(new FmaHFNode(control(), fld1, fld2, fld3)); break;
++  default:
++    fatal_unexpected_iid(id);
++    break;
++  }
++  set_result(_gvn.transform(new ReinterpretHF2SNode(result)));
++  return true;
++}
++
+ bool LibraryCallKit::inline_fp_conversions(vmIntrinsics::ID id) {
+   Node* arg = argument(0);
+   Node* result = nullptr;
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index 4a853045174..246955e14c6 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -289,6 +289,7 @@ class LibraryCallKit : public GraphKit {
+   bool inline_unsafe_load_store(BasicType type,  LoadStoreKind kind, AccessKind access_kind);
+   bool inline_unsafe_fence(vmIntrinsics::ID id);
+   bool inline_onspinwait();
++  bool inline_fp16_operations(vmIntrinsics::ID id, int num_args);
+   bool inline_fp_conversions(vmIntrinsics::ID id);
+   bool inline_fp_range_check(vmIntrinsics::ID id);
+   bool inline_number_methods(vmIntrinsics::ID id);
+diff --git a/src/hotspot/share/opto/mulnode.cpp b/src/hotspot/share/opto/mulnode.cpp
+index ad98fda025f..adf7096fb69 100644
+--- a/src/hotspot/share/opto/mulnode.cpp
++++ b/src/hotspot/share/opto/mulnode.cpp
+@@ -67,7 +67,8 @@ Node *MulNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+   // only valid for the actual Mul nodes.
+   uint op = Opcode();
+   bool real_mul = (op == Op_MulI) || (op == Op_MulL) ||
+-                  (op == Op_MulF) || (op == Op_MulD);
++                  (op == Op_MulF) || (op == Op_MulD) ||
++                  (op == Op_MulHF);
+ 
+   // Convert "(-a)*(-b)" into "a*b".
+   if (real_mul && in1->is_Sub() && in2->is_Sub()) {
+@@ -122,7 +123,8 @@ Node *MulNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+   // constant, flatten the expression tree.
+   if( t2->singleton() &&        // Right input is a constant?
+       op != Op_MulF &&          // Float & double cannot reassociate
+-      op != Op_MulD ) {
++      op != Op_MulD &&
++      op != Op_MulHF) {
+     if( t2 == Type::TOP ) return nullptr;
+     Node *mul1 = in(1);
+ #ifdef ASSERT
+@@ -536,7 +538,20 @@ Node* MulFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+     Node* base = in(1);
+     return new AddFNode(base, base);
+   }
++  return MulNode::Ideal(phase, can_reshape);
++}
++
++//=============================================================================
++//------------------------------Ideal------------------------------------------
++// Check to see if we are multiplying by a constant 2 and convert to add, then try the regular MulNode::Ideal
++Node* MulHFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
++  const TypeF* t2 = phase->type(in(2))->isa_float_constant();
+ 
++  // x * 2 -> x + x
++  if (t2 != nullptr && t2->getf() == 2) {
++    Node* base = in(1);
++    return new AddHFNode(base, base);
++  }
+   return MulNode::Ideal(phase, can_reshape);
+ }
+ 
+diff --git a/src/hotspot/share/opto/mulnode.hpp b/src/hotspot/share/opto/mulnode.hpp
+index 4c5e3e33248..b5e96604ce9 100644
+--- a/src/hotspot/share/opto/mulnode.hpp
++++ b/src/hotspot/share/opto/mulnode.hpp
+@@ -143,6 +143,19 @@ class MulFNode : public MulNode {
+   virtual uint ideal_reg() const { return Op_RegF; }
+ };
+ 
++//------------------------------MulHFNode---------------------------------------
++// Multiply 2 half floats
++class MulHFNode : public MulFNode {
++public:
++  MulHFNode(Node* in1, Node* in2) : MulFNode(in1, in2) {}
++  virtual int Opcode() const;
++  int add_opcode() const { return Op_AddHF; }
++  int mul_opcode() const { return Op_MulHF; }
++  int max_opcode() const { return Op_MaxHF; }
++  int min_opcode() const { return Op_MinHF; }
++  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
++};
++
+ //------------------------------MulDNode---------------------------------------
+ // Multiply 2 doubles
+ class MulDNode : public MulNode {
+@@ -390,6 +403,14 @@ class FmaFNode : public FmaNode {
+   virtual const Type* Value(PhaseGVN* phase) const;
+ };
+ 
++//------------------------------FmaHFNode-------------------------------------
++// fused-multiply-add half-precision float
++class FmaHFNode : public FmaFNode {
++public:
++  FmaHFNode(Node* c, Node* in1, Node* in2, Node* in3) : FmaFNode(c, in1, in2, in3) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------MulAddS2INode----------------------------------
+ // Multiply shorts into integers and add them.
+ // Semantics: I_OUT = S1 * S2 + S3 * S4
+diff --git a/src/hotspot/share/opto/subnode.hpp b/src/hotspot/share/opto/subnode.hpp
+index 6ceaa851739..c4f8151e348 100644
+--- a/src/hotspot/share/opto/subnode.hpp
++++ b/src/hotspot/share/opto/subnode.hpp
+@@ -130,6 +130,14 @@ class SubDNode : public SubFPNode {
+   virtual uint  ideal_reg() const { return Op_RegD; }
+ };
+ 
++//------------------------------SubHFNode--------------------------------------
++// Subtract 2 half floats
++class SubHFNode : public SubFNode {
++public:
++  SubHFNode(Node* in1, Node* in2) : SubFNode(in1, in2) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------CmpNode---------------------------------------
+ // Compare 2 values, returning condition codes (-1, 0 or 1).
+ class CmpNode : public SubNode {
+@@ -528,6 +536,14 @@ class SqrtFNode : public Node {
+   virtual const Type* Value(PhaseGVN* phase) const;
+ };
+ 
++//------------------------------SqrtHFNode-------------------------------------
++// square root of a half-precision float
++class SqrtHFNode : public SqrtFNode {
++public:
++  SqrtHFNode(Compile* C, Node* c, Node* in1) : SqrtFNode(C, c, in1) {}
++  virtual int Opcode() const;
++};
++
+ //-------------------------------ReverseBytesINode--------------------------------
+ // reverse bytes of an integer
+ class ReverseBytesINode : public Node {
+diff --git a/src/hotspot/share/opto/superword.cpp b/src/hotspot/share/opto/superword.cpp
+index 20c8dfbff17..07cad42e3e2 100644
+--- a/src/hotspot/share/opto/superword.cpp
++++ b/src/hotspot/share/opto/superword.cpp
+@@ -2542,6 +2542,7 @@ void VLoopTypes::compute_vector_element_type() {
+ 
+ // Smallest type containing range of values
+ const Type* VLoopTypes::container_type(Node* n) const {
++  int opc = n->Opcode();
+   if (n->is_Mem()) {
+     BasicType bt = n->as_Mem()->memory_type();
+     if (n->is_Store() && (bt == T_CHAR)) {
+@@ -2549,7 +2550,7 @@ const Type* VLoopTypes::container_type(Node* n) const {
+       // preceding arithmetic operation extends values to signed Int.
+       bt = T_SHORT;
+     }
+-    if (n->Opcode() == Op_LoadUB) {
++    if (opc == Op_LoadUB) {
+       // Adjust type for unsigned byte loads, it is important for right shifts.
+       // T_BOOLEAN is used because there is no basic type representing type
+       // TypeInt::UBYTE. Use of T_BOOLEAN for vectors is fine because only
+@@ -2559,11 +2560,20 @@ const Type* VLoopTypes::container_type(Node* n) const {
+     return Type::get_const_basic_type(bt);
+   }
+   const Type* t = _vloop.phase()->igvn().type(n);
++
++  // First check if the node is a float16 node returning a "Short" type.
++  // If it is, then it needs to be checked before the next condition.
++  // Else it might return TypeInt::INT for float16 nodes instead of TypeInt::SHORT
++  // which could cause assertion errors in VectorCastNode::opcode().
++  if (opc == Op_ReinterpretHF2S || VectorNode::is_float16_node(opc)) {
++    return TypeInt::SHORT;
++  }
++
+   if (t->basic_type() == T_INT) {
+     // Float to half float conversion may be succeeded by a conversion from
+     // half float to float, in such a case back propagation of narrow type (SHORT)
+     // may not be possible.
+-    if (n->Opcode() == Op_ConvF2HF) {
++    if (opc == Op_ConvF2HF) {
+       return TypeInt::SHORT;
+     }
+     // A narrow type of arithmetic operations will be determined by
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 72b49c043b6..8e9ef703fd6 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -569,6 +569,23 @@ bool VectorNode::is_rotate_opcode(int opc) {
+   }
+ }
+ 
++bool VectorNode::is_float16_node(int opc) {
++  switch (opc) {
++  case Op_AddHF:
++  case Op_SubHF:
++  case Op_MulHF:
++  case Op_DivHF:
++  case Op_MinHF:
++  case Op_MaxHF:
++  case Op_SqrtHF:
++  case Op_FmaHF:
++  case Op_ConvF2HF:
++  case Op_ReinterpretS2HF:
++     return true;
++  default:
++     return false;
++  }
++}
+ bool VectorNode::is_scalar_rotate(Node* n) {
+   return is_rotate_opcode(n->Opcode());
+ }
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 23ddebaf338..e50e88bf845 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -103,6 +103,8 @@ class VectorNode : public TypeNode {
+   static bool is_muladds2i(const Node* n);
+   static bool is_roundopD(Node* n);
+   static bool is_scalar_rotate(Node* n);
++  static bool is_float16_node(int opc);
++
+   static bool is_vector_rotate_supported(int opc, uint vlen, BasicType bt);
+   static bool is_vector_integral_negate_supported(int opc, uint vlen, BasicType bt, bool use_predicate);
+   static bool is_populate_index_supported(BasicType bt);
+@@ -185,6 +187,14 @@ class AddVFNode : public VectorNode {
+   virtual int Opcode() const;
+ };
+ 
++//------------------------------AddVHFNode--------------------------------------
++// Vector add float
++class AddVHFNode : public VectorNode {
++public:
++  AddVHFNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------AddVDNode--------------------------------------
+ // Vector add double
+ class AddVDNode : public VectorNode {
+@@ -355,6 +365,14 @@ class SubVLNode : public VectorNode {
+   virtual int Opcode() const;
+ };
+ 
++//------------------------------SubVHFNode--------------------------------------
++// Vector subtract half float
++class SubVHFNode : public VectorNode {
++public:
++  SubVHFNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------SubVFNode--------------------------------------
+ // Vector subtract float
+ class SubVFNode : public VectorNode {
+@@ -403,6 +421,14 @@ class MulVLNode : public VectorNode {
+   virtual int Opcode() const;
+ };
+ 
++//------------------------------MulVFNode--------------------------------------
++// Vector multiply half float
++class MulVHFNode : public VectorNode {
++public:
++  MulVHFNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------MulVFNode--------------------------------------
+ // Vector multiply float
+ class MulVFNode : public VectorNode {
+@@ -453,6 +479,14 @@ class FmaVFNode : public FmaVNode {
+   virtual int Opcode() const;
+ };
+ 
++//------------------------------FmaVHFNode-------------------------------------
++// Vector fused-multiply-add half-precision float
++class FmaVHFNode : public FmaVNode {
++public:
++  FmaVHFNode(Node* in1, Node* in2, Node* in3, const TypeVect* vt) : FmaVNode(in1, in2, in3, vt) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------MulReductionVINode--------------------------------------
+ // Vector multiply byte, short and int as a reduction
+ class MulReductionVINode : public ReductionNode {
+@@ -537,6 +571,15 @@ class DivVDNode : public VectorNode {
+   virtual int Opcode() const;
+ };
+ 
++//------------------------------DivVHFNode-------------------------------------
++// Vector divide half float
++class DivVHFNode : public VectorNode {
++public:
++  DivVHFNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {}
++  virtual int Opcode() const;
++};
++
++
+ //------------------------------AbsVBNode--------------------------------------
+ // Vector Abs byte
+ class AbsVBNode : public VectorNode {
+@@ -569,6 +612,22 @@ class MaxVNode : public VectorNode {
+   virtual int Opcode() const;
+ };
+ 
++//------------------------------MinVHFNode------------------------------------
++// Vector Min for half floats
++class MinVHFNode : public VectorNode {
++public:
++  MinVHFNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {}
++  virtual int Opcode() const;
++};
++
++//------------------------------MaxVHFNode------------------------------------
++// Vector Max for half floats
++class MaxVHFNode : public VectorNode {
++public:
++  MaxVHFNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------AbsVINode--------------------------------------
+ // Vector Abs int
+ class AbsVINode : public VectorNode {
+@@ -672,6 +731,15 @@ class SqrtVFNode : public VectorNode {
+   SqrtVFNode(Node* in, const TypeVect* vt) : VectorNode(in,vt) {}
+   virtual int Opcode() const;
+ };
++
++//------------------------------SqrtVHFNode-------------------------------------
++// Vector Sqrt half-precision float
++class SqrtVHFNode : public VectorNode {
++public:
++  SqrtVHFNode(Node* in, const TypeVect* vt) : VectorNode(in, vt) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------RoundDoubleVNode--------------------------------
+ // Vector round double
+ class RoundDoubleModeVNode : public VectorNode {
+diff --git a/src/java.base/share/classes/java/lang/Float16.java b/src/java.base/share/classes/java/lang/Float16.java
+new file mode 100644
+index 00000000000..b86e742cb1a
+--- /dev/null
++++ b/src/java.base/share/classes/java/lang/Float16.java
+@@ -0,0 +1,1359 @@
++/*
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.  Oracle designates this
++ * particular file as subject to the "Classpath" exception as provided
++ * by Oracle in the LICENSE file that accompanied this code.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++package java.lang;
++
++import java.math.BigDecimal;
++
++import jdk.internal.math.*;
++import jdk.internal.vm.annotation.IntrinsicCandidate;
++
++import static java.lang.Float.float16ToFloat;
++import static java.lang.Float.floatToFloat16;
++
++/**
++ * The {@code Float16} is a primitive value class holding 16-bit data
++ * in IEEE 754 binary16 format.
++ *
++ * <p>Binary16 Format:<br>
++ *   S EEEEE  MMMMMMMMMM<br>
++ *   Sign        - 1 bit<br>
++ *   Exponent    - 5 bits<br>
++ *   Significand - 10 bits (does not include the <i>implicit bit</i> inferred from the exponent, see {@link #PRECISION})<br>
++ *
++ * <p>This is a <a href="https://openjdk.org/jeps/401">primitive value class</a> and its objects are
++ * identity-less non-nullable value objects.
++ *
++ * <p>Unless otherwise specified, the methods in this class use a
++ * <em>rounding policy</em> (JLS {@jls 15.4}) of {@linkplain
++ * java.math.RoundingMode#HALF_EVEN round to nearest}.
++ *
++ * @apiNote
++ * The methods in this class generally have analogous methods in
++ * either {@link Float}/{@link Double} or {@link Math}/{@link
++ * StrictMath}. Unless otherwise specified, the handling of special
++ * floating-point values such as {@linkplain #isNaN(Float16) NaN}
++ * values, {@linkplain #isInfinite(Float16) infinities}, and signed
++ * zeros of methods in this class is wholly analogous to the handling
++ * of equivalent cases by methods in {@code Float}, {@code Double},
++ * {@code Math}, etc.
++ * @author Joseph D. Darcy
++ * @author Jatin Bhateja
++ * @author Raffaello Giulietti
++ * @since 24.00
++ */
++
++// Currently Float16 is a value based class but in future will be aligned with
++// Enhanced Primitive Boxes described by JEP-402 (https://openjdk.org/jeps/402)
++@jdk.internal.ValueBased
++@SuppressWarnings("serial")
++public final class Float16
++    extends Number
++    implements Comparable<Float16> {
++    private final short value;
++    private static final long serialVersionUID = 16; // Not needed for a value class?
++
++    // Functionality for future consideration:
++    // IEEEremainder / remainder operator remainder
++
++   /**
++    * Returns a {@code Float16} instance wrapping IEEE 754 binary16
++    * encoded {@code short} value.
++    *
++    * @param  bits a short value.
++    */
++    private Float16 (short bits ) {
++        this.value = bits;
++    }
++
++    // Do *not* define any public constructors
++
++    /**
++     * A constant holding the positive infinity of type {@code
++     * Float16}.
++     *
++     * @see Float#POSITIVE_INFINITY
++     * @see Double#POSITIVE_INFINITY
++     */
++    public static final Float16 POSITIVE_INFINITY = valueOf(Float.POSITIVE_INFINITY);
++
++    /**
++     * A constant holding the negative infinity of type {@code
++     * Float16}.
++     *
++     * @see Float#NEGATIVE_INFINITY
++     * @see Double#NEGATIVE_INFINITY
++     */
++    public static final Float16 NEGATIVE_INFINITY = valueOf(Float.NEGATIVE_INFINITY);
++
++    /**
++     * A constant holding a Not-a-Number (NaN) value of type {@code
++     * Float16}.
++     *
++     * @see Float#NaN
++     * @see Double#NaN
++     */
++    public static final Float16 NaN = valueOf(Float.NaN);
++
++    /**
++     * A constant holding the largest positive finite value of type
++     * {@code Float16},
++     * (2-2<sup>-10</sup>)&middot;2<sup>15</sup>, numerically equal to 65504.0.
++     *
++     * @see Float#MAX_VALUE
++     * @see Double#MAX_VALUE
++     */
++    public static final Float16 MAX_VALUE = valueOf(0x1.ffcp15f);
++
++    /**
++     * A constant holding the smallest positive normal value of type
++     * {@code Float16}, 2<sup>-14</sup>.
++     *
++     * @see Float#MIN_NORMAL
++     * @see Double#MIN_NORMAL
++     */
++    public static final Float16 MIN_NORMAL = valueOf(0x1.0p-14f);
++
++    /**
++     * A constant holding the smallest positive nonzero value of type
++     * {@code Float16}, 2<sup>-24</sup>.
++     *
++     * @see Float#MIN_VALUE
++     * @see Double#MIN_VALUE
++     */
++    public static final Float16 MIN_VALUE = valueOf(0x1.0p-24f);
++
++    /**
++     * The number of bits used to represent a {@code Float16} value,
++     * {@value}.
++     *
++     * @see Float#SIZE
++     * @see Double#SIZE
++     */
++    public static final int SIZE = 16;
++
++    /**
++     * The number of bits in the significand of a {@code Float16}
++     * value, {@value}.  This corresponds to parameter N in section
++     * {@jls 4.2.3} of <cite>The Java Language Specification</cite>.
++     *
++     * @see Float#PRECISION
++     * @see Double#PRECISION
++     */
++    public static final int PRECISION = 11;
++
++    /**
++     * Maximum exponent a finite {@code Float16} variable may have,
++     * {@value}. It is equal to the value returned by {@code
++     * Float16.getExponent(Float16.MAX_VALUE)}.
++     *
++     * @see Float#MAX_EXPONENT
++     * @see Double#MAX_EXPONENT
++     */
++    public static final int MAX_EXPONENT = (1 << (SIZE - PRECISION - 1)) - 1; // 15
++
++    /**
++     * Minimum exponent a normalized {@code Float16} variable may
++     * have, {@value}.  It is equal to the value returned by {@code
++     * Float16.getExponent(Float16.MIN_NORMAL)}.
++     *
++     * @see Float#MIN_EXPONENT
++     * @see Double#MIN_EXPONENT
++     */
++    public static final int MIN_EXPONENT = 1 - MAX_EXPONENT; // -14
++
++    /**
++     * The number of bytes used to represent a {@code Float16} value,
++     * {@value}.
++     *
++     * @see Float#BYTES
++     * @see Double#BYTES
++     */
++    public static final int BYTES = SIZE / Byte.SIZE;
++
++    /**
++     * Returns a string representation of the {@code Float16}
++     * argument.
++     *
++     * @implSpec
++     * The current implementation acts as this {@code Float16} were
++     * {@linkplain #floatValue() converted} to {@code float} and then
++     * the string for that {@code float} returned. This behavior is
++     * expected to change to accommodate the precision of {@code
++     * Float16}.
++     *
++     * @param   f16   the {@code Float16} to be converted.
++     * @return a string representation of the argument.
++     * @see java.lang.Float#toString(float)
++     */
++    public static String toString(Float16 f16) {
++        // FIXME -- update for Float16 precision
++        return FloatToDecimal.toString(f16.floatValue());
++    }
++
++    /**
++     * Returns a hexadecimal string representation of the {@code
++     * Float16} argument.
++     *
++     * The behavior of this class is analogous to {@link
++     * Float#toHexString(float)} except that an exponent value of
++     * {@code "p14"} is used for subnormal {@code Float16} values.
++     *
++     * @param   f16   the {@code Float16} to be converted.
++     * @return a hex string representation of the argument.
++     *
++     * @see Float#toHexString(float)
++     * @see Double#toHexString(double)
++     */
++    public static String toHexString(Float16 f16) {
++        float f = f16.floatValue();
++        if (Math.abs(f) < float16ToFloat(MIN_NORMAL.value)
++            &&  f != 0.0f ) {// Float16 subnormal
++            // Adjust exponent to create subnormal double, then
++            // replace subnormal double exponent with subnormal Float16
++            // exponent
++            String s = Double.toHexString(Math.scalb((double)f,
++                                                     /* -1022+14 */
++                                                     Double.MIN_EXPONENT-
++                                                     MIN_EXPONENT));
++            return s.replaceFirst("p-1022$", "p-14");
++        } else {// double string will be the same as Float16 string
++            return Double.toHexString(f);
++        }
++    }
++
++    // -----------------------
++
++   /**
++    * {@return the value of an {@code int} converted to {@code
++    * Float16}}
++    *
++    * @param  value an {@code int} value.
++    *
++    * @apiNote
++    * This method corresponds to the convertFromInt operation defined
++    * in IEEE 754.
++    */
++    public static Float16 valueOf(int value) {
++        // int -> double conversion is exact
++        return valueOf((double)value);
++    }
++
++   /**
++    * {@return the value of a {@code long} converted to {@code Float16}}
++    *
++    * @apiNote
++    * This method corresponds to the convertFromInt operation defined
++    * in IEEE 754.
++    *
++    * @param  value a {@code long} value.
++    */
++    public static Float16 valueOf(long value) {
++        if (value <= -65_520L) {  // -(Float16.MAX_VALUE + Float16.ulp(Float16.MAX_VALUE) / 2)
++            return NEGATIVE_INFINITY;
++        } else {
++            if (value >= 65_520L) {  // Float16.MAX_VALUE + Float16.ulp(Float16.MAX_VALUE) / 2
++                return POSITIVE_INFINITY;
++            }
++            // Remaining range of long, the integers in approx. +/-
++            // 2^16, all fit in a float so the correct conversion can
++            // be done via an intermediate float conversion.
++            return valueOf((float)value);
++        }
++    }
++
++   /**
++    * {@return a {@code Float16} value rounded from the {@code float}
++    * argument using the round to nearest rounding policy}
++    *
++    * @apiNote
++    * This method corresponds to the convertFormat operation defined
++    * in IEEE 754.
++    *
++    * @param  f a {@code float}
++    */
++    public static Float16 valueOf(float f) {
++        return new Float16(Float.floatToFloat16(f));
++    }
++
++   /**
++    * {@return a {@code Float16} value rounded from the {@code double}
++    * argument using the round to nearest rounding policy}
++    *
++    * @apiNote
++    * This method corresponds to the convertFormat operation defined
++    * in IEEE 754.
++    *
++    * @param  d a {@code double}
++    */
++    public static Float16 valueOf(double d) {
++        long doppel = Double.doubleToRawLongBits(d);
++
++        short sign_bit = (short)((doppel & 0x8000_0000_0000_0000L) >> 48);
++
++        if (Double.isNaN(d)) {
++            // Have existing float code handle any attempts to
++            // preserve NaN bits.
++            return valueOf((float)d);
++        }
++
++        double abs_d = Math.abs(d);
++
++        // The overflow threshold is binary16 MAX_VALUE + 1/2 ulp
++        if (abs_d >= (0x1.ffcp15 + 0x0.002p15) ) {
++             // correctly signed infinity
++            return new Float16((short)(sign_bit | 0x7c00));
++        }
++
++        // Smallest magnitude nonzero representable binary16 value
++        // is equal to 0x1.0p-24; half-way and smaller rounds to zero.
++        if (abs_d <= 0x1.0p-24d * 0.5d) { // Covers double zeros and subnormals.
++            return new Float16(sign_bit); // Positive or negative zero
++        }
++
++        // Dealing with finite values in exponent range of binary16
++        // (when rounding is done, could still round up)
++        int exp = Math.getExponent(d);
++        assert -25 <= exp && exp <= 15;
++
++        // For binary16 subnormals, beside forcing exp to -15, retain
++        // the difference expdelta = E_min - exp.  This is the excess
++        // shift value, in addition to 42, to be used in the
++        // computations below.  Further the (hidden) msb with value 1
++        // in d must be involved as well.
++        int expdelta = 0;
++        long msb = 0x0000_0000_0000_0000L;
++        if (exp < -14) {
++            expdelta = -14 - exp; // FIXME?
++            exp = -15;
++            msb = 0x0010_0000_0000_0000L; // should be 0x0020_... ?
++        }
++        long f_signif_bits = doppel & 0x000f_ffff_ffff_ffffL | msb;
++
++        // Significand bits as if using rounding to zero (truncation).
++        short signif_bits = (short)(f_signif_bits >> (42 + expdelta));
++
++        // For round to nearest even, determining whether or not to
++        // round up (in magnitude) is a function of the least
++        // significant bit (LSB), the next bit position (the round
++        // position), and the sticky bit (whether there are any
++        // nonzero bits in the exact result to the right of the round
++        // digit). An increment occurs in three cases:
++        //
++        // LSB  Round Sticky
++        // 0    1     1
++        // 1    1     0
++        // 1    1     1
++        // See "Computer Arithmetic Algorithms," Koren, Table 4.9
++
++        long lsb    = f_signif_bits & (1L << 42 + expdelta);
++        long round  = f_signif_bits & (1L << 41 + expdelta);
++        long sticky = f_signif_bits & ((1L << 41 + expdelta) - 1);
++
++        if (round != 0 && ((lsb | sticky) != 0 )) {
++            signif_bits++;
++        }
++
++        // No bits set in significand beyond the *first* exponent bit,
++        // not just the significand; quantity is added to the exponent
++        // to implement a carry out from rounding the significand.
++        assert (0xf800 & signif_bits) == 0x0;
++
++        return new Float16((short)(sign_bit | ( ((exp + 15) << 10) + signif_bits ) ));
++    }
++
++    /**
++     * Returns a {@code Float16} holding the floating-point value
++     * represented by the argument string.
++     *
++     * @implSpec
++     * The current implementation acts as if the string were
++     * {@linkplain Double#parseDouble(String) parsed} as a {@code
++     * double} and then {@linkplain #valueOf(double) converted} to
++     * {@code Float16}. This behavior is expected to change to
++     * accommodate the precision of {@code Float16}.
++     *
++     * @param  s the string to be parsed.
++     * @return the {@code Float16} value represented by the string
++     *         argument.
++     * @throws NullPointerException  if the string is null
++     * @throws NumberFormatException if the string does not contain a
++     *               parsable {@code Float16}.
++     * @see    java.lang.Float#valueOf(String)
++     */
++    public static Float16 valueOf(String s) throws NumberFormatException {
++        // TOOD: adjust precision of parsing if needed
++        return valueOf(Double.parseDouble(s));
++    }
++
++    /**
++     * {@return a {@link Float16} value rounded from the {@link BigDecimal}
++     * argument using the round to nearest rounding policy}
++     *
++     * @apiNote
++     * This method corresponds to the convertFormat operation defined
++     * in IEEE 754.
++     *
++     * @param  v a {@link BigDecimal}
++     * @see java.math.BigDecimal#float16Value()
++     */
++    public static Float16 valueOf(BigDecimal v) {
++        return v.float16Value();
++    }
++
++    /**
++     * Returns {@code true} if the specified number is a
++     * Not-a-Number (NaN) value, {@code false} otherwise.
++     *
++     * @apiNote
++     * This method corresponds to the isNaN operation defined in IEEE
++     * 754.
++     *
++     * @param   f16   the value to be tested.
++     * @return  {@code true} if the argument is NaN;
++     *          {@code false} otherwise.
++     *
++     * @see Float#isNaN(float)
++     * @see Double#isNaN(double)
++     */
++    public static boolean isNaN(Float16 f16) {
++        final short bits = float16ToRawShortBits(f16);
++        // A NaN value has all ones in its exponent and a non-zero significand
++        return ((bits & 0x7c00) == 0x7c00 && (bits & 0x03ff) != 0);
++    }
++
++    /**
++     * Returns {@code true} if the specified number is infinitely
++     * large in magnitude, {@code false} otherwise.
++     *
++     * @apiNote
++     * This method corresponds to the isInfinite operation defined in
++     * IEEE 754.
++     *
++     * @param   f16   the value to be tested.
++     * @return  {@code true} if the argument is positive infinity or
++     *          negative infinity; {@code false} otherwise.
++     *
++     * @see Float#isInfinite(float)
++     * @see Double#isInfinite(double)
++     */
++    public static boolean isInfinite(Float16 f16) {
++        return ((float16ToRawShortBits(f16) ^ float16ToRawShortBits(POSITIVE_INFINITY)) & 0x7fff) == 0;
++    }
++
++    /**
++     * Returns {@code true} if the argument is a finite floating-point
++     * value; returns {@code false} otherwise (for NaN and infinity
++     * arguments).
++     *
++     * @apiNote
++     * This method corresponds to the isFinite operation defined in
++     * IEEE 754.
++     *
++     * @param f16 the {@code Float16} value to be tested
++     * @return {@code true} if the argument is a finite
++     * floating-point value, {@code false} otherwise.
++     *
++     * @see Float#isFinite(float)
++     * @see Double#isFinite(double)
++     */
++    public static boolean isFinite(Float16 f16) {
++        return (float16ToRawShortBits(f16) & (short)0x0000_7FFF) <= float16ToRawShortBits(MAX_VALUE);
++     }
++
++    /**
++     * {@return the value of this {@code Float16} as a {@code byte} after
++     * a narrowing primitive conversion}
++     *
++     * @jls 5.1.3 Narrowing Primitive Conversion
++     */
++    @Override
++    public byte byteValue() {
++        return (byte)floatValue();
++    }
++
++    /**
++     * {@return a string representation of this {@code Float16}}
++     *
++     * @implSpec
++     * This method returns the result of {@code Float16.toString(this)}.
++     */
++    public String toString() {
++        return toString(this);
++    }
++
++    /**
++     * {@return the value of this {@code Float16} as a {@code short}
++     * after a narrowing primitive conversion}
++     *
++     * @jls 5.1.3 Narrowing Primitive Conversion
++     */
++    @Override
++    public short shortValue() {
++        return (short)floatValue();
++    }
++
++    /**
++     * {@return the value of this {@code Float16} as an {@code int} after
++     * a narrowing primitive conversion}
++     *
++     * @jls 5.1.3 Narrowing Primitive Conversion
++     */
++    @Override
++    public int intValue() {
++        return (int)floatValue();
++    }
++
++    /**
++     * {@return value of this {@code Float16} as a {@code long} after a
++     * narrowing primitive conversion}
++     *
++     * @jls 5.1.3 Narrowing Primitive Conversion
++     */
++    @Override
++    public long longValue() {
++        return (long)floatValue();
++    }
++
++    /**
++     * {@return the value of this {@code Float16} as a {@code float}
++     * after a widening primitive conversion}
++     *
++     * @apiNote
++     * This method corresponds to the convertFormat operation defined
++     * in IEEE 754.
++     *
++     * @jls 5.1.2 Widening Primitive Conversion
++     */
++    @Override
++    public float floatValue() {
++        return float16ToFloat(value);
++    }
++
++    /**
++     * {@return the value of this {@code Float16} as a {@code double}
++     * after a widening primitive conversion}
++     *
++     * @apiNote
++     * This method corresponds to the convertFormat operation defined
++     * in IEEE 754.
++     *
++     * @jls 5.1.2 Widening Primitive Conversion
++     */
++    @Override
++    public double doubleValue() {
++        return (double)floatValue();
++    }
++
++    // Skipping for now:
++    // public int hashCode()
++    // public static int hashCode(Float16 value)
++    // public boolean equals(Object obj)
++
++    /**
++     * Returns a representation of the specified floating-point value
++     * according to the IEEE 754 floating-point binary16 bit layout,
++     * preserving Not-a-Number (NaN) values.
++     *
++     * @param   f16   a {@code Float16} floating-point number.
++     * @return the bits that represent the floating-point number.
++     *
++     * @see Float#floatToRawIntBits(float)
++     * @see Double#doubleToRawLongBits(double)
++     */
++    public static short float16ToRawShortBits(Float16 f16) {
++        return f16.value;
++    }
++
++    /**
++     * Returns a representation of the specified floating-point value
++     * according to the IEEE 754 floating-point binary16 bit layout.
++     *
++     * @param   fp16   a {@code Float16} floating-point number.
++     * @return the bits that represent the floating-point number.
++     *
++     * @see Float#floatToIntBits(float)
++     * @see Double#doubleToLongBits(double)
++     */
++    public static short float16ToShortBits(Float16 fp16) {
++        if (!isNaN(fp16)) {
++            return float16ToRawShortBits(fp16);
++        }
++        return 0x7e00;
++    }
++
++    /**
++     * Returns the {@code Float16} value corresponding to a given bit
++     * representation.
++     *
++     * @param   bits   any {@code short} integer.
++     * @return  the {@code Float16} floating-point value with the same
++     *          bit pattern.
++     *
++     * @see Float#intBitsToFloat(int)
++     * @see Double#longBitsToDouble(long)
++     */
++    public static Float16 shortBitsToFloat16(short bits) {
++        return new Float16(bits);
++    }
++
++    /**
++     * Compares two {@code Float16} objects numerically.
++     *
++     * This method imposes a total order on {@code Float16} objects
++     * with two differences compared to the incomplete order defined by
++     * the Java language numerical comparison operators ({@code <, <=,
++     * ==, >=, >}) on {@code float} and {@code double} values.
++     *
++     * <ul><li> A NaN is <em>unordered</em> with respect to other
++     *          values and unequal to itself under the comparison
++     *          operators.  This method chooses to define {@code
++     *          Float16.NaN} to be equal to itself and greater than all
++     *          other {@code Float16} values (including {@code
++     *          Float16.POSITIVE_INFINITY}).
++     *
++     *      <li> Positive zero and negative zero compare equal
++     *      numerically, but are distinct and distinguishable values.
++     *      This method chooses to define positive zero
++     *      to be greater than negative zero.
++     * </ul>
++     *
++     * @param   anotherFloat16   the {@code Float16} to be compared.
++     * @return  the value {@code 0} if {@code anotherFloat16} is
++     *          numerically equal to this {@code Float16}; a value
++     *          less than {@code 0} if this {@code Float16}
++     *          is numerically less than {@code anotherFloat16};
++     *          and a value greater than {@code 0} if this
++     *          {@code Float16} is numerically greater than
++     *          {@code anotherFloat16}.
++     *
++     * @see Float#compareTo(Float)
++     * @see Double#compareTo(Double)
++     * @jls 15.20.1 Numerical Comparison Operators {@code <}, {@code <=}, {@code >}, and {@code >=}
++     */
++    @Override
++    public int compareTo(Float16 anotherFloat16) {
++        return compare(this, anotherFloat16);
++    }
++
++    /**
++     * Compares the two specified {@code Float16} values.
++     *
++     * @param   f1        the first {@code Float16} to compare
++     * @param   f2        the second {@code Float16} to compare
++     * @return  the value {@code 0} if {@code f1} is
++     *          numerically equal to {@code f2}; a value less than
++     *          {@code 0} if {@code f1} is numerically less than
++     *          {@code f2}; and a value greater than {@code 0}
++     *          if {@code f1} is numerically greater than
++     *          {@code f2}.
++     *
++     * @see Float#compare(float, float)
++     * @see Double#compare(double, double)
++     */
++    public static int compare(Float16 f1, Float16 f2) {
++        return Float.compare(f1.floatValue(), f2.floatValue());
++    }
++
++    /**
++     * Returns the larger of two {@code Float16} values.
++     *
++     * @apiNote
++     * This method corresponds to the maximum operation defined in
++     * IEEE 754.
++     *
++     * @param a the first operand
++     * @param b the second operand
++     * @return the greater of {@code a} and {@code b}
++     * @see java.util.function.BinaryOperator
++     * @see Math#max(float, float)
++     * @see Math#max(double, double)
++     */
++    public static Float16 max(Float16 a, Float16 b) {
++        return shortBitsToFloat16(Float16Math.max(float16ToRawShortBits(a), float16ToRawShortBits(b)));
++    }
++
++    /**
++     * Returns the smaller of two {@code Float16} values.
++     *
++     * @apiNote
++     * This method corresponds to the minimum operation defined in
++     * IEEE 754.
++     *
++     * @param a the first operand
++     * @param b the second operand
++     * @return the smaller of {@code a} and {@code b}
++     * @see java.util.function.BinaryOperator
++     * @see Math#min(float, float)
++     * @see Math#min(double, double)
++     */
++    public static Float16 min(Float16 a, Float16 b) {
++        return shortBitsToFloat16(Float16Math.min(float16ToRawShortBits(a), float16ToRawShortBits(b)));
++    }
++
++    // Skipping for now
++    // public Optional<Float16> describeConstable()
++    // public Float16 resolveConstantDesc(MethodHandles.Lookup lookup)
++
++    /*
++     * Note: for the basic arithmetic operations {+, -, *, /} and
++     * square root, among binary interchange formats (binary16,
++     * binary32 a.k.a. float, binary64 a.k.a double, etc.) the "2p + 2"
++     * property holds. That is, if one format has p bits of precision,
++     * if the next larger format has at least 2p + 2 bits of
++     * precision, arithmetic on the smaller format can be implemented by:
++     *
++     * 1) converting each argument to the wider format
++     * 2) performing the operation in the wider format
++     * 3) converting the result from 2) to the narrower format
++     *
++     * For example, this property hold between the formats used for the
++     * float and double types. Therefore, the following is a valid
++     * implementation of a float addition:
++     *
++     * float add(float addend, float augend) {
++     *     return (float)((double)addend + (double)augend);
++     * }
++     *
++     * The same property holds between the float16 format and
++     * float. Therefore, the software implementations of Float16 {+,
++     * -, *, /} and square root below use the technique of widening
++     * the Float16 arguments to float, performing the operation in
++     * float arithmetic, and then rounding the float result to
++     * Float16.
++     *
++     * For discussion and derivation of this property see:
++     *
++     * "When Is Double Rounding Innocuous?" by Samuel Figueroa
++     * ACM SIGNUM Newsletter, Volume 30 Issue 3, pp 21-26
++     * https://dl.acm.org/doi/pdf/10.1145/221332.221334
++     *
++     * Figueroa's write-up refers to lecture notes by W. Kahan. Those
++     * lectures notes are assumed to be these ones by Kahan and
++     * others:
++     *
++     * https://www.arithmazium.org/classroom/lib/Lecture_08_notes_slides.pdf
++     * https://www.arithmazium.org/classroom/lib/Lecture_09_notes_slides.pdf
++     */
++
++    /**
++     * Adds two {@code Float16} values together as per the {@code +}
++     * operator semantics using the round to nearest rounding policy.
++     *
++     * The handling of signed zeros, NaNs, infinities, and other
++     * special cases by this method is the same as for the handling of
++     * those cases by the built-in {@code +} operator for
++     * floating-point addition (JLS {@jls 15.18.2}).
++     *
++     * @apiNote This method corresponds to the addition operation
++     * defined in IEEE 754.
++     *
++     * @param addend the first operand
++     * @param augend the second operand
++     * @return the sum of the operands
++     *
++     * @jls 15.4 Floating-point Expressions
++     */
++    @IntrinsicCandidate
++    public static Float16 add(Float16 addend, Float16 augend) {
++        return shortBitsToFloat16(Float16Math.add(float16ToRawShortBits(addend), float16ToRawShortBits(augend)));
++    }
++
++    /**
++     * Subtracts two {@code Float16} values as per the {@code -}
++     * operator semantics using the round to nearest rounding policy.
++     *
++     * The handling of signed zeros, NaNs, infinities, and other
++     * special cases by this method is the same as for the handling of
++     * those cases by the built-in {@code -} operator for
++     * floating-point subtraction (JLS {@jls 15.18.2}).
++     *
++     * @apiNote This method corresponds to the subtraction operation
++     * defined in IEEE 754.
++     *
++     * @param minuend the first operand
++     * @param  subtrahend the second operand
++     * @return the difference of the operands
++     *
++     * @jls 15.4 Floating-point Expressions
++     */
++    public static Float16 subtract(Float16 minuend, Float16 subtrahend) {
++        return shortBitsToFloat16(Float16Math.subtract(float16ToRawShortBits(minuend), float16ToRawShortBits(subtrahend)));
++    }
++
++    /**
++     * Multiplies two {@code Float16} values as per the {@code *}
++     * operator semantics using the round to nearest rounding policy.
++     *
++     * The handling of signed zeros, NaNs, and infinities, other
++     * special cases by this method is the same as for the handling of
++     * those cases by the built-in {@code *} operator for
++     * floating-point multiplication (JLS {@jls 15.17.1}).
++     *
++     * @apiNote This method corresponds to the multiplication
++     * operation defined in IEEE 754.
++     *
++     * @param multiplier the first operand
++     * @param multiplicand the second operand
++     * @return the product of the operands
++     *
++     * @jls 15.4 Floating-point Expressions
++     */
++    public static Float16 multiply(Float16 multiplier, Float16 multiplicand) {
++        return shortBitsToFloat16(Float16Math.multiply(float16ToRawShortBits(multiplier), float16ToRawShortBits(multiplicand)));
++    }
++
++    /**
++     * Divides two {@code Float16} values as per the {@code /}
++     * operator semantics using the round to nearest rounding policy.
++     *
++     * The handling of signed zeros, NaNs, and infinities, other
++     * special cases by this method is the same as for the handling of
++     * those cases by the built-in {@code /} operator for
++     * floating-point division (JLS {@jls 15.17.2}).
++     *
++     * @apiNote This method corresponds to the division
++     * operation defined in IEEE 754.
++     *
++     * @param dividend the first operand
++     * @param divisor the second operand
++     * @return the quotient of the operands
++     *
++     * @jls 15.4 Floating-point Expressions
++     */
++    public static Float16 divide(Float16 dividend, Float16 divisor) {
++        return shortBitsToFloat16(Float16Math.divide(float16ToRawShortBits(dividend), float16ToRawShortBits(divisor)));
++    }
++
++    /**
++     * {@return the square root of the operand} The square root is
++     * computed using the round to nearest rounding policy.
++     *
++     * The handling of zeros, NaN, infinities, and negative arguments
++     * by this method is analogous to the handling of those cases by
++     * {@link Math#sqrt(double)}.
++     *
++     * @apiNote
++     * This method corresponds to the squareRoot operation defined in
++     * IEEE 754.
++     *
++     * @param radicand the argument to have its square root taken
++     *
++     * @see Math#sqrt(double)
++     */
++    public static Float16 sqrt(Float16 radicand) {
++        // Rounding path of sqrt(Float16 -> double) -> Float16 is fine
++        // for preserving the correct final value. The conversion
++        // Float16 -> double preserves the exact numerical value. The
++        // of the double -> Float16 conversion also benefits from the
++        // 2p+2 property of IEEE 754 arithmetic.
++        return shortBitsToFloat16(Float16Math.sqrt(float16ToRawShortBits(radicand)));
++    }
++
++    /**
++     * Returns the fused multiply add of the three arguments; that is,
++     * returns the exact product of the first two arguments summed
++     * with the third argument and then rounded once to the nearest
++     * {@code Float16}.
++     *
++     * The handling of zeros, NaN, infinities, and other special cases
++     * by this method is analogous to the handling of those cases by
++     * {@link Math#fma(float, float, float)}.
++     *
++     * @apiNote This method corresponds to the fusedMultiplyAdd
++     * operation defined in IEEE 754.
++     *
++     * @param a a value
++     * @param b a value
++     * @param c a value
++     *
++     * @return (<i>a</i>&nbsp;&times;&nbsp;<i>b</i>&nbsp;+&nbsp;<i>c</i>)
++     * computed, as if with unlimited range and precision, and rounded
++     * once to the nearest {@code Float16} value
++     *
++     * @see Math#fma(float, float, float)
++     * @see Math#fma(double, double, double)
++     */
++    public static Float16 fma(Float16 a, Float16 b, Float16 c) {
++        /*
++         * The double format has sufficient precision that a Float16
++         * fma can be computed by doing the arithmetic in double, with
++         * one rounding error for the sum, and then a second rounding
++         * error to round the product-sum to Float16. In pseudocode,
++         * this method is equivalent to the following code, assuming
++         * casting was defined between Float16 and double:
++         *
++         * double product = (double)a * (double)b;  // Always exact
++         * double productSum = product + (double)c;
++         * return (Float16)produdctSum;
++         *
++         * (Note that a similar relationship does *not* hold between
++         * the double format and computing a float fma.)
++         *
++         * Below is a sketch of the proof that simple double
++         * arithmetic can be used to implement a correctly rounded
++         * Float16 fma.
++         *
++         * ----------------------
++         *
++         * As preliminaries, the handling of NaN and Infinity
++         * arguments falls out as a consequence of general operation
++         * of non-finite values by double * and +. Any NaN argument to
++         * fma will lead to a NaN result, infinities will propagate or
++         * get turned into NaN as appropriate, etc.
++         *
++         * One or more zero arguments are also handled correctly,
++         * including the propagation of the sign of zero if all three
++         * arguments are zero.
++         *
++         * The double format has 53 logical bits of precision and its
++         * exponent range goes from -1022 to 1023. The Float16 format
++         * has 11 bits of logical precision and its exponent range
++         * goes from -14 to 15. Therefore, the individual powers of 2
++         * representable in the Float16 format range from the
++         * subnormal 2^(-24), MIN_VALUE, to 2^15, the leading bit
++         * position of MAX_VALUE.
++         *
++         * In cases where the numerical value of (a * b) + c is
++         * computed exactly in a double, after a single rounding to
++         * Float16, the result is necessarily correct since the one
++         * double -> Float16 conversion is the only source of
++         * numerical error. The operation as implemented in those
++         * cases would be equivalent to rounding the infinitely precise
++         * value to the result format, etc.
++         *
++         * However, for some inputs, the intermediate product-sum will
++         * *not* be exact and additional analysis is needed to justify
++         * not having any corrective computation to compensate for
++         * intermediate rounding errors.
++         *
++         * The following analysis will rely on the range of bit
++         * positions representable in the intermediate
++         * product-sum.
++         *
++         * For the product a*b of Float16 inputs, the range of
++         * exponents for nonzero finite results goes from 2^(-48)
++         * (from MIN_VALUE squared) to 2^31 (from the exact value of
++         * MAX_VALUE squared). This full range of exponent positions,
++         * (31 -(-48) + 1 ) = 80 exceeds the precision of
++         * double. However, only the product a*b can exceed the
++         * exponent range of Float16. Therefore, there are three main
++         * cases to consider:
++         *
++         * 1) Large exponent product, exponent > Float16.MAX_EXPONENT
++         *
++         * The magnitude of the overflow threshold for Float16 is:
++         *
++         * MAX_VALUE + 1/2 * ulp(MAX_VALUE) =  0x1.ffcp15 + 0x0.002p15 = 0x1.ffep15
++         *
++         * Therefore, for any product greater than or equal in
++         * magnitude to (0x1.ffep15 + MAX_VALUE) = 0x1.ffdp16, the
++         * final fma result will certainly overflow to infinity (under
++         * round to nearest) since adding in c = -MAX_VALUE will still
++         * be at or above the overflow threshold.
++         *
++         * If the exponent of the product is 15 or 16, the smallest
++         * subnormal Float16 is 2^-24 and the ~40 bit wide range bit
++         * positions would fit in a single double exactly.
++         *
++         * 2) Exponent of product is within the range of _normal_
++         * Float16 values; Float16.MIN_EXPONENT <=  exponent <= Float16.MAX_EXPONENT
++         *
++         * The exact product has at most 22 contiguous bits in its
++         * logical significand. The third number being added in has at
++         * most 11 contiguous bits in its significand and the lowest
++         * bit position that could be set is 2^(-24). Therefore, when
++         * the product has the maximum in-range exponent, 2^15, a
++         * single double has enough precision to hold down to the
++         * smallest subnormal bit position, 15 - (-24) + 1 = 40 <
++         * 53. If the product was large and rounded up, increasing the
++         * exponent, when the third operand was added, this would
++         * cause the exponent to go up to 16, which is within the
++         * range of double, so the product-sum is exact and will be
++         * correct when rounded to Float16.
++         *
++         * 3) Exponent of product is in the range of subnormal values or smaller,
++         * exponent < Float16.MIN_EXPONENT
++         *
++         * The smallest exponent possible in a product is 2^(-48).
++         * For moderately sized Float16 values added to the product,
++         * with an exponent of about 4, the sum will not be
++         * exact. Therefore, an analysis is needed to determine if the
++         * double-rounding is benign or would lead to a different
++         * final Float16 result. Double rounding can lead to a
++         * different result in two cases:
++         *
++         * 1) The first rounding from the exact value to the extended
++         * precision (here `double`) happens to be directed _toward_ 0
++         * to a value exactly midway between two adjacent working
++         * precision (here `Float16`) values, followed by a second
++         * rounding from there which again happens to be directed
++         * _toward_ 0 to one of these values (the one with lesser
++         * magnitude).  A single rounding from the exact value to the
++         * working precision, in contrast, rounds to the value with
++         * larger magnitude.
++         *
++         * 2) Symmetrically, the first rounding to the extended
++         * precision happens to be directed _away_ from 0 to a value
++         * exactly midway between two adjacent working precision
++         * values, followed by a second rounding from there which
++         * again happens to be directed _away_ from 0 to one of these
++         * values (the one with larger magnitude).  However, a single
++         * rounding from the exact value to the working precision
++         * rounds to the value with lesser magnitude.
++         *
++         * If the double rounding occurs in other cases, it is
++         * innocuous, returning the same value as a single rounding to
++         * the final format. Therefore, it is sufficient to show that
++         * the first rounding to double does not occur at the midpoint
++         * of two adjacent Float16 values:
++         *
++         * 1) If a, b and c have the same sign, the sum a*b + c has a
++         * significand with a large gap of 20 or more 0s between the
++         * bits of the significand of c to the left (at most 11 bits)
++         * and those of the product a*b to the right (at most 22
++         * bits).  The rounding bit for the final working precision of
++         * `float16` is the leftmost 0 in the gap.
++         *
++         *   a) If rounding to `double` is directed toward 0, all the
++         *   0s in the gap are preserved, thus the `Float16` rounding
++         *   bit is unaffected and remains 0. This means that the
++         *   `double` value is _not_ the midpoint of two adjacent
++         *   `float16` values, so double rounding is harmless.
++         *
++         *   b) If rounding to `double` is directed away form 0, the
++         *   rightmost 0 in the gap might be replaced by a 1, but the
++         *   others are unaffected, including the `float16` rounding
++         *   bit. Again, this shows that the `double` value is _not_
++         *   the midpoint of two adjacent `float16` values, and double
++         *   rounding is innocuous.
++         *
++         * 2) If a, b and c have opposite signs, in the sum a*b + c
++         * the long gap of 0s above is replaced by a long gap of
++         * 1s. The `float16` rounding bit is the leftmost 1 in the
++         * gap, or the second leftmost 1 iff c is a power of 2. In
++         * both cases, the rounding bit is followed by at least
++         * another 1.
++         *
++         *   a) If rounding to `double` is directed toward 0, the
++         *   `float16` rounding bit and its follower are preserved and
++         *   both 1, so the `double` value is _not_ the midpoint of
++         *   two adjacent `float16` values, and double rounding is
++         *   harmless.
++         *
++         *   b) If rounding to `double` is directed away from 0, the
++         *   `float16` rounding bit and its follower are either
++         *   preserved (both 1), or both switch to 0. Either way, the
++         *   `double` value is again _not_ the midpoint of two
++         *   adjacent `float16` values, and double rounding is
++         *   harmless.
++         */
++        return shortBitsToFloat16(Float16Math.fma(float16ToRawShortBits(a), float16ToRawShortBits(b), float16ToRawShortBits(c)));
++    }
++
++    /**
++     * {@return the negation of the argument}
++     *
++     * Special cases:
++     * <ul>
++     * <li> If the argument is zero, the result is a zero with the
++     * opposite sign as the argument.
++     * <li> If the argument is infinite, the result is an infinity
++     * with the opposite sign as the argument.
++     * <li> If the argument is a NaN, the result is a NaN.
++     * </ul>
++     *
++     * @apiNote
++     * This method corresponds to the negate operation defined in IEEE
++     * 754.
++     *
++     * @param f16 the value to be negated
++     * @jls 15.15.4 Unary Minus Operator {@code -}
++     */
++    public static Float16 negate(Float16 f16) {
++        // Negate sign bit only. Per IEEE 754-2019 section 5.5.1,
++        // negate is a bit-level operation and not a logical
++        // operation. Therefore, in this case do _not_ use the float
++        // unary minus as an implementation as that is not guaranteed
++        // to flip the sign bit of a NaN.
++        return shortBitsToFloat16((short)(f16.value ^ (short)0x0000_8000));
++    }
++
++    /**
++     * {@return the absolute value of the argument}
++     *
++     * The handling of zeros, NaN, and infinities by this method is
++     * analogous to the handling of those cases by {@link
++     * Math#abs(float)}.
++     *
++     * @param f16 the argument whose absolute value is to be determined
++     *
++     * @see Math#abs(float)
++     * @see Math#abs(double)
++     */
++    public static Float16 abs(Float16 f16) {
++        // Zero out sign bit. Per IEE 754-2019 section 5.5.1, abs is a
++        // bit-level operation and not a logical operation.
++        return shortBitsToFloat16((short)(f16.value & (short)0x0000_7FFF));
++    }
++
++    /**
++     * Returns the unbiased exponent used in the representation of a
++     * {@code Float16}.
++     *
++     * <ul>
++     * <li>If the argument is NaN or infinite, then the result is
++     * {@link Float16#MAX_EXPONENT} + 1.
++     * <li>If the argument is zero or subnormal, then the result is
++     * {@link Float16#MIN_EXPONENT} - 1.
++     * </ul>
++     *
++     * @apiNote
++     * This method is analogous to the logB operation defined in IEEE
++     * 754, but returns a different value on subnormal arguments.
++     *
++     * @param f16 a {@code Float16} value
++     * @return the unbiased exponent of the argument
++     *
++     * @see Math#getExponent(float)
++     * @see Math#getExponent(double)
++     */
++    public static int getExponent(Float16 f16) {
++        return getExponent0(f16.value);
++    }
++
++    /**
++     * From the bitwise representation of a float16, mask out exponent
++     * bits, shift to the right and then subtract out float16's bias
++     * adjust, 15, to get true exponent value.
++     */
++    /*package*/ static int getExponent0(short bits) {
++        // package private to be usable in java.lang.Float.
++        int bin16ExpBits     = 0x0000_7c00 & bits;     // Five exponent bits.
++        return (bin16ExpBits >> (PRECISION - 1)) - 15;
++    }
++
++    /**
++     * Returns the size of an ulp of the argument.  An ulp, unit in
++     * the last place, of a {@code Float16} value is the positive
++     * distance between this floating-point value and the {@code
++     * Float16} value next larger in magnitude.  Note that for non-NaN
++     * <i>x</i>, <code>ulp(-<i>x</i>) == ulp(<i>x</i>)</code>.
++     *
++     * <p>Special Cases:
++     * <ul>
++     * <li> If the argument is NaN, then the result is NaN.
++     * <li> If the argument is positive or negative infinity, then the
++     * result is positive infinity.
++     * <li> If the argument is positive or negative zero, then the result is
++     * {@code Float16.MIN_VALUE}.
++     * <li> If the argument is &plusmn;{@code Float16.MAX_VALUE}, then
++     * the result is equal to 2<sup>5</sup>, 32.0.
++     * </ul>
++     *
++     * @param f16 the floating-point value whose ulp is to be returned
++     * @return the size of an ulp of the argument
++     */
++    public static Float16 ulp(Float16 f16) {
++        int exp = getExponent(f16);
++
++        return switch(exp) {
++        case MAX_EXPONENT + 1 -> abs(f16);          // NaN or infinity
++        case MIN_EXPONENT - 1 -> Float16.MIN_VALUE; // zero or subnormal
++        default -> {
++            assert exp <= MAX_EXPONENT && exp >= MIN_EXPONENT;
++            // ulp(x) is usually 2^(SIGNIFICAND_WIDTH-1)*(2^ilogb(x))
++            // Let float -> float16 conversion handle encoding issues.
++            yield scalb(valueOf(1), exp - (PRECISION - 1));
++        }
++        };
++    }
++
++    /**
++     * Returns the floating-point value adjacent to {@code v} in
++     * the direction of positive infinity.
++     *
++     * <p>Special Cases:
++     * <ul>
++     * <li> If the argument is NaN, the result is NaN.
++     *
++     * <li> If the argument is positive infinity, the result is
++     * positive infinity.
++     *
++     * <li> If the argument is zero, the result is
++     * {@link #MIN_VALUE}
++     *
++     * </ul>
++     *
++     * @apiNote This method corresponds to the nextUp
++     * operation defined in IEEE 754.
++     *
++     * @param v starting floating-point value
++     * @return The adjacent floating-point value closer to positive
++     * infinity.
++     */
++    public static Float16 nextUp(Float16 v) {
++        float f = v.floatValue();
++        if (f < Float.POSITIVE_INFINITY) {
++            if (f != 0) {
++                int bits = float16ToRawShortBits(v);
++                return shortBitsToFloat16((short) (bits + ((bits >= 0) ? 1 : -1)));
++            }
++            return MIN_VALUE;
++        }
++        return v; // v is NaN or +Infinity
++    }
++
++    /**
++     * Returns the floating-point value adjacent to {@code v} in
++     * the direction of negative infinity.
++     *
++     * <p>Special Cases:
++     * <ul>
++     * <li> If the argument is NaN, the result is NaN.
++     *
++     * <li> If the argument is negative infinity, the result is
++     * negative infinity.
++     *
++     * <li> If the argument is zero, the result is
++     * -{@link #MIN_VALUE}
++     *
++     * </ul>
++     *
++     * @apiNote This method corresponds to the nextDown
++     * operation defined in IEEE 754.
++     *
++     * @param v  starting floating-point value
++     * @return The adjacent floating-point value closer to negative
++     * infinity.
++     */
++    public static Float16 nextDown(Float16 v) {
++        float f = v.floatValue();
++        if (f > Float.NEGATIVE_INFINITY) {
++            if (f != 0) {
++                int bits = float16ToRawShortBits(v);
++                return shortBitsToFloat16((short) (bits - ((bits >= 0) ? 1 : -1)));
++            }
++            return negate(MIN_VALUE);
++        }
++        return v; // v is NaN or -Infinity
++    }
++
++    /**
++     * Returns {@code v} &times; 2<sup>{@code scaleFactor}</sup>
++     * rounded as if performed by a single correctly rounded
++     * floating-point multiply.  If the exponent of the result is
++     * between {@link Float16#MIN_EXPONENT} and {@link
++     * Float16#MAX_EXPONENT}, the answer is calculated exactly.  If the
++     * exponent of the result would be larger than {@code
++     * Float16.MAX_EXPONENT}, an infinity is returned.  Note that if the
++     * result is subnormal, precision may be lost; that is, when
++     * {@code scalb(x, n)} is subnormal, {@code scalb(scalb(x, n),
++     * -n)} may not equal <i>x</i>.  When the result is non-NaN, the
++     * result has the same sign as {@code v}.
++     *
++     * <p>Special cases:
++     * <ul>
++     * <li> If the first argument is NaN, NaN is returned.
++     * <li> If the first argument is infinite, then an infinity of the
++     * same sign is returned.
++     * <li> If the first argument is zero, then a zero of the same
++     * sign is returned.
++     * </ul>
++     *
++     * @apiNote This method corresponds to the scaleB operation
++     * defined in IEEE 754.
++     *
++     * @param v number to be scaled by a power of two.
++     * @param scaleFactor power of 2 used to scale {@code v}
++     * @return {@code v} &times; 2<sup>{@code scaleFactor}</sup>
++     */
++    public static Float16 scalb(Float16 v, int scaleFactor) {
++        // magnitude of a power of two so large that scaling a finite
++        // nonzero value by it would be guaranteed to over or
++        // underflow; due to rounding, scaling down takes an
++        // additional power of two which is reflected here
++        final int MAX_SCALE = Float16.MAX_EXPONENT + -Float16.MIN_EXPONENT +
++                Float16Consts.SIGNIFICAND_WIDTH + 1;
++
++        // Make sure scaling factor is in a reasonable range
++        scaleFactor = Math.max(Math.min(scaleFactor, MAX_SCALE), -MAX_SCALE);
++
++        /*
++         * Since + MAX_SCALE for Float16 fits well within the double
++         * exponent range and + Float16 -> double conversion is exact
++         * the multiplication below will be exact. Therefore, the
++         * rounding that occurs when the double product is cast to
++         * Float16 will be the correctly rounded Float16 result.
++         */
++        return valueOf(v.doubleValue()
++                * Double.longBitsToDouble((long) (scaleFactor + DoubleConsts.EXP_BIAS) << Double.PRECISION - 1));
++    }
++
++    /**
++     * Returns the first floating-point argument with the sign of the
++     * second floating-point argument.
++     * This method does not require NaN {@code sign}
++     * arguments to be treated as positive values; implementations are
++     * permitted to treat some NaN arguments as positive and other NaN
++     * arguments as negative to allow greater performance.
++     *
++     * @apiNote
++     * This method corresponds to the copySign operation defined in
++     * IEEE 754.
++     *
++     * @param magnitude  the parameter providing the magnitude of the result
++     * @param sign   the parameter providing the sign of the result
++     * @return a value with the magnitude of {@code magnitude}
++     * and the sign of {@code sign}.
++     */
++    public static Float16 copySign(Float16 magnitude, Float16 sign) {
++        return shortBitsToFloat16((short) ((float16ToRawShortBits(sign) &
++                        (Float16Consts.SIGN_BIT_MASK)) |
++                        (float16ToRawShortBits(magnitude) &
++                                (Float16Consts.EXP_BIT_MASK |
++                                        Float16Consts.SIGNIF_BIT_MASK))));
++    }
++
++    /**
++     * Returns the signum function of the argument; zero if the argument
++     * is zero, 1.0 if the argument is greater than zero, -1.0 if the
++     * argument is less than zero.
++     *
++     * <p>Special Cases:
++     * <ul>
++     * <li> If the argument is NaN, then the result is NaN.
++     * <li> If the argument is positive zero or negative zero, then the
++     *      result is the same as the argument.
++     * </ul>
++     *
++     * @param f the floating-point value whose signum is to be returned
++     * @return the signum function of the argument
++     */
++    public static Float16 signum(Float16 f) {
++        return (f.floatValue() == 0.0f || isNaN(f)) ? f : copySign(valueOf(1), f);
++    }
++
++}
+diff --git a/src/java.base/share/classes/java/math/BigDecimal.java b/src/java.base/share/classes/java/math/BigDecimal.java
+index d915568a502..8a9c5eba6de 100644
+--- a/src/java.base/share/classes/java/math/BigDecimal.java
++++ b/src/java.base/share/classes/java/math/BigDecimal.java
+@@ -334,6 +334,10 @@
+      */
+     private static final double L = 3.321928094887362;
+ 
++    private static final int P_F16 = Float16.PRECISION;  // 11
++    private static final int Q_MIN_F16 = Float16.MIN_EXPONENT - (P_F16 - 1);  // -24
++    private static final int Q_MAX_F16 = Float16.MAX_EXPONENT - (P_F16 - 1);  // 5
++
+     private static final int P_F = Float.PRECISION;  // 24
+     private static final int Q_MIN_F = Float.MIN_EXPONENT - (P_F - 1);  // -149
+     private static final int Q_MAX_F = Float.MAX_EXPONENT - (P_F - 1);  // 104
+@@ -3776,6 +3780,100 @@ public byte byteValueExact() {
+        return (byte)num;
+     }
+ 
++    /**
++     * Converts this {@code BigDecimal} to a {@code Float16}.
++     * This conversion is similar to the
++     * <i>narrowing primitive conversion</i> from {@code double} to
++     * {@code float} as defined in
++     * <cite>The Java Language Specification</cite>:
++     * if this {@code BigDecimal} has too great a
++     * magnitude to represent as a {@code Float16}, it will be
++     * converted to {@link Float16#NEGATIVE_INFINITY} or {@link
++     * Float16#POSITIVE_INFINITY} as appropriate.  Note that even when
++     * the return value is finite, this conversion can lose
++     * information about the precision of the {@code BigDecimal}
++     * value.Float16
++     *
++     * @return this {@code BigDecimal} converted to a {@code Float16}.
++     * @jls 5.1.3 Narrowing Primitive Conversion
++     */
++    public Float16 float16Value() {
++        /* For details, see the extensive comments in doubleValue(). */
++        if (intCompact != INFLATED) {
++            Float16 v = Float16.valueOf(intCompact);
++            if (scale == 0) {
++                return v;
++            }
++            /*
++             * The discussion for the double case also applies here. That is,
++             * the following test is precise for all long values, but here
++             * Long.MAX_VALUE is not an issue.
++             */
++            if (v.longValue() == intCompact) {
++                if (0 < scale && scale < FLOAT16_10_POW.length) {
++                    return Float16.divide(v, FLOAT16_10_POW[scale]);
++                }
++                if (0 > scale && scale > -FLOAT16_10_POW.length) {
++                    return Float16.multiply(v, FLOAT16_10_POW[-scale]);
++                }
++            }
++        }
++        return fullFloat16Value();
++    }
++
++    private Float16 fullFloat16Value() {
++        if (intCompact == 0) {
++            return Float16.valueOf(0);
++        }
++        BigInteger w = unscaledValue().abs();
++        long qb = w.bitLength() - (long) Math.ceil(scale * L);
++        Float16 signum = Float16.valueOf(signum());
++        if (qb < Q_MIN_F16 - 2) {  // qb < -26
++            return Float16.multiply(signum, Float16.valueOf(0));
++        }
++        if (qb > Q_MAX_F16 + P_F16 + 1) {  // qb > 17
++            return Float16.multiply(signum, Float16.POSITIVE_INFINITY);
++        }
++        if (scale < 0) {
++            return Float16.multiply(signum, w.multiply(bigTenToThe(-scale)).float16Value());
++        }
++        if (scale == 0) {
++            return Float16.multiply(signum, w.float16Value());
++        }
++        int ql = (int) qb - (P_F16 + 3);
++        BigInteger pow10 = bigTenToThe(scale);
++        BigInteger m, n;
++        if (ql <= 0) {
++            m = w.shiftLeft(-ql);
++            n = pow10;
++        } else {
++            m = w;
++            n = pow10.shiftLeft(ql);
++        }
++        BigInteger[] qr = m.divideAndRemainder(n);
++        /*
++         * We have
++         *      2^12 = 2^{P+1} <= i < 2^{P+5} = 2^16
++         * Contrary to the double and float cases, where we use long and int, resp.,
++         * here we cannot simply declare i as short, because P + 5 < Short.SIZE
++         * fails to hold.
++         * Using int is safe, though.
++         *
++         * Further, as Math.scalb(Float16) does not exists, we fall back to
++         * Math.scalb(double).
++         */
++        int i = qr[0].intValue();
++        int sb = qr[1].signum();
++        int dq = (Integer.SIZE - (P_F16 + 2)) - Integer.numberOfLeadingZeros(i);
++        int eq = (Q_MIN_F16 - 2) - ql;
++        if (dq >= eq) {
++            return Float16.valueOf(signum() * Math.scalb((double) (i | sb), ql));
++        }
++        int mask = (1 << eq) - 1;
++        int j = i >> eq | (Integer.signum(i & mask)) | sb;
++        return Float16.valueOf(signum() * Math.scalb((double) j, Q_MIN_F16 - 2));
++    }
++
+     /**
+      * Converts this {@code BigDecimal} to a {@code float}.
+      * This conversion is similar to the
+@@ -4150,6 +4248,15 @@ private double fullDoubleValue() {
+         1.0e6f, 1.0e7f, 1.0e8f, 1.0e9f, 1.0e10f
+     };
+ 
++    /**
++     * Powers of 10 which can be represented exactly in {@code
++     * Float16}.
++     */
++    private static final Float16[] FLOAT16_10_POW = {
++            Float16.valueOf(1), Float16.valueOf(10), Float16.valueOf(100),
++            Float16.valueOf(1_000), Float16.valueOf(10_000)
++    };
++
+     /**
+      * Returns the size of an ulp, a unit in the last place, of this
+      * {@code BigDecimal}.  An ulp of a nonzero {@code BigDecimal}
+diff --git a/src/java.base/share/classes/java/math/BigInteger.java b/src/java.base/share/classes/java/math/BigInteger.java
+index 3a5fd143937..8d5aeffce18 100644
+--- a/src/java.base/share/classes/java/math/BigInteger.java
++++ b/src/java.base/share/classes/java/math/BigInteger.java
+@@ -4395,6 +4395,30 @@ public long longValue() {
+         return result;
+     }
+ 
++    /**
++     * Converts this BigInteger to a {@code Float16}.  This
++     * conversion is similar to the
++     * <i>narrowing primitive conversion</i> from {@code double} to
++     * {@code float} as defined in
++     * <cite>The Java Language Specification</cite>:
++     * if this BigInteger has too great a magnitude
++     * to represent as a {@code Float16}, it will be converted to
++     * {@link Float16#NEGATIVE_INFINITY} or {@link
++     * Float16#POSITIVE_INFINITY} as appropriate.  Note that even when
++     * the return value is finite, this conversion can lose
++     * information about the precision of the BigInteger value.
++     *
++     * @return this BigInteger converted to a {@code Float16}.
++     * @jls 5.1.3 Narrowing Primitive Conversion
++     */
++    public Float16 float16Value() {
++        return signum == 0 || mag.length == 1
++                ? Float16.valueOf(longValue())  // might return infinities
++                : signum > 0
++                ? Float16.POSITIVE_INFINITY
++                : Float16.NEGATIVE_INFINITY;
++    }
++
+     /**
+      * Converts this BigInteger to a {@code float}.  This
+      * conversion is similar to the
+diff --git a/src/java.base/share/classes/jdk/internal/math/Float16Consts.java b/src/java.base/share/classes/jdk/internal/math/Float16Consts.java
+new file mode 100644
+index 00000000000..5942c90a633
+--- /dev/null
++++ b/src/java.base/share/classes/jdk/internal/math/Float16Consts.java
+@@ -0,0 +1,93 @@
++/*
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.  Oracle designates this
++ * particular file as subject to the "Classpath" exception as provided
++ * by Oracle in the LICENSE file that accompanied this code.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++package jdk.internal.math;
++
++import static java.lang.Float16.MIN_EXPONENT;
++import static java.lang.Float16.PRECISION;
++import static java.lang.Float16.SIZE;
++
++/**
++ * This class contains additional constants documenting limits of the
++ * {@code Float16} type.
++ */
++
++public class Float16Consts {
++    /**
++     * Don't let anyone instantiate this class.
++     */
++    private Float16Consts() {}
++
++    /**
++     * The number of logical bits in the significand of a
++     * {@code Float16} number, including the implicit bit.
++     */
++    public static final int SIGNIFICAND_WIDTH = PRECISION;
++
++    /**
++     * The exponent the smallest positive {@code Float16}
++     * subnormal value would have if it could be normalized.
++     */
++    public static final int MIN_SUB_EXPONENT =
++            MIN_EXPONENT - (SIGNIFICAND_WIDTH - 1); // -24
++
++    /**
++     * Bias used in representing a {@code Float16} exponent.
++     */
++    public static final int EXP_BIAS =
++            (1 << (SIZE - SIGNIFICAND_WIDTH - 1)) - 1; // 15
++
++    /**
++     * Bit mask to isolate the sign bit of a {@code Float16}.
++     */
++    public static final int SIGN_BIT_MASK = 1 << (SIZE - 1);
++
++    /**
++     * Bit mask to isolate the exponent field of a {@code Float16}.
++     */
++    public static final int EXP_BIT_MASK =
++            ((1 << (SIZE - SIGNIFICAND_WIDTH)) - 1) << (SIGNIFICAND_WIDTH - 1);
++
++    /**
++     * Bit mask to isolate the significand field of a {@code Float16}.
++     */
++    public static final int SIGNIF_BIT_MASK = (1 << (SIGNIFICAND_WIDTH - 1)) - 1;
++
++    /**
++     * Bit mask to isolate the magnitude bits (combined exponent and
++     * significand fields) of a {@code Float16}.
++     */
++    public static final int MAG_BIT_MASK = EXP_BIT_MASK | SIGNIF_BIT_MASK;
++
++    static {
++        // verify bit masks cover all bit positions and that the bit
++        // masks are non-overlapping
++        assert(((SIGN_BIT_MASK | EXP_BIT_MASK | SIGNIF_BIT_MASK) == 0xFFFF) &&
++               (((SIGN_BIT_MASK & EXP_BIT_MASK) == 0) &&
++                ((SIGN_BIT_MASK & SIGNIF_BIT_MASK) == 0) &&
++                ((EXP_BIT_MASK & SIGNIF_BIT_MASK) == 0)) &&
++                ((SIGN_BIT_MASK | MAG_BIT_MASK) == 0xFFFF));
++    }
++}
+diff --git a/src/java.base/share/classes/jdk/internal/math/Float16Math.java b/src/java.base/share/classes/jdk/internal/math/Float16Math.java
+new file mode 100644
+index 00000000000..573471f3ef0
+--- /dev/null
++++ b/src/java.base/share/classes/jdk/internal/math/Float16Math.java
+@@ -0,0 +1,168 @@
++/*
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.  Oracle designates this
++ * particular file as subject to the "Classpath" exception as provided
++ * by Oracle in the LICENSE file that accompanied this code.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++package jdk.internal.math;
++
++import jdk.internal.vm.annotation.IntrinsicCandidate;
++
++import static java.lang.Float.*;
++import static java.lang.Float16.*;
++
++/**
++ * The class {@code Float16Math} constains intrinsic entry points corresponding
++ * to scalar numeric operations defined in Float16 class.
++ * @author
++ * @since   24
++ */
++public final class Float16Math {
++
++    private Float16Math() {
++    }
++
++    /**
++     * Intrinsic entry point for {@code Float16.max} operation.
++     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
++     * enocoded value.
++     *
++     * @param a the first operand.
++     * @param b the second operand.
++     * @return the greater of {@code a} and {@code b}.
++     * @see Float16#max
++     */
++    @IntrinsicCandidate
++    public static short max(short a, short b) {
++        return floatToFloat16(Math.max(float16ToFloat(a), float16ToFloat(b)));
++    }
++
++    /**
++     * Intrinsic entry point for {@code Float16.min} operation.
++     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
++     * enocoded value.
++     *
++     * @param a the first operand.
++     * @param b the second operand.
++     * @return the smaller of {@code a} and {@code b}.
++     * @see Float16#min
++     */
++    @IntrinsicCandidate
++    public static short min(short a, short b) {
++        return floatToFloat16(Math.min(float16ToFloat(a), float16ToFloat(b)));
++    }
++
++    /**
++     * Intrinsic entry point for {@code Float16.add} operation.
++     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
++     * enocoded value.
++     *
++     * @param a the first operand.
++     * @param b the second operand.
++     * @return the sum of {@code a} and {@code b}.
++     * @see Float16#add
++     */
++    @IntrinsicCandidate
++    public static short add(short a, short b) {
++        return floatToFloat16(float16ToFloat(a) + float16ToFloat(b));
++    }
++
++    /**
++     * Intrinsic entry point for {@code Float16.subtract} operation.
++     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
++     * enocoded value.
++     *
++     * @param a the first operand.
++     * @param b the second operand.
++     * @return the difference of {@code a} and {@code b}.
++     * @see Float16#subtract
++     */
++    @IntrinsicCandidate
++    public static short subtract(short a, short b) {
++        return floatToFloat16(float16ToFloat(a) - float16ToFloat(b));
++    }
++
++    /**
++     * Intrinsic entry point for {@code Float16.multiply} operation.
++     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
++     * enocoded value.
++     *
++     * @param a the first operand.
++     * @param b the second operand.
++     * @return the product of {@code a} and {@code b}.
++     * @see Float16#multiply
++     */
++    @IntrinsicCandidate
++    public static short multiply(short a, short b) {
++        return floatToFloat16(float16ToFloat(a) * float16ToFloat(b));
++    }
++
++    /**
++     * Intrinsic entry point for {@code Float16.divide} operation.
++     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
++     * enocoded value.
++     *
++     * @param a the first operand.
++     * @param b the second operand.
++     * @return the quotient of {@code a} and {@code b}.
++     * @see Float16#divide
++     */
++    @IntrinsicCandidate
++    public static short divide(short a, short b) {
++        return floatToFloat16(float16ToFloat(a) / float16ToFloat(b));
++    }
++
++    /**
++     * Intrinsic entry point for {@code Float16.sqrt} operation.
++     * Accepts unwrapped 'short' parameter holding IEEE 754 binary16
++     * enocoded value.
++     *
++     * @param a the first operand.
++     * @return square root of a.
++     * @see Float16#sqrt
++     */
++    @IntrinsicCandidate
++    public static short sqrt(short a) {
++        return float16ToRawShortBits(valueOf(Math.sqrt(float16ToFloat(a))));
++    }
++
++    /**
++     * Intrinsic entry point for {@code Float16.fma} operation.
++     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
++     * enocoded value.
++     *
++     * @param a the first operand.
++     * @param b the second operand.
++     * @param c the third operand.
++     * @return (<i>a</i>&nbsp;&times;&nbsp;<i>b</i>&nbsp;+&nbsp;<i>c</i>)
++     * computed, as if with unlimited range and precision, and rounded
++     * once to the nearest {@code Float16} value
++     * @see Float16#fma
++     */
++    @IntrinsicCandidate
++    public static short fma(short a, short b, short c) {
++        // product is numerically exact in float before the cast to
++        // double; not necessary to widen to double before the
++        // multiply.
++        double product = (double)(float16ToFloat(a) * float16ToFloat(b));
++        return float16ToRawShortBits(valueOf(product + float16ToFloat(c)));
++    }
++}
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java b/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java
+new file mode 100644
+index 00000000000..dcc36614b35
+--- /dev/null
++++ b/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java
+@@ -0,0 +1,197 @@
++/*
++ * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2024, Arm Limited. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/**
++* @test
++* @bug 8308363 8336406
++* @summary Validate compiler IR for FP16 scalar operations.
++* @requires vm.compiler2.enabled
++* @library /test/lib /
++* @run driver TestFP16ScalarOps
++*/
++
++import compiler.lib.ir_framework.*;
++import java.util.Random;
++import static java.lang.Float16.*;
++
++public class TestFP16ScalarOps {
++    private static final int count = 1024;
++
++    private short[] src;
++    private short[] dst;
++    private short res;
++
++    public static void main(String args[]) {
++        TestFramework.runWithFlags("--enable-preview");
++    }
++
++    public TestFP16ScalarOps() {
++        src = new short[count];
++        dst = new short[count];
++        for (int i = 0; i < count; i++) {
++            src[i] = Float.floatToFloat16(i);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.ADD_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(counts = {IRNode.ADD_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testAdd1() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.add(res, shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.ADD_HF, IRNode.REINTERPRET_S2HF, IRNode.REINTERPRET_HF2S},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(failOn = {IRNode.ADD_HF, IRNode.REINTERPRET_S2HF, IRNode.REINTERPRET_HF2S},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testAdd2() {
++        Float16 hf0 = shortBitsToFloat16((short)0);
++        Float16 hf1 = shortBitsToFloat16((short)15360);
++        Float16 hf2 = shortBitsToFloat16((short)16384);
++        Float16 hf3 = shortBitsToFloat16((short)16896);
++        Float16 hf4 = shortBitsToFloat16((short)17408);
++        res = float16ToRawShortBits(Float16.add(Float16.add(Float16.add(Float16.add(hf0, hf1), hf2), hf3), hf4));
++    }
++
++    @Test
++    @IR(counts = {IRNode.SUB_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(counts = {IRNode.SUB_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testSub() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.subtract(res, shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.MUL_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(counts = {IRNode.MUL_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testMul() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.multiply(res, shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.DIV_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(counts = {IRNode.DIV_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testDiv() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.divide(res, shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.MAX_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(counts = {IRNode.MAX_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testMax() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.max(res, shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.MIN_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(counts = {IRNode.MIN_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testMin() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.min(res, shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.ABS_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testAbs() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.abs(shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.NEG_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testNeg() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.negate(shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.SQRT_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(counts = {IRNode.SQRT_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testSqrt() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            res = Float16.sqrt(shortBitsToFloat16(src[i]));
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.FMA_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    @IR(counts = {IRNode.FMA_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testFma() {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < count; i++) {
++            Float16 in = shortBitsToFloat16(src[i]);
++            res = Float16.fma(in, in, in) ;
++            dst[i] = float16ToRawShortBits(res);
++        }
++    }
++}
+diff --git a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java
+new file mode 100644
+index 00000000000..ce4da4aeaaa
+--- /dev/null
++++ b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java
+@@ -0,0 +1,284 @@
++/*
++ * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2024, Arm Limited. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/**
++* @test
++* @bug 8308363 8336406
++* @summary Test vectorization of Float16 binary operations
++* @requires vm.compiler2.enabled
++* @library /test/lib /
++* @compile TestFloat16VectorOps.java
++* @run driver compiler.vectorization.TestFloat16VectorOps
++*/
++
++package compiler.vectorization;
++import compiler.lib.ir_framework.*;
++import java.util.Random;
++import static java.lang.Float16.*;
++
++public class TestFloat16VectorOps {
++    private Float16[] input1;
++    private Float16[] input2;
++    private Float16[] input3;
++    private Float16[] output;
++    private static final int LEN = 2048;
++    private Random rng;
++
++    public static void main(String args[]) {
++        TestFramework.runWithFlags("--enable-preview", "-XX:-TieredCompilation", "-Xbatch");
++    }
++
++    public TestFloat16VectorOps() {
++        input1 = new Float16[LEN];
++        input2 = new Float16[LEN];
++        input3 = new Float16[LEN];
++        output = new Float16[LEN];
++        rng = new Random(42);
++        for (int i = 0; i < LEN; ++i) {
++            input1[i] = shortBitsToFloat16(Float.floatToFloat16(rng.nextFloat()));
++            input2[i] = shortBitsToFloat16(Float.floatToFloat16(rng.nextFloat()));
++            input3[i] = shortBitsToFloat16(Float.floatToFloat16(rng.nextFloat()));
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.ADD_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.ADD_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorAddFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.add(input1[i], input2[i]);
++        }
++    }
++
++    @Check(test="vectorAddFloat16")
++    public void checkResultAdd() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.add(input1[i], input2[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.SUB_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.SUB_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorSubFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.subtract(input1[i], input2[i]);
++        }
++    }
++
++    @Check(test="vectorSubFloat16")
++    public void checkResultSub() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.subtract(input1[i], input2[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.MUL_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.MUL_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorMulFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.multiply(input1[i], input2[i]);
++        }
++    }
++
++    @Check(test="vectorMulFloat16")
++    public void checkResultMul() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.multiply(input1[i], input2[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.DIV_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.DIV_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorDivFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.divide(input1[i], input2[i]);
++        }
++    }
++
++    @Check(test="vectorDivFloat16")
++    public void checkResultDiv() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.divide(input1[i], input2[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.MIN_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.MIN_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorMinFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.min(input1[i], input2[i]);
++        }
++    }
++
++    @Check(test="vectorMinFloat16")
++    public void checkResultMin() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.min(input1[i], input2[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.MAX_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.MAX_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorMaxFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.max(input1[i], input2[i]);
++        }
++    }
++
++    @Check(test="vectorMaxFloat16")
++    public void checkResultMax() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.max(input1[i], input2[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.ABS_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"sve", "true"})
++    @IR(counts = {IRNode.ABS_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorAbsFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.abs(input1[i]);
++        }
++    }
++
++    @Check(test="vectorAbsFloat16")
++    public void checkResultAbs() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.abs(input1[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.NEG_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"sve", "true"})
++    @IR(counts = {IRNode.NEG_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorNegFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.negate(input1[i]);
++        }
++    }
++
++    @Check(test="vectorNegFloat16")
++    public void checkResultNeg() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.negate(input1[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.SQRT_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.SQRT_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorSqrtFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.sqrt(input1[i]);
++        }
++    }
++
++    @Check(test="vectorSqrtFloat16")
++    public void checkResultSqrt() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.sqrt(input1[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.FMA_VHF, ">= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.FMA_VHF, ">= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void vectorFmaFloat16() {
++        for (int i = 0; i < LEN; ++i) {
++            output[i] = Float16.fma(input1[i], input2[i], input3[i]);
++        }
++    }
++
++    @Check(test="vectorFmaFloat16")
++    public void checkResultFma() {
++        for (int i = 0; i < LEN; ++i) {
++            Float16 expected = Float16.fma(input1[i], input2[i], input3[i]);
++            if (float16ToRawShortBits(output[i]) != float16ToRawShortBits(expected)) {
++                throw new RuntimeException("Invalid result: output[" + i + "] = " + float16ToRawShortBits(output[i]) + " != " + float16ToRawShortBits(expected));
++            }
++        }
++    }
++}
+diff --git a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorReinterpretConv.java b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorReinterpretConv.java
+new file mode 100644
+index 00000000000..675b3b50501
+--- /dev/null
++++ b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorReinterpretConv.java
+@@ -0,0 +1,84 @@
++/*
++ * Copyright (c) 2024, Arm Limited. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/**
++* @test
++* @bug 8330021
++* @summary Test auto-vectorization for "dst (ConvHF2F (ReinterpretHF2S src))" sequence
++* @requires vm.compiler2.enabled
++* @library /test/lib /
++* @run driver compiler.vectorization.TestFloat16VectorReinterpretConv
++*/
++
++package compiler.vectorization;
++import compiler.lib.ir_framework.*;
++import java.util.Random;
++import static java.lang.Float16.*;
++
++public class TestFloat16VectorReinterpretConv {
++    private Float16[] fin;
++    private float[] flout;
++    private static final int LEN = 2048;
++    private Random rng;
++
++    public static void main(String args[]) {
++        TestFramework.runWithFlags("--enable-preview", "-XX:-TieredCompilation", "-Xbatch");
++    }
++
++    public TestFloat16VectorReinterpretConv() {
++        fin  = new Float16[LEN];
++        flout = new float[LEN];
++        rng = new Random(25);
++        for (int i = 0; i < LEN; i++) {
++            fin[i] = shortBitsToFloat16(Float.floatToFloat16(rng.nextFloat()));
++        }
++    }
++
++    // When auto-vectorizing a sequence like - "dst (ConvHF2F (ReinterpretHF2S src))", the compilation
++    // fails due to an assertion error when testing for the source type in vectorCastNode::opcode() for
++    // Op_ConvHF2F. The input passed to ConvHF2F is of type T_INT but is supposed to be of type T_SHORT. It is
++    // because the container type for ReinterpretHF2S is computed as T_INT instead of T_SHORT. Fix for this
++    // is part of JDK-8330021 and this test makes sure the compilation does not fail and vectorization of both
++    // ConvHF2F and ReinterpretHF2S takes place.
++    @Test
++    @Warmup(10000)
++    @IR(counts = {IRNode.VECTOR_CAST_HF2F, " >= 1", IRNode.VECTOR_REINTERPRET, " >= 1"},
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
++    @IR(counts = {IRNode.VECTOR_CAST_HF2F, " >= 1", IRNode.VECTOR_REINTERPRET, " >= 1"},
++        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
++    public void testVect() {
++        for (int i = 0; i < LEN; i++) {
++            flout[i] = Float16.add(fin[i], fin[i]).floatValue();
++        }
++    }
++
++    @Check(test="testVect")
++    public void checkResult() {
++        for (int i = 0; i < LEN; i++) {
++            float expected = fin[i].floatValue() + fin[i].floatValue();
++            if (flout[i] != expected) {
++                throw new RuntimeException("Invalid result: flout[" + i + "] = " + flout[i] + " != " + expected);
++            }
++        }
++    }
++}
+diff --git a/test/jdk/java/lang/Float/FP16ReductionOperations.java b/test/jdk/java/lang/Float/FP16ReductionOperations.java
+new file mode 100644
+index 00000000000..9b4b3f7ab04
+--- /dev/null
++++ b/test/jdk/java/lang/Float/FP16ReductionOperations.java
+@@ -0,0 +1,137 @@
++/*
++ * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/*
++ * @test
++ * @bug 8308363
++ * @summary Test FP16 reduction operations.
++ * @compile FP16ReductionOperations.java
++ * @run main/othervm --enable-preview -XX:-TieredCompilation -Xbatch FP16ReductionOperations
++ */
++
++import java.util.Random;
++
++import static java.lang.Float16.*;
++
++public class FP16ReductionOperations {
++
++    public static Random r = new Random(1024);
++
++    public static short test_reduction_add_constants() {
++        Float16 hf0 = shortBitsToFloat16((short)0);
++        Float16 hf1 = shortBitsToFloat16((short)15360);
++        Float16 hf2 = shortBitsToFloat16((short)16384);
++        Float16 hf3 = shortBitsToFloat16((short)16896);
++        Float16 hf4 = shortBitsToFloat16((short)17408);
++        return float16ToRawShortBits(Float16.add(Float16.add(Float16.add(Float16.add(hf0, hf1), hf2), hf3), hf4));
++    }
++
++    public static short expected_reduction_add_constants() {
++        Float16 hf0 = shortBitsToFloat16((short)0);
++        Float16 hf1 = shortBitsToFloat16((short)15360);
++        Float16 hf2 = shortBitsToFloat16((short)16384);
++        Float16 hf3 = shortBitsToFloat16((short)16896);
++        Float16 hf4 = shortBitsToFloat16((short)17408);
++        return Float.floatToFloat16(Float.float16ToFloat(float16ToRawShortBits(hf0)) +
++                                    Float.float16ToFloat(float16ToRawShortBits(hf1)) +
++                                    Float.float16ToFloat(float16ToRawShortBits(hf2)) +
++                                    Float.float16ToFloat(float16ToRawShortBits(hf3)) +
++                                    Float.float16ToFloat(float16ToRawShortBits(hf4)));
++    }
++
++    public static boolean compare(short actual, short expected) {
++        return !((0xFFFF & actual) == (0xFFFF & expected));
++    }
++
++    public static void test_reduction_constants(char oper) {
++        short actual = 0;
++        short expected = 0;
++        switch(oper) {
++            case '+' ->  {
++                             actual = test_reduction_add_constants();
++                             expected = expected_reduction_add_constants();
++                         }
++            default  ->  throw new AssertionError("Unsupported Operation.");
++        }
++        if (compare(actual,expected)) {
++            throw new AssertionError("Result mismatch!, expected = " + expected + " actual = " + actual);
++        }
++    }
++
++    public static short test_reduction_add(short [] arr) {
++        Float16 res = shortBitsToFloat16((short)0);
++        for (int i = 0; i < arr.length; i++) {
++            res = Float16.add(res, shortBitsToFloat16(arr[i]));
++        }
++        return float16ToRawShortBits(res);
++    }
++
++    public static short expected_reduction_add(short [] arr) {
++        short res = 0;
++        for (int i = 0; i < arr.length; i++) {
++            res = Float.floatToFloat16(Float.float16ToFloat(res) + Float.float16ToFloat(arr[i]));
++        }
++        return res;
++    }
++
++    public static void test_reduction(char oper, short [] arr) {
++        short actual = 0;
++        short expected = 0;
++        switch(oper) {
++            case '+' ->  {
++                             actual = test_reduction_add(arr);
++                             expected = expected_reduction_add(arr);
++                         }
++            default  ->  throw new AssertionError("Unsupported Operation.");
++        }
++        if (compare(actual,expected)) {
++            throw new AssertionError("Result mismatch!, expected = " + expected + " actual = " + actual);
++        }
++    }
++
++    public static short [] get_fp16_array(int size) {
++        short [] arr = new short[size];
++        for (int i = 0; i < arr.length; i++) {
++            arr[i] = Float.floatToFloat16(r.nextFloat());
++        }
++        return arr;
++    }
++
++    public static void main(String [] args) {
++        int res = 0;
++        short [] input = get_fp16_array(1024);
++        short [] special_values = {
++              32256,          // NAN
++              31744,          // +Inf
++              (short)-1024,   // -Inf
++              0,              // +0.0
++              (short)-32768,  // -0.0
++        };
++        for (int i = 0;  i < 1000; i++) {
++            test_reduction('+', input);
++            test_reduction('+', special_values);
++            test_reduction_constants('+');
++        }
++        System.out.println("PASS");
++    }
++}
+diff --git a/test/jdk/java/lang/Float/FP16ScalarOperations.java b/test/jdk/java/lang/Float/FP16ScalarOperations.java
+new file mode 100644
+index 00000000000..9be9ed9bfcc
+--- /dev/null
++++ b/test/jdk/java/lang/Float/FP16ScalarOperations.java
+@@ -0,0 +1,182 @@
++/*
++ * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2024, Arm Limited. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/*
++ * @test
++ * @bug 8308363 8336406 8339473
++ * @summary Verify FP16 unary, binary and ternary operations
++ * @compile FP16ScalarOperations.java
++ * @run main/othervm --enable-preview -XX:-TieredCompilation -Xbatch FP16ScalarOperations
++ */
++
++import java.util.Random;
++import java.util.stream.IntStream;
++import static java.lang.Float16.*;
++
++public class FP16ScalarOperations {
++
++    public static final int SIZE = 65504;
++    public static Random r = new Random(SIZE);
++    public static final Float16 ONE = Float16.valueOf(1.0);
++    public static final Float16 ZERO = Float16.valueOf(0.0);
++    public static final int EXP = 0x7c00; // Mask for Float16 Exponent in a NaN (which is all ones)
++    public static final int SIGN_BIT = 0x8000; // Mask for sign bit for Float16
++
++    public static Float16 actual_value(String oper, Float16... val) {
++        switch (oper) {
++            case "abs"        : return Float16.abs(val[0]);
++            case "neg"        : return Float16.negate(val[0]);
++            case "sqrt"       : return Float16.sqrt(val[0]);
++            case "isInfinite" : return Float16.isInfinite(val[0]) ? ONE : ZERO;
++            case "isFinite"   : return Float16.isFinite(val[0]) ? ONE : ZERO;
++            case "isNaN"      : return Float16.isNaN(val[0]) ? ONE : ZERO;
++            case "+"          : return Float16.add(val[0], val[1]);
++            case "-"          : return Float16.subtract(val[0], val[1]);
++            case "*"          : return Float16.multiply(val[0], val[1]);
++            case "/"          : return Float16.divide(val[0], val[1]);
++            case "min"        : return Float16.min(val[0], val[1]);
++            case "max"        : return Float16.max(val[0], val[1]);
++            case "fma"        : return Float16.fma(val[0], val[1], val[2]);
++            default           : throw new AssertionError("Unsupported Operation!");
++        }
++    }
++
++    public static Float16 expected_value(String oper, Float16... val) {
++        switch (oper) {
++            case "abs"        : return Float16.valueOf(Math.abs(val[0].floatValue()));
++            case "neg"        : return Float16.shortBitsToFloat16((short)(Float16.float16ToRawShortBits(val[0]) ^ (short)0x0000_8000));
++            case "sqrt"       : return Float16.valueOf(Math.sqrt(val[0].floatValue()));
++            case "isInfinite" : return Float.isInfinite(val[0].floatValue()) ? ONE : ZERO;
++            case "isFinite"   : return Float.isFinite(val[0].floatValue()) ? ONE : ZERO;
++            case "isNaN"      : return Float.isNaN(val[0].floatValue()) ? ONE : ZERO;
++            case "+"          : return Float16.valueOf(val[0].floatValue() + val[1].floatValue());
++            case "-"          : return Float16.valueOf(val[0].floatValue() - val[1].floatValue());
++            case "*"          : return Float16.valueOf(val[0].floatValue() * val[1].floatValue());
++            case "/"          : return Float16.valueOf(val[0].floatValue() / val[1].floatValue());
++            case "min"        : return Float16.valueOf(Float.min(val[0].floatValue(), val[1].floatValue()));
++            case "max"        : return Float16.valueOf(Float.max(val[0].floatValue(), val[1].floatValue()));
++            case "fma"        : return Float16.valueOf(val[0].floatValue() * val[1].floatValue() + val[2].floatValue());
++            default           : throw new AssertionError("Unsupported Operation!");
++        }
++    }
++
++    public static void validate(String oper, Float16... input) {
++        int arity = input.length;
++
++        Float16 actual = actual_value(oper, input);
++        Float16 expected = expected_value(oper, input);
++
++        if (actual != expected) {
++            switch (arity) {
++                case 1:
++                    throw new AssertionError("Test Failed: " + oper + "(" + Float16.float16ToRawShortBits(input[0]) + ") : " +  actual + " != " + expected);
++                case 2:
++                    throw new AssertionError("Test Failed: " + oper + "(" + Float16.float16ToRawShortBits(input[0]) + ", " + Float16.float16ToRawShortBits(input[1]) + ") : " + actual + " != " + expected);
++                case 3:
++                    throw new AssertionError("Test failed: " + oper + "(" + Float16.float16ToRawShortBits(input[0]) + ", " + Float16.float16ToRawShortBits(input[1]) + ", " + Float16.float16ToRawShortBits(input[2]) + ") : " + actual + " != " + expected);
++                default:
++                    throw new AssertionError("Incorrect operation (" + oper + ")  arity = " + arity);
++            }
++        }
++    }
++
++    public static void test_unary_operations(Float16 [] inp) {
++        for (int i = 0; i < inp.length; i++) {
++            validate("abs", inp[i]);
++            validate("neg", inp[i]);
++            validate("sqrt", inp[i]);
++            validate("isInfinite", inp[i]);
++            validate("isFinite", inp[i]);
++            validate("isNaN", inp[i]);
++        }
++    }
++
++    public static void test_binary_operations(Float16 [] inp1, Float16 inp2[]) {
++        for (int i = 0; i < inp1.length; i++) {
++            validate("+", inp1[i], inp2[i]);
++            validate("-", inp1[i], inp2[i]);
++            validate("*", inp1[i], inp2[i]);
++            validate("/", inp1[i], inp2[i]);
++        }
++    }
++
++    public static void test_ternary_operations(Float16 [] inp1, Float16 inp2[], Float16 inp3[]) {
++        for (int i = 0; i < inp1.length; i++) {
++            validate("fma", inp1[i], inp2[i], inp3[i]);
++        }
++    }
++
++    public static void test_fin_inf_nan() {
++        Float16 pos_nan, neg_nan;
++        // Starting from 1 as the significand in a NaN value is always non-zero
++        for (int i = 1; i < 0x03ff; i++) {
++            pos_nan = Float16.shortBitsToFloat16((short)(EXP | i));
++            neg_nan = Float16.shortBitsToFloat16((short)(Float16.float16ToRawShortBits(pos_nan) | SIGN_BIT));
++
++            // Test isFinite, isInfinite, isNaN for all positive NaN values
++            validate("isInfinite", pos_nan);
++            validate("isFinite", pos_nan);
++            validate("isNaN", pos_nan);
++
++           // Test isFinite, isinfinite, isNaN for all negative NaN values
++            validate("isInfinite", neg_nan);
++            validate("isFinite", neg_nan);
++            validate("isNaN", neg_nan);
++        }
++    }
++
++    public static void main(String [] args) {
++        Float16 [] input1 = new Float16[SIZE];
++        Float16 [] input2 = new Float16[SIZE];
++        Float16 [] input3 = new Float16[SIZE];
++
++        // input1, input2, input3 contain the entire value range for FP16
++        IntStream.range(0, input1.length).forEach(i -> {input1[i] = Float16.valueOf((float)i);});
++        IntStream.range(0, input2.length).forEach(i -> {input2[i] = Float16.valueOf((float)i);});
++        IntStream.range(0, input2.length).forEach(i -> {input3[i] = Float16.valueOf((float)i);});
++
++        Float16 [] special_values = {
++              Float16.NaN,                 // NAN
++              Float16.POSITIVE_INFINITY,   // +Inf
++              Float16.NEGATIVE_INFINITY,   // -Inf
++              Float16.valueOf(0.0),        // +0.0
++              Float16.valueOf(-0.0),       // -0.0
++        };
++
++        for (int i = 0;  i < 1000; i++) {
++            test_unary_operations(input1);
++            test_binary_operations(input1, input2);
++            test_ternary_operations(input1, input2, input3);
++
++            test_unary_operations(special_values);
++            test_binary_operations(special_values, input1);
++            test_ternary_operations(special_values, input1, input2);
++
++            // The above functions test isFinite, isInfinite and isNaN for all possible finite FP16 values
++            // and infinite values. The below method tests these functions for all possible NaN values as well.
++            test_fin_inf_nan();
++        }
++        System.out.println("PASS");
++    }
++}

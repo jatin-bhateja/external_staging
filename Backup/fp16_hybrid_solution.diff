@@ -1,0 +1,1522 @@
+diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
+index 27c435dcec5..d722bab7c5a 100644
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@ -938,27 +938,13 @@ class methodHandle;
+   do_intrinsic(_getAndSetReference,       jdk_internal_misc_Unsafe,     getAndSetReference_name, getAndSetReference_signature, F_R)   \
+    do_name(     getAndSetReference_name,                                "getAndSetReference")                                         \
+    do_signature(getAndSetReference_signature,                           "(Ljava/lang/Object;JLjava/lang/Object;)Ljava/lang/Object;" ) \
+-                                                                                                           \
+-  /* Float16Math API intrinsification support */                                                           \
+-                                                                                                           \
+-  do_name(add_name, "add")                                                                                 \
+-  do_name(subtract_name, "subtract")                                                                       \
+-  do_name(multiply_name, "multiply")                                                                       \
+-  do_name(divide_name, "divide")                                                                           \
++                                                                                                                          \
++  /* Float16Math API intrinsification support */                                                                          \
+   /* Float16 signatures */                                                                                                \
+-  do_signature(short_2_short_signature,   "(SS)S")                                                                        \
+-  do_signature(short_3_short_signature,  "(SSS)S")                                                                        \
+-  /* Float16 intrinsics for binary operations */                                                                          \
+-  do_intrinsic(_add_float16,              jdk_internal_math_Float16Math, add_name,         short_2_short_signature,  F_S) \
+-  do_intrinsic(_subtract_float16,         jdk_internal_math_Float16Math, subtract_name,    short_2_short_signature,  F_S) \
+-  do_intrinsic(_multiply_float16,         jdk_internal_math_Float16Math, multiply_name,    short_2_short_signature,  F_S) \
+-  do_intrinsic(_divide_float16,           jdk_internal_math_Float16Math, divide_name,      short_2_short_signature,  F_S) \
+-  do_intrinsic(_max_float16,              jdk_internal_math_Float16Math, max_name,         short_2_short_signature,  F_S) \
+-  do_intrinsic(_min_float16,              jdk_internal_math_Float16Math, min_name,         short_2_short_signature,  F_S) \
+-  /* Float16 intrinsics for unary operations */                                                                           \
+-  do_intrinsic(_sqrt_float16,             jdk_internal_math_Float16Math, sqrt_name,        short_short_signature,   F_S)  \
+-  /* Float16 intrinsics for ternary operations */                                                                         \
+-  do_intrinsic(_fma_float16,              jdk_internal_math_Float16Math, fma_name,         short_3_short_signature,  F_S) \
++  do_signature(float16_unary_math_op_sig, "(SLjdk/internal/vm/vector/Float16Math$Float16UnaryMathOp;)S")                  \
++  do_signature(float16_ternary_math_op_sig, "(SSSLjdk/internal/vm/vector/Float16Math$Float16TernaryMathOp;)S")            \
++  do_intrinsic(_sqrt_float16, jdk_internal_vm_vector_Float16Math, sqrt_name, float16_unary_math_op_sig, F_S)              \
++  do_intrinsic(_fma_float16, jdk_internal_vm_vector_Float16Math, fma_name, float16_ternary_math_op_sig, F_S)              \
+                                                                                                                                                \
+   /* Vector API intrinsification support */                                                                                                    \
+                                                                                                                                                \
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index 12fca8b0a5b..177c5f79225 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -92,7 +92,8 @@ class SerializeClosure;
+   template(java_lang_Long,                            "java/lang/Long")                           \
+   template(java_lang_Long_LongCache,                  "java/lang/Long$LongCache")                 \
+                                                                                                   \
+-  template(jdk_internal_vm_vector_VectorSupport,      "jdk/internal/vm/vector/VectorSupport")               \
++  template(jdk_internal_vm_vector_VectorSupport,      "jdk/internal/vm/vector/VectorSupport")     \
++  template(jdk_internal_vm_vector_Float16Math,        "jdk/internal/vm/vector/Float16Math")       \
+   template(jdk_internal_vm_vector_VectorPayload,      "jdk/internal/vm/vector/VectorSupport$VectorPayload") \
+   template(jdk_internal_vm_vector_Vector,             "jdk/internal/vm/vector/VectorSupport$Vector")        \
+   template(jdk_internal_vm_vector_VectorMask,         "jdk/internal/vm/vector/VectorSupport$VectorMask")    \
+diff --git a/src/hotspot/share/opto/addnode.cpp b/src/hotspot/share/opto/addnode.cpp
+index 802af20adae..947779f62e4 100644
+--- a/src/hotspot/share/opto/addnode.cpp
++++ b/src/hotspot/share/opto/addnode.cpp
+@@ -26,6 +26,7 @@
+ #include "memory/allocation.inline.hpp"
+ #include "opto/addnode.hpp"
+ #include "opto/castnode.hpp"
++#include "opto/convertnode.hpp"
+ #include "opto/cfgnode.hpp"
+ #include "opto/connode.hpp"
+ #include "opto/machnode.hpp"
+@@ -702,6 +703,12 @@ const Type *AddFNode::add_ring( const Type *t0, const Type *t1 ) const {
+ 
+ //------------------------------Ideal------------------------------------------
+ Node *AddFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
++  if (in(1)->Opcode() == Op_ConvHF2F && in(2)->Opcode() == Op_ConvHF2F) {
++    Node* oper = ConvertNode::lower_to_fp16_oper(phase, Op_AddHF, in(0), this, in(1)->in(1), in(2)->in(1));
++    if (oper != this) {
++      return oper;
++    }
++  }
+   // Floating point additions are not associative because of boundary conditions (infinity)
+   return commute(phase, this) ? this : nullptr;
+ }
+@@ -1681,3 +1688,23 @@ const Type* MaxDNode::add_ring(const Type* t0, const Type* t1) const {
+   // handle max of 0.0, -0.0 case.
+   return (jlong_cast(d0) > jlong_cast(d1)) ? r0 : r1;
+ }
++
++Node* MinFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
++  if (in(1)->Opcode() == Op_ConvHF2F && in(2)->Opcode() == Op_ConvHF2F) {
++    Node* oper = ConvertNode::lower_to_fp16_oper(phase, Op_MinHF, in(0), this, in(1)->in(1), in(2)->in(1));
++    if (oper != this) {
++      return oper;
++    }
++  }
++  return MaxNode::Ideal(phase, can_reshape);
++}
++
++Node* MaxFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
++  if (in(1)->Opcode() == Op_ConvHF2F && in(2)->Opcode() == Op_ConvHF2F) {
++    Node* oper = ConvertNode::lower_to_fp16_oper(phase, Op_MaxHF, in(0), this, in(1)->in(1), in(2)->in(1));
++    if (oper != this) {
++      return oper;
++    }
++  }
++  return MaxNode::Ideal(phase, can_reshape);
++}
+diff --git a/src/hotspot/share/opto/addnode.hpp b/src/hotspot/share/opto/addnode.hpp
+index 6ac08c63ad2..e25c2c0eb08 100644
+--- a/src/hotspot/share/opto/addnode.hpp
++++ b/src/hotspot/share/opto/addnode.hpp
+@@ -396,6 +396,7 @@ class MaxFNode : public MaxNode {
+   virtual const Type *add_id() const { return TypeF::NEG_INF; }
+   virtual const Type *bottom_type() const { return Type::FLOAT; }
+   virtual uint ideal_reg() const { return Op_RegF; }
++  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
+   int max_opcode() const { return Op_MaxF; }
+   int min_opcode() const { return Op_MinF; }
+ };
+@@ -410,6 +411,7 @@ class MinFNode : public MaxNode {
+   virtual const Type *add_id() const { return TypeF::POS_INF; }
+   virtual const Type *bottom_type() const { return Type::FLOAT; }
+   virtual uint ideal_reg() const { return Op_RegF; }
++  virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
+   int max_opcode() const { return Op_MaxF; }
+   int min_opcode() const { return Op_MinF; }
+ };
+diff --git a/src/hotspot/share/opto/c2compiler.cpp b/src/hotspot/share/opto/c2compiler.cpp
+index 38f4324dce3..bb3808a1da0 100644
+--- a/src/hotspot/share/opto/c2compiler.cpp
++++ b/src/hotspot/share/opto/c2compiler.cpp
+@@ -353,6 +353,12 @@ bool C2Compiler::is_intrinsic_supported(vmIntrinsics::ID id) {
+   case vmIntrinsics::_floatToFloat16:
+     if (!Matcher::match_rule_supported(Op_ConvF2HF)) return false;
+     break;
++  case vmIntrinsics::_sqrt_float16:
++    if (!Matcher::match_rule_supported(Op_SqrtHF)) return false;
++    break;
++  case vmIntrinsics::_fma_float16:
++    if (!Matcher::match_rule_supported(Op_FmaHF)) return false;
++    break;
+ 
+   /* CompareAndSet, Object: */
+   case vmIntrinsics::_compareAndSetReference:
+@@ -604,30 +610,6 @@ bool C2Compiler::is_intrinsic_supported(vmIntrinsics::ID id) {
+   case vmIntrinsics::_doubleIsFinite:
+     if (!Matcher::match_rule_supported(Op_IsFiniteD)) return false;
+     break;
+-  case vmIntrinsics::_add_float16:
+-    if (!Matcher::match_rule_supported(Op_AddHF)) return false;
+-    break;
+-  case vmIntrinsics::_subtract_float16:
+-    if (!Matcher::match_rule_supported(Op_SubHF)) return false;
+-    break;
+-  case vmIntrinsics::_multiply_float16:
+-    if (!Matcher::match_rule_supported(Op_MulHF)) return false;
+-    break;
+-  case vmIntrinsics::_divide_float16:
+-    if (!Matcher::match_rule_supported(Op_DivHF)) return false;
+-    break;
+-    case vmIntrinsics::_max_float16:
+-    if (!Matcher::match_rule_supported(Op_MaxHF)) return false;
+-    break;
+-  case vmIntrinsics::_min_float16:
+-    if (!Matcher::match_rule_supported(Op_MinHF)) return false;
+-    break;
+-  case vmIntrinsics::_sqrt_float16:
+-    if (!Matcher::match_rule_supported(Op_SqrtHF)) return false;
+-    break;
+-  case vmIntrinsics::_fma_float16:
+-    if (!Matcher::match_rule_supported(Op_FmaHF)) return false;
+-    break;
+   case vmIntrinsics::_hashCode:
+   case vmIntrinsics::_identityHashCode:
+   case vmIntrinsics::_getClass:
+diff --git a/src/hotspot/share/opto/convertnode.cpp b/src/hotspot/share/opto/convertnode.cpp
+index d324743b6e2..241cdaa8f7e 100644
+--- a/src/hotspot/share/opto/convertnode.cpp
++++ b/src/hotspot/share/opto/convertnode.cpp
+@@ -27,7 +27,9 @@
+ #include "opto/castnode.hpp"
+ #include "opto/connode.hpp"
+ #include "opto/convertnode.hpp"
++#include "opto/divnode.hpp"
+ #include "opto/matcher.hpp"
++#include "opto/mulnode.hpp"
+ #include "opto/movenode.hpp"
+ #include "opto/phaseX.hpp"
+ #include "opto/subnode.hpp"
+@@ -137,6 +139,49 @@ Node* ConvertNode::create_convert(BasicType source, BasicType target, Node* inpu
+   return nullptr;
+ }
+ 
++Node* ConvertNode::lower_to_fp16_oper(PhaseGVN* phase, int opc, Node* c, Node* n, Node* in1, Node* in2, Node* in3) {
++  if (!Matcher::match_rule_supported(Op_ReinterpretS2HF) ||
++      !Matcher::match_rule_supported(Op_ReinterpretHF2S) ||
++      !Matcher::match_rule_supported(opc)) {
++    return n;
++  }
++
++  in1 = phase->transform(new ReinterpretS2HFNode(in1));
++  if (in2) {
++    in2 = phase->transform(new ReinterpretS2HFNode(in2));
++  }
++  if (in3) {
++    in3 = phase->transform(new ReinterpretS2HFNode(in3));
++  }
++
++  Node* oper = nullptr;
++  switch (opc) {
++    case Op_AddHF:
++      oper = phase->transform(new AddHFNode(in1, in2));
++      break;
++    case Op_SubHF:
++      oper = phase->transform(new SubHFNode(in1, in2));
++      break;
++    case Op_MulHF:
++      oper = phase->transform(new MulHFNode(in1, in2));
++      break;
++    case Op_MinHF:
++      oper = phase->transform(new MinHFNode(in1, in2));
++      break;
++    case Op_MaxHF:
++      oper = phase->transform(new MaxHFNode(in1, in2));
++      break;
++    case Op_DivHF:
++      oper = phase->transform(new DivHFNode(c, in1, in2));
++      break;
++    default:
++      ShouldNotReachHere();
++      break;
++  }
++  oper = phase->transform(new ReinterpretHF2SNode(oper));
++  return new ConvHF2FNode(oper);
++}
++
+ // The conversions operations are all Alpha sorted.  Please keep it that way!
+ //=============================================================================
+ //------------------------------Value------------------------------------------
+@@ -269,6 +314,7 @@ Node* ConvF2HFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   }
+   return nullptr;
+ }
++
+ //=============================================================================
+ //------------------------------Value------------------------------------------
+ const Type* ConvF2INode::Value(PhaseGVN* phase) const {
+diff --git a/src/hotspot/share/opto/convertnode.hpp b/src/hotspot/share/opto/convertnode.hpp
+index 386d7d17e20..86641e9859e 100644
+--- a/src/hotspot/share/opto/convertnode.hpp
++++ b/src/hotspot/share/opto/convertnode.hpp
+@@ -55,6 +55,7 @@ class ConvertNode : public TypeNode {
+   // Create a convert node for a given input and output type.
+   // Conversions to and from half float are specified via T_SHORT.
+   static Node* create_convert(BasicType source, BasicType target, Node* input);
++  static Node* lower_to_fp16_oper(PhaseGVN* phase, int opc, Node* c, Node* n, Node* in1, Node* in2 = nullptr, Node* in3 = nullptr);
+ };
+ 
+ // The conversions operations are all Alpha sorted.  Please keep it that way!
+diff --git a/src/hotspot/share/opto/divnode.cpp b/src/hotspot/share/opto/divnode.cpp
+index b9a207b2dee..96590820686 100644
+--- a/src/hotspot/share/opto/divnode.cpp
++++ b/src/hotspot/share/opto/divnode.cpp
+@@ -718,6 +718,13 @@ Node *DivFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+   // Don't bother trying to transform a dead node
+   if( in(0) && in(0)->is_top() )  return nullptr;
+ 
++  if (in(1)->Opcode() == Op_ConvHF2F && in(2)->Opcode() == Op_ConvHF2F) {
++    Node* oper = ConvertNode::lower_to_fp16_oper(phase, Op_DivHF, in(0), this, in(1)->in(1), in(2)->in(1));
++    if (oper != this) {
++      return oper;
++    }
++  }
++
+   const Type *t2 = phase->type( in(2) );
+   if( t2 == TypeF::ONE )         // Identity?
+     return nullptr;              // Skip it
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index 31d8bc6a291..984155f5b1a 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -544,12 +544,6 @@ bool LibraryCallKit::try_to_inline(int predicate) {
+   case vmIntrinsics::_floatToFloat16:
+   case vmIntrinsics::_float16ToFloat:           return inline_fp_conversions(intrinsic_id());
+   case vmIntrinsics::_sqrt_float16:             return inline_fp16_operations(intrinsic_id(), 1);
+-  case vmIntrinsics::_add_float16:
+-  case vmIntrinsics::_subtract_float16:
+-  case vmIntrinsics::_multiply_float16:
+-  case vmIntrinsics::_divide_float16:
+-  case vmIntrinsics::_max_float16:
+-  case vmIntrinsics::_min_float16:              return inline_fp16_operations(intrinsic_id(), 2);
+   case vmIntrinsics::_fma_float16:              return inline_fp16_operations(intrinsic_id(), 3);
+   case vmIntrinsics::_floatIsFinite:
+   case vmIntrinsics::_floatIsInfinite:
+@@ -4908,55 +4902,6 @@ bool LibraryCallKit::inline_native_Reflection_getCallerClass() {
+   return false;  // bail-out; let JVM_GetCallerClass do the work
+ }
+ 
+-bool LibraryCallKit::inline_fp16_operations(vmIntrinsics::ID id, int num_args) {
+-  if (!Matcher::match_rule_supported(Op_ReinterpretS2HF) ||
+-      !Matcher::match_rule_supported(Op_ReinterpretHF2S)) {
+-    return false;
+-  }
+-
+-  // Transformed nodes
+-  Node* fld1 = nullptr;
+-  Node* fld2 = nullptr;
+-  Node* fld3 = nullptr;
+-  switch(num_args) {
+-    case 3:
+-      assert(argument(2)->bottom_type()->array_element_basic_type() == T_SHORT, "");
+-      fld3 = _gvn.transform(new ReinterpretS2HFNode(argument(2)));
+-    // fall-through
+-    case 2:
+-      assert(argument(1)->bottom_type()->array_element_basic_type() == T_SHORT, "");
+-      fld2 = _gvn.transform(new ReinterpretS2HFNode(argument(1)));
+-    // fall-through
+-    case 1:
+-      assert(argument(0)->bottom_type()->array_element_basic_type() == T_SHORT, "");
+-      fld1 = _gvn.transform(new ReinterpretS2HFNode(argument(0)));
+-      break;
+-    default: fatal("Unsupported number of arguments %d", num_args);
+-  }
+-
+-  Node* result = nullptr;
+-  switch (id) {
+-  // Unary operations
+-  case vmIntrinsics::_sqrt_float16:      result = _gvn.transform(new SqrtHFNode(C, control(), fld1)); break;
+-
+-  // Binary operations
+-  case vmIntrinsics::_add_float16:       result = _gvn.transform(new AddHFNode(fld1, fld2));    break;
+-  case vmIntrinsics::_subtract_float16:  result = _gvn.transform(new SubHFNode(fld1, fld2));    break;
+-  case vmIntrinsics::_multiply_float16:  result = _gvn.transform(new MulHFNode(fld1, fld2));    break;
+-  case vmIntrinsics::_divide_float16:    result = _gvn.transform(new DivHFNode(0, fld1, fld2)); break;
+-  case vmIntrinsics::_max_float16:       result = _gvn.transform(new MaxHFNode(fld1, fld2));    break;
+-  case vmIntrinsics::_min_float16:       result = _gvn.transform(new MinHFNode(fld1, fld2));    break;
+-
+-  // Ternary operations
+-  case vmIntrinsics::_fma_float16:       result = _gvn.transform(new FmaHFNode(control(), fld1, fld2, fld3)); break;
+-  default:
+-    fatal_unexpected_iid(id);
+-    break;
+-  }
+-  set_result(_gvn.transform(new ReinterpretHF2SNode(result)));
+-  return true;
+-}
+-
+ bool LibraryCallKit::inline_fp_conversions(vmIntrinsics::ID id) {
+   Node* arg = argument(0);
+   Node* result = nullptr;
+@@ -8644,3 +8589,45 @@ bool LibraryCallKit::inline_blackhole() {
+ 
+   return true;
+ }
++
++bool LibraryCallKit::inline_fp16_operations(vmIntrinsics::ID id, int num_args) {
++  if (!Matcher::match_rule_supported(Op_ReinterpretS2HF) ||
++      !Matcher::match_rule_supported(Op_ReinterpretHF2S)) {
++    return false;
++  }
++
++  // Transformed nodes
++  Node* fld1 = nullptr;
++  Node* fld2 = nullptr;
++  Node* fld3 = nullptr;
++  switch(num_args) {
++    case 3:
++      assert(argument(2)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      fld3 = _gvn.transform(new ReinterpretS2HFNode(argument(2)));
++    // fall-through
++    case 2:
++      assert(argument(1)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      fld2 = _gvn.transform(new ReinterpretS2HFNode(argument(1)));
++    // fall-through
++    case 1:
++      assert(argument(0)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      fld1 = _gvn.transform(new ReinterpretS2HFNode(argument(0)));
++      break;
++    default: fatal("Unsupported number of arguments %d", num_args);
++  }
++
++  Node* result = nullptr;
++  switch (id) {
++  // Unary operations
++  case vmIntrinsics::_sqrt_float16:      result = _gvn.transform(new SqrtHFNode(C, control(), fld1)); break;
++
++  // Ternary operations
++  case vmIntrinsics::_fma_float16:       result = _gvn.transform(new FmaHFNode(control(), fld1, fld2, fld3)); break;
++  default:
++    fatal_unexpected_iid(id);
++    break;
++  }
++  set_result(_gvn.transform(new ReinterpretHF2SNode(result)));
++  return true;
++}
++
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index 246955e14c6..41e0b6395d2 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -289,9 +289,9 @@ class LibraryCallKit : public GraphKit {
+   bool inline_unsafe_load_store(BasicType type,  LoadStoreKind kind, AccessKind access_kind);
+   bool inline_unsafe_fence(vmIntrinsics::ID id);
+   bool inline_onspinwait();
+-  bool inline_fp16_operations(vmIntrinsics::ID id, int num_args);
+   bool inline_fp_conversions(vmIntrinsics::ID id);
+   bool inline_fp_range_check(vmIntrinsics::ID id);
++  bool inline_fp16_operations(vmIntrinsics::ID id, int num_args);
+   bool inline_number_methods(vmIntrinsics::ID id);
+   bool inline_bitshuffle_methods(vmIntrinsics::ID id);
+   bool inline_compare_unsigned(vmIntrinsics::ID id);
+diff --git a/src/hotspot/share/opto/mulnode.cpp b/src/hotspot/share/opto/mulnode.cpp
+index adf7096fb69..f61282c9bb0 100644
+--- a/src/hotspot/share/opto/mulnode.cpp
++++ b/src/hotspot/share/opto/mulnode.cpp
+@@ -531,6 +531,12 @@ const Type *MulFNode::mul_ring(const Type *t0, const Type *t1) const {
+ //------------------------------Ideal---------------------------------------
+ // Check to see if we are multiplying by a constant 2 and convert to add, then try the regular MulNode::Ideal
+ Node* MulFNode::Ideal(PhaseGVN* phase, bool can_reshape) {
++  if (in(1)->Opcode() == Op_ConvHF2F && in(2)->Opcode() == Op_ConvHF2F) {
++    Node* oper = ConvertNode::lower_to_fp16_oper(phase, Op_MulHF, in(0), this, in(1)->in(1), in(2)->in(1));
++    if (oper != this) {
++      return oper;
++    }
++  }
+   const TypeF *t2 = phase->type(in(2))->isa_float_constant();
+ 
+   // x * 2 -> x + x
+diff --git a/src/hotspot/share/opto/subnode.cpp b/src/hotspot/share/opto/subnode.cpp
+index 445eb168214..752e458ca88 100644
+--- a/src/hotspot/share/opto/subnode.cpp
++++ b/src/hotspot/share/opto/subnode.cpp
+@@ -30,6 +30,7 @@
+ #include "opto/addnode.hpp"
+ #include "opto/callnode.hpp"
+ #include "opto/cfgnode.hpp"
++#include "opto/convertnode.hpp"
+ #include "opto/loopnode.hpp"
+ #include "opto/matcher.hpp"
+ #include "opto/movenode.hpp"
+@@ -555,6 +556,13 @@ const Type* SubFPNode::Value(PhaseGVN* phase) const {
+ //=============================================================================
+ //------------------------------Ideal------------------------------------------
+ Node *SubFNode::Ideal(PhaseGVN *phase, bool can_reshape) {
++  if (in(1)->Opcode() == Op_ConvHF2F && in(2)->Opcode() == Op_ConvHF2F) {
++    Node* oper = ConvertNode::lower_to_fp16_oper(phase, Op_SubHF, in(0), this, in(1)->in(1), in(2)->in(1));
++    if (oper != this) {
++      return oper;
++    }
++  }
++
+   const Type *t2 = phase->type( in(2) );
+   // Convert "x-c0" into "x+ -c0".
+   if( t2->base() == Type::FloatCon ) {  // Might be bottom or top...
+diff --git a/src/java.base/share/classes/java/math/BigDecimal.java b/src/java.base/share/classes/java/math/BigDecimal.java
+index 8a9c5eba6de..d915568a502 100644
+--- a/src/java.base/share/classes/java/math/BigDecimal.java
++++ b/src/java.base/share/classes/java/math/BigDecimal.java
+@@ -334,10 +334,6 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
+      */
+     private static final double L = 3.321928094887362;
+ 
+-    private static final int P_F16 = Float16.PRECISION;  // 11
+-    private static final int Q_MIN_F16 = Float16.MIN_EXPONENT - (P_F16 - 1);  // -24
+-    private static final int Q_MAX_F16 = Float16.MAX_EXPONENT - (P_F16 - 1);  // 5
+-
+     private static final int P_F = Float.PRECISION;  // 24
+     private static final int Q_MIN_F = Float.MIN_EXPONENT - (P_F - 1);  // -149
+     private static final int Q_MAX_F = Float.MAX_EXPONENT - (P_F - 1);  // 104
+@@ -3780,100 +3776,6 @@ public byte byteValueExact() {
+        return (byte)num;
+     }
+ 
+-    /**
+-     * Converts this {@code BigDecimal} to a {@code Float16}.
+-     * This conversion is similar to the
+-     * <i>narrowing primitive conversion</i> from {@code double} to
+-     * {@code float} as defined in
+-     * <cite>The Java Language Specification</cite>:
+-     * if this {@code BigDecimal} has too great a
+-     * magnitude to represent as a {@code Float16}, it will be
+-     * converted to {@link Float16#NEGATIVE_INFINITY} or {@link
+-     * Float16#POSITIVE_INFINITY} as appropriate.  Note that even when
+-     * the return value is finite, this conversion can lose
+-     * information about the precision of the {@code BigDecimal}
+-     * value.Float16
+-     *
+-     * @return this {@code BigDecimal} converted to a {@code Float16}.
+-     * @jls 5.1.3 Narrowing Primitive Conversion
+-     */
+-    public Float16 float16Value() {
+-        /* For details, see the extensive comments in doubleValue(). */
+-        if (intCompact != INFLATED) {
+-            Float16 v = Float16.valueOf(intCompact);
+-            if (scale == 0) {
+-                return v;
+-            }
+-            /*
+-             * The discussion for the double case also applies here. That is,
+-             * the following test is precise for all long values, but here
+-             * Long.MAX_VALUE is not an issue.
+-             */
+-            if (v.longValue() == intCompact) {
+-                if (0 < scale && scale < FLOAT16_10_POW.length) {
+-                    return Float16.divide(v, FLOAT16_10_POW[scale]);
+-                }
+-                if (0 > scale && scale > -FLOAT16_10_POW.length) {
+-                    return Float16.multiply(v, FLOAT16_10_POW[-scale]);
+-                }
+-            }
+-        }
+-        return fullFloat16Value();
+-    }
+-
+-    private Float16 fullFloat16Value() {
+-        if (intCompact == 0) {
+-            return Float16.valueOf(0);
+-        }
+-        BigInteger w = unscaledValue().abs();
+-        long qb = w.bitLength() - (long) Math.ceil(scale * L);
+-        Float16 signum = Float16.valueOf(signum());
+-        if (qb < Q_MIN_F16 - 2) {  // qb < -26
+-            return Float16.multiply(signum, Float16.valueOf(0));
+-        }
+-        if (qb > Q_MAX_F16 + P_F16 + 1) {  // qb > 17
+-            return Float16.multiply(signum, Float16.POSITIVE_INFINITY);
+-        }
+-        if (scale < 0) {
+-            return Float16.multiply(signum, w.multiply(bigTenToThe(-scale)).float16Value());
+-        }
+-        if (scale == 0) {
+-            return Float16.multiply(signum, w.float16Value());
+-        }
+-        int ql = (int) qb - (P_F16 + 3);
+-        BigInteger pow10 = bigTenToThe(scale);
+-        BigInteger m, n;
+-        if (ql <= 0) {
+-            m = w.shiftLeft(-ql);
+-            n = pow10;
+-        } else {
+-            m = w;
+-            n = pow10.shiftLeft(ql);
+-        }
+-        BigInteger[] qr = m.divideAndRemainder(n);
+-        /*
+-         * We have
+-         *      2^12 = 2^{P+1} <= i < 2^{P+5} = 2^16
+-         * Contrary to the double and float cases, where we use long and int, resp.,
+-         * here we cannot simply declare i as short, because P + 5 < Short.SIZE
+-         * fails to hold.
+-         * Using int is safe, though.
+-         *
+-         * Further, as Math.scalb(Float16) does not exists, we fall back to
+-         * Math.scalb(double).
+-         */
+-        int i = qr[0].intValue();
+-        int sb = qr[1].signum();
+-        int dq = (Integer.SIZE - (P_F16 + 2)) - Integer.numberOfLeadingZeros(i);
+-        int eq = (Q_MIN_F16 - 2) - ql;
+-        if (dq >= eq) {
+-            return Float16.valueOf(signum() * Math.scalb((double) (i | sb), ql));
+-        }
+-        int mask = (1 << eq) - 1;
+-        int j = i >> eq | (Integer.signum(i & mask)) | sb;
+-        return Float16.valueOf(signum() * Math.scalb((double) j, Q_MIN_F16 - 2));
+-    }
+-
+     /**
+      * Converts this {@code BigDecimal} to a {@code float}.
+      * This conversion is similar to the
+@@ -4248,15 +4150,6 @@ private double fullDoubleValue() {
+         1.0e6f, 1.0e7f, 1.0e8f, 1.0e9f, 1.0e10f
+     };
+ 
+-    /**
+-     * Powers of 10 which can be represented exactly in {@code
+-     * Float16}.
+-     */
+-    private static final Float16[] FLOAT16_10_POW = {
+-            Float16.valueOf(1), Float16.valueOf(10), Float16.valueOf(100),
+-            Float16.valueOf(1_000), Float16.valueOf(10_000)
+-    };
+-
+     /**
+      * Returns the size of an ulp, a unit in the last place, of this
+      * {@code BigDecimal}.  An ulp of a nonzero {@code BigDecimal}
+diff --git a/src/java.base/share/classes/java/math/BigInteger.java b/src/java.base/share/classes/java/math/BigInteger.java
+index 8d5aeffce18..3a5fd143937 100644
+--- a/src/java.base/share/classes/java/math/BigInteger.java
++++ b/src/java.base/share/classes/java/math/BigInteger.java
+@@ -4395,30 +4395,6 @@ public long longValue() {
+         return result;
+     }
+ 
+-    /**
+-     * Converts this BigInteger to a {@code Float16}.  This
+-     * conversion is similar to the
+-     * <i>narrowing primitive conversion</i> from {@code double} to
+-     * {@code float} as defined in
+-     * <cite>The Java Language Specification</cite>:
+-     * if this BigInteger has too great a magnitude
+-     * to represent as a {@code Float16}, it will be converted to
+-     * {@link Float16#NEGATIVE_INFINITY} or {@link
+-     * Float16#POSITIVE_INFINITY} as appropriate.  Note that even when
+-     * the return value is finite, this conversion can lose
+-     * information about the precision of the BigInteger value.
+-     *
+-     * @return this BigInteger converted to a {@code Float16}.
+-     * @jls 5.1.3 Narrowing Primitive Conversion
+-     */
+-    public Float16 float16Value() {
+-        return signum == 0 || mag.length == 1
+-                ? Float16.valueOf(longValue())  // might return infinities
+-                : signum > 0
+-                ? Float16.POSITIVE_INFINITY
+-                : Float16.NEGATIVE_INFINITY;
+-    }
+-
+     /**
+      * Converts this BigInteger to a {@code float}.  This
+      * conversion is similar to the
+diff --git a/src/java.base/share/classes/jdk/internal/math/Float16Math.java b/src/java.base/share/classes/jdk/internal/math/Float16Math.java
+deleted file mode 100644
+index 573471f3ef0..00000000000
+--- a/src/java.base/share/classes/jdk/internal/math/Float16Math.java
++++ /dev/null
+@@ -1,168 +0,0 @@
+-/*
+- * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+- * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+- *
+- * This code is free software; you can redistribute it and/or modify it
+- * under the terms of the GNU General Public License version 2 only, as
+- * published by the Free Software Foundation.  Oracle designates this
+- * particular file as subject to the "Classpath" exception as provided
+- * by Oracle in the LICENSE file that accompanied this code.
+- *
+- * This code is distributed in the hope that it will be useful, but WITHOUT
+- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+- * version 2 for more details (a copy is included in the LICENSE file that
+- * accompanied this code).
+- *
+- * You should have received a copy of the GNU General Public License version
+- * 2 along with this work; if not, write to the Free Software Foundation,
+- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+- *
+- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+- * or visit www.oracle.com if you need additional information or have any
+- * questions.
+- */
+-package jdk.internal.math;
+-
+-import jdk.internal.vm.annotation.IntrinsicCandidate;
+-
+-import static java.lang.Float.*;
+-import static java.lang.Float16.*;
+-
+-/**
+- * The class {@code Float16Math} constains intrinsic entry points corresponding
+- * to scalar numeric operations defined in Float16 class.
+- * @author
+- * @since   24
+- */
+-public final class Float16Math {
+-
+-    private Float16Math() {
+-    }
+-
+-    /**
+-     * Intrinsic entry point for {@code Float16.max} operation.
+-     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
+-     * enocoded value.
+-     *
+-     * @param a the first operand.
+-     * @param b the second operand.
+-     * @return the greater of {@code a} and {@code b}.
+-     * @see Float16#max
+-     */
+-    @IntrinsicCandidate
+-    public static short max(short a, short b) {
+-        return floatToFloat16(Math.max(float16ToFloat(a), float16ToFloat(b)));
+-    }
+-
+-    /**
+-     * Intrinsic entry point for {@code Float16.min} operation.
+-     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
+-     * enocoded value.
+-     *
+-     * @param a the first operand.
+-     * @param b the second operand.
+-     * @return the smaller of {@code a} and {@code b}.
+-     * @see Float16#min
+-     */
+-    @IntrinsicCandidate
+-    public static short min(short a, short b) {
+-        return floatToFloat16(Math.min(float16ToFloat(a), float16ToFloat(b)));
+-    }
+-
+-    /**
+-     * Intrinsic entry point for {@code Float16.add} operation.
+-     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
+-     * enocoded value.
+-     *
+-     * @param a the first operand.
+-     * @param b the second operand.
+-     * @return the sum of {@code a} and {@code b}.
+-     * @see Float16#add
+-     */
+-    @IntrinsicCandidate
+-    public static short add(short a, short b) {
+-        return floatToFloat16(float16ToFloat(a) + float16ToFloat(b));
+-    }
+-
+-    /**
+-     * Intrinsic entry point for {@code Float16.subtract} operation.
+-     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
+-     * enocoded value.
+-     *
+-     * @param a the first operand.
+-     * @param b the second operand.
+-     * @return the difference of {@code a} and {@code b}.
+-     * @see Float16#subtract
+-     */
+-    @IntrinsicCandidate
+-    public static short subtract(short a, short b) {
+-        return floatToFloat16(float16ToFloat(a) - float16ToFloat(b));
+-    }
+-
+-    /**
+-     * Intrinsic entry point for {@code Float16.multiply} operation.
+-     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
+-     * enocoded value.
+-     *
+-     * @param a the first operand.
+-     * @param b the second operand.
+-     * @return the product of {@code a} and {@code b}.
+-     * @see Float16#multiply
+-     */
+-    @IntrinsicCandidate
+-    public static short multiply(short a, short b) {
+-        return floatToFloat16(float16ToFloat(a) * float16ToFloat(b));
+-    }
+-
+-    /**
+-     * Intrinsic entry point for {@code Float16.divide} operation.
+-     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
+-     * enocoded value.
+-     *
+-     * @param a the first operand.
+-     * @param b the second operand.
+-     * @return the quotient of {@code a} and {@code b}.
+-     * @see Float16#divide
+-     */
+-    @IntrinsicCandidate
+-    public static short divide(short a, short b) {
+-        return floatToFloat16(float16ToFloat(a) / float16ToFloat(b));
+-    }
+-
+-    /**
+-     * Intrinsic entry point for {@code Float16.sqrt} operation.
+-     * Accepts unwrapped 'short' parameter holding IEEE 754 binary16
+-     * enocoded value.
+-     *
+-     * @param a the first operand.
+-     * @return square root of a.
+-     * @see Float16#sqrt
+-     */
+-    @IntrinsicCandidate
+-    public static short sqrt(short a) {
+-        return float16ToRawShortBits(valueOf(Math.sqrt(float16ToFloat(a))));
+-    }
+-
+-    /**
+-     * Intrinsic entry point for {@code Float16.fma} operation.
+-     * Accepts unwrapped 'short' parameters holding IEEE 754 binary16
+-     * enocoded value.
+-     *
+-     * @param a the first operand.
+-     * @param b the second operand.
+-     * @param c the third operand.
+-     * @return (<i>a</i>&nbsp;&times;&nbsp;<i>b</i>&nbsp;+&nbsp;<i>c</i>)
+-     * computed, as if with unlimited range and precision, and rounded
+-     * once to the nearest {@code Float16} value
+-     * @see Float16#fma
+-     */
+-    @IntrinsicCandidate
+-    public static short fma(short a, short b, short c) {
+-        // product is numerically exact in float before the cast to
+-        // double; not necessary to widen to double before the
+-        // multiply.
+-        double product = (double)(float16ToFloat(a) * float16ToFloat(b));
+-        return float16ToRawShortBits(valueOf(product + float16ToFloat(c)));
+-    }
+-}
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/Float16Math.java b/src/java.base/share/classes/jdk/internal/vm/vector/Float16Math.java
+new file mode 100644
+index 00000000000..03ae9226225
+--- /dev/null
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/Float16Math.java
+@@ -0,0 +1,65 @@
++/*
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.  Oracle designates this
++ * particular file as subject to the "Classpath" exception as provided
++ * by Oracle in the LICENSE file that accompanied this code.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++package jdk.internal.vm.vector;
++
++import jdk.internal.vm.annotation.IntrinsicCandidate;
++import jdk.internal.vm.annotation.ForceInline;
++
++import static java.lang.Float.*;
++
++/**
++ * The class {@code Float16Math} constains intrinsic entry points corresponding
++ * to scalar numeric operations defined in Float16 class.
++ * @author
++ * @since   24
++ */
++public final class Float16Math {
++    private Float16Math() {
++    }
++
++    public interface Float16UnaryMathOp {
++        short apply(short a);
++    }
++
++    public interface Float16TernaryMathOp {
++        short apply(short a, short b, short c);
++    }
++
++    @IntrinsicCandidate
++    public static short sqrt(short a, Float16UnaryMathOp defaultImpl) {
++        assert isNonCapturingLambda(defaultImpl) : defaultImpl;
++        return defaultImpl.apply(a);
++    }
++
++    @IntrinsicCandidate
++    public static short fma(short a, short b, short c, Float16TernaryMathOp defaultImpl) {
++        assert isNonCapturingLambda(defaultImpl) : defaultImpl;
++        return defaultImpl.apply(a, b, c);
++    }
++
++    public static boolean isNonCapturingLambda(Object o) {
++        return o.getClass().getDeclaredFields().length == 0;
++    }
++}
+diff --git a/src/java.base/share/classes/java/lang/Float16.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
+similarity index 87%
+rename from src/java.base/share/classes/java/lang/Float16.java
+rename to src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
+index 6ba8ad7ecbc..00c1a3b7235 100644
+--- a/src/java.base/share/classes/java/lang/Float16.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -23,18 +23,21 @@
+  * questions.
+  */
+ 
+-package java.lang;
++package jdk.incubator.vector;
+ 
+ import java.math.BigDecimal;
++import java.math.BigInteger;
+ 
+-import jdk.internal.math.*;
+-import jdk.internal.vm.annotation.IntrinsicCandidate;
++// import jdk.internal.math.*;
++// import jdk.internal.vm.annotation.IntrinsicCandidate;
++import jdk.internal.vm.annotation.ForceInline;
+ 
+ import static java.lang.Float.float16ToFloat;
+ import static java.lang.Float.floatToFloat16;
++import jdk.internal.vm.vector.Float16Math;
+ 
+ /**
+- * The {@code Float16} is a primitive value class holding 16-bit data
++ * The {@code Float16} is a class holding 16-bit data
+  * in IEEE 754 binary16 format.
+  *
+  * <p>Binary16 Format:<br>
+@@ -43,13 +46,16 @@
+  *   Exponent    - 5 bits<br>
+  *   Significand - 10 bits (does not include the <i>implicit bit</i> inferred from the exponent, see {@link #PRECISION})<br>
+  *
+- * <p>This is a <a href="https://openjdk.org/jeps/401">primitive value class</a> and its objects are
+- * identity-less non-nullable value objects.
+- *
+  * <p>Unless otherwise specified, the methods in this class use a
+  * <em>rounding policy</em> (JLS {@jls 15.4}) of {@linkplain
+  * java.math.RoundingMode#HALF_EVEN round to nearest}.
+  *
++ * <p>This is a <a href="{@docRoot}/java.base/java/lang/doc-files/ValueBased.html">value-based</a>
++ * class; programmers should treat instances that are
++ * {@linkplain #equals(Object) equal} as interchangeable and should not
++ * use instances for synchronization, or unpredictable behavior may
++ * occur. For example, in a future release, synchronization may fail.
++ *
+  * @apiNote
+  * The methods in this class generally have analogous methods in
+  * either {@link Float}/{@link Double} or {@link Math}/{@link
+@@ -59,14 +65,12 @@
+  * zeros of methods in this class is wholly analogous to the handling
+  * of equivalent cases by methods in {@code Float}, {@code Double},
+  * {@code Math}, etc.
+- * @author Joseph D. Darcy
+- * @author Jatin Bhateja
+- * @since 24.00
+  */
+ 
+ // Currently Float16 is a value based class but in future will be aligned with
+ // Enhanced Primitive Boxes described by JEP-402 (https://openjdk.org/jeps/402)
+-@jdk.internal.ValueBased
++// @jdk.internal.MigratedValueClass
++//@jdk.internal.ValueBased
+ @SuppressWarnings("serial")
+ public final class Float16
+     extends Number
+@@ -83,7 +87,7 @@
+     *
+     * @param  bits a short value.
+     */
+-    private Float16 (short bits) {
++    private Float16 (short bits ) {
+         this.value = bits;
+     }
+ 
+@@ -209,7 +213,8 @@ private Float16 (short bits) {
+      */
+     public static String toString(Float16 f16) {
+         // FIXME -- update for Float16 precision
+-        return FloatToDecimal.toString(f16.floatValue());
++        return Float.toString(f16.floatValue());
++        // return FloatToDecimal.toString(f16.floatValue());
+     }
+ 
+     /**
+@@ -416,10 +421,124 @@ public static Float16 valueOf(String s) throws NumberFormatException {
+      * in IEEE 754.
+      *
+      * @param  v a {@link BigDecimal}
+-     * @see java.math.BigDecimal#float16Value()
+      */
+     public static Float16 valueOf(BigDecimal v) {
+-        return v.float16Value();
++        return BigDecimalConversion.float16Value(v);
++    }
++
++    private class BigDecimalConversion {
++        /*
++         * Let l = log_2(10).
++         * Then, L < l < L + ulp(L) / 2, that is, L = roundTiesToEven(l).
++         */
++        private static final double L = 3.321928094887362;
++
++        private static final int P_F16 = PRECISION;  // 11
++        private static final int Q_MIN_F16 = MIN_EXPONENT - (P_F16 - 1);  // -24
++        private static final int Q_MAX_F16 = MAX_EXPONENT - (P_F16 - 1);  // 5
++
++        /**
++         * Powers of 10 which can be represented exactly in {@code
++         * Float16}.
++         */
++        private static final Float16[] FLOAT16_10_POW = {
++            Float16.valueOf(1), Float16.valueOf(10), Float16.valueOf(100),
++            Float16.valueOf(1_000), Float16.valueOf(10_000)
++        };
++
++        public static Float16 float16Value(BigDecimal bd) {
++//             int scale = bd.scale();
++//             BigInteger unscaledValue = bd.unscaledValue();
++
++//              if (unscaledValue.abs().compareTo(BigInteger.valueOf(Long.MAX_VALUE)) <= 0) {
++//                 long intCompact = bd.longValue();
++//                 Float16 v = Float16.valueOf(intCompact);
++//                 if (scale == 0) {
++//                     return v;
++//                 }
++//                 /*
++//                  * The discussion for the double case also applies here. That is,
++//                  * the following test is precise for all long values, but here
++//                  * Long.MAX_VALUE is not an issue.
++//                  */
++//                 if (v.longValue() == intCompact) {
++//                     if (0 < scale && scale < FLOAT16_10_POW.length) {
++//                         return Float16.divide(v, FLOAT16_10_POW[scale]);
++//                     }
++//                     if (0 > scale && scale > -FLOAT16_10_POW.length) {
++//                         return Float16.multiply(v, FLOAT16_10_POW[-scale]);
++//                     }
++//                 }
++//             }
++            return fullFloat16Value(bd);
++        }
++
++        private static BigInteger bigTenToThe(int scale) {
++            return BigInteger.TEN.pow(scale);
++        }
++
++        private static Float16 fullFloat16Value(BigDecimal bd) {
++            if (BigDecimal.ZERO.compareTo(bd) == 0) {
++                return Float16.valueOf(0);
++            }
++            BigInteger w = bd.unscaledValue().abs();
++            int scale = bd.scale();
++            long qb = w.bitLength() - (long) Math.ceil(scale * L);
++            Float16 signum = Float16.valueOf(bd.signum());
++            if (qb < Q_MIN_F16 - 2) {  // qb < -26
++                return Float16.multiply(signum, Float16.valueOf(0));
++            }
++            if (qb > Q_MAX_F16 + P_F16 + 1) {  // qb > 17
++                return Float16.multiply(signum, Float16.POSITIVE_INFINITY);
++            }
++            if (scale < 0) {
++                return Float16.multiply(signum, valueOf(w.multiply(bigTenToThe(-scale))));
++            }
++            if (scale == 0) {
++                return Float16.multiply(signum, valueOf(w));
++            }
++            int ql = (int) qb - (P_F16 + 3);
++            BigInteger pow10 =  bigTenToThe(scale);
++            BigInteger m, n;
++            if (ql <= 0) {
++                m = w.shiftLeft(-ql);
++                n = pow10;
++            } else {
++                m = w;
++                n = pow10.shiftLeft(ql);
++            }
++            BigInteger[] qr = m.divideAndRemainder(n);
++            /*
++             * We have
++             *      2^12 = 2^{P+1} <= i < 2^{P+5} = 2^16
++             * Contrary to the double and float cases, where we use long and int, resp.,
++             * here we cannot simply declare i as short, because P + 5 < Short.SIZE
++             * fails to hold.
++             * Using int is safe, though.
++             *
++             * Further, as Math.scalb(Float16) does not exists, we fall back to
++             * Math.scalb(double).
++             */
++            int i = qr[0].intValue();
++            int sb = qr[1].signum();
++            int dq = (Integer.SIZE - (P_F16 + 2)) - Integer.numberOfLeadingZeros(i);
++            int eq = (Q_MIN_F16 - 2) - ql;
++            if (dq >= eq) {
++                return Float16.valueOf(bd.signum() * Math.scalb((double) (i | sb), ql));
++            }
++            int mask = (1 << eq) - 1;
++            int j = i >> eq | (Integer.signum(i & mask)) | sb;
++            return Float16.valueOf(bd.signum() * Math.scalb((double) j, Q_MIN_F16 - 2));
++        }
++
++        public static Float16 valueOf(BigInteger bi) {
++            int signum = bi.signum();
++            return (signum == 0 || bi.bitLength() <= 31)
++                ? Float16.valueOf(bi.longValue())  // might return infinities
++                : signum > 0
++                ? Float16.POSITIVE_INFINITY
++                : Float16.NEGATIVE_INFINITY;
++        }
+     }
+ 
+     /**
+@@ -569,7 +688,7 @@ public double doubleValue() {
+     /**
+      * Returns a hash code for this {@code Float16} object. The
+      * result is the integer bit representation, exactly as produced
+-     * by the method {@link #float16ToShortBits(Float16)}, of the primitive
++     * by the method {@link #float16ToRawShortBits(Float16)}, of the primitive
+      * {@code short} value represented by this {@code Float16}
+      * object.
+      *
+@@ -599,13 +718,13 @@ public static int hashCode(short value) {
+      * represents a {@code short} with the same value as the
+      * {@code short} represented by this object. For this
+      * purpose, two {@code short} values are considered to be the
+-     * same if and only if the method {@link #float16ToShortBits(Float16)}
++     * same if and only if the method {@link #float16ToRawShortBits(Float16)}
+      * returns the identical {@code short} value when applied to
+      * each.
+      *
+      * @apiNote
+      * This method is defined in terms of {@link
+-     * #float16ToShortBits(Float16)} rather than the {@code ==} operator on
++     * #float16ToRawShortBits(Float16)} rather than the {@code ==} operator on
+      * {@code float} values since the {@code ==} operator does
+      * <em>not</em> define an equivalence relation and to satisfy the
+      * {@linkplain Object#equals equals contract} an equivalence
+@@ -615,18 +734,17 @@ public static int hashCode(short value) {
+      * @param obj the object to be compared
+      * @return  {@code true} if the objects are the same;
+      *          {@code false} otherwise.
+-     * @see java.lang.Float16#float16ToShortBits(Float16)
++     * @see jdk.incubator.vector.Float16#float16ToRawShortBits(Float16)
+      * @jls 15.21.1 Numerical Equality Operators == and !=
+      */
+     public boolean equals(Object obj) {
+         return (obj instanceof Float16)
+-               && (float16ToShortBits(((Float16)obj)) == float16ToShortBits(this));
++               && (float16ToRawShortBits(((Float16)obj)) == float16ToRawShortBits(this));
+     }
+ 
+     /**
+      * Returns a representation of the specified floating-point value
+-     * according to the IEEE 754 floating-point binary16 bit layout,
+-     * preserving Not-a-Number (NaN) values.
++     * according to the IEEE 754 floating-point binary16 bit layout.
+      *
+      * @param   f16   a {@code Float16} floating-point number.
+      * @return the bits that represent the floating-point number.
+@@ -638,23 +756,6 @@ public static short float16ToRawShortBits(Float16 f16) {
+         return f16.value;
+     }
+ 
+-    /**
+-     * Returns a representation of the specified floating-point value
+-     * according to the IEEE 754 floating-point binary16 bit layout.
+-     *
+-     * @param   fp16   a {@code Float16} floating-point number.
+-     * @return the bits that represent the floating-point number.
+-     *
+-     * @see Float#floatToIntBits(float)
+-     * @see Double#doubleToLongBits(double)
+-     */
+-    public static short float16ToShortBits(Float16 fp16) {
+-        if (!isNaN(fp16)) {
+-            return float16ToRawShortBits(fp16);
+-        }
+-        return 0x7e00;
+-    }
+-
+     /**
+      * Returns the {@code Float16} value corresponding to a given bit
+      * representation.
+@@ -742,8 +843,10 @@ public static int compare(Float16 f1, Float16 f2) {
+      * @see Math#max(float, float)
+      * @see Math#max(double, double)
+      */
++    // @IntrinsicCandidate
+     public static Float16 max(Float16 a, Float16 b) {
+-        return shortBitsToFloat16(Float16Math.max(float16ToRawShortBits(a), float16ToRawShortBits(b)));
++        return shortBitsToFloat16(floatToFloat16(Math.max(a.floatValue(),
++                                                          b.floatValue() )));
+     }
+ 
+     /**
+@@ -761,7 +864,8 @@ public static Float16 max(Float16 a, Float16 b) {
+      * @see Math#min(double, double)
+      */
+     public static Float16 min(Float16 a, Float16 b) {
+-        return shortBitsToFloat16(Float16Math.min(float16ToRawShortBits(a), float16ToRawShortBits(b)));
++        return shortBitsToFloat16(floatToFloat16(Math.min(a.floatValue(),
++                                                          b.floatValue()) ));
+     }
+ 
+     // Skipping for now
+@@ -828,7 +932,7 @@ public static Float16 min(Float16 a, Float16 b) {
+      * @jls 15.4 Floating-point Expressions
+      */
+     public static Float16 add(Float16 addend, Float16 augend) {
+-        return shortBitsToFloat16(Float16Math.add(float16ToRawShortBits(addend), float16ToRawShortBits(augend)));
++        return valueOf(addend.floatValue() + augend.floatValue());
+     }
+ 
+     /**
+@@ -850,7 +954,7 @@ public static Float16 add(Float16 addend, Float16 augend) {
+      * @jls 15.4 Floating-point Expressions
+      */
+     public static Float16 subtract(Float16 minuend, Float16 subtrahend) {
+-        return shortBitsToFloat16(Float16Math.subtract(float16ToRawShortBits(minuend), float16ToRawShortBits(subtrahend)));
++        return valueOf(minuend.floatValue() - subtrahend.floatValue());
+     }
+ 
+     /**
+@@ -872,7 +976,7 @@ public static Float16 subtract(Float16 minuend, Float16 subtrahend) {
+      * @jls 15.4 Floating-point Expressions
+      */
+     public static Float16 multiply(Float16 multiplier, Float16 multiplicand) {
+-        return shortBitsToFloat16(Float16Math.multiply(float16ToRawShortBits(multiplier), float16ToRawShortBits(multiplicand)));
++        return valueOf(multiplier.floatValue() * multiplicand.floatValue());
+     }
+ 
+     /**
+@@ -894,7 +998,7 @@ public static Float16 multiply(Float16 multiplier, Float16 multiplicand) {
+      * @jls 15.4 Floating-point Expressions
+      */
+     public static Float16 divide(Float16 dividend, Float16 divisor) {
+-        return shortBitsToFloat16(Float16Math.divide(float16ToRawShortBits(dividend), float16ToRawShortBits(divisor)));
++        return valueOf(dividend.floatValue() / divisor.floatValue());
+     }
+ 
+     /**
+@@ -919,7 +1023,9 @@ public static Float16 sqrt(Float16 radicand) {
+         // Float16 -> double preserves the exact numerical value. The
+         // of the double -> Float16 conversion also benefits from the
+         // 2p+2 property of IEEE 754 arithmetic.
+-        return shortBitsToFloat16(Float16Math.sqrt(float16ToRawShortBits(radicand)));
++        short res = Float16Math.sqrt(float16ToRawShortBits(radicand),
++                (f16) -> float16ToRawShortBits(valueOf(Math.sqrt(float16ToFloat(f16)))));
++        return shortBitsToFloat16(res);
+     }
+ 
+     /**
+@@ -946,6 +1052,7 @@ public static Float16 sqrt(Float16 radicand) {
+      * @see Math#fma(float, float, float)
+      * @see Math#fma(double, double, double)
+      */
++    @SuppressWarnings({"cast"})
+     public static Float16 fma(Float16 a, Float16 b, Float16 c) {
+         /*
+          * The double format has sufficient precision that a Float16
+@@ -1120,7 +1227,19 @@ public static Float16 fma(Float16 a, Float16 b, Float16 c) {
+          *   adjacent `float16` values, and double rounding is
+          *   harmless.
+          */
+-        return shortBitsToFloat16(Float16Math.fma(float16ToRawShortBits(a), float16ToRawShortBits(b), float16ToRawShortBits(c)));
++
++        // product is numerically exact in float before the cast to
++        // double; not necessary to widen to double before the
++        // multiply.
++        short fa = float16ToRawShortBits(a);
++        short fb = float16ToRawShortBits(b);
++        short fc = float16ToRawShortBits(c);
++        short res = Float16Math.fma(fa, fb, fc, 
++                (f16a, f16b, f16c) -> {
++                    double product = (double)(float16ToFloat(f16a) * float16ToFloat(f16b));
++                    return float16ToRawShortBits(valueOf(product + float16ToFloat(f16c)));
++                });
++        return shortBitsToFloat16(res);
+     }
+ 
+     /**
+@@ -1351,6 +1470,7 @@ public static Float16 scalb(Float16 v, int scaleFactor) {
+         // Make sure scaling factor is in a reasonable range
+         scaleFactor = Math.max(Math.min(scaleFactor, MAX_SCALE), -MAX_SCALE);
+ 
++        int DoubleConsts_EXP_BIAS = 1023;
+         /*
+          * Since + MAX_SCALE for Float16 fits well within the double
+          * exponent range and + Float16 -> double conversion is exact
+@@ -1359,9 +1479,8 @@ public static Float16 scalb(Float16 v, int scaleFactor) {
+          * Float16 will be the correctly rounded Float16 result.
+          */
+         return valueOf(v.doubleValue()
+-                * Double.longBitsToDouble((long) (scaleFactor + DoubleConsts.EXP_BIAS) << Double.PRECISION - 1));
++                * Double.longBitsToDouble((long) (scaleFactor + DoubleConsts_EXP_BIAS) << Double.PRECISION - 1));
+     }
+-
+     /**
+      * Returns the first floating-point argument with the sign of the
+      * second floating-point argument.
+@@ -1405,5 +1524,4 @@ public static Float16 copySign(Float16 magnitude, Float16 sign) {
+     public static Float16 signum(Float16 f) {
+         return (f.floatValue() == 0.0f || isNaN(f)) ? f : copySign(valueOf(1), f);
+     }
+-
+ }
+diff --git a/src/java.base/share/classes/jdk/internal/math/Float16Consts.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16Consts.java
+similarity index 93%
+rename from src/java.base/share/classes/jdk/internal/math/Float16Consts.java
+rename to src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16Consts.java
+index 5942c90a633..48c4d2199b1 100644
+--- a/src/java.base/share/classes/jdk/internal/math/Float16Consts.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16Consts.java
+@@ -23,18 +23,18 @@
+  * questions.
+  */
+ 
+-package jdk.internal.math;
++package jdk.incubator.vector;
+ 
+-import static java.lang.Float16.MIN_EXPONENT;
+-import static java.lang.Float16.PRECISION;
+-import static java.lang.Float16.SIZE;
++import static jdk.incubator.vector.Float16.MIN_EXPONENT;
++import static jdk.incubator.vector.Float16.PRECISION;
++import static jdk.incubator.vector.Float16.SIZE;
+ 
+ /**
+  * This class contains additional constants documenting limits of the
+  * {@code Float16} type.
+  */
+ 
+-public class Float16Consts {
++class Float16Consts {
+     /**
+      * Don't let anyone instantiate this class.
+      */
+diff --git a/test/jdk/java/lang/Float/FP16ReductionOperations.java b/test/jdk/jdk/incubator/vector/float16/Float16ReductionOperations.java
+similarity index 89%
+rename from test/jdk/java/lang/Float/FP16ReductionOperations.java
+rename to test/jdk/jdk/incubator/vector/float16/Float16ReductionOperations.java
+index 9b4b3f7ab04..94469d64560 100644
+--- a/test/jdk/java/lang/Float/FP16ReductionOperations.java
++++ b/test/jdk/jdk/incubator/vector/float16/Float16ReductionOperations.java
+@@ -24,16 +24,18 @@
+ /*
+  * @test
+  * @bug 8308363
+- * @summary Test FP16 reduction operations.
+- * @compile FP16ReductionOperations.java
+- * @run main/othervm --enable-preview -XX:-TieredCompilation -Xbatch FP16ReductionOperations
++ * @summary Test Float16 reduction operations.
++ * @modules jdk.incubator.vector
++ * @compile Float16ReductionOperations.java
++ * @run main/othervm -XX:-TieredCompilation -Xbatch Float16ReductionOperations
+  */
+ 
+ import java.util.Random;
+ 
+-import static java.lang.Float16.*;
++import jdk.incubator.vector.Float16;
++import static jdk.incubator.vector.Float16.*;
+ 
+-public class FP16ReductionOperations {
++public class Float16ReductionOperations {
+ 
+     public static Random r = new Random(1024);
+ 
+@@ -43,7 +45,7 @@ public static short test_reduction_add_constants() {
+         Float16 hf2 = shortBitsToFloat16((short)16384);
+         Float16 hf3 = shortBitsToFloat16((short)16896);
+         Float16 hf4 = shortBitsToFloat16((short)17408);
+-        return float16ToRawShortBits(Float16.add(Float16.add(Float16.add(Float16.add(hf0, hf1), hf2), hf3), hf4));
++        return float16ToRawShortBits(add(add(add(add(hf0, hf1), hf2), hf3), hf4));
+     }
+ 
+     public static short expected_reduction_add_constants() {
+@@ -81,7 +83,7 @@ public static void test_reduction_constants(char oper) {
+     public static short test_reduction_add(short [] arr) {
+         Float16 res = shortBitsToFloat16((short)0);
+         for (int i = 0; i < arr.length; i++) {
+-            res = Float16.add(res, shortBitsToFloat16(arr[i]));
++            res = add(res, shortBitsToFloat16(arr[i]));
+         }
+         return float16ToRawShortBits(res);
+     }
+@@ -109,7 +111,7 @@ public static void test_reduction(char oper, short [] arr) {
+         }
+     }
+ 
+-    public static short [] get_fp16_array(int size) {
++    public static short [] get_float16_array(int size) {
+         short [] arr = new short[size];
+         for (int i = 0; i < arr.length; i++) {
+             arr[i] = Float.floatToFloat16(r.nextFloat());
+@@ -119,7 +121,7 @@ public static void test_reduction(char oper, short [] arr) {
+ 
+     public static void main(String [] args) {
+         int res = 0;
+-        short [] input = get_fp16_array(1024);
++        short [] input = get_float16_array(1024);
+         short [] special_values = {
+               32256,          // NAN
+               31744,          // +Inf
+diff --git a/test/jdk/java/lang/Float/FP16ScalarOperations.java b/test/jdk/jdk/incubator/vector/float16/Float16ScalarOperations.java
+similarity index 63%
+rename from test/jdk/java/lang/Float/FP16ScalarOperations.java
+rename to test/jdk/jdk/incubator/vector/float16/Float16ScalarOperations.java
+index 75bf054f228..ef703841960 100644
+--- a/test/jdk/java/lang/Float/FP16ScalarOperations.java
++++ b/test/jdk/jdk/incubator/vector/float16/Float16ScalarOperations.java
+@@ -26,57 +26,59 @@
+  * @test
+  * @bug 8308363 8336406 8339473
+  * @summary Verify FP16 unary, binary and ternary operations
+- * @compile FP16ScalarOperations.java
+- * @run main/othervm --enable-preview -XX:-TieredCompilation -Xbatch FP16ScalarOperations
++ * @modules jdk.incubator.vector
++ * @compile Float16ScalarOperations.java
++ * @run main/othervm -XX:-TieredCompilation -Xbatch Float16ScalarOperations
+  */
+ 
+ import java.util.Random;
+ import java.util.stream.IntStream;
+-import static java.lang.Float16.*;
++import jdk.incubator.vector.Float16;
++import static jdk.incubator.vector.Float16.*;
+ 
+-public class FP16ScalarOperations {
++public class Float16ScalarOperations {
+ 
+     public static final int SIZE = 65504;
+     public static Random r = new Random(SIZE);
+-    public static final Float16 ONE = Float16.valueOf(1.0);
+-    public static final Float16 ZERO = Float16.valueOf(0.0);
++    public static final Float16 ONE = valueOf(1.0);
++    public static final Float16 ZERO = valueOf(0.0);
+     public static final int EXP = 0x7c00; // Mask for Float16 Exponent in a NaN (which is all ones)
+     public static final int SIGN_BIT = 0x8000; // Mask for sign bit for Float16
+ 
+     public static Float16 actual_value(String oper, Float16... val) {
+         switch (oper) {
+-            case "abs"        : return Float16.abs(val[0]);
+-            case "neg"        : return Float16.negate(val[0]);
+-            case "sqrt"       : return Float16.sqrt(val[0]);
+-            case "isInfinite" : return Float16.isInfinite(val[0]) ? ONE : ZERO;
+-            case "isFinite"   : return Float16.isFinite(val[0]) ? ONE : ZERO;
+-            case "isNaN"      : return Float16.isNaN(val[0]) ? ONE : ZERO;
+-            case "+"          : return Float16.add(val[0], val[1]);
+-            case "-"          : return Float16.subtract(val[0], val[1]);
+-            case "*"          : return Float16.multiply(val[0], val[1]);
+-            case "/"          : return Float16.divide(val[0], val[1]);
+-            case "min"        : return Float16.min(val[0], val[1]);
+-            case "max"        : return Float16.max(val[0], val[1]);
+-            case "fma"        : return Float16.fma(val[0], val[1], val[2]);
++            case "abs"        : return abs(val[0]);
++            case "neg"        : return negate(val[0]);
++            case "sqrt"       : return sqrt(val[0]);
++            case "isInfinite" : return isInfinite(val[0]) ? ONE : ZERO;
++            case "isFinite"   : return isFinite(val[0]) ? ONE : ZERO;
++            case "isNaN"      : return isNaN(val[0]) ? ONE : ZERO;
++            case "+"          : return add(val[0], val[1]);
++            case "-"          : return subtract(val[0], val[1]);
++            case "*"          : return multiply(val[0], val[1]);
++            case "/"          : return divide(val[0], val[1]);
++            case "min"        : return min(val[0], val[1]);
++            case "max"        : return max(val[0], val[1]);
++            case "fma"        : return fma(val[0], val[1], val[2]);
+             default           : throw new AssertionError("Unsupported Operation!");
+         }
+     }
+ 
+     public static Float16 expected_value(String oper, Float16... val) {
+         switch (oper) {
+-            case "abs"        : return Float16.valueOf(Math.abs(val[0].floatValue()));
+-            case "neg"        : return Float16.shortBitsToFloat16((short)(Float16.float16ToRawShortBits(val[0]) ^ (short)0x0000_8000));
+-            case "sqrt"       : return Float16.valueOf(Math.sqrt(val[0].floatValue()));
++            case "abs"        : return valueOf(Math.abs(val[0].floatValue()));
++            case "neg"        : return shortBitsToFloat16((short)(float16ToRawShortBits(val[0]) ^ (short)0x0000_8000));
++            case "sqrt"       : return valueOf(Math.sqrt(val[0].floatValue()));
+             case "isInfinite" : return Float.isInfinite(val[0].floatValue()) ? ONE : ZERO;
+             case "isFinite"   : return Float.isFinite(val[0].floatValue()) ? ONE : ZERO;
+             case "isNaN"      : return Float.isNaN(val[0].floatValue()) ? ONE : ZERO;
+-            case "+"          : return Float16.valueOf(val[0].floatValue() + val[1].floatValue());
+-            case "-"          : return Float16.valueOf(val[0].floatValue() - val[1].floatValue());
+-            case "*"          : return Float16.valueOf(val[0].floatValue() * val[1].floatValue());
+-            case "/"          : return Float16.valueOf(val[0].floatValue() / val[1].floatValue());
+-            case "min"        : return Float16.valueOf(Float.min(val[0].floatValue(), val[1].floatValue()));
+-            case "max"        : return Float16.valueOf(Float.max(val[0].floatValue(), val[1].floatValue()));
+-            case "fma"        : return Float16.valueOf(val[0].floatValue() * val[1].floatValue() + val[2].floatValue());
++            case "+"          : return valueOf(val[0].floatValue() + val[1].floatValue());
++            case "-"          : return valueOf(val[0].floatValue() - val[1].floatValue());
++            case "*"          : return valueOf(val[0].floatValue() * val[1].floatValue());
++            case "/"          : return valueOf(val[0].floatValue() / val[1].floatValue());
++            case "min"        : return valueOf(Float.min(val[0].floatValue(), val[1].floatValue()));
++            case "max"        : return valueOf(Float.max(val[0].floatValue(), val[1].floatValue()));
++            case "fma"        : return valueOf(Math.fma(val[0].doubleValue(), val[1].doubleValue(), val[2].doubleValue()));
+             default           : throw new AssertionError("Unsupported Operation!");
+         }
+     }
+@@ -90,11 +92,11 @@ public static void validate(String oper, Float16... input) {
+         if (!actual.equals(expected)) {
+             switch (arity) {
+                 case 1:
+-                    throw new AssertionError("Test Failed: " + oper + "(" + Float16.float16ToRawShortBits(input[0]) + ") : " +  actual + " != " + expected);
++                    throw new AssertionError("Test Failed: " + oper + "(" + float16ToRawShortBits(input[0]) + ") : " + "(actual:" + actual + ") != (" + "expected:" + expected);
+                 case 2:
+-                    throw new AssertionError("Test Failed: " + oper + "(" + Float16.float16ToRawShortBits(input[0]) + ", " + Float16.float16ToRawShortBits(input[1]) + ") : " + actual + " != " + expected);
++                    throw new AssertionError("Test Failed: " + oper + "(" + float16ToRawShortBits(input[0]) + ", " + float16ToRawShortBits(input[1]) + ") : " + "(actual:"+ actual + ") != (" + "expected:" + expected);
+                 case 3:
+-                    throw new AssertionError("Test failed: " + oper + "(" + Float16.float16ToRawShortBits(input[0]) + ", " + Float16.float16ToRawShortBits(input[1]) + ", " + Float16.float16ToRawShortBits(input[2]) + ") : " + actual + " != " + expected);
++                    throw new AssertionError("Test failed: " + oper + "(" + float16ToRawShortBits(input[0]) + ", " + float16ToRawShortBits(input[1]) + ", " + float16ToRawShortBits(input[2]) + ") : " + "(actual:" + actual + ") != (" + "expected:" + expected);
+                 default:
+                     throw new AssertionError("Incorrect operation (" + oper + ")  arity = " + arity);
+             }
+@@ -131,8 +133,8 @@ public static void test_fin_inf_nan() {
+         Float16 pos_nan, neg_nan;
+         // Starting from 1 as the significand in a NaN value is always non-zero
+         for (int i = 1; i < 0x03ff; i++) {
+-            pos_nan = Float16.shortBitsToFloat16((short)(EXP | i));
+-            neg_nan = Float16.shortBitsToFloat16((short)(Float16.float16ToRawShortBits(pos_nan) | SIGN_BIT));
++            pos_nan = shortBitsToFloat16((short)(EXP | i));
++            neg_nan = shortBitsToFloat16((short)(float16ToRawShortBits(pos_nan) | SIGN_BIT));
+ 
+             // Test isFinite, isInfinite, isNaN for all positive NaN values
+             validate("isInfinite", pos_nan);
+@@ -152,16 +154,16 @@ public static void main(String [] args) {
+         Float16 [] input3 = new Float16[SIZE];
+ 
+         // input1, input2, input3 contain the entire value range for FP16
+-        IntStream.range(0, input1.length).forEach(i -> {input1[i] = Float16.valueOf((float)i);});
+-        IntStream.range(0, input2.length).forEach(i -> {input2[i] = Float16.valueOf((float)i);});
+-        IntStream.range(0, input2.length).forEach(i -> {input3[i] = Float16.valueOf((float)i);});
++        IntStream.range(0, input1.length).forEach(i -> {input1[i] = valueOf((float)i);});
++        IntStream.range(0, input2.length).forEach(i -> {input2[i] = valueOf((float)i);});
++        IntStream.range(0, input2.length).forEach(i -> {input3[i] = valueOf((float)i);});
+ 
+         Float16 [] special_values = {
+-              Float16.NaN,                 // NAN
+-              Float16.POSITIVE_INFINITY,   // +Inf
+-              Float16.NEGATIVE_INFINITY,   // -Inf
+-              Float16.valueOf(0.0),        // +0.0
+-              Float16.valueOf(-0.0),       // -0.0
++              NaN,                 // NAN
++              POSITIVE_INFINITY,   // +Inf
++              NEGATIVE_INFINITY,   // -Inf
++              valueOf(0.0),        // +0.0
++              valueOf(-0.0),       // -0.0
+         };
+ 
+         for (int i = 0;  i < 1000; i++) {

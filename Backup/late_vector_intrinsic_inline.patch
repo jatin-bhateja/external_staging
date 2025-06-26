@@ -1,0 +1,96 @@
+diff --git a/make/common/JavaCompilation.gmk b/make/common/JavaCompilation.gmk
+index f48aefcd517..6317c528afa 100644
+--- a/make/common/JavaCompilation.gmk
++++ b/make/common/JavaCompilation.gmk
+@@ -265,7 +265,7 @@ define SetupJavaCompilationBody
+   endif
+ 
+   # Allow overriding on the command line
+-  JAVA_WARNINGS_ARE_ERRORS ?= -Werror
++  JAVA_WARNINGS_ARE_ERRORS ?=
+ 
+   # Tell javac to do exactly as told and no more
+   PARANOIA_FLAGS := -implicit:none -Xprefer:source -XDignore.symbol.file=true -encoding ascii
+diff --git a/src/hotspot/share/opto/callGenerator.cpp b/src/hotspot/share/opto/callGenerator.cpp
+index ec7117e3568..4c0bd162162 100644
+--- a/src/hotspot/share/opto/callGenerator.cpp
++++ b/src/hotspot/share/opto/callGenerator.cpp
+@@ -441,6 +441,33 @@ CallGenerator* CallGenerator::for_mh_late_inline(ciMethod* caller, ciMethod* cal
+   return cg;
+ }
+ 
++class LateInlineVectorCallGenerator : public LateInlineCallGenerator {
++ protected: 
++ CallGenerator* _inline_cg;
++
++ public:
++  LateInlineVectorCallGenerator(ciMethod* method, CallGenerator* intrinsic_cg, CallGenerator* inline_cg) :
++    LateInlineCallGenerator(method, intrinsic_cg) , _inline_cg(inline_cg) {}
++
++  virtual JVMState* generate(JVMState* jvms) {
++    Compile *C = Compile::current();
++
++    C->log_inline_id(this);
++
++    C->add_string_late_inline(this);
++
++    JVMState* new_jvms = DirectCallGenerator::generate(jvms);
++    return new_jvms;
++  }
++  CallGenerator* inline_cg2() const { return _inline_cg; }
++  virtual bool      is_vector_late_inline() const  { return true; }
++};
++
++CallGenerator* for_vector_late_inline(ciMethod* m, CallGenerator* intrinsic_cg, CallGenerator* inline_cg) {
++  return new LateInlineVectorCallGenerator(m, intrinsic_cg, inline_cg);
++}
++
++
+ // Allow inlining decisions to be delayed
+ class LateInlineVirtualCallGenerator : public VirtualCallGenerator {
+  private:
+@@ -673,6 +700,8 @@ void CallGenerator::do_late_inline_helper() {
+ 
+     // Now perform the inlining using the synthesized JVMState
+     JVMState* new_jvms = inline_cg()->generate(jvms);
++    new_jvms = new_jvms == nullptr && is_vector_late_inline() ?
++        static_cast<const LateInlineVectorCallGenerator*>(this)->inline_cg2()->generate(jvms) : new_jvms;
+     if (new_jvms == nullptr)  return;  // no change
+     if (C->failing())      return;
+ 
+diff --git a/src/hotspot/share/opto/callGenerator.hpp b/src/hotspot/share/opto/callGenerator.hpp
+index 82b195e0c76..46a08f98ebb 100644
+--- a/src/hotspot/share/opto/callGenerator.hpp
++++ b/src/hotspot/share/opto/callGenerator.hpp
+@@ -75,6 +75,7 @@ class CallGenerator : public ArenaObj {
+   // same but for method handle calls
+   virtual bool      is_mh_late_inline() const      { return false; }
+   virtual bool      is_string_late_inline() const  { return false; }
++  virtual bool      is_vector_late_inline() const  { return false; }
+   virtual bool      is_boxing_late_inline() const  { return false; }
+   virtual bool      is_vector_reboxing_late_inline() const  { return false; }
+   virtual bool      is_virtual_late_inline() const { return false; }
+@@ -141,6 +142,7 @@ class CallGenerator : public ArenaObj {
+   static CallGenerator* for_late_inline(ciMethod* m, CallGenerator* inline_cg);
+   static CallGenerator* for_mh_late_inline(ciMethod* caller, ciMethod* callee, bool input_not_const);
+   static CallGenerator* for_string_late_inline(ciMethod* m, CallGenerator* inline_cg);
++  static CallGenerator* for_vector_late_inline(ciMethod* m, CallGenerator* intrinsic_cg, CallGenerator* inline_cg);
+   static CallGenerator* for_boxing_late_inline(ciMethod* m, CallGenerator* inline_cg);
+   static CallGenerator* for_vector_reboxing_late_inline(ciMethod* m, CallGenerator* inline_cg);
+   static CallGenerator* for_late_inline_virtual(ciMethod* m, int vtable_index, float expected_uses);
+diff --git a/src/hotspot/share/opto/doCall.cpp b/src/hotspot/share/opto/doCall.cpp
+index f4b36674968..87d237d9404 100644
+--- a/src/hotspot/share/opto/doCall.cpp
++++ b/src/hotspot/share/opto/doCall.cpp
+@@ -164,7 +164,9 @@ CallGenerator* Compile::call_generator(ciMethod* callee, int vtable_index, bool
+         cg_intrinsic = cg;
+         cg = nullptr;
+       } else if (IncrementalInline && should_delay_vector_inlining(callee, jvms)) {
+-        return CallGenerator::for_late_inline(callee, cg);
++        float expected_uses = jvms->method()->scale_count(site_count, prof_factor);
++        CallGenerator* inline_cg = CallGenerator::for_inline(callee, expected_uses);
++        return CallGenerator::for_vector_late_inline(callee, cg, inline_cg);
+       } else {
+         return cg;
+       }
+

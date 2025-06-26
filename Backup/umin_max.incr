@@ -1,0 +1,293 @@
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index fe85e1f806f..6b15bc1fd53 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -2159,9 +2159,9 @@ static Node* unsigned_min_max_xform(Node* n) {
+   // UMin (UMax(a, b), UMin(b, a))  => UMin(a, b)
+   // UMax (UMin(a, b), UMax(a, b))  => UMax(a, b)
+   // UMax (UMax(a, b), UMin(b, a))  => UMax(a, b)
+-  if (umin && umax) {
++  if (umin != nullptr && umax != nullptr) {
+     if ((umin->in(1) == umax->in(1) && umin->in(2) == umax->in(2)) ||
+-         (umin->in(2) == umax->in(1) && umin->in(1) == umax->in(2))) {
++        (umin->in(2) == umax->in(1) && umin->in(1) == umax->in(2))) {
+       if (vopc == Op_UMinV) {
+         return new UMinVNode(umax->in(1), umax->in(2), n->bottom_type()->is_vect());
+       } else {
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 32fdd95a23e..e75c8c44f4d 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -617,9 +617,6 @@ class UMinVNode : public VectorNode {
+   virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
+   virtual Node* Identity(PhaseGVN* phase);
+   virtual int Opcode() const;
+-  virtual uint hash() const {
+-    return (uintptr_t)in(1) + (uintptr_t)in(2) + Opcode();
+-  }
+ };
+ 
+ 
+@@ -639,9 +636,6 @@ class UMaxVNode : public VectorNode {
+   virtual Node* Ideal(PhaseGVN* phase, bool can_reshape);
+   virtual Node* Identity(PhaseGVN* phase);
+   virtual int Opcode() const;
+-  virtual uint hash() const {
+-    return (uintptr_t)in(1) + (uintptr_t)in(2) + Opcode();
+-  }
+ };
+ 
+ //------------------------------AbsVINode--------------------------------------
+diff --git a/test/hotspot/jtreg/compiler/vectorapi/VectorUnsignedMinMaxOperationsTest.java b/test/hotspot/jtreg/compiler/vectorapi/VectorUnsignedMinMaxOperationsTest.java
+index c77c321db95..7c927b052b3 100644
+--- a/test/hotspot/jtreg/compiler/vectorapi/VectorUnsignedMinMaxOperationsTest.java
++++ b/test/hotspot/jtreg/compiler/vectorapi/VectorUnsignedMinMaxOperationsTest.java
+@@ -23,10 +23,9 @@
+ 
+ /**
+ * @test
+-* @bug 8338201
+-* @summary Support new unsigned and saturating vector operators in VectorAPI
++* @bug 8342676
++* @summary Unsigned Vector Min / Max transforms
+ * @modules jdk.incubator.vector
+-* @requires vm.compiler2.enabled
+ * @library /test/lib /
+ * @run driver compiler.vectorapi.VectorUnsignedMinMaxOperationsTest
+ */
+@@ -106,14 +105,14 @@ public VectorUnsignedMinMaxOperationsTest() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMAX_VB, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMAX_VB, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umax_byte() {
+         for (int i = 0; i < COUNT; i += bspec.length()) {
+             ByteVector.fromArray(bspec, byte_in1, i)
+-                     .lanewise(VectorOperators.UMAX,
+-                               ByteVector.fromArray(bspec, byte_in2, i))
+-                     .intoArray(byte_out, i);
++                      .lanewise(VectorOperators.UMAX,
++                                ByteVector.fromArray(bspec, byte_in2, i))
++                      .intoArray(byte_out, i);
+         }
+     }
+ 
+@@ -129,14 +128,14 @@ public void umax_byte_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMAX_VS, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMAX_VS, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umax_short() {
+         for (int i = 0; i < COUNT; i += sspec.length()) {
+             ShortVector.fromArray(sspec, short_in1, i)
+-                     .lanewise(VectorOperators.UMAX,
+-                               ShortVector.fromArray(sspec, short_in2, i))
+-                     .intoArray(short_out, i);
++                       .lanewise(VectorOperators.UMAX,
++                                 ShortVector.fromArray(sspec, short_in2, i))
++                       .intoArray(short_out, i);
+         }
+     }
+ 
+@@ -152,7 +151,7 @@ public void umax_short_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMAX_VI, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMAX_VI, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umax_int() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+@@ -175,14 +174,14 @@ public void umax_int_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMAX_VL, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMAX_VL, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umax_long() {
+         for (int i = 0; i < COUNT; i += lspec.length()) {
+             LongVector.fromArray(lspec, long_in1, i)
+-                     .lanewise(VectorOperators.UMAX,
+-                               LongVector.fromArray(lspec, long_in2, i))
+-                     .intoArray(long_out, i);
++                      .lanewise(VectorOperators.UMAX,
++                                LongVector.fromArray(lspec, long_in2, i))
++                      .intoArray(long_out, i);
+         }
+     }
+ 
+@@ -198,14 +197,14 @@ public void umax_long_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMIN_VB, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMIN_VB, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_byte() {
+         for (int i = 0; i < COUNT; i += bspec.length()) {
+             ByteVector.fromArray(bspec, byte_in1, i)
+-                     .lanewise(VectorOperators.UMIN,
+-                               ByteVector.fromArray(bspec, byte_in2, i))
+-                     .intoArray(byte_out, i);
++                      .lanewise(VectorOperators.UMIN,
++                                ByteVector.fromArray(bspec, byte_in2, i))
++                      .intoArray(byte_out, i);
+         }
+     }
+ 
+@@ -221,14 +220,14 @@ public void umin_byte_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMIN_VS, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMIN_VS, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_short() {
+         for (int i = 0; i < COUNT; i += sspec.length()) {
+             ShortVector.fromArray(sspec, short_in1, i)
+-                     .lanewise(VectorOperators.UMIN,
+-                               ShortVector.fromArray(sspec, short_in2, i))
+-                     .intoArray(short_out, i);
++                       .lanewise(VectorOperators.UMIN,
++                                 ShortVector.fromArray(sspec, short_in2, i))
++                       .intoArray(short_out, i);
+         }
+     }
+ 
+@@ -244,7 +243,7 @@ public void umin_short_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMIN_VI, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMIN_VI, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_int() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+@@ -267,14 +266,14 @@ public void umin_int_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMIN_VL, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMIN_VL, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_long() {
+         for (int i = 0; i < COUNT; i += lspec.length()) {
+             LongVector.fromArray(lspec, long_in1, i)
+-                     .lanewise(VectorOperators.UMIN,
+-                               LongVector.fromArray(lspec, long_in2, i))
+-                     .intoArray(long_out, i);
++                      .lanewise(VectorOperators.UMIN,
++                                LongVector.fromArray(lspec, long_in2, i))
++                      .intoArray(long_out, i);
+         }
+     }
+ 
+@@ -290,7 +289,7 @@ public void umin_long_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMIN_VI, " 0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMIN_VI, " 0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_ir_transform1() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+@@ -313,7 +312,7 @@ public void umin_ir_transform1_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMAX_VI, " 0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMAX_VI, " 0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umax_ir_transform1() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+@@ -336,7 +335,7 @@ public void umax_ir_transform1_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMAX_VI, " 0 ", IRNode.UMIN_VI, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMAX_VI, " 0 ", IRNode.UMIN_VI, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_max_ir_transform1() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+@@ -363,14 +362,14 @@ public void umin_max_ir_transform1_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMIN_VI, " 0 ", IRNode.UMAX_VI, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMIN_VI, " 0 ", IRNode.UMAX_VI, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_max_ir_transform2() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+             IntVector vec1 = IntVector.fromArray(ispec, int_in1, i);
+             IntVector vec2 = IntVector.fromArray(ispec, int_in2, i);
+-            // UMinV (UMinV vec1, vec2) (UMaxV vec1, vec2) => UMinV vec1 vec2
+-            vec1.lanewise(VectorOperators.UMIN, vec2)
++            // UMinV (UMinV vec2, vec1) (UMaxV vec1, vec2) => UMinV vec1 vec2
++            vec2.lanewise(VectorOperators.UMIN, vec1)
+                 .lanewise(VectorOperators.UMAX,
+                           vec1.lanewise(VectorOperators.UMAX, vec2))
+                 .intoArray(int_out, i);
+@@ -381,7 +380,7 @@ public void umin_max_ir_transform2() {
+     public void umin_max_ir_transform2_verify() {
+         for (int i = 0; i < COUNT; i++) {
+             int actual = int_out[i];
+-            int expected = VectorMath.maxUnsigned(VectorMath.minUnsigned(int_in1[i], int_in2[i]),
++            int expected = VectorMath.maxUnsigned(VectorMath.minUnsigned(int_in2[i], int_in1[i]),
+                                                   VectorMath.maxUnsigned(int_in1[i], int_in2[i]));
+             if (actual != expected) {
+                 throw new AssertionError("Result Mismatch : actual (" +  actual + ") !=  expected (" + expected  + ")");
+@@ -390,7 +389,7 @@ public void umin_max_ir_transform2_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMAX_VI, " 0 ", IRNode.UMIN_VI, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMAX_VI, " 0 ", IRNode.UMIN_VI, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_max_ir_transform3() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+@@ -417,14 +416,14 @@ public void umin_max_ir_transform3_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMIN_VI, " 0 ", IRNode.UMAX_VI, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMIN_VI, " 0 ", IRNode.UMAX_VI, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_max_ir_transform4() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+             IntVector vec1 = IntVector.fromArray(ispec, int_in1, i);
+             IntVector vec2 = IntVector.fromArray(ispec, int_in2, i);
+-            // UMinV (UMaxV vec1, vec2) (UMaxV vec1, vec2) => UMaxV vec1 vec2
+-            vec1.lanewise(VectorOperators.UMAX, vec2)
++            // UMinV (UMaxV vec2, vec1) (UMaxV vec1, vec2) => UMaxV vec1 vec2
++            vec2.lanewise(VectorOperators.UMAX, vec1)
+                 .lanewise(VectorOperators.UMIN,
+                           vec1.lanewise(VectorOperators.UMAX, vec2))
+                 .intoArray(int_out, i);
+@@ -435,7 +434,7 @@ public void umin_max_ir_transform4() {
+     public void umin_max_ir_transform4_verify() {
+         for (int i = 0; i < COUNT; i++) {
+             int actual = int_out[i];
+-            int expected = VectorMath.minUnsigned(VectorMath.maxUnsigned(int_in1[i], int_in2[i]),
++            int expected = VectorMath.minUnsigned(VectorMath.maxUnsigned(int_in2[i], int_in1[i]),
+                                                   VectorMath.maxUnsigned(int_in1[i], int_in2[i]));
+             if (actual != expected) {
+                 throw new AssertionError("Result Mismatch : actual (" +  actual + ") !=  expected (" + expected  + ")");
+@@ -444,7 +443,7 @@ public void umin_max_ir_transform4_verify() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.UMIN_VI, " 0 ", IRNode.UMAX_VI, " >0 "}, applyIf = {"UseAVX", " >0 "})
++    @IR(counts = {IRNode.UMIN_VI, " 0 ", IRNode.UMAX_VI, " >0 "}, applyIfCPUFeature = {"avx", "true"})
+     @Warmup(value = 10000)
+     public void umin_max_ir_transform5() {
+         for (int i = 0; i < COUNT; i += ispec.length()) {
+@@ -470,3 +469,4 @@ public void umin_max_ir_transform5_verify() {
+         }
+     }
+ }
++

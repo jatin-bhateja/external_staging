@@ -1,0 +1,206 @@
+diff --git a/src/hotspot/cpu/x86/globals_x86.hpp b/src/hotspot/cpu/x86/globals_x86.hpp
+index cacbce676d0..f13d8db14f2 100644
+--- a/src/hotspot/cpu/x86/globals_x86.hpp
++++ b/src/hotspot/cpu/x86/globals_x86.hpp
+@@ -116,6 +116,10 @@ define_pd_global(intx, InitArrayShortSize, 8*BytesPerLong);
+           "Highest supported AVX instructions set on x86/x64")              \
+           range(0, 3)                                                       \
+                                                                             \
++  product(int, UseAPX, 0,                                                   \
++          "Use Intel Advanced Performance Extensions.")                     \
++          range(0, 1)                                                       \
++                                                                            \
+   product(bool, UseKNLSetting, false, DIAGNOSTIC,                           \
+           "Control whether Knights platform setting should be used")        \
+                                                                             \
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index df1ea6edd30..85b49a23cf6 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -113,7 +113,7 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     bool use_evex = FLAG_IS_DEFAULT(UseAVX) || (UseAVX > 2);
+ 
+     Label detect_486, cpu486, detect_586, std_cpuid1, std_cpuid4;
+-    Label sef_cpuid, ext_cpuid, ext_cpuid1, ext_cpuid5, ext_cpuid7, ext_cpuid8, done, wrapup;
++    Label sef_cpuid, sefsl1_cpuid, ext_cpuid, ext_cpuid1, ext_cpuid5, ext_cpuid7, ext_cpuid8, done, wrapup, epilogue;
+     Label legacy_setup, save_restore_except, legacy_save_restore, start_simd_check;
+ 
+     StubCodeMark mark(this, "VM_Version", "get_cpu_info_stub");
+@@ -288,7 +288,7 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     __ movl(Address(rsi, 4), rdx);
+ 
+     //
+-    // cpuid(0x7) Structured Extended Features
++    // cpuid(0x7) Structured Extended Features Enumeration Leaf.
+     //
+     __ bind(sef_cpuid);
+     __ movl(rax, 7);
+@@ -303,6 +303,19 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     __ movl(Address(rsi, 8), rcx);
+     __ movl(Address(rsi, 12), rdx);
+ 
++    //
++    // cpuid(0x7) Structured Extended Features Enumeration Sub-Leaf 1.
++    //
++    if (UseAPX) {
++      __ bind(sefsl1_cpuid);
++      __ movl(rax, 7);
++      __ movl(rcx, 1);
++      __ cpuid();
++      __ lea(rsi, Address(rbp, in_bytes(VM_Version::sefsl1_cpuid7_offset())));
++      __ movl(Address(rsi, 0), rax);
++      __ movl(Address(rsi, 4), rdx);
++    }
++
+     //
+     // Extended cpuid(0x80000000)
+     //
+@@ -579,6 +592,24 @@ class VM_Version_StubGenerator: public StubCodeGenerator {
+     UseSSE = saved_usesse;
+ 
+     __ bind(wrapup);
++
++    if (UseAPX) {
++      // To enable APX, check CPUID.EAX=7.ECX=1.EDX[21] bit for HW support
++      // and XCRO[19] bit for OS support to save/restore extended GPR state.
++      __ lea(rsi, Address(rbp, in_bytes(VM_Version::sefsl1_cpuid7_offset())));
++      __ movl(rax, 0x100000);
++      __ andl(rax, Address(rsi, 4));
++      __ cmpl(rax, 0x100000);
++      __ jcc(Assembler::notEqual, epilogue);
++      // check _cpuid_info.xem_xcr0_eax.bits.apx_f
++      __ movl(rax, 0x80000);
++      __ andl(rax, Address(rbp, in_bytes(VM_Version::xem_xcr0_offset()))); // xcr0 bits apx_f
++      __ cmpl(rax, 0x80000);
++      __ jcc(Assembler::notEqual, epilogue);
++      // TODO check for EGPR save restore
++    }
++
++    __ bind(epilogue);
+     __ popf();
+     __ pop(rsi);
+     __ pop(rbx);
+@@ -2927,6 +2958,10 @@ uint64_t VM_Version::feature_flags() {
+     result |= CPU_SSE4_2;
+   if (_cpuid_info.std_cpuid1_ecx.bits.popcnt != 0)
+     result |= CPU_POPCNT;
++  if (_cpuid_info.sefsl1_cpuid7_edx.bits.apx_f != 0 &&
++      _cpuid_info.xem_xcr0_eax.bits.apx_f != 0) {
++    result |= CPU_APX_F;
++  }
+   if (_cpuid_info.std_cpuid1_ecx.bits.avx != 0 &&
+       _cpuid_info.std_cpuid1_ecx.bits.osxsave != 0 &&
+       _cpuid_info.xem_xcr0_eax.bits.sse != 0 &&
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.hpp b/src/hotspot/cpu/x86/vm_version_x86.hpp
+index e521a6ee3bc..66531b657bf 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.hpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.hpp
+@@ -279,6 +279,19 @@ class VM_Version : public Abstract_VM_Version {
+     } bits;
+   };
+ 
++  union SefCpuid7SubLeaf1Eax {
++    uint32_t value;
++  };
++
++  union SefCpuid7SubLeaf1Edx {
++    uint32_t value;
++    struct {
++      uint32_t       : 21,
++              apx_f  : 1,
++                     : 10;
++    } bits;
++  };
++
+   union ExtCpuid1EEbx {
+     uint32_t value;
+     struct {
+@@ -299,7 +312,9 @@ class VM_Version : public Abstract_VM_Version {
+                opmask  : 1,
+                zmm512  : 1,
+                zmm32   : 1,
+-                       : 24;
++                       : 11,
++               apx_f   : 1,
++                       : 12;
+     } bits;
+   };
+ 
+@@ -390,7 +405,8 @@ class VM_Version : public Abstract_VM_Version {
+     decl(OSPKE,             "ospke",             55) /* OS enables protection keys */ \
+     decl(CET_IBT,           "cet_ibt",           56) /* Control Flow Enforcement - Indirect Branch Tracking */ \
+     decl(CET_SS,            "cet_ss",            57) /* Control Flow Enforcement - Shadow Stack */ \
+-    decl(AVX512_IFMA,       "avx512_ifma",       58) /* Integer Vector FMA instructions*/
++    decl(AVX512_IFMA,       "avx512_ifma",       58) /* Integer Vector FMA instructions*/  \
++    decl(APX_F,             "apx_f",             59) /* Intel Advanced Performance Extensions*/
+ 
+ #define DECLARE_CPU_FEATURE_FLAG(id, name, bit) CPU_##id = (1ULL << bit),
+     CPU_FEATURE_FLAGS(DECLARE_CPU_FEATURE_FLAG)
+@@ -447,12 +463,17 @@ class VM_Version : public Abstract_VM_Version {
+     uint32_t     dcp_cpuid4_ecx; // unused currently
+     uint32_t     dcp_cpuid4_edx; // unused currently
+ 
+-    // cpuid function 7 (structured extended features)
++    // cpuid function 7 (structured extended features enumeration leaf)
+     SefCpuid7Eax sef_cpuid7_eax;
+     SefCpuid7Ebx sef_cpuid7_ebx;
+     SefCpuid7Ecx sef_cpuid7_ecx;
+     SefCpuid7Edx sef_cpuid7_edx;
+ 
++    // cpuid function 7 (structured extended features enumeration sub-leaf 1)
++    // eax = 7, ecx = 1
++    SefCpuid7SubLeaf1Eax sefsl1_cpuid7_eax;
++    SefCpuid7SubLeaf1Edx sefsl1_cpuid7_edx;
++
+     // cpuid function 0xB (processor topology)
+     // ecx = 0
+     uint32_t     tpl_cpuidB0_eax;
+@@ -563,6 +584,7 @@ class VM_Version : public Abstract_VM_Version {
+   static ByteSize std_cpuid1_offset() { return byte_offset_of(CpuidInfo, std_cpuid1_eax); }
+   static ByteSize dcp_cpuid4_offset() { return byte_offset_of(CpuidInfo, dcp_cpuid4_eax); }
+   static ByteSize sef_cpuid7_offset() { return byte_offset_of(CpuidInfo, sef_cpuid7_eax); }
++  static ByteSize sefsl1_cpuid7_offset() { return byte_offset_of(CpuidInfo, sefsl1_cpuid7_eax); }
+   static ByteSize ext_cpuid1_offset() { return byte_offset_of(CpuidInfo, ext_cpuid1_eax); }
+   static ByteSize ext_cpuid5_offset() { return byte_offset_of(CpuidInfo, ext_cpuid5_eax); }
+   static ByteSize ext_cpuid7_offset() { return byte_offset_of(CpuidInfo, ext_cpuid7_eax); }
+@@ -587,6 +609,7 @@ class VM_Version : public Abstract_VM_Version {
+   static void clean_cpuFeatures()   { _features = 0; }
+   static void set_avx_cpuFeatures() { _features = (CPU_SSE | CPU_SSE2 | CPU_AVX | CPU_VZEROUPPER ); }
+   static void set_evex_cpuFeatures() { _features = (CPU_AVX512F | CPU_SSE | CPU_SSE2 | CPU_VZEROUPPER ); }
++  static void set_apx_cpuFeatures() { _features |= CPU_APX_F; }
+ 
+   // Initialization
+   static void initialize();
+@@ -683,6 +706,7 @@ class VM_Version : public Abstract_VM_Version {
+   static bool supports_avx512novl()   { return (supports_evex() && !supports_avx512vl()); }
+   static bool supports_avx512nobw()   { return (supports_evex() && !supports_avx512bw()); }
+   static bool supports_avx256only()   { return (supports_avx2() && !supports_evex()); }
++  static bool supports_apx_f()        { return (_features & CPU_APX_F) != 0; }
+   static bool supports_avxonly()      { return ((supports_avx2() || supports_avx()) && !supports_evex()); }
+   static bool supports_sha()          { return (_features & CPU_SHA) != 0; }
+   static bool supports_fma()          { return (_features & CPU_FMA) != 0 && supports_avx(); }
+diff --git a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java
+index 9b6b0e9c352..e008ecf5a55 100644
+--- a/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java
++++ b/src/jdk.internal.vm.ci/share/classes/jdk/vm/ci/amd64/AMD64.java
+@@ -232,6 +232,7 @@
+         CET_IBT,
+         CET_SS,
+         AVX512_IFMA,
++        APX_F,
+     }
+ 
+     private final EnumSet<CPUFeature> features;
+diff --git a/test/lib-test/jdk/test/whitebox/CPUInfoTest.java b/test/lib-test/jdk/test/whitebox/CPUInfoTest.java
+index c3713f300a6..2398385f032 100644
+--- a/test/lib-test/jdk/test/whitebox/CPUInfoTest.java
++++ b/test/lib-test/jdk/test/whitebox/CPUInfoTest.java
+@@ -65,7 +65,7 @@
+                     "avx512_vbmi2", "avx512_vbmi",      "rdtscp",            "rdpid",
+                     "hv",           "fsrm",             "avx512_bitalg",     "gfni",
+                     "f16c",         "pku",              "ospke",             "cet_ibt",
+-                    "cet_ss",       "avx512_ifma",      "serialize"
++                    "cet_ss",       "avx512_ifma",      "serialize",          "apx_f"
+                     );
+             // @formatter:on
+             // Checkstyle: resume

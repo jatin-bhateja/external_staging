@@ -1,0 +1,21 @@
+
+OLD:- 
+CPROMPT>java -XX:TieredStopAtLevel=1 -Xbatch -XX:+CIPrintRequests  -XX:-PauseAtStartup -Xcomp Foo | grep -e "Foo" -e "Float" 
+request:  java.lang.invoke.VarHandleByteArrayAsFloats$ArrayHandle::<clinit> level: 1 comment: must_be_compiled count: 0
+request:  java.lang.invoke.VarHandleByteArrayAsFloats$ArrayHandle::<init> level: 1 comment: must_be_compiled count: 0
+request:  Foo::main level: 1 comment: must_be_compiled count: 0
+request:  java.lang.Float::float16ToFloat level: 1 comment: must_be_compiled count: 0
+request:  java.lang.Float::floatToFloat16 level: 1 comment: must_be_compiled count: 0
+CPROMPT>
+
+New:-  Prevent compilation of Float16ToFloat and FloatToFloat16, only if their parent method gets compiled they will get intrinsified.
+       Interpreter has a specialized intrinsified entry point for them, virtually the Java Side implementation is more of a holder and
+       none of the execution engines use it
+CPROMPT>java -XX:TieredStopAtLevel=1 -Xbatch -XX:+CIPrintRequests  -XX:-PauseAtStartup -Xcomp Foo | grep -e "Foo" -e "Float" 
+request:  java.lang.invoke.VarHandleByteArrayAsFloats$ArrayHandle::<clinit> level: 1 comment: must_be_compiled count: 0
+request:  java.lang.invoke.VarHandleByteArrayAsFloats$ArrayHandle::<init> level: 1 comment: must_be_compiled count: 0
+request:  Foo::main level: 1 comment: must_be_compiled count: 0
+
+      C2 compilation of main deoptimizes on account of unloaded classes (java/lang/System) with -Xcomp.
+      C1 does not deoptimize in Foo::main compilation, but emits a call to Float16ToFloat/FloatToFloat16, earlier interpreter used 
+      to again request the compilation of Float16ToFloat/FloatToFloat16 to C1 which then compiled the bytecodes of these method.

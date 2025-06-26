@@ -1,0 +1,207 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 88a34b1385d..bf79e933e96 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -7327,6 +7327,14 @@ void Assembler::vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector
+   emit_operand(dst, src, 0);
+ }
+ 
++void Assembler::evaddph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x58, (0xC0 | encode));
++}
++
+ void Assembler::evaddsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
+   InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 22853614e2b..c59b5fc02c3 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -2399,6 +2399,7 @@ private:
+   void vpaddd(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void evaddsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
++  void evaddph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+ 
+   // Leaf level assembler routines for masked operations.
+   void evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index c6902425a49..451a144cea9 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1729,6 +1729,11 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+   //   * 128bit vroundpd instruction is present only in AVX1
+   int size_in_bits = vlen * type2aelembytes(bt) * BitsPerByte;
+   switch (opcode) {
++    case Op_AddVHF:
++      if (!VM_Version::supports_avx512_fp16()) {
++        return false;
++      }
++      break;
+     case Op_AbsVF:
+     case Op_NegVF:
+       if ((vlen == 16) && (VM_Version::supports_avx512dq() == false)) {
+@@ -10186,3 +10191,14 @@ instruct addFP16_scalar (regF dst, regF src1, regF src2)
+   %}
+   ins_pipe(pipe_slow);
+ %}
++
++instruct vaddVHF (vec dst, vec src1, vec src2)
++%{
++  match(Set dst (AddVHF src1 src2));
++  format %{ "vaddph $dst, $src1, $src2" %}
++  ins_encode %{
++    uint vlen = Matcher::vector_length(this);
++    __ evaddph($dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, vlen);
++  %}
++  ins_pipe(pipe_slow);
++%}
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index fedda555a52..870607537ea 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -4201,7 +4201,7 @@ Form::DataType MatchRule::is_ideal_load() const {
+ 
+ bool MatchRule::is_vector() const {
+   static const char *vector_list[] = {
+-    "AddVB","AddVS","AddVI","AddVL","AddVF","AddVD",
++    "AddVB","AddVHF", "AddVS","AddVI","AddVL","AddVF","AddVD",
+     "SubVB","SubVS","SubVI","SubVL","SubVF","SubVD",
+     "MulVB","MulVS","MulVI","MulVL","MulVF","MulVD",
+     "DivVF","DivVD",
+diff --git a/src/hotspot/share/oops/inlineKlass.cpp b/src/hotspot/share/oops/inlineKlass.cpp
+index 9b9d5e3ad52..c40460c0a1d 100644
+--- a/src/hotspot/share/oops/inlineKlass.cpp
++++ b/src/hotspot/share/oops/inlineKlass.cpp
+@@ -542,6 +542,9 @@ void InlineKlass::restore_unshareable_info(ClassLoaderData* loader_data, Handle
+   if (value_array_klasses() != nullptr) {
+     value_array_klasses()->restore_unshareable_info(ClassLoaderData::the_null_class_loader_data(), Handle(), CHECK);
+   }
++  if (vmSymbols::java_lang_Float16() == name()) {
++    EnablePrimitiveClasses = true;
++  }
+ }
+ 
+ // oop verify
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 91f91d03dc5..dd771cb35b2 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -374,6 +374,7 @@ macro(XorL)
+ macro(InlineType)
+ macro(Vector)
+ macro(AddVB)
++macro(AddVHF)
+ macro(AddVS)
+ macro(AddVI)
+ macro(AddReductionVI)
+diff --git a/src/hotspot/share/opto/superword.cpp b/src/hotspot/share/opto/superword.cpp
+index f665089d0bf..875e71e3838 100644
+--- a/src/hotspot/share/opto/superword.cpp
++++ b/src/hotspot/share/opto/superword.cpp
+@@ -2903,6 +2903,13 @@ bool SuperWord::output() {
+         int vopc = VectorCastNode::opcode(opc, in->bottom_type()->is_vect()->element_basic_type());
+         vn = VectorCastNode::make(vopc, in, bt, vlen);
+         vlen_in_bytes = vn->as_Vector()->length_in_bytes();
++      } else if (opc == Op_ReinterpretS2HF || opc == Op_ReinterpretHF2S) {
++        assert(n->req() == 2, "only one input expected");
++        BasicType bt = velt_basic_type(n);
++        const TypeVect* vt = TypeVect::make(bt, vlen);
++        Node* in = vector_opd(p, 1);
++        vn = VectorReinterpretNode::make(in, vt, vt);
++        vlen_in_bytes = vn->as_Vector()->length_in_bytes();
+       } else if (opc == Op_FmaD || opc == Op_FmaF) {
+         // Promote operands to vector
+         Node* in1 = vector_opd(p, 1);
+@@ -3758,6 +3765,9 @@ const Type* SuperWord::container_type(Node* n) {
+     // propagating the type of memory operations.
+     return TypeInt::INT;
+   }
++  if (n->Opcode() == Op_AddHF || n->Opcode() == Op_ReinterpretS2HF) {
++    return TypeInt::SHORT;
++  }
+   return t;
+ }
+ 
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index fdfa0718a45..8d29fd90f41 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -46,6 +46,7 @@ int VectorNode::opcode(int sopc, BasicType bt) {
+     case T_INT:       return Op_AddVI;
+     default:          return 0;
+     }
++  case Op_AddHF: return (bt == T_SHORT ? Op_AddVHF : 0);
+   case Op_AddL: return (bt == T_LONG   ? Op_AddVL : 0);
+   case Op_AddF: return (bt == T_FLOAT  ? Op_AddVF : 0);
+   case Op_AddD: return (bt == T_DOUBLE ? Op_AddVD : 0);
+@@ -267,6 +268,9 @@ int VectorNode::opcode(int sopc, BasicType bt) {
+     return Op_SignumVF;
+   case Op_SignumD:
+     return Op_SignumVD;
++  case Op_ReinterpretS2HF:
++  case Op_ReinterpretHF2S:
++    return Op_VectorReinterpret;
+ 
+   default:
+     assert(!VectorNode::is_convert_opcode(sopc),
+@@ -674,7 +678,7 @@ void VectorNode::vector_operands(Node* n, uint* start, uint* end) {
+     *start = 1;
+     *end   = (n->is_Con() && Matcher::supports_vector_constant_rotates(n->get_int())) ? 2 : 3;
+     break;
+-  case Op_AddI: case Op_AddL: case Op_AddF: case Op_AddD:
++  case Op_AddI: case Op_AddHF: case Op_AddL: case Op_AddF: case Op_AddD:
+   case Op_SubI: case Op_SubL: case Op_SubF: case Op_SubD:
+   case Op_MulI: case Op_MulL: case Op_MulF: case Op_MulD:
+   case Op_DivF: case Op_DivD:
+@@ -732,6 +736,7 @@ VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, b
+ 
+   switch (vopc) {
+   case Op_AddVB: return new AddVBNode(n1, n2, vt);
++  case Op_AddVHF: return new AddVHFNode(n1, n2, vt);
+   case Op_AddVS: return new AddVSNode(n1, n2, vt);
+   case Op_AddVI: return new AddVINode(n1, n2, vt);
+   case Op_AddVL: return new AddVLNode(n1, n2, vt);
+@@ -1733,6 +1738,10 @@ Node* VectorReinterpretNode::Identity(PhaseGVN *phase) {
+   return this;
+ }
+ 
++VectorNode* VectorReinterpretNode::make(Node* n, const TypeVect* dst_vt, const TypeVect* src_vt) {
++  return new VectorReinterpretNode(n, dst_vt, src_vt);
++}
++
+ Node* VectorInsertNode::make(Node* vec, Node* new_val, int position) {
+   assert(position < (int)vec->bottom_type()->is_vect()->length(), "pos in range");
+   ConINode* pos = ConINode::make(position);
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 39a5b49454d..e9d67f4867a 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -186,6 +186,14 @@ public:
+   virtual int Opcode() const;
+ };
+ 
++//------------------------------AddVHFNode--------------------------------------
++// Vector add float
++class AddVHFNode : public VectorNode {
++public:
++  AddVHFNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1, in2, vt) {}
++  virtual int Opcode() const;
++};
++
+ //------------------------------AddVDNode--------------------------------------
+ // Vector add double
+ class AddVDNode : public VectorNode {
+@@ -1544,6 +1552,8 @@ class VectorReinterpretNode : public VectorNode {
+   virtual Node* Identity(PhaseGVN* phase);
+ 
+   virtual int Opcode() const;
++
++  static VectorNode* make(Node* n, const TypeVect* dst_vt, const TypeVect* src_vt);
+ };
+ 
+ class VectorCastNode : public VectorNode {

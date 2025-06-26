@@ -1,0 +1,344 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 66630efa841..7fa9462efac 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -13571,7 +13571,7 @@ void Assembler::notq(Register dst) {
+   emit_int16((unsigned char)0xF7, (0xD0 | encode));
+ }
+ 
+-void Assembler::bt(Register dst, Register src) {
++void Assembler::btq(Register dst, Register src) {
+   int encode = prefixq_and_encode(src->encoding(), dst->encoding());
+   emit_int24(0x0F, (unsigned char)0xA3, (encode | 0xC0));
+ }
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 31a2b047ff5..1d6ad8c474b 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1735,7 +1735,7 @@ class Assembler : public AbstractAssembler  {
+   void btsq(Address dst, int imm8);
+   void btrq(Address dst, int imm8);
+ #endif
+-  void bt(Register dst, Register src);
++  void btq(Register dst, Register src);
+ 
+   void orw(Register dst, Register src);
+ 
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index ff920c19ddf..47d7063c0f9 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -1572,16 +1572,19 @@ void C2_MacroAssembler::vinsert(BasicType typ, XMMRegister dst, XMMRegister src,
+ }
+ 
+ #ifdef _LP64
+-void C2_MacroAssembler::vgather8b_masked(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
+-                                          Register mask, Register midx, Register rtmp, int vlen_enc) {
++void C2_MacroAssembler::vgather8b_masked(BasicType elem_bt, XMMRegister dst,
++                                         Register base, Register idx_base,
++                                         Register mask, Register midx,
++                                         Register rtmp, int vlen_enc) {
+   vpxor(dst, dst, dst, vlen_enc);
+   if (elem_bt == T_SHORT) {
+     Label case0, case1, case2, case3;
+-    Label* larr[] = { &case0, &case1, &case2, &case3 };
++    Label *larr[] = {&case0, &case1, &case2, &case3};
+     for (int i = 0; i < 4; i++) {
+-      bt(mask, midx);
++      // dst[i] = mask ? src[index[i]] : 0
++      btq(mask, midx);
+       jccb(Assembler::carryClear, *larr[i]);
+-      movl(rtmp, Address(idx_base, i*4));
++      movl(rtmp, Address(idx_base, i * 4));
+       pinsrw(dst, Address(base, rtmp, Address::times_2), i);
+       bind(*larr[i]);
+       incq(midx);
+@@ -1589,11 +1592,13 @@ void C2_MacroAssembler::vgather8b_masked(BasicType elem_bt, XMMRegister dst, Reg
+   } else {
+     assert(elem_bt == T_BYTE, "");
+     Label case0, case1, case2, case3, case4, case5, case6, case7;
+-    Label* larr[] = { &case0, &case1, &case2, &case3, &case4, &case5, &case6, &case7 };
++    Label *larr[] = {&case0, &case1, &case2, &case3,
++                     &case4, &case5, &case6, &case7};
+     for (int i = 0; i < 8; i++) {
+-      bt(mask, midx);
++      // dst[i] = mask ? src[index[i]] : 0
++      btq(mask, midx);
+       jccb(Assembler::carryClear, *larr[i]);
+-      movl(rtmp, Address(idx_base, i*4));
++      movl(rtmp, Address(idx_base, i * 4));
+       pinsrb(dst, Address(base, rtmp), i);
+       bind(*larr[i]);
+       incq(midx);
+@@ -1601,16 +1606,21 @@ void C2_MacroAssembler::vgather8b_masked(BasicType elem_bt, XMMRegister dst, Reg
+   }
+ }
+ 
+-void C2_MacroAssembler::vgather8b_masked_offset(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
+-                                                 Register offset, Register mask, Register midx, Register rtmp, int vlen_enc) {
++void C2_MacroAssembler::vgather8b_masked_offset(BasicType elem_bt,
++                                                XMMRegister dst, Register base,
++                                                Register idx_base,
++                                                Register offset, Register mask,
++                                                Register midx, Register rtmp,
++                                                int vlen_enc) {
+   vpxor(dst, dst, dst, vlen_enc);
+   if (elem_bt == T_SHORT) {
+     Label case0, case1, case2, case3;
+-    Label* larr[] = { &case0, &case1, &case2, &case3 };
++    Label *larr[] = {&case0, &case1, &case2, &case3};
+     for (int i = 0; i < 4; i++) {
+-      bt(mask, midx);
++      // dst[i] = mask ? src[offset + index[i]] : 0
++      btq(mask, midx);
+       jccb(Assembler::carryClear, *larr[i]);
+-      movl(rtmp, Address(idx_base, i*4));
++      movl(rtmp, Address(idx_base, i * 4));
+       addl(rtmp, offset);
+       pinsrw(dst, Address(base, rtmp, Address::times_2), i);
+       bind(*larr[i]);
+@@ -1619,11 +1629,13 @@ void C2_MacroAssembler::vgather8b_masked_offset(BasicType elem_bt, XMMRegister d
+   } else {
+     assert(elem_bt == T_BYTE, "");
+     Label case0, case1, case2, case3, case4, case5, case6, case7;
+-    Label* larr[] = { &case0, &case1, &case2, &case3, &case4, &case5, &case6, &case7 };
++    Label *larr[] = {&case0, &case1, &case2, &case3,
++                     &case4, &case5, &case6, &case7};
+     for (int i = 0; i < 8; i++) {
+-      bt(mask, midx);
++      // dst[i] = mask ? src[offset + index[i]] : 0
++      btq(mask, midx);
+       jccb(Assembler::carryClear, *larr[i]);
+-      movl(rtmp, Address(idx_base, i*4));
++      movl(rtmp, Address(idx_base, i * 4));
+       addl(rtmp, offset);
+       pinsrb(dst, Address(base, rtmp), i);
+       bind(*larr[i]);
+@@ -1633,35 +1645,64 @@ void C2_MacroAssembler::vgather8b_masked_offset(BasicType elem_bt, XMMRegister d
+ }
+ #endif // _LP64
+ 
+-void C2_MacroAssembler::vgather8b(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base, Register rtmp, int vlen_enc) {
++void C2_MacroAssembler::vgather8b(BasicType elem_bt, XMMRegister dst,
++                                  Register base, Register idx_base,
++                                  Register rtmp, int vlen_enc) {
+   vpxor(dst, dst, dst, vlen_enc);
+   if (elem_bt == T_SHORT) {
+     for (int i = 0; i < 4; i++) {
+-      movl(rtmp, Address(idx_base, i*4));
++      // dst[i] = src[index[i]]
++      movl(rtmp, Address(idx_base, i * 4));
+       pinsrw(dst, Address(base, rtmp, Address::times_2), i);
+     }
+   } else {
+     assert(elem_bt == T_BYTE, "");
+     for (int i = 0; i < 8; i++) {
+-      movl(rtmp, Address(idx_base, i*4));
++      // dst[i] = src[index[i]]
++      movl(rtmp, Address(idx_base, i * 4));
+       pinsrb(dst, Address(base, rtmp), i);
+     }
+   }
+ }
++#endif // _LP64
+ 
+-void C2_MacroAssembler::vgather8b_offset(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
+-                                          Register offset, Register rtmp, int vlen_enc) {
++void C2_MacroAssembler::vgather8b(BasicType elem_bt, XMMRegister dst,
++                                  Register base, Register idx_base,
++                                  Register rtmp, int vlen_enc) {
+   vpxor(dst, dst, dst, vlen_enc);
+   if (elem_bt == T_SHORT) {
+     for (int i = 0; i < 4; i++) {
+-      movl(rtmp, Address(idx_base, i*4));
++      // dst[i] = src[index[i]]
++      movl(rtmp, Address(idx_base, i * 4));
++      pinsrw(dst, Address(base, rtmp, Address::times_2), i);
++    }
++  } else {
++    assert(elem_bt == T_BYTE, "");
++    for (int i = 0; i < 8; i++) {
++      // dst[i] = src[index[i]]
++      movl(rtmp, Address(idx_base, i * 4));
++      pinsrb(dst, Address(base, rtmp), i);
++    }
++  }
++}
++
++void C2_MacroAssembler::vgather8b_offset(BasicType elem_bt, XMMRegister dst,
++                                         Register base, Register idx_base,
++                                         Register offset, Register rtmp,
++                                         int vlen_enc) {
++  vpxor(dst, dst, dst, vlen_enc);
++  if (elem_bt == T_SHORT) {
++    for (int i = 0; i < 4; i++) {
++      // dst[i] = src[offset + index[i]]
++      movl(rtmp, Address(idx_base, i * 4));
+       addl(rtmp, offset);
+       pinsrw(dst, Address(base, rtmp, Address::times_2), i);
+     }
+   } else {
+     assert(elem_bt == T_BYTE, "");
+     for (int i = 0; i < 8; i++) {
+-      movl(rtmp, Address(idx_base, i*4));
++      // dst[i] = src[offset + index[i]]
++      movl(rtmp, Address(idx_base, i * 4));
+       addl(rtmp, offset);
+       pinsrb(dst, Address(base, rtmp), i);
+     }
+@@ -1676,18 +1717,17 @@ void C2_MacroAssembler::vgather8b_offset(BasicType elem_bt, XMMRegister dst, Reg
+  *
+  * DST_VEC = ZERO_VEC
+  * PERM_INDEX = {0, 1, 2, 3, 4, 5, 6, 7, 8..}
+- * TWO_VEC = {2, 2, 2, 2, 2, 2, 2, 2..}
++ * TWO_VEC    = {2, 2, 2, 2, 2, 2, 2, 2, 2..}
+  * FOREACH_ITER:
+  *     TMP_VEC_64 = PICK_SUB_WORDS_FROM_GATHER_INDICES
+  *     TEMP_PERM_VEC = PERMUTE TMP_VEC_64 PERM_INDEX
+  *     DST_VEC = DST_VEC OR TEMP_PERM_VEC
+  *     PERM_INDEX = PERM_INDEX - TWO_VEC
+  *
+- * With each iteration permute index 0,1 holding assembled quadword
+- * gets right shifted by two lane position.
++ * With each iteration, doubleword permute indices (0,1) corresponding
++ * to assembled quadword gets right shifted by two lane position.
+  *
+  */
+-
+ void C2_MacroAssembler::vgather_subword(BasicType elem_ty, XMMRegister dst,
+                                         Register base, Register idx_base,
+                                         Register offset, Register mask,
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 67ab1e369b6..3449d25604b 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -4143,7 +4143,6 @@ instruct vgather_subwordGT8B(vec dst, memory mem, rRegP idx, immI_0 offset, rReg
+ instruct vgather_subwordLE8B_off(vec dst, memory mem, rRegP idx, rRegI offset, rRegP tmp, rRegI rtmp, rFlagsReg cr) %{
+   predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
+   match(Set dst (LoadVectorGather mem (Binary idx offset)));
+-  ins_cost(200);
+   effect(TEMP tmp, TEMP rtmp, KILL cr);
+   format %{ "vector_gatherLE8 $dst, $mem, $idx, $offset\t! using $tmp and $rtmp as TEMP" %}
+   ins_encode %{
+@@ -4160,7 +4159,6 @@ instruct vgather_subwordGT8B_off(vec dst, memory mem, rRegP idx, rRegI offset, r
+                                  vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI length, rFlagsReg cr) %{
+   predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
+   match(Set dst (LoadVectorGather mem (Binary idx offset)));
+-  ins_cost(200);
+   effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP length, KILL cr);
+   format %{ "vector_gatherGT8 $dst, $mem, $idx, $offset\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp and $length as TEMP" %}
+   ins_encode %{
+@@ -4197,7 +4195,6 @@ instruct vgather_masked_subwordGT8B_avx3(vec dst, memory mem, rRegP idx, immI_0
+                                          vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegL rtmp2, rRegL midx, rRegI length, rFlagsReg cr) %{
+   predicate(VM_Version::supports_avx512bw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
+   match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  ins_cost(200);
+   effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP rtmp2, TEMP midx, TEMP length, KILL cr);
+   format %{ "vector_gatherGT8_masked $dst, $mem, $idx, $mask\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp, $rtmp2, $midx and $length as TEMP" %}
+   ins_encode %{
+@@ -4235,7 +4232,6 @@ instruct vgather_masked_subwordGT8B_off_avx3(vec dst, memory mem, rRegP idx, rRe
+                                              vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegL rtmp2, rRegL midx, rRegI length, rFlagsReg cr) %{
+   predicate(VM_Version::supports_avx512bw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
+   match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  ins_cost(200);
+   effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP rtmp2, TEMP midx, TEMP length, KILL cr);
+   format %{ "vector_gatherGT8_masked_off $dst, $mem, $idx, $offset, $mask\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp, $rtmp2, $midx and $length as TEMP" %}
+   ins_encode %{
+@@ -4252,10 +4248,10 @@ instruct vgather_masked_subwordGT8B_off_avx3(vec dst, memory mem, rRegP idx, rRe
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vgather_masked_subwordLE8B_avx2(vec dst, memory mem, rRegP idx, immI_0 offset, vec mask, rRegL midx, rRegP tmp, rRegI rtmp, rRegL rtmp2) %{
++instruct vgather_masked_subwordLE8B_avx2(vec dst, memory mem, rRegP idx, immI_0 offset, vec mask, rRegI midx, rRegP tmp, rRegI rtmp, rRegI rtmp2, rFlagsReg cr) %{
+   predicate(!VM_Version::supports_avx512vlbw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
+   match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  effect(TEMP midx, TEMP tmp, TEMP rtmp, TEMP rtmp2);
++  effect(TEMP midx, TEMP tmp, TEMP rtmp, TEMP rtmp2, KILL cr);
+   format %{ "vector_masked_gatherLE8 $dst, $mem, $idx, $mask\t! using $midx, $tmp, $rtmp and $rtmp2 as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+@@ -4263,8 +4259,8 @@ instruct vgather_masked_subwordLE8B_avx2(vec dst, memory mem, rRegP idx, immI_0
+     __ lea($tmp$$Register, $mem$$Address);
+     __ vpmovmskb($rtmp2$$Register, $mask$$XMMRegister, vlen_enc);
+     if (elem_bt == T_SHORT) {
+-      __ mov64($midx$$Register, 0x5555555555555555ULL);
+-      __ pextq($rtmp2$$Register, $rtmp2$$Register, $midx$$Register);
++      __ movl($midx$$Register, 0x55555555);
++      __ pextl($rtmp2$$Register, $rtmp2$$Register, $midx$$Register);
+     }
+     __ xorl($midx$$Register, $midx$$Register);
+     __ vgather8b_masked(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$Register, $rtmp2$$Register, $midx$$Register, $rtmp$$Register, vlen_enc);
+@@ -4273,11 +4269,10 @@ instruct vgather_masked_subwordLE8B_avx2(vec dst, memory mem, rRegP idx, immI_0
+ %}
+ 
+ instruct vgather_masked_subwordGT8B_avx2(vec dst, memory mem, rRegP idx, immI_0 offset, vec mask, rRegP tmp, rRegP idx_base_temp,
+-                                         vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegL rtmp2, rRegL midx, rRegI length) %{
++                                         vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI rtmp2, rRegI midx, rRegI length, rFlagsReg cr) %{
+   predicate(!VM_Version::supports_avx512vlbw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
+   match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  ins_cost(200);
+-  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP rtmp2, TEMP midx, TEMP length);
++  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP rtmp2, TEMP midx, TEMP length, KILL cr);
+   format %{ "vector_gatherGT8_masked $dst, $mem, $idx, $mask\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp, $rtmp2, $midx and $length as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+@@ -4287,8 +4282,8 @@ instruct vgather_masked_subwordGT8B_avx2(vec dst, memory mem, rRegP idx, immI_0
+     __ movptr($idx_base_temp$$Register, $idx$$Register);
+     __ vpmovmskb($rtmp2$$Register, $mask$$XMMRegister, vlen_enc);
+     if (elem_bt == T_SHORT) {
+-      __ mov64($midx$$Register, 0x5555555555555555ULL);
+-      __ pextq($rtmp2$$Register, $rtmp2$$Register, $midx$$Register);
++      __ movl($midx$$Register, 0x55555555);
++      __ pextl($rtmp2$$Register, $rtmp2$$Register, $midx$$Register);
+     }
+     __ xorl($midx$$Register, $midx$$Register);
+     __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, noreg, $rtmp2$$Register, $xtmp1$$XMMRegister,
+@@ -4297,10 +4292,10 @@ instruct vgather_masked_subwordGT8B_avx2(vec dst, memory mem, rRegP idx, immI_0
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vgather_masked_subwordLE8B_off_avx2(vec dst, memory mem, rRegP idx, rRegI offset, vec mask, rRegL midx, rRegP tmp, rRegI rtmp, rRegL rtmp2) %{
++instruct vgather_masked_subwordLE8B_off_avx2(vec dst, memory mem, rRegP idx, rRegI offset, vec mask, rRegI midx, rRegP tmp, rRegI rtmp, rRegI rtmp2, rFlagsReg cr) %{
+   predicate(!VM_Version::supports_avx512vlbw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
+   match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  effect(TEMP midx, TEMP tmp, TEMP rtmp, TEMP rtmp2);
++  effect(TEMP midx, TEMP tmp, TEMP rtmp, TEMP rtmp2, KILL cr);
+   format %{ "vector_masked_gatherLE8_off $dst, $mem, $idx, $offset, $mask\t! using $midx, $tmp, $rtmp and $rtmp2 as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+@@ -4308,8 +4303,8 @@ instruct vgather_masked_subwordLE8B_off_avx2(vec dst, memory mem, rRegP idx, rRe
+     __ lea($tmp$$Register, $mem$$Address);
+     __ vpmovmskb($rtmp2$$Register, $mask$$XMMRegister, vlen_enc);
+     if (elem_bt == T_SHORT) {
+-      __ mov64($midx$$Register, 0x5555555555555555ULL);
+-      __ pextq($rtmp2$$Register, $rtmp2$$Register, $midx$$Register);
++      __ movl($midx$$Register, 0x55555555);
++      __ pextl($rtmp2$$Register, $rtmp2$$Register, $midx$$Register);
+     }
+     __ xorl($midx$$Register, $midx$$Register);
+     __ vgather8b_masked_offset(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$Register, $offset$$Register,
+@@ -4319,11 +4314,10 @@ instruct vgather_masked_subwordLE8B_off_avx2(vec dst, memory mem, rRegP idx, rRe
+ %}
+ 
+ instruct vgather_masked_subwordGT8B_off_avx2(vec dst, memory mem, rRegP idx, rRegI offset, vec mask, rRegP tmp, rRegP idx_base_temp,
+-                                             vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegL rtmp2, rRegL midx, rRegI length) %{
++                                             vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI rtmp2, rRegI midx, rRegI length, rFlagsReg cr) %{
+   predicate(!VM_Version::supports_avx512vlbw() && is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
+   match(Set dst (LoadVectorGatherMasked mem (Binary idx (Binary mask offset))));
+-  ins_cost(200);
+-  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP rtmp2, TEMP midx, TEMP length);
++  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP rtmp2, TEMP midx, TEMP length, KILL cr);
+   format %{ "vector_gatherGT8_masked_off $dst, $mem, $idx, $offset, $mask\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp, $rtmp2, $midx and $length as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+@@ -4334,8 +4328,8 @@ instruct vgather_masked_subwordGT8B_off_avx2(vec dst, memory mem, rRegP idx, rRe
+     __ movptr($idx_base_temp$$Register, $idx$$Register);
+     __ vpmovmskb($rtmp2$$Register, $mask$$XMMRegister, vlen_enc);
+     if (elem_bt == T_SHORT) {
+-      __ mov64($midx$$Register, 0x5555555555555555ULL);
+-      __ pextq($rtmp2$$Register, $rtmp2$$Register, $midx$$Register);
++      __ movl($midx$$Register, 0x55555555);
++      __ pextl($rtmp2$$Register, $rtmp2$$Register, $midx$$Register);
+     }
+     __ xorl($midx$$Register, $midx$$Register);
+     __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, $offset$$Register, $rtmp2$$Register, $xtmp1$$XMMRegister,

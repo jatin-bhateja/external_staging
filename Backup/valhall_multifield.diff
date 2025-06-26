@@ -1,0 +1,1835 @@
+commit c02147b16e4bb9ccdaea6d6c847c55fdadb51f63
+Author: Frederic Parain <frederic.parain@oracle.com>
+Date:   Fri Mar 11 15:34:10 2022 -0500
+
+    MultiFields initial implementation
+
+diff --git a/src/hotspot/share/classfile/classFileParser.cpp b/src/hotspot/share/classfile/classFileParser.cpp
+index d916f821db9..4ab8e652bd2 100644
+--- a/src/hotspot/share/classfile/classFileParser.cpp
++++ b/src/hotspot/share/classfile/classFileParser.cpp
+@@ -1034,12 +1034,14 @@ public:
+     _jdk_internal_vm_annotation_Contended,
+     _field_Stable,
+     _jdk_internal_vm_annotation_ReservedStackAccess,
++    _jdk_internal_vm_annotation_MultiField,
+     _jdk_internal_ValueBased,
+     _annotation_LIMIT
+   };
+   const Location _location;
+   int _annotations_present;
+   u2 _contended_group;
++  jbyte _multifield_arg;
+ 
+   AnnotationCollector(Location location)
+     : _location(location), _annotations_present(0), _contended_group(0)
+@@ -1066,7 +1068,11 @@ public:
+   void set_contended_group(u2 group) { _contended_group = group; }
+   u2 contended_group() const { return _contended_group; }
+ 
++  void set_multifield_arg(jbyte arg) { _multifield_arg = arg; }
++  jbyte multifield_arg() const { return _multifield_arg; }
++
+   bool is_contended() const { return has_annotation(_jdk_internal_vm_annotation_Contended); }
++  bool is_multifield_base() const { return has_annotation(_jdk_internal_vm_annotation_MultiField); }
+ 
+   void set_stable(bool stable) { set_annotation(_field_Stable); }
+   bool is_stable() const { return has_annotation(_field_Stable); }
+@@ -1206,6 +1212,9 @@ static void parse_annotations(const ConstantPool* const cp,
+     s_tag_val = 's',    // payload is String
+     s_con_off = 7,    // utf8 payload, such as 'Ljava/lang/String;'
+     s_size = 9,
++    b_tag_val = 'B',
++    b_con_off = 7,
++    b_size = 9,
+     min_size = 6        // smallest possible size (zero members)
+   };
+   // Cannot add min_size to index in case of overflow MAX_INT
+@@ -1252,6 +1261,15 @@ static void parse_annotations(const ConstantPool* const cp,
+         }
+       }
+       coll->set_contended_group(group_index);
++    } else if (AnnotationCollector::_jdk_internal_vm_annotation_MultiField == id) {
++      // TODO: change those assertion into a conditional statement to process the value
++      assert(count == 1, "MultiField annotation must have at least one argument");  // Is it true?
++      assert(member == vmSymbols::value_name(), "Must be");
++      assert(b_tag_val == *(abase + tag_off), "Must be a byte value");
++      int arg_index = Bytes::get_Java_u2((address)abase + b_con_off);
++      int multifield_arg = cp->int_at(arg_index);
++      assert(((jbyte)multifield_arg) == multifield_arg, "Must be");
++      coll->set_multifield_arg(multifield_arg);
+     }
+   }
+ }
+@@ -1572,15 +1590,23 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+   // index. After parsing all fields, the data are copied to a permanent
+   // array and any unused slots will be discarded.
+   ResourceMark rm(THREAD);
+-  u2* const fa = NEW_RESOURCE_ARRAY_IN_THREAD(THREAD,
+-                                              u2,
+-                                              total_fields * (FieldInfo::field_slots + 1));
++
++  GrowableArray<FieldInfo>* temp_fieldinfo = new GrowableArray<FieldInfo>(total_fields, mtNone);
++  GrowableArray<u2>* temp_generic_signature = new GrowableArray<u2>(total_fields, mtNone);
++  GrowableArray<MultiFieldInfo>* temp_multifield_info = new GrowableArray<MultiFieldInfo>(0, mtNone); // could be allocated lazily
++  FieldInfo fi;
++  FieldInfo* f = &fi;
++  GrowableArray<AnnotationArray*>* fields_annotations = NULL;
++  GrowableArray<AnnotationArray*>* fields_type_annotations = NULL;
++
+ 
+   // The generic signature slots start after all other fields' data.
+   int generic_signature_slot = total_fields * FieldInfo::field_slots;
+-  int num_generic_signature = 0;
+   int instance_fields_count = 0;
++  int inj_multifields = 0;
++  int field_index = -1;
+   for (int n = 0; n < length; n++) {
++    field_index++;
+     // access_flags, name_index, descriptor_index, attributes_count
+     cfs->guarantee_more(8, CHECK);
+ 
+@@ -1625,23 +1651,18 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+                              CHECK);
+ 
+       if (parsed_annotations.field_annotations() != NULL) {
+-        if (_fields_annotations == NULL) {
+-          _fields_annotations = MetadataFactory::new_array<AnnotationArray*>(
+-                                             _loader_data, length, NULL,
+-                                             CHECK);
++        if (fields_annotations == NULL) {
++          fields_annotations = new GrowableArray<AnnotationArray*>(length, mtNone);
+         }
+-        _fields_annotations->at_put(n, parsed_annotations.field_annotations());
++
++        fields_annotations->at_put_grow(field_index, parsed_annotations.field_annotations(), NULL);
+         parsed_annotations.set_field_annotations(NULL);
+       }
+       if (parsed_annotations.field_type_annotations() != NULL) {
+-        if (_fields_type_annotations == NULL) {
+-          _fields_type_annotations =
+-            MetadataFactory::new_array<AnnotationArray*>(_loader_data,
+-                                                         length,
+-                                                         NULL,
+-                                                         CHECK);
++        if (fields_type_annotations == NULL) {
++          fields_type_annotations = new GrowableArray<AnnotationArray*>(length, mtNone);
+         }
+-        _fields_type_annotations->at_put(n, parsed_annotations.field_type_annotations());
++        fields_type_annotations->at_put_grow(field_index, parsed_annotations.field_type_annotations(), NULL);
+         parsed_annotations.set_field_type_annotations(NULL);
+       }
+ 
+@@ -1650,17 +1671,18 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+       }
+       if (generic_signature_index != 0) {
+         access_flags.set_field_has_generic_signature();
+-        fa[generic_signature_slot] = generic_signature_index;
++        temp_generic_signature->append(generic_signature_index);
+         generic_signature_slot ++;
+-        num_generic_signature ++;
+       }
+     }
+ 
+-    FieldInfo* const field = FieldInfo::from_field_array(fa, n);
+-    field->initialize(access_flags.as_short(),
++    f->initialize(access_flags.as_short(),
+                       name_index,
+                       signature_index,
+                       constantvalue_index);
++    int base_idx = temp_fieldinfo->append(fi);
++    assert(base_idx == field_index, "Must be");
++    FieldInfo* const field = temp_fieldinfo->adr_at(field_index);
+     const BasicType type = cp->basic_type_for_signature_at(signature_index);
+ 
+     // Update FieldAllocationCount for this kind of field
+@@ -1673,9 +1695,43 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+         _has_contended_fields = true;
+       }
+     }
++
++    if (parsed_annotations.is_multifield_base() && is_java_primitive(cp->basic_type_for_signature_at(signature_index))) {
++      field->set_multifield_base(true);
++      char* base_name = cp->symbol_at(name_index)->as_C_string();
++      for (int i = 1; i < parsed_annotations.multifield_arg(); i++) {
++        field_index++;
++        stringStream st;
++        st.print("%s", base_name);
++        st.print("#");
++        st.print("%d", i);
++        Symbol* inj_name = SymbolTable::new_symbol(st.as_string());
++        MultiFieldInfo mfi(inj_name, base_idx, i);
++        int mfi_idx = temp_multifield_info->append(mfi);
++        f->initialize(access_flags.as_short(),
++                      mfi_idx,
++                      signature_index,
++                      constantvalue_index);
++        int inj_idx = temp_fieldinfo->append(fi);
++        assert(inj_idx == field_index, "Must be");
++        FieldInfo* const field = temp_fieldinfo->adr_at(inj_idx);
++        const BasicType type = cp->basic_type_for_signature_at(signature_index);
++        // Update FieldAllocationCount for this kind of field
++        fac->update(is_static, type, type == T_PRIMITIVE_OBJECT);
++        field->set_multifield(true);
++        if (fields_annotations != NULL && fields_annotations->at(base_idx) != NULL) {
++          fields_annotations->at_put_grow(field_index, fields_annotations->at(base_idx));
++        }
++        if (fields_type_annotations != NULL && fields_type_annotations->at(base_idx) != NULL) {
++          fields_type_annotations->at_put_grow(field_index, fields_type_annotations->at(base_idx));
++        }
++        inj_multifields++;
++      }
++    }
+   }
+ 
+-  int index = length;
++  *java_fields_count_ptr = *java_fields_count_ptr + inj_multifields;
++  int index = length + inj_multifields;
+   if (num_injected != 0) {
+     for (int n = 0; n < num_injected; n++) {
+       // Check for duplicates
+@@ -1684,7 +1740,7 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+         const Symbol* const signature = injected[n].signature();
+         bool duplicate = false;
+         for (int i = 0; i < length; i++) {
+-          const FieldInfo* const f = FieldInfo::from_field_array(fa, i);
++          const FieldInfo* const f = temp_fieldinfo->adr_at(i);
+           if (name      == cp->symbol_at(f->name_index()) &&
+               signature == cp->symbol_at(f->signature_index())) {
+             // Symbol is desclared in Java so skip this one
+@@ -1693,17 +1749,18 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+           }
+         }
+         if (duplicate) {
+-          // These will be removed from the field array at the end
+           continue;
+         }
+       }
+ 
+       // Injected field
+-      FieldInfo* const field = FieldInfo::from_field_array(fa, index);
+-      field->initialize((u2)JVM_ACC_FIELD_INTERNAL,
++      f->initialize((u2)JVM_ACC_FIELD_INTERNAL,
+                         (u2)(injected[n].name_index),
+                         (u2)(injected[n].signature_index),
+                         0);
++      field_index++;
++      int inj_idx = temp_fieldinfo->append(fi);
++      assert(inj_idx == field_index, "Must be");
+ 
+       const BasicType type = Signature::basic_type(injected[n].signature());
+ 
+@@ -1714,11 +1771,13 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+   }
+ 
+   if (is_inline_type) {
+-    FieldInfo* const field = FieldInfo::from_field_array(fa, index);
+-    field->initialize(JVM_ACC_FIELD_INTERNAL | JVM_ACC_STATIC,
++    f->initialize(JVM_ACC_FIELD_INTERNAL | JVM_ACC_STATIC,
+                       (u2)vmSymbols::as_int(VM_SYMBOL_ENUM_NAME(default_value_name)),
+                       (u2)vmSymbols::as_int(VM_SYMBOL_ENUM_NAME(object_signature)),
+                       0);
++    field_index++;
++    int inj_idx = temp_fieldinfo->append(fi);
++    assert(inj_idx == field_index, "Must be");
+     const BasicType type = Signature::basic_type(vmSymbols::object_signature());
+     fac->update(true, type, false);
+     index++;
+@@ -1726,11 +1785,13 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+ 
+   if (is_inline_type && instance_fields_count == 0) {
+     _is_empty_inline_type = true;
+-    FieldInfo* const field = FieldInfo::from_field_array(fa, index);
+-    field->initialize(JVM_ACC_FIELD_INTERNAL,
++    f->initialize(JVM_ACC_FIELD_INTERNAL,
+         (u2)vmSymbols::as_int(VM_SYMBOL_ENUM_NAME(empty_marker_name)),
+         (u2)vmSymbols::as_int(VM_SYMBOL_ENUM_NAME(byte_signature)),
+         0);
++    field_index++;
++    int inj_idx = temp_fieldinfo->append(fi);
++    assert(inj_idx == field_index, "Must be");
+     const BasicType type = Signature::basic_type(vmSymbols::byte_signature());
+     fac->update(false, type, false);
+     index++;
+@@ -1741,27 +1802,54 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+   }
+ 
+   assert(NULL == _fields, "invariant");
++  assert(index == field_index + 1, "Must be");
++  assert(temp_fieldinfo->length() == field_index + 1, "Must be");
+ 
+   _fields =
+     MetadataFactory::new_array<u2>(_loader_data,
+-                                   index * FieldInfo::field_slots + num_generic_signature,
++                                   temp_fieldinfo->length() * FieldInfo::field_slots + temp_generic_signature->length(),
+                                    CHECK);
+-  // Sometimes injected fields already exist in the Java source so
+-  // the fields array could be too long.  In that case the
+-  // fields array is trimed. Also unused slots that were reserved
+-  // for generic signature indexes are discarded.
+   {
+     int i = 0;
+-    for (; i < index * FieldInfo::field_slots; i++) {
+-      _fields->at_put(i, fa[i]);
++    for (i = 0; i < index; i++) {
++      u2* adr = (u2*)temp_fieldinfo->adr_at(i);
++      for (int j = 0; j < FieldInfo::field_slots; j++) {
++        _fields->at_put(i * FieldInfo::field_slots + j, adr[j]);
++      }
+     }
+-    for (int j = total_fields * FieldInfo::field_slots;
+-         j < generic_signature_slot; j++) {
+-      _fields->at_put(i++, fa[j]);
++    i = index * FieldInfo::field_slots;
++    for (int j = 0; j < temp_generic_signature->length(); j++) {
++      _fields->at_put(i++, temp_generic_signature->at(j));
+     }
++
+     assert(_fields->length() == i, "");
+   }
+ 
++  if (temp_multifield_info->length() > 0) {
++    _multifield_info = MetadataFactory::new_array<MultiFieldInfo>(_loader_data, temp_multifield_info->length(), CHECK);
++    for (int i = 0; i < temp_multifield_info->length(); i++) {
++      _multifield_info->at_put(i, temp_multifield_info->at(i));
++    }
++  }
++
++  if (fields_annotations != NULL) {
++    _fields_annotations = MetadataFactory::new_array<AnnotationArray*>(
++                                             _loader_data, temp_fieldinfo->length(), NULL,
++                                             CHECK);
++    for (int i = 0; i < fields_annotations->length(); i++) {
++      _fields_annotations->at_put(i, fields_annotations->at(i));
++    }
++  }
++
++  if (fields_type_annotations != NULL) {
++     _fields_type_annotations = MetadataFactory::new_array<AnnotationArray*>(
++                                             _loader_data, temp_fieldinfo->length(), NULL,
++                                             CHECK);
++    for (int i = 0; i < fields_type_annotations->length(); i++) {
++      _fields_type_annotations->at_put(i, fields_type_annotations->at(i));
++    }
++  }
++
+   if (_need_verify && length > 1) {
+     // Check duplicated fields
+     ResourceMark rm(THREAD);
+@@ -1773,7 +1861,7 @@ void ClassFileParser::parse_fields(const ClassFileStream* const cfs,
+     const Symbol* sig = NULL;
+     {
+       debug_only(NoSafepointVerifier nsv;)
+-      for (AllFieldStream fs(_fields, cp); !fs.done(); fs.next()) {
++      for (AllFieldStream fs(_fields, cp, _multifield_info); !fs.done(); fs.next()) {
+         name = fs.name();
+         sig = fs.signature();
+         // If no duplicates, add name/signature in hashtable names_and_sigs.
+@@ -2138,6 +2226,11 @@ AnnotationCollector::annotation_index(const ClassLoaderData* loader_data,
+       if (RestrictReservedStack && !privileged) break; // honor privileges
+       return _jdk_internal_vm_annotation_ReservedStackAccess;
+     }
++    case VM_SYMBOL_ENUM_NAME(jdk_internal_vm_annotation_MultiField_signature): {
++      if (_location != _in_field) break;  // only allow for fields
++      if (!privileged)            break;  // honor privileges
++      return _jdk_internal_vm_annotation_MultiField;
++    }
+     case VM_SYMBOL_ENUM_NAME(jdk_internal_ValueBased_signature): {
+       if (_location != _in_class)   break;  // only allow for classes
+       if (!privileged)              break;  // only allow in priviledged code
+@@ -4183,6 +4276,7 @@ void ClassFileParser::apply_parsed_class_metadata(
+   _cp->set_pool_holder(this_klass);
+   this_klass->set_constants(_cp);
+   this_klass->set_fields(_fields, java_fields_count);
++  this_klass->set_multifield_info(_multifield_info);
+   this_klass->set_methods(_methods);
+   this_klass->set_inner_classes(_inner_classes);
+   this_klass->set_nest_members(_nest_members);
+@@ -5707,6 +5801,7 @@ void ClassFileParser::fill_instance_klass(InstanceKlass* ik,
+   assert(NULL == _combined_annotations, "invariant");
+   assert(NULL == _record_components, "invariant");
+   assert(NULL == _permitted_subclasses, "invariant");
++  assert(NULL == _multifield_info, "invariant");
+ 
+   if (_has_final_method) {
+     ik->set_has_final_method();
+@@ -5848,7 +5943,7 @@ void ClassFileParser::fill_instance_klass(InstanceKlass* ik,
+   }
+ 
+   bool all_fields_empty = true;
+-  for (AllFieldStream fs(ik->fields(), ik->constants()); !fs.done(); fs.next()) {
++  for (AllFieldStream fs(ik); !fs.done(); fs.next()) {
+     if (!fs.access_flags().is_static()) {
+       if (fs.field_descriptor().is_inline_type()) {
+         Klass* k = _inline_type_field_klasses->at(fs.index());
+@@ -5992,6 +6087,7 @@ ClassFileParser::ClassFileParser(ClassFileStream* stream,
+   _inline_type_field_klasses(NULL),
+   _method_ordering(NULL),
+   _all_mirandas(NULL),
++  _multifield_info(NULL),
+   _vtable_size(0),
+   _itable_size(0),
+   _num_miranda_methods(0),
+@@ -6082,6 +6178,7 @@ void ClassFileParser::clear_class_metadata() {
+   _class_annotations = _class_type_annotations = NULL;
+   _fields_annotations = _fields_type_annotations = NULL;
+   _record_components = NULL;
++  _multifield_info = NULL;
+ }
+ 
+ // Destructor to clean up
+@@ -6095,6 +6192,10 @@ ClassFileParser::~ClassFileParser() {
+     MetadataFactory::free_array<u2>(_loader_data, _fields);
+   }
+ 
++  if (_multifield_info != NULL) {
++    MetadataFactory::free_array<MultiFieldInfo>(_loader_data, _multifield_info);
++  }
++
+   if (_inline_type_field_klasses != NULL) {
+      MetadataFactory::free_array<InlineKlass*>(_loader_data, _inline_type_field_klasses);
+   }
+@@ -6574,7 +6675,7 @@ void ClassFileParser::post_process_parsed_stream(const ClassFileStream* const st
+                                                    java_fields_count(),
+                                                    NULL,
+                                                    CHECK);
+-    for (AllFieldStream fs(_fields, cp); !fs.done(); fs.next()) {
++    for (AllFieldStream fs(_fields, cp, _multifield_info); !fs.done(); fs.next()) {
+       if (Signature::basic_type(fs.signature()) == T_PRIMITIVE_OBJECT && !fs.access_flags().is_static()) {
+         // Pre-load inline class
+         Klass* klass = SystemDictionary::resolve_inline_type_field_or_fail(&fs,
+@@ -6597,7 +6698,7 @@ void ClassFileParser::post_process_parsed_stream(const ClassFileStream* const st
+   _field_info = new FieldLayoutInfo();
+   FieldLayoutBuilder lb(class_name(), super_klass(), _cp, _fields,
+       _parsed_annotations->is_contended(), is_inline_type(),
+-      _field_info, _inline_type_field_klasses);
++      _field_info, _inline_type_field_klasses, _multifield_info);
+   lb.build_layout(CHECK);
+   if (is_inline_type()) {
+     _alignment = lb.get_alignment();
+diff --git a/src/hotspot/share/classfile/classFileParser.hpp b/src/hotspot/share/classfile/classFileParser.hpp
+index 75b8002979c..16db878eb50 100644
+--- a/src/hotspot/share/classfile/classFileParser.hpp
++++ b/src/hotspot/share/classfile/classFileParser.hpp
+@@ -149,6 +149,7 @@ class ClassFileParser {
+   Array<InlineKlass*>* _inline_type_field_klasses;
+   const intArray* _method_ordering;
+   GrowableArray<Method*>* _all_mirandas;
++  Array<MultiFieldInfo>* _multifield_info;
+ 
+   enum { fixed_buffer_size = 128 };
+   u_char _linenumbertable_buffer[fixed_buffer_size];
+diff --git a/src/hotspot/share/classfile/fieldLayoutBuilder.cpp b/src/hotspot/share/classfile/fieldLayoutBuilder.cpp
+index f7761f9e2ae..9dd12ae70f0 100644
+--- a/src/hotspot/share/classfile/fieldLayoutBuilder.cpp
++++ b/src/hotspot/share/classfile/fieldLayoutBuilder.cpp
+@@ -46,14 +46,15 @@ LayoutRawBlock::LayoutRawBlock(Kind kind, int size) :
+   _alignment(1),
+   _size(size),
+   _field_index(-1),
+-  _is_reference(false) {
++  _is_reference(false),
++  _multifield_index(-1) {
+   assert(kind == EMPTY || kind == RESERVED || kind == PADDING || kind == INHERITED,
+          "Otherwise, should use the constructor with a field index argument");
+   assert(size > 0, "Sanity check");
+ }
+ 
+ 
+-LayoutRawBlock::LayoutRawBlock(int index, Kind kind, int size, int alignment, bool is_reference) :
++LayoutRawBlock::LayoutRawBlock(int index, Kind kind, int size, int alignment, bool is_reference, jbyte multifield_index) :
+  _next_block(NULL),
+  _prev_block(NULL),
+  _inline_klass(NULL),
+@@ -62,8 +63,9 @@ LayoutRawBlock::LayoutRawBlock(int index, Kind kind, int size, int alignment, bo
+  _alignment(alignment),
+  _size(size),
+  _field_index(index),
+- _is_reference(is_reference) {
+-  assert(kind == REGULAR || kind == INLINED || kind == INHERITED,
++ _is_reference(is_reference),
++ _multifield_index(multifield_index) {
++  assert(kind == REGULAR || kind == INLINED || kind == INHERITED || kind == MULTIFIELD,
+          "Other kind do not have a field index");
+   assert(size > 0, "Sanity check");
+   assert(alignment > 0, "Sanity check");
+@@ -82,12 +84,13 @@ FieldGroup::FieldGroup(int contended_group) :
+   _small_primitive_fields(NULL),
+   _big_primitive_fields(NULL),
+   _oop_fields(NULL),
++  _multifields(NULL),
+   _contended_group(contended_group),  // -1 means no contended group, 0 means default contended group
+   _oop_count(0) {}
+ 
+ void FieldGroup::add_primitive_field(AllFieldStream fs, BasicType type) {
+   int size = type2aelembytes(type);
+-  LayoutRawBlock* block = new LayoutRawBlock(fs.index(), LayoutRawBlock::REGULAR, size, size /* alignment == size for primitive types */, false);
++  LayoutRawBlock* block = new LayoutRawBlock(fs.index(), LayoutRawBlock::REGULAR, size, size /* alignment == size for primitive types */, false, -1);
+   if (size >= oopSize) {
+     add_to_big_primitive_list(block);
+   } else {
+@@ -97,7 +100,7 @@ void FieldGroup::add_primitive_field(AllFieldStream fs, BasicType type) {
+ 
+ void FieldGroup::add_oop_field(AllFieldStream fs) {
+   int size = type2aelembytes(T_OBJECT);
+-  LayoutRawBlock* block = new LayoutRawBlock(fs.index(), LayoutRawBlock::REGULAR, size, size /* alignment == size for oops */, true);
++  LayoutRawBlock* block = new LayoutRawBlock(fs.index(), LayoutRawBlock::REGULAR, size, size /* alignment == size for oops */, true, -1);
+   if (_oop_fields == NULL) {
+     _oop_fields = new(ResourceObj::RESOURCE_AREA, mtInternal) GrowableArray<LayoutRawBlock*>(INITIAL_LIST_SIZE);
+   }
+@@ -106,7 +109,7 @@ void FieldGroup::add_oop_field(AllFieldStream fs) {
+ }
+ 
+ void FieldGroup::add_inlined_field(AllFieldStream fs, InlineKlass* vk) {
+-  LayoutRawBlock* block = new LayoutRawBlock(fs.index(), LayoutRawBlock::INLINED, vk->get_exact_size_in_bytes(), vk->get_alignment(), false);
++  LayoutRawBlock* block = new LayoutRawBlock(fs.index(), LayoutRawBlock::INLINED, vk->get_exact_size_in_bytes(), vk->get_alignment(), false, -1);
+   block->set_inline_klass(vk);
+   if (block->size() >= oopSize) {
+     add_to_big_primitive_list(block);
+@@ -115,6 +118,30 @@ void FieldGroup::add_inlined_field(AllFieldStream fs, InlineKlass* vk) {
+   }
+ }
+ 
++void FieldGroup::add_multifield(AllFieldStream fs, Array<MultiFieldInfo>* multifield_info, InlineKlass* vk) {
++  assert(fs.is_multifield() || fs.is_multifield_base(), "Must be");
++  u2 base = fs.multifield_base();
++  BasicType type = Signature::basic_type(fs.signature());
++  MultiFieldGroup* mfg = NULL;
++  if (_multifields != NULL) {
++    for (int i = 0; i < _multifields->length(); i++) {
++      if (base == _multifields->at(i)->multifield_base()) {
++        mfg = _multifields->at(i);
++        break;
++      }
++    }
++  } else {
++    _multifields = new(ResourceObj::RESOURCE_AREA, mtInternal) GrowableArray<MultiFieldGroup*>(8);
++  }
++  if (mfg == NULL) {
++    mfg = new(ResourceObj::RESOURCE_AREA, mtInternal) MultiFieldGroup(base, fs.signature());
++    mfg->add_field(fs, vk);
++    _multifields->append(mfg);
++  } else {
++    mfg->add_field(fs, vk);
++  }
++}
++
+ void FieldGroup::sort_by_size() {
+   if (_small_primitive_fields != NULL) {
+     _small_primitive_fields->sort(LayoutRawBlock::compare_size_inverted);
+@@ -122,6 +149,22 @@ void FieldGroup::sort_by_size() {
+   if (_big_primitive_fields != NULL) {
+     _big_primitive_fields->sort(LayoutRawBlock::compare_size_inverted);
+   }
++  if (_multifields != NULL) {
++    for (int i = 0; i < _multifields->length(); i++) {
++      int size = _multifields->at(i)->fields()->at(0)->size();
++      int alignment =  _multifields->at(i)->fields()->at(0)->alignment();
++      int multialignment = size/alignment;
++      if (size % multialignment != 0) multialignment+= alignment;
++      // Problem: at this point, multialignment can be a weird number, for instance not a power of two
++      int multisize = multialignment * alignment * _multifields->at(i)->fields()->length();  // should be stored
++      // True alignment should be adjusted to increase chances to be on a single cache line
++      int multifield_group_alignment = MIN2(round_up_power_of_2(multisize), HeapWordSize);
++      _multifields->at(i)->set_group_size(multisize);
++      _multifields->at(i)->set_group_alignment(multifield_group_alignment);
++      _multifields->at(i)->fields()->sort(MultiFieldGroup::compare_multifield_index);
++    }
++    _multifields->sort(MultiFieldGroup::compare_multifield_groups_inverted);
++  }
+ }
+ 
+ void FieldGroup::add_to_small_primitive_list(LayoutRawBlock* block) {
+@@ -138,9 +181,38 @@ void FieldGroup::add_to_big_primitive_list(LayoutRawBlock* block) {
+   _big_primitive_fields->append(block);
+ }
+ 
+-FieldLayout::FieldLayout(Array<u2>* fields, ConstantPool* cp) :
++MultiFieldGroup::MultiFieldGroup(u2 base, Symbol* signature) :  _multifield_base(base), _signature(signature), _fields(NULL) { }
++
++void MultiFieldGroup::add_field(AllFieldStream fs, InlineKlass* vk) {
++  assert(fs.is_multifield() || fs.is_multifield_base(), "Must be");
++  assert(fs.multifield_base() == multifield_base(), "multifield base mismatch");
++  jbyte idx = fs.multifield_index();
++  if (_fields == NULL) {
++    _fields = new(ResourceObj::RESOURCE_AREA, mtInternal) GrowableArray<LayoutRawBlock*>(8);
++  } else {
++    guarantee(fs.signature() == signature(), "multifield signature mismatch");
++  }
++  BasicType type = Signature::basic_type(fs.signature());
++  LayoutRawBlock* block = NULL;
++  if (type == T_PRIMITIVE_OBJECT) {
++    block = new LayoutRawBlock(fs.index(), LayoutRawBlock::MULTIFIELD, vk->get_exact_size_in_bytes(),
++                               vk->get_alignment(), false, fs.multifield_index());
++  } else {
++    int size = type2aelembytes(type);
++    block = new LayoutRawBlock(fs.index(), LayoutRawBlock::MULTIFIELD, size, size, false, fs.multifield_index());
++  }
++  int cursor = 0;
++  for (; cursor < _fields->length(); cursor++) {
++    assert(_fields->at(cursor)->multifield_index() != fs.multifield_index(), "multifield index duplicate found");
++    if (_fields->at(cursor)->multifield_index() > fs.multifield_index()) break;
++  }
++  _fields->insert_before(cursor, block);
++}
++
++FieldLayout::FieldLayout(Array<u2>* fields, ConstantPool* cp, Array<MultiFieldInfo>* multifields) :
+   _fields(fields),
+   _cp(cp),
++  _multifield_info(multifields),
+   _blocks(NULL),
+   _start(_blocks),
+   _last(_blocks) {}
+@@ -184,7 +256,8 @@ LayoutRawBlock* FieldLayout::first_field_block() {
+   while (block != NULL
+          && block->kind() != LayoutRawBlock::INHERITED
+          && block->kind() != LayoutRawBlock::REGULAR
+-         && block->kind() != LayoutRawBlock::INLINED) {
++         && block->kind() != LayoutRawBlock::INLINED
++         && block->kind() != LayoutRawBlock::MULTIFIELD) {
+     block = block->next_block();
+   }
+   return block;
+@@ -313,6 +386,37 @@ void FieldLayout::add_contiguously(GrowableArray<LayoutRawBlock*>* list, LayoutR
+   }
+ }
+ 
++void FieldLayout::add_multifield(MultiFieldGroup* multifield_group, LayoutRawBlock* start) {
++  if (start == NULL) {
++    start = _start;
++  }
++  LayoutRawBlock* candidate = NULL;
++  if (start == last_block()) {
++    candidate = last_block();
++  } else {
++    candidate = last_block()->prev_block();
++    while (candidate->kind() != LayoutRawBlock::EMPTY || !candidate->fit(multifield_group->group_size(), multifield_group->group_alignment())) {
++      if (candidate == start) {
++        candidate = last_block();
++        break;
++      }
++      candidate = candidate->prev_block();
++    }
++    assert(candidate != NULL, "Candidate must not be null");
++    assert(candidate->kind() == LayoutRawBlock::EMPTY, "Candidate must be an empty block");
++  }
++  if ((candidate->offset() % multifield_group->group_alignment()) != 0) {
++    int adjustment = multifield_group->group_alignment() - (candidate->offset() % multifield_group->group_alignment());
++    LayoutRawBlock* adj = new LayoutRawBlock(LayoutRawBlock::EMPTY, adjustment);
++    insert(candidate, adj);
++  }
++  assert(candidate->fit(multifield_group->group_size(), multifield_group->group_alignment()), "Candidate must be able to store the whole contiguous block");
++  for (int i = 0; i < multifield_group->fields()->length(); i++) {
++    LayoutRawBlock* b = multifield_group->fields()->at(i);
++    insert_field_block(candidate, b);
++  }
++}
++
+ LayoutRawBlock* FieldLayout::insert_field_block(LayoutRawBlock* slot, LayoutRawBlock* block) {
+   assert(slot->kind() == LayoutRawBlock::EMPTY, "Blocks can only be inserted in empty blocks");
+   if (slot->offset() % block->alignment() != 0) {
+@@ -332,7 +436,7 @@ bool FieldLayout::reconstruct_layout(const InstanceKlass* ik) {
+   bool has_instance_fields = false;
+   GrowableArray<LayoutRawBlock*>* all_fields = new GrowableArray<LayoutRawBlock*>(32);
+   while (ik != NULL) {
+-    for (AllFieldStream fs(ik->fields(), ik->constants()); !fs.done(); fs.next()) {
++    for (AllFieldStream fs(ik->fields(), ik->constants(), ik->multifield_info()); !fs.done(); fs.next()) {
+       BasicType type = Signature::basic_type(fs.signature());
+       // distinction between static and non-static fields is missing
+       if (fs.access_flags().is_static()) continue;
+@@ -341,12 +445,12 @@ bool FieldLayout::reconstruct_layout(const InstanceKlass* ik) {
+       if (type == T_PRIMITIVE_OBJECT) {
+         InlineKlass* vk = InlineKlass::cast(ik->get_inline_type_field_klass(fs.index()));
+         block = new LayoutRawBlock(fs.index(), LayoutRawBlock::INHERITED, vk->get_exact_size_in_bytes(),
+-                                   vk->get_alignment(), false);
++                                   vk->get_alignment(), false, -1);
+ 
+       } else {
+         int size = type2aelembytes(type);
+         // INHERITED blocks are marked as non-reference because oop_maps are handled by their holder class
+-        block = new LayoutRawBlock(fs.index(), LayoutRawBlock::INHERITED, size, size, false);
++        block = new LayoutRawBlock(fs.index(), LayoutRawBlock::INHERITED, size, size, false, -1);
+       }
+       block->set_offset(fs.offset());
+       all_fields->append(block);
+@@ -470,7 +574,7 @@ void FieldLayout::print(outputStream* output, bool is_static, const InstanceKlas
+       FieldInfo* fi = FieldInfo::from_field_array(_fields, b->field_index());
+       output->print_cr(" @%d \"%s\" %s %d/%d %s",
+                        b->offset(),
+-                       fi->name(_cp)->as_C_string(),
++                       fi->name(_multifield_info, _cp)->as_C_string(),
+                        fi->signature(_cp)->as_C_string(),
+                        b->size(),
+                        b->alignment(),
+@@ -481,7 +585,7 @@ void FieldLayout::print(outputStream* output, bool is_static, const InstanceKlas
+       FieldInfo* fi = FieldInfo::from_field_array(_fields, b->field_index());
+       output->print_cr(" @%d \"%s\" %s %d/%d %s",
+                        b->offset(),
+-                       fi->name(_cp)->as_C_string(),
++                       fi->name(_multifield_info, _cp)->as_C_string(),
+                        fi->signature(_cp)->as_C_string(),
+                        b->size(),
+                        b->alignment(),
+@@ -501,7 +605,7 @@ void FieldLayout::print(outputStream* output, bool is_static, const InstanceKlas
+       bool found = false;
+       const InstanceKlass* ik = super;
+       while (!found && ik != NULL) {
+-        for (AllFieldStream fs(ik->fields(), ik->constants()); !fs.done(); fs.next()) {
++        for (AllFieldStream fs(ik->fields(), ik->constants(), ik->multifield_info()); !fs.done(); fs.next()) {
+           if (fs.offset() == b->offset()) {
+             output->print_cr(" @%d \"%s\" %s %d/%d %s",
+                 b->offset(),
+@@ -530,6 +634,16 @@ void FieldLayout::print(outputStream* output, bool is_static, const InstanceKlas
+                        b->size(),
+                        "PADDING");
+       break;
++    case LayoutRawBlock::MULTIFIELD:
++      FieldInfo* fi = FieldInfo::from_field_array(_fields, b->field_index());
++      output->print_cr(" @%d \"%s\" %s %d/%d %s",
++                       b->offset(),
++                       fi->name(_multifield_info, _cp)->as_C_string(),
++                       fi->signature(_cp)->as_C_string(),
++                       b->size(),
++                       b->alignment(),
++                       "MULTIFIELD");
++      break;
+     }
+     b = b->next_block();
+   }
+@@ -537,15 +651,17 @@ void FieldLayout::print(outputStream* output, bool is_static, const InstanceKlas
+ 
+ FieldLayoutBuilder::FieldLayoutBuilder(const Symbol* classname, const InstanceKlass* super_klass, ConstantPool* constant_pool,
+                                        Array<u2>* fields, bool is_contended, bool is_inline_type,
+-                                       FieldLayoutInfo* info, Array<InlineKlass*>* inline_type_field_klasses) :
++                                       FieldLayoutInfo* info, Array<InlineKlass*>* inline_type_field_klasses,
++                                       Array<MultiFieldInfo>* multifields) :
+   _classname(classname),
+   _super_klass(super_klass),
+   _constant_pool(constant_pool),
+   _fields(fields),
+   _info(info),
+   _inline_type_field_klasses(inline_type_field_klasses),
++  _multifield_info(multifields),
+   _root_group(NULL),
+-  _contended_groups(GrowableArray<FieldGroup*>(8)),
++  _contended_groups(GrowableArray<FieldGroup*>(0)),
+   _static_fields(NULL),
+   _layout(NULL),
+   _static_layout(NULL),
+@@ -575,13 +691,13 @@ FieldGroup* FieldLayoutBuilder::get_or_create_contended_group(int g) {
+ }
+ 
+ void FieldLayoutBuilder::prologue() {
+-  _layout = new FieldLayout(_fields, _constant_pool);
++  _layout = new FieldLayout(_fields, _constant_pool, _multifield_info);
+   const InstanceKlass* super_klass = _super_klass;
+   _layout->initialize_instance_layout(super_klass);
+   if (super_klass != NULL) {
+     _has_nonstatic_fields = super_klass->has_nonstatic_fields();
+   }
+-  _static_layout = new FieldLayout(_fields, _constant_pool);
++  _static_layout = new FieldLayout(_fields, _constant_pool, _multifield_info);
+   _static_layout->initialize_static_layout();
+   _static_fields = new FieldGroup();
+   _root_group = new FieldGroup();
+@@ -594,7 +710,7 @@ void FieldLayoutBuilder::prologue() {
+ //   - @Contended annotation is ignored for static fields
+ //   - field flattening decisions are taken in this method
+ void FieldLayoutBuilder::regular_field_sorting() {
+-  for (AllFieldStream fs(_fields, _constant_pool); !fs.done(); fs.next()) {
++  for (AllFieldStream fs(_fields, _constant_pool, _multifield_info); !fs.done(); fs.next()) {
+     FieldGroup* group = NULL;
+     if (fs.access_flags().is_static()) {
+       group = _static_fields;
+@@ -615,61 +731,66 @@ void FieldLayoutBuilder::regular_field_sorting() {
+     }
+     assert(group != NULL, "invariant");
+     BasicType type = Signature::basic_type(fs.signature());
+-    switch(type) {
+-    case T_BYTE:
+-    case T_CHAR:
+-    case T_DOUBLE:
+-    case T_FLOAT:
+-    case T_INT:
+-    case T_LONG:
+-    case T_SHORT:
+-    case T_BOOLEAN:
+-      group->add_primitive_field(fs, type);
+-      break;
+-    case T_OBJECT:
+-    case T_ARRAY:
+-      if (group != _static_fields) _nonstatic_oopmap_count++;
+-      group->add_oop_field(fs);
+-      break;
+-    case T_PRIMITIVE_OBJECT:
+-      _has_inline_type_fields = true;
+-      if (group == _static_fields) {
+-        // static fields are never inlined
+-        group->add_oop_field(fs);
+-      } else {
+-        _has_flattening_information = true;
+-        // Flattening decision to be taken here
+-        // This code assumes all verification already have been performed
+-        // (field's type has been loaded and it is an inline klass)
+-        JavaThread* THREAD = JavaThread::current();
+-        Klass* klass =  _inline_type_field_klasses->at(fs.index());
+-        assert(klass != NULL, "Sanity check");
+-        InlineKlass* vk = InlineKlass::cast(klass);
+-        bool too_big_to_flatten = (InlineFieldMaxFlatSize >= 0 &&
+-                                   (vk->size_helper() * HeapWordSize) > InlineFieldMaxFlatSize);
+-        bool too_atomic_to_flatten = vk->is_declared_atomic() || AlwaysAtomicAccesses;
+-        bool too_volatile_to_flatten = fs.access_flags().is_volatile();
+-        if (vk->is_naturally_atomic()) {
+-          too_atomic_to_flatten = false;
+-          //too_volatile_to_flatten = false; //FIXME
+-          // volatile fields are currently never inlined, this could change in the future
+-        }
+-        if (!(too_big_to_flatten | too_atomic_to_flatten | too_volatile_to_flatten) || fs.access_flags().is_final()) {
+-          group->add_inlined_field(fs, vk);
+-          _nonstatic_oopmap_count += vk->nonstatic_oop_map_count();
+-          fs.set_inlined(true);
+-          if (!vk->is_atomic()) {  // flat and non-atomic: take note
+-            _has_nonatomic_values = true;
+-            _atomic_field_count--;  // every other field is atomic but this one
+-          }
+-        } else {
+-          _nonstatic_oopmap_count++;
++    bool has_multifield_annotation = false;
++    if (fs.is_multifield() || fs.is_multifield_base()) {
++      group->add_multifield(fs, _multifield_info);
++    } else {
++      switch(type) {
++        case T_BYTE:
++        case T_CHAR:
++        case T_DOUBLE:
++        case T_FLOAT:
++        case T_INT:
++        case T_LONG:
++        case T_SHORT:
++        case T_BOOLEAN:
++          group->add_primitive_field(fs, type);
++          break;
++        case T_OBJECT:
++        case T_ARRAY:
++          if (group != _static_fields) _nonstatic_oopmap_count++;
+           group->add_oop_field(fs);
+-        }
++          break;
++        case T_PRIMITIVE_OBJECT:
++          _has_inline_type_fields = true;
++          if (group == _static_fields) {
++            // static fields are never inlined
++            group->add_oop_field(fs);
++          } else {
++            _has_flattening_information = true;
++            // Flattening decision to be taken here
++            // This code assumes all verification already have been performed
++            // (field's type has been loaded and it is an inline klass)
++            JavaThread* THREAD = JavaThread::current();
++            Klass* klass =  _inline_type_field_klasses->at(fs.index());
++            assert(klass != NULL, "Sanity check");
++            InlineKlass* vk = InlineKlass::cast(klass);
++            bool too_big_to_flatten = (InlineFieldMaxFlatSize >= 0 &&
++                                      (vk->size_helper() * HeapWordSize) > InlineFieldMaxFlatSize);
++            bool too_atomic_to_flatten = vk->is_declared_atomic() || AlwaysAtomicAccesses;
++            bool too_volatile_to_flatten = fs.access_flags().is_volatile();
++            if (vk->is_naturally_atomic()) {
++              too_atomic_to_flatten = false;
++              //too_volatile_to_flatten = false; //FIXME
++              // volatile fields are currently never inlined, this could change in the future
++            }
++            if (!(too_big_to_flatten | too_atomic_to_flatten | too_volatile_to_flatten) || fs.access_flags().is_final()) {
++              group->add_inlined_field(fs, vk);
++              _nonstatic_oopmap_count += vk->nonstatic_oop_map_count();
++              fs.set_inlined(true);
++              if (!vk->is_atomic()) {  // flat and non-atomic: take note
++                _has_nonatomic_values = true;
++                _atomic_field_count--;  // every other field is atomic but this one
++              }
++            } else {
++              _nonstatic_oopmap_count++;
++              group->add_oop_field(fs);
++            }
++          }
++          break;
++        default:
++          fatal("Something wrong?");
+       }
+-      break;
+-    default:
+-      fatal("Something wrong?");
+     }
+   }
+   _root_group->sort_by_size();
+@@ -695,7 +816,7 @@ void FieldLayoutBuilder::regular_field_sorting() {
+ void FieldLayoutBuilder::inline_class_field_sorting(TRAPS) {
+   assert(_is_inline_type, "Should only be used for inline classes");
+   int alignment = 1;
+-  for (AllFieldStream fs(_fields, _constant_pool); !fs.done(); fs.next()) {
++  for (AllFieldStream fs(_fields, _constant_pool, _multifield_info); !fs.done(); fs.next()) {
+     FieldGroup* group = NULL;
+     int field_alignment = 1;
+     if (fs.access_flags().is_static()) {
+@@ -707,73 +828,86 @@ void FieldLayoutBuilder::inline_class_field_sorting(TRAPS) {
+     }
+     assert(group != NULL, "invariant");
+     BasicType type = Signature::basic_type(fs.signature());
+-    switch(type) {
+-    case T_BYTE:
+-    case T_CHAR:
+-    case T_DOUBLE:
+-    case T_FLOAT:
+-    case T_INT:
+-    case T_LONG:
+-    case T_SHORT:
+-    case T_BOOLEAN:
+-      if (group != _static_fields) {
+-        field_alignment = type2aelembytes(type); // alignment == size for primitive types
+-      }
+-      group->add_primitive_field(fs, type);
+-      break;
+-    case T_OBJECT:
+-    case T_ARRAY:
+-      if (group != _static_fields) {
+-        _nonstatic_oopmap_count++;
+-        field_alignment = type2aelembytes(type); // alignment == size for oops
+-      }
+-      group->add_oop_field(fs);
+-      break;
+-    case T_PRIMITIVE_OBJECT: {
+-//      fs.set_inline(true);
+-      _has_inline_type_fields = true;
+-      if (group == _static_fields) {
+-        // static fields are never inlined
+-        group->add_oop_field(fs);
+-      } else {
+-        // Flattening decision to be taken here
+-        // This code assumes all verifications have already been performed
+-        // (field's type has been loaded and it is an inline klass)
+-        JavaThread* THREAD = JavaThread::current();
+-        Klass* klass =  _inline_type_field_klasses->at(fs.index());
+-        assert(klass != NULL, "Sanity check");
+-        InlineKlass* vk = InlineKlass::cast(klass);
+-        bool too_big_to_flatten = (InlineFieldMaxFlatSize >= 0 &&
+-                                   (vk->size_helper() * HeapWordSize) > InlineFieldMaxFlatSize);
+-        bool too_atomic_to_flatten = vk->is_declared_atomic() || AlwaysAtomicAccesses;
+-        bool too_volatile_to_flatten = fs.access_flags().is_volatile();
+-        if (vk->is_naturally_atomic()) {
+-          too_atomic_to_flatten = false;
+-          //too_volatile_to_flatten = false; //FIXME
+-          // volatile fields are currently never inlined, this could change in the future
+-        }
+-        if (!(too_big_to_flatten | too_atomic_to_flatten | too_volatile_to_flatten) || fs.access_flags().is_final()) {
+-          group->add_inlined_field(fs, vk);
+-          _nonstatic_oopmap_count += vk->nonstatic_oop_map_count();
+-          field_alignment = vk->get_alignment();
+-          fs.set_inlined(true);
+-          if (!vk->is_atomic()) {  // flat and non-atomic: take note
+-            _has_nonatomic_values = true;
+-            _atomic_field_count--;  // every other field is atomic but this one
++    bool has_multifield_annotation = false;
++    if (fs.is_multifield() || fs.is_multifield_base()) {
++      group->add_multifield(fs, _multifield_info);
++    } else {
++      switch(type) {
++        case T_BYTE:
++        case T_CHAR:
++        case T_DOUBLE:
++        case T_FLOAT:
++        case T_INT:
++        case T_LONG:
++        case T_SHORT:
++        case T_BOOLEAN:
++          if (group != _static_fields) {
++            field_alignment = type2aelembytes(type); // alignment == size for primitive types
++          }
++          group->add_primitive_field(fs, type);
++          break;
++        case T_OBJECT:
++        case T_ARRAY:
++          if (group != _static_fields) {
++            _nonstatic_oopmap_count++;
++            field_alignment = type2aelembytes(type); // alignment == size for oops
+           }
+-        } else {
+-          _nonstatic_oopmap_count++;
+-          field_alignment = type2aelembytes(T_OBJECT);
+           group->add_oop_field(fs);
++          break;
++        case T_PRIMITIVE_OBJECT: {
++          //      fs.set_inline(true);
++          _has_inline_type_fields = true;
++          if (group == _static_fields) {
++            // static fields are never inlined
++            group->add_oop_field(fs);
++          } else {
++            // Flattening decision to be taken here
++            // This code assumes all verifications have already been performed
++            // (field's type has been loaded and it is an inline klass)
++            JavaThread* THREAD = JavaThread::current();
++            Klass* klass =  _inline_type_field_klasses->at(fs.index());
++            assert(klass != NULL, "Sanity check");
++            InlineKlass* vk = InlineKlass::cast(klass);
++            bool too_big_to_flatten = (InlineFieldMaxFlatSize >= 0 &&
++                                      (vk->size_helper() * HeapWordSize) > InlineFieldMaxFlatSize);
++            bool too_atomic_to_flatten = vk->is_declared_atomic() || AlwaysAtomicAccesses;
++            bool too_volatile_to_flatten = fs.access_flags().is_volatile();
++            if (vk->is_naturally_atomic()) {
++              too_atomic_to_flatten = false;
++              //too_volatile_to_flatten = false; //FIXME
++              // volatile fields are currently never inlined, this could change in the future
++            }
++            if (!(too_big_to_flatten | too_atomic_to_flatten | too_volatile_to_flatten) || fs.access_flags().is_final()) {
++              group->add_inlined_field(fs, vk);
++              _nonstatic_oopmap_count += vk->nonstatic_oop_map_count();
++              field_alignment = vk->get_alignment();
++              fs.set_inlined(true);
++              if (!vk->is_atomic()) {  // flat and non-atomic: take note
++                _has_nonatomic_values = true;
++                _atomic_field_count--;  // every other field is atomic but this one
++              }
++            } else {
++              _nonstatic_oopmap_count++;
++              field_alignment = type2aelembytes(T_OBJECT);
++              group->add_oop_field(fs);
++            }
++          }
++          break;
+         }
++        default:
++          fatal("Unexpected BasicType");
+       }
+-      break;
+-    }
+-    default:
+-      fatal("Unexpected BasicType");
+     }
+     if (!fs.access_flags().is_static() && field_alignment > alignment) alignment = field_alignment;
+   }
++  _root_group->sort_by_size();
++  if (_root_group->multifields() != NULL) {
++    for (int i = 0; i < _root_group->multifields()->length(); i++) {
++      if (_root_group->multifields()->at(i)->group_alignment() > alignment) {
++        alignment = _root_group->multifields()->at(i)->group_alignment();
++      }
++    }
++  }
+   _alignment = alignment;
+   if (!_has_nonstatic_fields) {
+     // There are a number of fixes required throughout the type system and JIT
+@@ -809,6 +943,11 @@ void FieldLayoutBuilder::compute_regular_layout() {
+     insert_contended_padding(_layout->start());
+     need_tail_padding = true;
+   }
++  if (_root_group->multifields() != NULL) {
++    for (int i = 0; i < _root_group->multifields()->length(); i++) {
++      _layout->add_multifield(_root_group->multifields()->at(i));
++    }
++  }
+   _layout->add(_root_group->big_primitive_fields());
+   _layout->add(_root_group->small_primitive_fields());
+   _layout->add(_root_group->oop_fields());
+@@ -818,7 +957,12 @@ void FieldLayoutBuilder::compute_regular_layout() {
+       FieldGroup* cg = _contended_groups.at(i);
+       LayoutRawBlock* start = _layout->last_block();
+       insert_contended_padding(start);
+-      _layout->add(cg->big_primitive_fields());
++      if (cg->multifields() != NULL) {
++        for (int i = 0; i < cg->multifields()->length(); i++) {
++          _layout->add_multifield(cg->multifields()->at(i), start);
++        }
++      }
++      _layout->add(cg->big_primitive_fields(), start);
+       _layout->add(cg->small_primitive_fields(), start);
+       _layout->add(cg->oop_fields(), start);
+       need_tail_padding = true;
+@@ -830,6 +974,11 @@ void FieldLayoutBuilder::compute_regular_layout() {
+   }
+   // Warning: IntanceMirrorKlass expects static oops to be allocated first
+   _static_layout->add_contiguously(_static_fields->oop_fields());
++  if (_static_fields->multifields() != NULL) {
++    for (int i = 0; i < _static_fields->multifields()->length(); i++) {
++      _layout->add_multifield(_static_fields->multifields()->at(i));
++    }
++  }
+   _static_layout->add(_static_fields->big_primitive_fields());
+   _static_layout->add(_static_fields->small_primitive_fields());
+ 
+@@ -863,6 +1012,11 @@ void FieldLayoutBuilder::compute_inline_class_layout(TRAPS) {
+     _layout->set_start(padding->next_block());
+   }
+ 
++  if (_root_group->multifields() != NULL) {
++    for (int i = 0; i < _root_group->multifields()->length(); i++) {
++      _layout->add_multifield(_root_group->multifields()->at(i));
++    }
++  }
+   _layout->add(_root_group->big_primitive_fields());
+   _layout->add(_root_group->oop_fields());
+   _layout->add(_root_group->small_primitive_fields());
+@@ -876,7 +1030,6 @@ void FieldLayoutBuilder::compute_inline_class_layout(TRAPS) {
+      _first_field_offset = _layout->blocks()->size();
+      _exact_size_in_bytes = 0;
+    }
+-  _exact_size_in_bytes = _layout->last_block()->offset() - _layout->first_field_block()->offset();
+ 
+   // Warning:: InstanceMirrorKlass expects static oops to be allocated first
+   _static_layout->add_contiguously(_static_fields->oop_fields());
+diff --git a/src/hotspot/share/classfile/fieldLayoutBuilder.hpp b/src/hotspot/share/classfile/fieldLayoutBuilder.hpp
+index 8c89f516968..17e34d011d5 100644
+--- a/src/hotspot/share/classfile/fieldLayoutBuilder.hpp
++++ b/src/hotspot/share/classfile/fieldLayoutBuilder.hpp
+@@ -58,7 +58,8 @@ class LayoutRawBlock : public ResourceObj {
+     PADDING,          // padding (because of alignment constraints or @Contended)
+     REGULAR,          // primitive or oop field (including inline type fields not inlined)
+     INLINED,          // field inlined
+-    INHERITED         // field(s) inherited from super classes
++    INHERITED,        // field(s) inherited from super classes
++    MULTIFIELD        // fields part of a multi-field
+   };
+ 
+  private:
+@@ -71,10 +72,11 @@ class LayoutRawBlock : public ResourceObj {
+   int _size;
+   int _field_index;
+   bool _is_reference;
++  jbyte _multifield_index;
+ 
+  public:
+   LayoutRawBlock(Kind kind, int size);
+-  LayoutRawBlock(int index, Kind kind, int size, int alignment, bool is_reference = false);
++  LayoutRawBlock(int index, Kind kind, int size, int alignment, bool is_reference, jbyte multifield_index);
+   LayoutRawBlock* next_block() const { return _next_block; }
+   void set_next_block(LayoutRawBlock* next) { _next_block = next; }
+   LayoutRawBlock* prev_block() const { return _prev_block; }
+@@ -93,6 +95,7 @@ class LayoutRawBlock : public ResourceObj {
+     return _field_index;
+   }
+   bool is_reference() const { return _is_reference; }
++  jbyte multifield_index() const { return _multifield_index; }
+   InlineKlass* inline_klass() const {
+     assert(_inline_klass != NULL, "Must be initialized");
+     return _inline_klass;
+@@ -120,7 +123,39 @@ class LayoutRawBlock : public ResourceObj {
+   }
+ };
+ 
+-// A Field group represents a set of fields that have to be allocated together,
++class MultiFieldGroup : public ResourceObj {
++ private:
++  u2 _multifield_base;
++  Symbol* _signature;
++  int _group_size;
++  int _group_alignment;
++  GrowableArray<LayoutRawBlock*>* _fields;
++  // total size and alignment?
++
++ public:
++  MultiFieldGroup(u2 base, Symbol* signature);
++
++  u2 multifield_base() const { return _multifield_base; }
++  Symbol* signature() const { return _signature; }
++  int group_size() const { return _group_size; }
++  void set_group_size(int size) { _group_size = size; }
++  int group_alignment() const { return _group_alignment; }
++  void set_group_alignment(int alignment) { _group_alignment = alignment; }
++  GrowableArray<LayoutRawBlock*>* fields() const { return _fields; }
++  void add_field(AllFieldStream fs, InlineKlass* vk);
++    static int compare_multifield_index(LayoutRawBlock** x, LayoutRawBlock** y) {
++     return (*x)->multifield_index() - (*y)->multifield_index();
++  }
++  static int compare_multifield_groups_inverted(MultiFieldGroup** x, MultiFieldGroup** y) {
++    int diff = (*y)->group_size() - (*x)->group_size();
++    if (diff == 0) {
++      diff = (*y)->group_alignment() - (*x)->group_alignment();
++    }
++    return diff;
++  }
++};
++
++// A FieldGroup represents a set of fields that have to be allocated together,
+ // this is the way the @Contended annotation is supported.
+ // Inside a FieldGroup, fields are sorted based on their kind: primitive,
+ // oop, or inlined.
+@@ -133,6 +168,7 @@ class FieldGroup : public ResourceObj {
+   GrowableArray<LayoutRawBlock*>* _small_primitive_fields;
+   GrowableArray<LayoutRawBlock*>* _big_primitive_fields;
+   GrowableArray<LayoutRawBlock*>* _oop_fields;
++  GrowableArray<MultiFieldGroup*>* _multifields;
+   int _contended_group;
+   int _oop_count;
+   static const int INITIAL_LIST_SIZE = 16;
+@@ -145,12 +181,14 @@ class FieldGroup : public ResourceObj {
+   GrowableArray<LayoutRawBlock*>* small_primitive_fields() const { return _small_primitive_fields; }
+   GrowableArray<LayoutRawBlock*>* big_primitive_fields() const { return _big_primitive_fields; }
+   GrowableArray<LayoutRawBlock*>* oop_fields() const { return _oop_fields; }
++  GrowableArray<MultiFieldGroup*>* multifields() const { return _multifields; }
+   int contended_group() const { return _contended_group; }
+   int oop_count() const { return _oop_count; }
+ 
+   void add_primitive_field(AllFieldStream fs, BasicType type);
+   void add_oop_field(AllFieldStream fs);
+   void add_inlined_field(AllFieldStream fs, InlineKlass* vk);
++  void add_multifield(AllFieldStream fs, Array<MultiFieldInfo>* multifield_info, InlineKlass* vk = NULL);
+   void add_block(LayoutRawBlock** list, LayoutRawBlock* block);
+   void sort_by_size();
+  private:
+@@ -178,12 +216,13 @@ class FieldLayout : public ResourceObj {
+  private:
+   Array<u2>* _fields;
+   ConstantPool* _cp;
++  Array<MultiFieldInfo>* _multifield_info;
+   LayoutRawBlock* _blocks;  // the layout being computed
+   LayoutRawBlock* _start;   // points to the first block where a field can be inserted
+   LayoutRawBlock* _last;    // points to the last block of the layout (big empty block)
+ 
+  public:
+-  FieldLayout(Array<u2>* fields, ConstantPool* cp);
++  FieldLayout(Array<u2>* fields, ConstantPool* cp, Array<MultiFieldInfo>* multifields);
+   void initialize_static_layout();
+   void initialize_instance_layout(const InstanceKlass* ik);
+ 
+@@ -205,6 +244,7 @@ class FieldLayout : public ResourceObj {
+   void add(GrowableArray<LayoutRawBlock*>* list, LayoutRawBlock* start = NULL);
+   void add_field_at_offset(LayoutRawBlock* blocks, int offset, LayoutRawBlock* start = NULL);
+   void add_contiguously(GrowableArray<LayoutRawBlock*>* list, LayoutRawBlock* start = NULL);
++  void add_multifield(MultiFieldGroup* multifield, LayoutRawBlock* start = NULL);
+   LayoutRawBlock* insert_field_block(LayoutRawBlock* slot, LayoutRawBlock* block);
+   bool reconstruct_layout(const InstanceKlass* ik);
+   void fill_holes(const InstanceKlass* ik);
+@@ -245,6 +285,7 @@ class FieldLayoutBuilder : public ResourceObj {
+   Array<u2>* _fields;
+   FieldLayoutInfo* _info;
+   Array<InlineKlass*>* _inline_type_field_klasses;
++  Array<MultiFieldInfo>* _multifield_info;
+   FieldGroup* _root_group;
+   GrowableArray<FieldGroup*> _contended_groups;
+   FieldGroup* _static_fields;
+@@ -263,10 +304,12 @@ class FieldLayoutBuilder : public ResourceObj {
+   int _atomic_field_count;
+ 
+   FieldGroup* get_or_create_contended_group(int g);
++  MultiFieldGroup* get_or_create_multifield_group(int base);
+ 
+  public:
+   FieldLayoutBuilder(const Symbol* classname, const InstanceKlass* super_klass, ConstantPool* constant_pool,
+-      Array<u2>* fields, bool is_contended, bool is_inline_type, FieldLayoutInfo* info, Array<InlineKlass*>* inline_type_field_klasses);
++      Array<u2>* fields, bool is_contended, bool is_inline_type, FieldLayoutInfo* info,
++      Array<InlineKlass*>* inline_type_field_klasses, Array<MultiFieldInfo>* multifields);
+ 
+   int get_alignment() {
+     assert(_alignment != -1, "Uninitialized");
+diff --git a/src/hotspot/share/classfile/systemDictionary.cpp b/src/hotspot/share/classfile/systemDictionary.cpp
+index ea3594e969c..819e7b6c3e0 100644
+--- a/src/hotspot/share/classfile/systemDictionary.cpp
++++ b/src/hotspot/share/classfile/systemDictionary.cpp
+@@ -1209,7 +1209,7 @@ InstanceKlass* SystemDictionary::load_shared_class(InstanceKlass* ik,
+ 
+ 
+   if (ik->has_inline_type_fields()) {
+-    for (AllFieldStream fs(ik->fields(), ik->constants()); !fs.done(); fs.next()) {
++    for (AllFieldStream fs(ik); !fs.done(); fs.next()) {
+       if (Signature::basic_type(fs.signature()) == T_PRIMITIVE_OBJECT) {
+         if (!fs.access_flags().is_static()) {
+           // Pre-load inline class
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index 6c3ebe75353..98c8742d3b3 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -256,6 +256,7 @@
+   template(java_util_concurrent_atomic_AtomicReferenceFieldUpdater_Impl,     "java/util/concurrent/atomic/AtomicReferenceFieldUpdater$AtomicReferenceFieldUpdaterImpl") \
+   template(jdk_internal_vm_annotation_Contended_signature,                   "Ljdk/internal/vm/annotation/Contended;")    \
+   template(jdk_internal_vm_annotation_ReservedStackAccess_signature,         "Ljdk/internal/vm/annotation/ReservedStackAccess;") \
++  template(jdk_internal_vm_annotation_MultiField_signature,                  "Ljdk/internal/vm/annotation/MultiField;") \
+   template(jdk_internal_ValueBased_signature,                                "Ljdk/internal/ValueBased;") \
+                                                                                                   \
+   /* class symbols needed by intrinsics */                                                        \
+diff --git a/src/hotspot/share/memory/allocation.hpp b/src/hotspot/share/memory/allocation.hpp
+index f6be506cfb7..93d02b35462 100644
+--- a/src/hotspot/share/memory/allocation.hpp
++++ b/src/hotspot/share/memory/allocation.hpp
+@@ -321,7 +321,8 @@ class MetaspaceObj {
+   f(ConstantPoolCache) \
+   f(Annotations) \
+   f(MethodCounters) \
+-  f(RecordComponent)
++  f(RecordComponent) \
++  f(MultiFieldInfo)
+ 
+ #define METASPACE_OBJ_TYPE_DECLARE(name) name ## Type,
+ #define METASPACE_OBJ_TYPE_NAME_CASE(name) case name ## Type: return #name;
+diff --git a/src/hotspot/share/memory/metaspaceClosure.hpp b/src/hotspot/share/memory/metaspaceClosure.hpp
+index cb4991a1695..93bfe1af434 100644
+--- a/src/hotspot/share/memory/metaspaceClosure.hpp
++++ b/src/hotspot/share/memory/metaspaceClosure.hpp
+@@ -42,6 +42,7 @@
+   class   ConstantPoolCache; // no C++ vtable
+   class   ConstMethod;       // no C++ vtable
+   class   MethodCounters;    // no C++ vtable
++  class   MultiFieldInfo;    // no C++ vtable
+   class   Symbol;            // no C++ vtable
+   class   Metadata;          // has C++ vtable (so do all subclasses)
+   class     ConstantPool;
+diff --git a/src/hotspot/share/oops/constantPool.hpp b/src/hotspot/share/oops/constantPool.hpp
+index 46b42f78e7e..92352fe379f 100644
+--- a/src/hotspot/share/oops/constantPool.hpp
++++ b/src/hotspot/share/oops/constantPool.hpp
+@@ -434,7 +434,7 @@ class ConstantPool : public Metadata {
+     unresolved_klass_at_put(which, name_index, CPKlassSlot::_temp_resolved_klass_index);
+   }
+ 
+-  jint int_at(int which) {
++  jint int_at(int which) const {
+     assert(tag_at(which).is_int(), "Corrupted constant pool");
+     return *int_at_addr(which);
+   }
+diff --git a/src/hotspot/share/oops/fieldInfo.cpp b/src/hotspot/share/oops/fieldInfo.cpp
+new file mode 100644
+index 00000000000..9437beb2003
+--- /dev/null
++++ b/src/hotspot/share/oops/fieldInfo.cpp
+@@ -0,0 +1,42 @@
++/*
++ * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ *
++ */
++
++#include "precompiled.hpp"
++#include "oops/fieldInfo.hpp"
++#include "oops/instanceKlass.hpp"
++
++Symbol* FieldInfo::get_multifield_name(Array<MultiFieldInfo>* multifield_info) const {
++  assert(is_multifield(), "Sanity check");
++  return multifield_info->at(secondary_index()).name();
++}
++
++u2 FieldInfo::multifield_base(Array<MultiFieldInfo>* multifield_info) const {
++  assert(is_multifield(), "Sanity check");
++  return multifield_info->at(secondary_index()).base_index();
++}
++
++jbyte FieldInfo::multifield_index(Array<MultiFieldInfo>* multifield_info) const {
++  assert(is_multifield(), "Sanity check");
++  return multifield_info->at(secondary_index()).multifield_index();
++}
+\ No newline at end of file
+diff --git a/src/hotspot/share/oops/fieldInfo.hpp b/src/hotspot/share/oops/fieldInfo.hpp
+index dcf94afffd0..3e10d585567 100644
+--- a/src/hotspot/share/oops/fieldInfo.hpp
++++ b/src/hotspot/share/oops/fieldInfo.hpp
+@@ -30,6 +30,8 @@
+ #include "oops/typeArrayOop.hpp"
+ #include "utilities/vmEnums.hpp"
+ 
++class MultiFieldInfo;
++
+ // This class represents the field information contained in the fields
+ // array of an InstanceKlass.  Currently it's laid on top an array of
+ // Java shorts but in the future it could simply be used as a real
+@@ -38,31 +40,37 @@
+ // the various FieldStreams.
+ class FieldInfo {
+   friend class fieldDescriptor;
++  friend class FieldStreamBase;
+   friend class JavaFieldStream;
+   friend class ClassFileParser;
++  friend class FieldLayout;
+ 
+  public:
+   // fields
+   // Field info extracted from the class file and stored
+   // as an array of 6 shorts.
+ 
+-#define FIELDINFO_TAG_SIZE             3
++#define FIELDINFO_TAG_SIZE             5
+ #define FIELDINFO_TAG_OFFSET           1 << 0
+ #define FIELDINFO_TAG_CONTENDED        1 << 1
+ #define FIELDINFO_TAG_INLINED          1 << 2
++#define FIELDINFO_TAG_MULTIFIELD       1 << 3
++#define FIELDINFO_TAG_MULTIFIELD_BASE  1 << 4
+ 
+   // Packed field has the tag, and can be either of:
+   //    hi bits <--------------------------- lo bits
+   //   |---------high---------|---------low---------|
+   //    ..........................................CO
+-  //    ..........................................00  - non-contended field
+-  //    [--contention_group--]...................I10  - contended field with contention group
+-  //    [------------------offset---------------]I01  - real field offset
++  //    .......................................BMI00  - non-contended field
++  //    [--contention_group--].................B0I10  - contended field with contention group
++  //    [------------------offset-------------]BMI01  - real field offset
+ 
+   // Bit O indicates if the packed field contains an offset (O=1) or not (O=0)
+   // Bit C indicates if the field is contended (C=1) or not (C=0)
+   //       (if it is contended, the high packed field contains the contention group)
+   // Bit I indicates if the field has been inlined  (I=1) or not (I=0)
++  // Bit M indicates the field is an injected multifield
++  // Bit B indicates the field is a multifield base field
+ 
+   enum FieldOffset {
+     access_flags_offset      = 0,
+@@ -81,9 +89,10 @@ class FieldInfo {
+   void set_signature_index(u2 val)               { _shorts[signature_index_offset] = val;    }
+   void set_initval_index(u2 val)                 { _shorts[initval_index_offset] = val;      }
+ 
+-  u2 name_index() const                          { return _shorts[name_index_offset];        }
++  u2 name_index() const                          { assert(!is_multifield(), "wrong call"); return _shorts[name_index_offset]; }
+   u2 signature_index() const                     { return _shorts[signature_index_offset];   }
+   u2 initval_index() const                       { return _shorts[initval_index_offset];     }
++  u2 secondary_index() const                     { assert( is_multifield(), "wrong call"); return _shorts[name_index_offset]; }
+ 
+  public:
+   static FieldInfo* from_field_array(Array<u2>* fields, int index) {
+@@ -115,6 +124,14 @@ class FieldInfo {
+     return (_shorts[low_packed_offset] & FIELDINFO_TAG_CONTENDED) != 0;
+   }
+ 
++  bool is_multifield() const {
++    return (_shorts[low_packed_offset] & FIELDINFO_TAG_MULTIFIELD) != 0;
++  }
++
++  bool is_multifield_base() const {
++    return (_shorts[low_packed_offset] & FIELDINFO_TAG_MULTIFIELD_BASE) != 0;
++  }
++
+   u2 contended_group() const {
+     assert((_shorts[low_packed_offset] & FIELDINFO_TAG_OFFSET) == 0, "Offset must not have been set");
+     assert((_shorts[low_packed_offset] & FIELDINFO_TAG_CONTENDED) != 0, "Field must be contended");
+@@ -125,7 +142,12 @@ class FieldInfo {
+     return (_shorts[low_packed_offset] & FIELDINFO_TAG_OFFSET)!= 0;
+   }
+ 
+-  Symbol* name(ConstantPool* cp) const {
++  Symbol* get_multifield_name(Array<MultiFieldInfo>* multifield_info) const;
++
++  Symbol* name(Array<MultiFieldInfo>* multifield_info, ConstantPool* cp) const {
++    if (is_multifield()) {
++      return get_multifield_name(multifield_info);
++    }
+     int index = name_index();
+     if (is_internal()) {
+       return lookup_symbol(index);
+@@ -145,8 +167,12 @@ class FieldInfo {
+   void set_offset(u4 val)                        {
+     val = val << FIELDINFO_TAG_SIZE; // make room for tag
+     bool inlined = is_inlined();
++    bool multifield = is_multifield();
++    bool multifield_base = is_multifield_base();
+     _shorts[low_packed_offset] = extract_low_short_from_int(val) | FIELDINFO_TAG_OFFSET;
+     if (inlined) set_inlined(true);
++    if (multifield) set_multifield(true);
++    if (multifield_base) set_multifield_base(true);
+     _shorts[high_packed_offset] = extract_high_short_from_int(val);
+     assert(is_inlined() || !inlined, "just checking");
+   }
+@@ -170,6 +196,25 @@ class FieldInfo {
+     _shorts[high_packed_offset] = val;
+   }
+ 
++  void set_multifield(bool b) {
++    if (b) {
++      _shorts[low_packed_offset] |= FIELDINFO_TAG_MULTIFIELD;
++    } else {
++      _shorts[low_packed_offset] &= ~FIELDINFO_TAG_MULTIFIELD;
++    }
++  }
++
++  void set_multifield_base(bool b) {
++    if (b) {
++      _shorts[low_packed_offset] |= FIELDINFO_TAG_MULTIFIELD_BASE;
++    } else {
++      _shorts[low_packed_offset] &= ~FIELDINFO_TAG_MULTIFIELD_BASE;
++    }
++  }
++
++  u2 multifield_base(Array<MultiFieldInfo>* multifield_info) const;
++  jbyte multifield_index(Array<MultiFieldInfo>* multifield_info) const;
++
+   bool is_internal() const {
+     return (access_flags() & JVM_ACC_FIELD_INTERNAL) != 0;
+   }
+diff --git a/src/hotspot/share/oops/fieldStreams.hpp b/src/hotspot/share/oops/fieldStreams.hpp
+index d87079e7377..80aa1940f5e 100644
+--- a/src/hotspot/share/oops/fieldStreams.hpp
++++ b/src/hotspot/share/oops/fieldStreams.hpp
+@@ -42,6 +42,7 @@ class FieldStreamBase : public StackObj {
+  protected:
+   Array<u2>*          _fields;
+   constantPoolHandle  _constants;
++  Array<MultiFieldInfo>* _multifield_info;
+   int                 _index;
+   int                 _limit;
+   int                 _generic_signature_slot;
+@@ -79,9 +80,9 @@ class FieldStreamBase : public StackObj {
+     return num_fields;
+   }
+ 
+-  inline FieldStreamBase(Array<u2>* fields, ConstantPool* constants, int start, int limit);
++  inline FieldStreamBase(Array<u2>* fields, ConstantPool* constants, Array<MultiFieldInfo>* multifield_info, int start, int limit );
+ 
+-  inline FieldStreamBase(Array<u2>* fields, ConstantPool* constants);
++  inline FieldStreamBase(Array<u2>* fields, ConstantPool* constants, Array<MultiFieldInfo>* multifield_info);
+  public:
+   inline FieldStreamBase(InstanceKlass* klass);
+ 
+@@ -114,7 +115,11 @@ class FieldStreamBase : public StackObj {
+   }
+ 
+   Symbol* name() const {
+-    return field()->name(_constants());
++    return field()->name(_multifield_info, _constants());
++  }
++
++  int name_index() const {
++    return field()->name_index();
+   }
+ 
+   Symbol* signature() const {
+@@ -155,6 +160,32 @@ class FieldStreamBase : public StackObj {
+     return field()->is_contended();
+   }
+ 
++  bool is_multifield() const {
++    return field()->is_multifield();
++  }
++
++  bool is_multifield_base() const {
++    return field()->is_multifield_base();
++  }
++
++  u2 multifield_base() const {
++    assert(field()->is_multifield() || field()->is_multifield_base(), "Must be");
++    if (field()->is_multifield_base()) {
++      return index();
++    } else {
++      return _multifield_info->at(field()->secondary_index()).base_index();
++    }
++  }
++
++  jbyte multifield_index() const {
++    assert(field()->is_multifield() || field()->is_multifield_base(), "Must be");
++    if (field()->is_multifield_base()) {
++      return 0;
++    } else {
++      return _multifield_info->at(field()->secondary_index()).multifield_index();
++    }
++  }
++
+   int contended_group() const {
+     return field()->contended_group();
+   }
+@@ -170,7 +201,7 @@ class FieldStreamBase : public StackObj {
+ // Iterate over only the internal fields
+ class JavaFieldStream : public FieldStreamBase {
+  public:
+-  JavaFieldStream(const InstanceKlass* k): FieldStreamBase(k->fields(), k->constants(), 0, k->java_fields_count()) {}
++  JavaFieldStream(const InstanceKlass* k): FieldStreamBase(k->fields(), k->constants(), k->multifield_info(), 0, k->java_fields_count()) {}
+ 
+   int name_index() const {
+     assert(!field()->is_internal(), "regular only");
+@@ -218,14 +249,14 @@ class JavaFieldStream : public FieldStreamBase {
+ // Iterate over only the internal fields
+ class InternalFieldStream : public FieldStreamBase {
+  public:
+-  InternalFieldStream(InstanceKlass* k):      FieldStreamBase(k->fields(), k->constants(), k->java_fields_count(), 0) {}
++  InternalFieldStream(InstanceKlass* k): FieldStreamBase(k->fields(), k->constants(), k->multifield_info(), k->java_fields_count(), 0) {}
+ };
+ 
+ 
+ class AllFieldStream : public FieldStreamBase {
+  public:
+-  AllFieldStream(Array<u2>* fields, ConstantPool* constants): FieldStreamBase(fields, constants) {}
+-  AllFieldStream(InstanceKlass* k):      FieldStreamBase(k->fields(), k->constants()) {}
++  AllFieldStream(Array<u2>* fields, ConstantPool* constants, Array<MultiFieldInfo>* multifield_info): FieldStreamBase(fields, constants, multifield_info) {}
++  AllFieldStream(InstanceKlass* k):      FieldStreamBase(k->fields(), k->constants(), k->multifield_info()) {}
+ };
+ 
+ #endif // SHARE_OOPS_FIELDSTREAMS_HPP
+diff --git a/src/hotspot/share/oops/fieldStreams.inline.hpp b/src/hotspot/share/oops/fieldStreams.inline.hpp
+index 9b7303f6f2b..264fb2cff41 100644
+--- a/src/hotspot/share/oops/fieldStreams.inline.hpp
++++ b/src/hotspot/share/oops/fieldStreams.inline.hpp
+@@ -29,8 +29,8 @@
+ 
+ #include "runtime/thread.inline.hpp"
+ 
+-FieldStreamBase::FieldStreamBase(Array<u2>* fields, ConstantPool* constants, int start, int limit) : _fields(fields),
+-         _constants(constantPoolHandle(Thread::current(), constants)), _index(start) {
++FieldStreamBase::FieldStreamBase(Array<u2>* fields, ConstantPool* constants, Array<MultiFieldInfo>* multifield_info, int start, int limit) : _fields(fields),
++         _constants(constantPoolHandle(Thread::current(), constants)), _multifield_info(multifield_info), _index(start) {
+   _index = start;
+   int num_fields = init_generic_signature_start_slot();
+   if (limit < start) {
+@@ -40,13 +40,13 @@ FieldStreamBase::FieldStreamBase(Array<u2>* fields, ConstantPool* constants, int
+   }
+ }
+ 
+-FieldStreamBase::FieldStreamBase(Array<u2>* fields, ConstantPool* constants) : _fields(fields),
+-         _constants(constantPoolHandle(Thread::current(), constants)), _index(0) {
++FieldStreamBase::FieldStreamBase(Array<u2>* fields, ConstantPool* constants, Array<MultiFieldInfo>* multifield_info) : _fields(fields),
++         _constants(constantPoolHandle(Thread::current(), constants)), _multifield_info(multifield_info), _index(0) {
+   _limit = init_generic_signature_start_slot();
+ }
+ 
+ FieldStreamBase::FieldStreamBase(InstanceKlass* klass) : _fields(klass->fields()),
+-         _constants(constantPoolHandle(Thread::current(), klass->constants())), _index(0),
++         _constants(constantPoolHandle(Thread::current(), klass->constants())), _multifield_info(klass->multifield_info()),_index(0),
+          _limit(klass->java_fields_count()) {
+   init_generic_signature_start_slot();
+   assert(klass == field_holder(), "");
+diff --git a/src/hotspot/share/oops/instanceKlass.cpp b/src/hotspot/share/oops/instanceKlass.cpp
+index c54e1ba6828..bae1899822b 100644
+--- a/src/hotspot/share/oops/instanceKlass.cpp
++++ b/src/hotspot/share/oops/instanceKlass.cpp
+@@ -163,6 +163,14 @@ static inline bool is_class_loader(const Symbol* class_name,
+   return false;
+ }
+ 
++  FieldInfo* MultiFieldInfo::base_field_info(InstanceKlass* ik) {
++    return ik->field(_base_index);
++  }
++
++  void MultiFieldInfo::metaspace_pointers_do(MetaspaceClosure* it) {
++    it->push(&_name);
++  }
++
+ bool InstanceKlass::field_is_null_free_inline_type(int index) const { return Signature::basic_type(field(index)->signature(constants())) == T_PRIMITIVE_OBJECT; }
+ 
+ // private: called to verify that k is a static member of this nest.
+@@ -528,6 +536,7 @@ InstanceKlass::InstanceKlass(const ClassFileParser& parser, unsigned kind, Klass
+   _nest_host(NULL),
+   _permitted_subclasses(NULL),
+   _record_components(NULL),
++  _multifield_info(NULL),
+   _static_field_size(parser.static_field_size()),
+   _nonstatic_oop_map_size(nonstatic_oop_map_size(parser.total_oop_map_count())),
+   _itable_len(parser.itable_size()),
+@@ -738,6 +747,10 @@ void InstanceKlass::deallocate_contents(ClassLoaderData* loader_data) {
+   }
+   set_annotations(NULL);
+ 
++  if (_multifield_info != NULL && !_multifield_info->is_shared()) {
++    MetadataFactory::free_array<MultiFieldInfo>(loader_data, _multifield_info);
++  }
++
+   SystemDictionaryShared::handle_class_unloading(this);
+ }
+ 
+@@ -2644,6 +2657,9 @@ void InstanceKlass::metaspace_pointers_do(MetaspaceClosure* it) {
+   it->push(&_permitted_subclasses);
+   it->push(&_preload_classes);
+   it->push(&_record_components);
++  if(_multifield_info != NULL) {
++    it->push(&_multifield_info);
++  }
+ 
+   if (has_inline_type_fields()) {
+     for (int i = 0; i < java_fields_count(); i++) {
+@@ -2693,7 +2709,7 @@ void InstanceKlass::remove_unshareable_info() {
+   }
+ 
+   if (has_inline_type_fields()) {
+-    for (AllFieldStream fs(fields(), constants()); !fs.done(); fs.next()) {
++    for (AllFieldStream fs(this); !fs.done(); fs.next()) {
+       if (Signature::basic_type(fs.signature()) == T_PRIMITIVE_OBJECT) {
+         reset_inline_type_field_klass(fs.index());
+       }
+diff --git a/src/hotspot/share/oops/instanceKlass.hpp b/src/hotspot/share/oops/instanceKlass.hpp
+index eaa3ebb2cd7..f94d821ff11 100644
+--- a/src/hotspot/share/oops/instanceKlass.hpp
++++ b/src/hotspot/share/oops/instanceKlass.hpp
+@@ -132,6 +132,22 @@ struct JvmtiCachedClassFileData;
+ 
+ class SigEntry;
+ 
++class MultiFieldInfo : public MetaspaceObj {
++ private:
++  Symbol* _name;
++  u2 _base_index;
++  jbyte _multifield_index;
++ public:
++  MultiFieldInfo() : _name(NULL), _base_index(0), _multifield_index(-1) {}
++  MultiFieldInfo(Symbol* name, u2 base, jbyte index) : _name(name), _base_index(base), _multifield_index(index) {}
++  Symbol* name() const { return _name; }
++  u2 base_index() const { return _base_index; }
++  jbyte multifield_index() const { return _multifield_index; }
++  FieldInfo* base_field_info(InstanceKlass* ik);
++  void metaspace_pointers_do(MetaspaceClosure* it);
++  MetaspaceObj::Type type() const { return MultiFieldInfoType; }
++};
++
+ class InlineKlassFixedBlock {
+   Array<SigEntry>** _extended_sig;
+   Array<VMRegPair>** _return_regs;
+@@ -221,6 +237,9 @@ class InstanceKlass: public Klass {
+   // The contents of the Record attribute.
+   Array<RecordComponent*>* _record_components;
+ 
++  // Array containing meta-data generated for multifields
++  Array<MultiFieldInfo>* _multifield_info;
++
+   // the source debug extension for this klass, NULL if not specified.
+   // Specified as UTF-8 string without terminating zero byte in the classfile,
+   // it is stored in the instanceklass as a NULL-terminated UTF-8 string
+@@ -546,12 +565,13 @@ class InstanceKlass: public Klass {
+ 
+  private:
+   friend class fieldDescriptor;
++  friend class MultiFieldInfo;
+   FieldInfo* field(int index) const { return FieldInfo::from_field_array(_fields, index); }
+ 
+  public:
+   int     field_offset      (int index) const { return field(index)->offset(); }
+   int     field_access_flags(int index) const { return field(index)->access_flags(); }
+-  Symbol* field_name        (int index) const { return field(index)->name(constants()); }
++  Symbol* field_name        (int index) const { return field(index)->name(multifield_info(), constants()); }
+   Symbol* field_signature   (int index) const { return field(index)->signature(constants()); }
+   bool    field_is_inlined(int index) const { return field(index)->is_inlined(); }
+   bool    field_is_null_free_inline_type(int index) const;
+@@ -566,6 +586,17 @@ class InstanceKlass: public Klass {
+     _java_fields_count = java_fields_count;
+   }
+ 
++  Array<MultiFieldInfo>* multifield_info() const { return _multifield_info; }
++
++  MultiFieldInfo multifield_info(int i) const {
++    guarantee(_multifield_info != NULL, "Just checking");
++    return _multifield_info->at(i);
++  }
++  void set_multifield_info(Array<MultiFieldInfo>* array) {
++    assert(_multifield_info == NULL, "Must be initialized only once");
++    _multifield_info = array;
++  }
++
+   Array<u2>* preload_classes() const { return _preload_classes; }
+   void set_preload_classes(Array<u2>* c) { _preload_classes = c; }
+ 
+diff --git a/src/hotspot/share/runtime/fieldDescriptor.cpp b/src/hotspot/share/runtime/fieldDescriptor.cpp
+index cad5f2a9675..b0a61f1cc90 100644
+--- a/src/hotspot/share/runtime/fieldDescriptor.cpp
++++ b/src/hotspot/share/runtime/fieldDescriptor.cpp
+@@ -112,7 +112,8 @@ void fieldDescriptor::reinitialize(InstanceKlass* ik, int index) {
+   }
+   FieldInfo* f = ik->field(index);
+   _access_flags = accessFlags_from(f->access_flags());
+-  guarantee(f->name_index() != 0 && f->signature_index() != 0, "bad constant pool index for fieldDescriptor");
++  // assert to be extended to allow multifield names
++  guarantee(/*f->name_index() != 0 &&*/ f->signature_index() != 0, "bad constant pool index for fieldDescriptor");
+   _index = index;
+   verify();
+ }
+diff --git a/src/hotspot/share/runtime/fieldDescriptor.hpp b/src/hotspot/share/runtime/fieldDescriptor.hpp
+index 9ec9d6a7831..142dc090a8d 100644
+--- a/src/hotspot/share/runtime/fieldDescriptor.hpp
++++ b/src/hotspot/share/runtime/fieldDescriptor.hpp
+@@ -95,6 +95,9 @@ class fieldDescriptor {
+   bool is_transient()             const    { return access_flags().is_transient(); }
+   inline bool is_inlined() const;
+   inline bool is_inline_type()    const;
++  inline bool is_multifield()            const;
++  inline u2   multifield_base()          const;
++  inline jbyte multifield_index()        const;
+ 
+   bool is_synthetic()             const    { return access_flags().is_synthetic(); }
+ 
+diff --git a/src/hotspot/share/runtime/fieldDescriptor.inline.hpp b/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
+index e402f1846a1..3b321328012 100644
+--- a/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
++++ b/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
+@@ -34,7 +34,7 @@
+ // must be put in this file, as they require runtime/handles.inline.hpp.
+ 
+ inline Symbol* fieldDescriptor::name() const {
+-  return field()->name(_cp());
++  return field()->name(field_holder()->multifield_info(),  _cp());
+ }
+ 
+ inline Symbol* fieldDescriptor::signature() const {
+@@ -85,4 +85,8 @@ inline BasicType fieldDescriptor::field_type() const {
+ inline bool fieldDescriptor::is_inlined()  const  { return field()->is_inlined(); }
+ inline bool fieldDescriptor::is_inline_type() const { return Signature::basic_type(field()->signature(_cp())) == T_PRIMITIVE_OBJECT; }
+ 
++inline bool fieldDescriptor::is_multifield() const { return field()->is_multifield(); };
++inline u2   fieldDescriptor::multifield_base() const { return field_holder()->multifield_info(field()->secondary_index()).base_index(); }
++inline jbyte fieldDescriptor::multifield_index() const { return  field_holder()->multifield_info(field()->secondary_index()).multifield_index(); }
++
+ #endif // SHARE_RUNTIME_FIELDDESCRIPTOR_INLINE_HPP
+\ No newline at end of file
+diff --git a/src/java.base/share/classes/java/lang/MultiField.java b/src/java.base/share/classes/java/lang/MultiField.java
+new file mode 100644
+index 00000000000..db5d6b6d149
+--- /dev/null
++++ b/src/java.base/share/classes/java/lang/MultiField.java
+@@ -0,0 +1,52 @@
++/*
++* Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
++* DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++*
++* This code is free software; you can redistribute it and/or modify it
++* under the terms of the GNU General Public License version 2 only, as
++* published by the Free Software Foundation.  Oracle designates this
++* particular file as subject to the "Classpath" exception as provided
++* by Oracle in the LICENSE file that accompanied this code.
++*
++* This code is distributed in the hope that it will be useful, but WITHOUT
++* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++* FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++* version 2 for more details (a copy is included in the LICENSE file that
++* accompanied this code).
++*
++* You should have received a copy of the GNU General Public License version
++* 2 along with this work; if not, write to the Free Software Foundation,
++* Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++*
++* Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++* or visit www.oracle.com if you need additional information or have any
++* questions.
++*/
++
++package jdk.internal.vm.annotation;
++
++import java.lang.annotation.ElementType;
++import java.lang.annotation.Retention;
++import java.lang.annotation.RetentionPolicy;
++import java.lang.annotation.Target;
++
++/**
++* <p>An annotation expressing that the field has to be
++* replicated several times and all replication must be
++* layed out contiguously in memory. The annotation is
++* ignored if the type of the field is not one of the
++* eight Java basic primitive types: boolean, byte, short,
++* char, int, long, float, double.
++*/
++@Retention(RetentionPolicy.RUNTIME)
++@Target({ElementType.FIELD})
++public @interface MultiField {
++
++   /**
++    * The total number of fields (initial plus replicated).
++    * This tag is only meaningful for field level annotations.
++    *
++    * @return total number of fields to layout.
++    */
++   byte value() default 0;
++}
+\ No newline at end of file

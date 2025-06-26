@@ -1,0 +1,492 @@
+diff --git a/src/hotspot/share/compiler/compilerDirectives.hpp b/src/hotspot/share/compiler/compilerDirectives.hpp
+index fc814868921..fdb3d715ac5 100644
+--- a/src/hotspot/share/compiler/compilerDirectives.hpp
++++ b/src/hotspot/share/compiler/compilerDirectives.hpp
+@@ -64,6 +64,7 @@
+     cflags(BlockLayoutByFrequency,  bool, BlockLayoutByFrequency,  BlockLayoutByFrequency) \
+     cflags(PrintOptoAssembly,       bool, PrintOptoAssembly, PrintOptoAssembly) \
+     cflags(PrintIntrinsics,         bool, PrintIntrinsics, PrintIntrinsics) \
++    cflags(TraceLoopOpts,     bool, TraceLoopOpts, TraceLoopOpts) \
+ NOT_PRODUCT(cflags(TraceOptoPipelining, bool, TraceOptoPipelining, TraceOptoPipelining)) \
+ NOT_PRODUCT(cflags(TraceOptoOutput,     bool, TraceOptoOutput, TraceOptoOutput)) \
+ NOT_PRODUCT(cflags(TraceEscapeAnalysis, bool, false, TraceEscapeAnalysis)) \
+diff --git a/src/hotspot/share/compiler/compilerOracle.hpp b/src/hotspot/share/compiler/compilerOracle.hpp
+index 52ebce474df..86f8d6182d5 100644
+--- a/src/hotspot/share/compiler/compilerOracle.hpp
++++ b/src/hotspot/share/compiler/compilerOracle.hpp
+@@ -79,6 +79,7 @@ class methodHandle;
+   option(TraceOptoPipelining, "TraceOptoPipelining", Bool) \
+   option(TraceOptoOutput, "TraceOptoOutput", Bool) \
+   option(TraceSpilling, "TraceSpilling", Bool) \
++  option(TraceLoopOpts, "TraceLoopOpts", Bool) \
+ NOT_PRODUCT(option(TraceEscapeAnalysis, "TraceEscapeAnalysis", Bool)) \
+ NOT_PRODUCT(option(PrintIdeal, "PrintIdeal", Bool))  \
+ NOT_PRODUCT(option(PrintIdealPhase, "PrintIdealPhase", Ccstrlist)) \
+diff --git a/src/hotspot/share/opto/compile.cpp b/src/hotspot/share/opto/compile.cpp
+index 0c3fb5d74e2..bd3ad5f3166 100644
+--- a/src/hotspot/share/opto/compile.cpp
++++ b/src/hotspot/share/opto/compile.cpp
+@@ -593,6 +593,7 @@ Compile::Compile( ciEnv* ci_env, ciMethod* target, int osr_bci,
+                   _inlining_incrementally(false),
+                   _do_cleanup(false),
+                   _has_reserved_stack_access(target->has_reserved_stack_access()),
++                  _trace_loop_opts(directive->TraceLoopOptsOption),
+ #ifndef PRODUCT
+                   _igv_idx(0),
+                   _trace_opto_output(directive->TraceOptoOutputOption),
+diff --git a/src/hotspot/share/opto/compile.hpp b/src/hotspot/share/opto/compile.hpp
+index a622f136944..9c368b7ac83 100644
+--- a/src/hotspot/share/opto/compile.hpp
++++ b/src/hotspot/share/opto/compile.hpp
+@@ -332,6 +332,7 @@ class Compile : public Phase {
+   bool                  _print_assembly;        // True if we should dump assembly code for this compilation
+   bool                  _print_inlining;        // True if we should print inlining for this compilation
+   bool                  _print_intrinsics;      // True if we should print intrinsics for this compilation
++  bool                  _trace_loop_opts;
+ #ifndef PRODUCT
+   uint                  _igv_idx;               // Counter for IGV node identifiers
+   bool                  _trace_opto_output;
+@@ -642,6 +643,7 @@ class Compile : public Phase {
+     return method() != NULL && method()->has_option(option);
+   }
+ 
++  bool          trace_loop_opts() const       { return _trace_loop_opts; }
+ #ifndef PRODUCT
+   uint          next_igv_idx()                  { return _igv_idx++; }
+   bool          trace_opto_output() const       { return _trace_opto_output; }
+diff --git a/src/hotspot/share/opto/loopPredicate.cpp b/src/hotspot/share/opto/loopPredicate.cpp
+index 4f63b504b8a..22f6ce04d88 100644
+--- a/src/hotspot/share/opto/loopPredicate.cpp
++++ b/src/hotspot/share/opto/loopPredicate.cpp
+@@ -1275,7 +1275,7 @@ bool PhaseIdealLoop::loop_predication_impl_helper(IdealLoopTree *loop, ProjNode*
+     if (TraceLoopPredicate) {
+       tty->print("Predicate invariant if%s: %d ", negated ? " negated" : "", new_predicate_iff->_idx);
+       loop->dump_head();
+-    } else if (TraceLoopOpts) {
++    } else if (TraceLoopOpts || C->trace_loop_opts()) {
+       tty->print("Predicate IC ");
+       loop->dump_head();
+     }
+@@ -1346,7 +1346,7 @@ bool PhaseIdealLoop::loop_predication_impl_helper(IdealLoopTree *loop, ProjNode*
+     }
+ 
+ #ifndef PRODUCT
+-    if (TraceLoopOpts && !TraceLoopPredicate) {
++    if ((TraceLoopOpts || C->trace_loop_opts()) && !TraceLoopPredicate) {
+       tty->print("Predicate RC ");
+       loop->dump_head();
+     }
+diff --git a/src/hotspot/share/opto/loopTransform.cpp b/src/hotspot/share/opto/loopTransform.cpp
+index b3a7594ec88..705ae984678 100644
+--- a/src/hotspot/share/opto/loopTransform.cpp
++++ b/src/hotspot/share/opto/loopTransform.cpp
+@@ -695,7 +695,7 @@ void PhaseIdealLoop::do_peeling(IdealLoopTree *loop, Node_List &old_new) {
+   // no longer a 'main' loop; it will need new pre and post loops before
+   // we can do further RCE.
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("Peel         ");
+     loop->dump_head();
+   }
+@@ -1561,7 +1561,7 @@ void PhaseIdealLoop::copy_skeleton_predicates_to_main_loop(CountedLoopNode* pre_
+ void PhaseIdealLoop::insert_pre_post_loops(IdealLoopTree *loop, Node_List &old_new, bool peel_only) {
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     if (peel_only)
+       tty->print("PeelMainPost ");
+     else
+@@ -1812,7 +1812,7 @@ void PhaseIdealLoop::insert_vector_post_loop(IdealLoopTree *loop, Node_List &old
+   }
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("PostVector  ");
+     loop->dump_head();
+   }
+@@ -1862,7 +1862,7 @@ void PhaseIdealLoop::insert_scalar_rced_post_loop(IdealLoopTree *loop, Node_List
+   if (!cl->is_main_loop() || cl->range_checks_present()) return;
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("PostScalarRce  ");
+     loop->dump_head();
+   }
+@@ -2130,7 +2130,7 @@ void PhaseIdealLoop::do_unroll(IdealLoopTree *loop, Node_List &old_new, bool adj
+   if (PrintOpto && VerifyLoopOptimizations) {
+     tty->print("Unrolling ");
+     loop->dump_head();
+-  } else if (TraceLoopOpts) {
++  } else if (TraceLoopOpts || C->trace_loop_opts()) {
+     if (loop_head->trip_count() < (uint)LoopUnrollLimit) {
+       tty->print("Unroll %d(%2d) ", loop_head->unrolled_count()*2, loop_head->trip_count());
+     } else {
+@@ -2139,7 +2139,7 @@ void PhaseIdealLoop::do_unroll(IdealLoopTree *loop, Node_List &old_new, bool adj
+     loop->dump_head();
+   }
+ 
+-  if (C->do_vector_loop() && (PrintOpto && (VerifyLoopOptimizations || TraceLoopOpts))) {
++  if (C->do_vector_loop() && (PrintOpto && (VerifyLoopOptimizations || TraceLoopOpts || C->trace_loop_opts()))) {
+     Node_Stack stack(C->live_nodes() >> 2);
+     Node_List rpo_list;
+     VectorSet visited;
+@@ -2397,7 +2397,7 @@ void PhaseIdealLoop::do_unroll(IdealLoopTree *loop, Node_List &old_new, bool adj
+   loop_head->clear_strip_mined();
+ 
+ #ifndef PRODUCT
+-  if (C->do_vector_loop() && (PrintOpto && (VerifyLoopOptimizations || TraceLoopOpts))) {
++  if (C->do_vector_loop() && (PrintOpto && (VerifyLoopOptimizations || TraceLoopOpts || C->trace_loop_opts()))) {
+     tty->print("\nnew loop after unroll\n");       loop->dump_head();
+     for (uint i = 0; i < loop->_body.size(); i++) {
+       loop->_body.at(i)->dump();
+@@ -2427,7 +2427,7 @@ void PhaseIdealLoop::do_maximally_unroll(IdealLoopTree *loop, Node_List &old_new
+   assert(cl->has_exact_trip_count(), "trip count is not exact");
+   assert(cl->trip_count() > 0, "");
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("MaxUnroll  %d ", cl->trip_count());
+     loop->dump_head();
+   }
+@@ -2905,7 +2905,7 @@ int PhaseIdealLoop::do_range_check(IdealLoopTree *loop, Node_List &old_new) {
+   if (PrintOpto && VerifyLoopOptimizations) {
+     tty->print("Range Check Elimination ");
+     loop->dump_head();
+-  } else if (TraceLoopOpts) {
++  } else if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("RangeCheck   ");
+     loop->dump_head();
+   }
+@@ -3290,7 +3290,7 @@ bool PhaseIdealLoop::multi_version_post_loops(IdealLoopTree *rce_loop, IdealLoop
+   if (!ctrl->is_IfTrue() && !ctrl->is_IfFalse()) return multi_version_succeeded;
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("PostMultiVersion\n");
+     rce_loop->dump_head();
+     legacy_loop->dump_head();
+@@ -3587,7 +3587,7 @@ bool IdealLoopTree::do_remove_empty_loop(PhaseIdealLoop *phase) {
+   if (PrintOpto) {
+     tty->print("Removing empty loop with%s zero trip guard", needs_guard ? "out" : "");
+     this->dump_head();
+-  } else if (TraceLoopOpts) {
++  } else if (TraceLoopOpts || phase->C->trace_loop_opts()) {
+     tty->print("Empty with%s zero trip guard   ", needs_guard ? "out" : "");
+     this->dump_head();
+   }
+@@ -3639,7 +3639,7 @@ bool IdealLoopTree::do_one_iteration_loop(PhaseIdealLoop *phase) {
+   }
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || phase->C->trace_loop_opts()) {
+     tty->print("OneIteration ");
+     this->dump_head();
+   }
+@@ -4140,7 +4140,7 @@ bool PhaseIdealLoop::intrinsify_fill(IdealLoopTree* lpt) {
+   }
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("ArrayFill    ");
+     lpt->dump_head();
+   }
+diff --git a/src/hotspot/share/opto/loopUnswitch.cpp b/src/hotspot/share/opto/loopUnswitch.cpp
+index a141b8e15aa..9f66311b1d4 100644
+--- a/src/hotspot/share/opto/loopUnswitch.cpp
++++ b/src/hotspot/share/opto/loopUnswitch.cpp
+@@ -136,7 +136,7 @@ void PhaseIdealLoop::do_unswitching(IdealLoopTree *loop, Node_List &old_new) {
+   assert(unswitch_iff != NULL, "should be at least one");
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("Unswitch   %d ", head->unswitch_count()+1);
+     loop->dump_head();
+   }
+@@ -311,7 +311,7 @@ LoopNode* PhaseIdealLoop::create_reserve_version_of_loop(IdealLoopTree *loop, Co
+   LoopNode* slow_head = old_new[head->_idx]->as_Loop();
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print_cr("PhaseIdealLoop::create_reserve_version_of_loop:");
+     tty->print("\t iff = %d, ", iff->_idx); iff->dump();
+     tty->print("\t iffast = %d, ", iffast->_idx); iffast->dump();
+@@ -331,7 +331,7 @@ LoopNode* PhaseIdealLoop::create_reserve_version_of_loop(IdealLoopTree *loop, Co
+   lk->set_iff(iff);
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts ) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("\t after  replace_input_of: head = %d, ", head->_idx); head->dump();
+     tty->print("\t after  replace_input_of: slow_head = %d, ", slow_head->_idx); slow_head->dump();
+   }
+@@ -365,7 +365,7 @@ CountedLoopReserveKit::~CountedLoopReserveKit() {
+     _iff->set_req(1, const_0);
+ 
+     #ifndef PRODUCT
+-      if (TraceLoopOpts) {
++      if (TraceLoopOpts || _phase->C->trace_loop_opts()) {
+         tty->print_cr("CountedLoopReserveKit::~CountedLoopReserveKit()");
+         tty->print("\t discard loop %d and revert to the reserved loop clone %d: ", _lp->_idx, _lp_reserved->_idx);
+         _lp_reserved->dump();
+@@ -380,14 +380,14 @@ bool CountedLoopReserveKit::create_reserve() {
+   }
+ 
+   if(!_lpt->_head->is_CountedLoop()) {
+-    if (TraceLoopOpts) {
++    if (TraceLoopOpts || _phase->C->trace_loop_opts()) {
+       tty->print_cr("CountedLoopReserveKit::create_reserve: %d not counted loop", _lpt->_head->_idx);
+     }
+     return false;
+   }
+   CountedLoopNode *cl = _lpt->_head->as_CountedLoop();
+   if (!cl->is_valid_counted_loop(T_INT)) {
+-    if (TraceLoopOpts) {
++    if (TraceLoopOpts || _phase->C->trace_loop_opts()) {
+       tty->print_cr("CountedLoopReserveKit::create_reserve: %d not valid counted loop", cl->_idx);
+     }
+     return false; // skip malformed counted loop
+@@ -399,7 +399,7 @@ bool CountedLoopReserveKit::create_reserve() {
+     }
+     // only reject some loop forms
+     if (loop_not_canonical) {
+-      if (TraceLoopOpts) {
++      if (TraceLoopOpts || _phase->C->trace_loop_opts()) {
+         tty->print_cr("CountedLoopReserveKit::create_reserve: %d not canonical loop", cl->_idx);
+       }
+       return false; // skip normal, pre, and post (conditionally) loops
+diff --git a/src/hotspot/share/opto/loopnode.cpp b/src/hotspot/share/opto/loopnode.cpp
+index 742e745a978..b1f71e9c3ba 100644
+--- a/src/hotspot/share/opto/loopnode.cpp
++++ b/src/hotspot/share/opto/loopnode.cpp
+@@ -2066,7 +2066,7 @@ bool PhaseIdealLoop::is_counted_loop(Node* x, IdealLoopTree*&loop, BasicType iv_
+   assert(l == loop->_head && l->phi() == phi && l->loopexit_or_null() == lex, "" );
+ #endif
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("Counted      ");
+     loop->dump_head();
+   }
+@@ -3703,7 +3703,7 @@ void PhaseIdealLoop::replace_parallel_iv(IdealLoopTree *loop) {
+ 
+     if ((ratio_con * stride_con) == stride_con2) { // Check for exact
+ #ifndef PRODUCT
+-      if (TraceLoopOpts) {
++      if (TraceLoopOpts || C->trace_loop_opts()) {
+         tty->print("Parallel IV: %d ", phi2->_idx);
+         loop->dump_head();
+       }
+@@ -4423,7 +4423,7 @@ void PhaseIdealLoop::build_and_optimize() {
+     return;
+   }
+   if (VerifyLoopOptimizations) verify();
+-  if (TraceLoopOpts && C->has_loops()) {
++  if ((TraceLoopOpts || C->trace_loop_opts()) && C->has_loops()) {
+     _ltree_root->dump();
+   }
+ #endif
+@@ -4556,7 +4556,7 @@ void PhaseIdealLoop::build_and_optimize() {
+   // After that switch predicates off and do more loop optimizations.
+   if (!C->major_progress() && (C->predicate_count() > 0)) {
+      C->cleanup_loop_predicates(_igvn);
+-     if (TraceLoopOpts) {
++     if (TraceLoopOpts || C->trace_loop_opts()) {
+        tty->print_cr("PredicatesOff");
+      }
+      C->set_major_progress();
+diff --git a/src/hotspot/share/opto/loopnode.hpp b/src/hotspot/share/opto/loopnode.hpp
+index 13ca3a60816..bd210bd61a3 100644
+--- a/src/hotspot/share/opto/loopnode.hpp
++++ b/src/hotspot/share/opto/loopnode.hpp
+@@ -1757,7 +1757,7 @@ public:
+ 
+   ~AutoNodeBudget() {
+ #ifndef PRODUCT
+-    if (TraceLoopOpts) {
++    if (TraceLoopOpts || _phase->C->trace_loop_opts()) {
+       uint request = _phase->nodes_required();
+       uint delta   = _phase->C->live_nodes() - _nodes_at_begin;
+ 
+diff --git a/src/hotspot/share/opto/loopopts.cpp b/src/hotspot/share/opto/loopopts.cpp
+index 787931782ae..c5d0620463c 100644
+--- a/src/hotspot/share/opto/loopopts.cpp
++++ b/src/hotspot/share/opto/loopopts.cpp
+@@ -769,7 +769,7 @@ Node *PhaseIdealLoop::conditional_move( Node *region ) {
+     register_new_node( cmov, cmov_ctrl );
+     _igvn.replace_node( phi, cmov );
+ #ifndef PRODUCT
+-    if (TraceLoopOpts) {
++    if (TraceLoopOpts || C->trace_loop_opts()) {
+       tty->print("CMOV  ");
+       r_loop->dump_head();
+       if (Verbose) {
+@@ -3493,7 +3493,7 @@ bool PhaseIdealLoop::partial_peel( IdealLoopTree *loop, Node_List &old_new ) {
+   }
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("PartialPeel  ");
+     loop->dump_head();
+   }
+diff --git a/src/hotspot/share/opto/split_if.cpp b/src/hotspot/share/opto/split_if.cpp
+index f85f3996ca5..eb4e3881e1c 100644
+--- a/src/hotspot/share/opto/split_if.cpp
++++ b/src/hotspot/share/opto/split_if.cpp
+@@ -456,7 +456,7 @@ void PhaseIdealLoop::do_split_if(Node* iff, RegionNode** new_false_region, Regio
+   if (PrintOpto && VerifyLoopOptimizations) {
+     tty->print_cr("Split-if");
+   }
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print_cr("SplitIf");
+   }
+ 
+diff --git a/src/hotspot/share/opto/superword.cpp b/src/hotspot/share/opto/superword.cpp
+index 087a20c425a..1d203734943 100644
+--- a/src/hotspot/share/opto/superword.cpp
++++ b/src/hotspot/share/opto/superword.cpp
+@@ -2451,7 +2451,7 @@ bool SuperWord::output() {
+          "non-reduction loop contains reduction nodes");
+ 
+ #ifndef PRODUCT
+-  if (TraceLoopOpts) {
++  if (TraceLoopOpts || C->trace_loop_opts()) {
+     tty->print("SuperWord::output    ");
+     lpt()->dump_head();
+   }
+@@ -2479,7 +2479,7 @@ bool SuperWord::output() {
+   NOT_PRODUCT(if(is_trace_loop_reverse()) {tty->print_cr("SWPointer::output: print loop after create_reserve_version_of_loop"); print_loop(true);})
+ 
+   if (do_reserve_copy() && !make_reversable.has_reserved()) {
+-    NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: loop was not reserved correctly, exiting SuperWord");})
++    NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: loop was not reserved correctly, exiting SuperWord");})
+     return false;
+   }
+ 
+@@ -2539,7 +2539,7 @@ bool SuperWord::output() {
+         Node* val = vector_opd(p, MemNode::ValueIn);
+         if (val == NULL) {
+           if (do_reserve_copy()) {
+-            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: val should not be NULL, exiting SuperWord");})
++            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: val should not be NULL, exiting SuperWord");})
+             return false; //and reverse to backup IG
+           }
+           ShouldNotReachHere();
+@@ -2596,7 +2596,7 @@ bool SuperWord::output() {
+           in1 = vector_opd(p, 1);
+           if (in1 == NULL) {
+             if (do_reserve_copy()) {
+-              NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: in1 should not be NULL, exiting SuperWord");})
++              NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: in1 should not be NULL, exiting SuperWord");})
+               return false; //and reverse to backup IG
+             }
+             ShouldNotReachHere();
+@@ -2605,7 +2605,7 @@ bool SuperWord::output() {
+         Node* in2 = vector_opd(p, 2);
+         if (in2 == NULL) {
+           if (do_reserve_copy()) {
+-            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: in2 should not be NULL, exiting SuperWord");})
++            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: in2 should not be NULL, exiting SuperWord");})
+             return false; //and reverse to backup IG
+           }
+           ShouldNotReachHere();
+@@ -2675,7 +2675,7 @@ bool SuperWord::output() {
+         assert(bol->is_Bool(), "should be BoolNode - too late to bail out!");
+         if (!bol->is_Bool()) {
+           if (do_reserve_copy()) {
+-            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: expected %d bool node, exiting SuperWord", bol->_idx); bol->dump();})
++            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: expected %d bool node, exiting SuperWord", bol->_idx); bol->dump();})
+             return false; //and reverse to backup IG
+           }
+           ShouldNotReachHere();
+@@ -2691,7 +2691,7 @@ bool SuperWord::output() {
+         Node* src1 = vector_opd(p, 2); //2=CMoveNode::IfFalse
+         if (src1 == NULL) {
+           if (do_reserve_copy()) {
+-            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: src1 should not be NULL, exiting SuperWord");})
++            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: src1 should not be NULL, exiting SuperWord");})
+             return false; //and reverse to backup IG
+           }
+           ShouldNotReachHere();
+@@ -2699,7 +2699,7 @@ bool SuperWord::output() {
+         Node* src2 = vector_opd(p, 3); //3=CMoveNode::IfTrue
+         if (src2 == NULL) {
+           if (do_reserve_copy()) {
+-            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: src2 should not be NULL, exiting SuperWord");})
++            NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: src2 should not be NULL, exiting SuperWord");})
+             return false; //and reverse to backup IG
+           }
+           ShouldNotReachHere();
+@@ -2723,7 +2723,7 @@ bool SuperWord::output() {
+         vlen_in_bytes = vn->as_Vector()->length_in_bytes();
+       } else {
+         if (do_reserve_copy()) {
+-          NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: Unhandled scalar opcode (%s), ShouldNotReachHere, exiting SuperWord", NodeClassNames[opc]);})
++          NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: Unhandled scalar opcode (%s), ShouldNotReachHere, exiting SuperWord", NodeClassNames[opc]);})
+           return false; //and reverse to backup IG
+         }
+         ShouldNotReachHere();
+@@ -2732,7 +2732,7 @@ bool SuperWord::output() {
+       assert(vn != NULL, "sanity");
+       if (vn == NULL) {
+         if (do_reserve_copy()){
+-          NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("SWPointer::output: got NULL node, cannot proceed, exiting SuperWord");})
++          NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || C->trace_loop_opts()) {tty->print_cr("SWPointer::output: got NULL node, cannot proceed, exiting SuperWord");})
+           return false; //and reverse to backup IG
+         }
+         ShouldNotReachHere();
+@@ -2945,7 +2945,7 @@ Node* SuperWord::vector_opd(Node_List* p, int opd_idx) {
+     if (opd->is_Vector() || opd->is_LoadVector()) {
+       assert(((opd_idx != 2) || !VectorNode::is_shift(p0)), "shift's count can't be vector");
+       if (opd_idx == 2 && VectorNode::is_shift(p0)) {
+-        NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("shift's count can't be vector");})
++        NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || _phase->C->trace_loop_opts()) {tty->print_cr("shift's count can't be vector");})
+         return NULL;
+       }
+       return opd; // input is matching vector
+@@ -2970,7 +2970,7 @@ Node* SuperWord::vector_opd(Node_List* p, int opd_idx) {
+         }
+         assert(opd->bottom_type()->isa_int(), "int type only");
+         if (!opd->bottom_type()->isa_int()) {
+-          NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("Should be int type only");})
++          NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || _phase->C->trace_loop_opts()) {tty->print_cr("Should be int type only");})
+           return NULL;
+         }
+       }
+@@ -2982,7 +2982,7 @@ Node* SuperWord::vector_opd(Node_List* p, int opd_idx) {
+     }
+     assert(!opd->is_StoreVector(), "such vector is not expected here");
+     if (opd->is_StoreVector()) {
+-      NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("StoreVector is not expected here");})
++      NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || _phase->C->trace_loop_opts()) {tty->print_cr("StoreVector is not expected here");})
+       return NULL;
+     }
+     // Convert scalar input to vector with the same number of elements as
+@@ -3026,7 +3026,7 @@ Node* SuperWord::vector_opd(Node_List* p, int opd_idx) {
+     Node* in = pi->in(opd_idx);
+     assert(my_pack(in) == NULL, "Should already have been unpacked");
+     if (my_pack(in) != NULL) {
+-      NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts) {tty->print_cr("Should already have been unpacked");})
++      NOT_PRODUCT(if(is_trace_loop_reverse() || TraceLoopOpts || _phase->C->trace_loop_opts()) {tty->print_cr("Should already have been unpacked");})
+       return NULL;
+     }
+     assert(opd_bt == in->bottom_type()->basic_type(), "all same type");
+@@ -3035,7 +3035,7 @@ Node* SuperWord::vector_opd(Node_List* p, int opd_idx) {
+       Node* in2 = pi->in(opd_idx + 2);
+       assert(my_pack(in2) == NULL, "Should already have been unpacked");
+       if (my_pack(in2) != NULL) {
+-        NOT_PRODUCT(if (is_trace_loop_reverse() || TraceLoopOpts) { tty->print_cr("Should already have been unpacked"); })
++        NOT_PRODUCT(if (is_trace_loop_reverse() || TraceLoopOpts || _phase->C->trace_loop_opts()) { tty->print_cr("Should already have been unpacked"); })
+           return NULL;
+       }
+       assert(opd_bt == in2->bottom_type()->basic_type(), "all same type");

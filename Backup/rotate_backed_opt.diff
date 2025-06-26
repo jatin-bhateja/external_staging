@@ -1,0 +1,119 @@
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index c2801a791cb..96d4cd5c988 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -6508,3 +6508,29 @@ void C2_MacroAssembler::vector_rearrange_int_float(BasicType bt, XMMRegister dst
+     vpermps(dst, shuffle, src, vlen_enc);
+   }
+ }
++
++void C2_MacroAssembler::vector_shift_legacy32B(int opcode, XMMRegister dst, XMMRegister src, XMMRegister shift,
++                                               XMMRegister vtmp1, XMMRegister vtmp2, int vlen_enc) {
++  bool sign = (opcode != Op_URShiftVS);
++  // Shift lower half, with result in vtmp2 using vtmp1 as TEMP
++  vextendwd(sign, vtmp2, src, vlen_enc);
++  vpmovzxwd(vtmp1, shift, vlen_enc);
++  varshiftd(opcode, vtmp2, vtmp2, vtmp1, vlen_enc);
++  vpand(vtmp2, vtmp2, ExternalAddress(vector_int_to_short_mask()), vlen_enc, noreg);
++
++  // Shift upper half, with result in dst using vtmp1 as TEMP
++  vextracti128_high(dst, src);
++  vextracti128_high(vtmp1, shift);
++  vextendwd(sign, dst, dst, vlen_enc);
++  vpmovzxwd(vtmp1, vtmp1, vlen_enc);
++  varshiftd(opcode, dst, dst, vtmp1, vlen_enc);
++  vpand(dst, dst, ExternalAddress(vector_int_to_short_mask()), vlen_enc, noreg);
++
++  // Merge lower and upper half result into dst
++  vpackusdw(dst, vtmp2, dst, vlen_enc);
++  vpermq(dst, dst, 0xD8, vlen_enc);
++}
++
++void C2_MacroAssembler::vector_rotate_short_evex( ) {
++
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index af57546b3d1..15cbb3db8be 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -498,6 +498,11 @@
+                        Register mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3, Register rtmp,
+                        Register midx, Register length, int vector_len, int vlen_enc);
+ 
++  void vector_shift_legacy32B(int opcode, XMMRegister dst, XMMRegister src, XMMRegister shift, XMMRegister vtmp1,
++                              XMMRegister vtmp2, int vlen_enc);
++
++  void vector_shift_legacy16B(int opcode, XMMRegister dst, XMMRegister src, XMMRegister shift, XMMRegister vtmp,
++                              int vlen_enc);
+ #ifdef _LP64
+   void vgather8b_masked_offset(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
+                                Register offset, Register mask, Register midx, Register rtmp, int vlen_enc);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 2b29dd14e4b..b7736f03030 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1740,9 +1740,14 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+       break;
+     case Op_RotateRightV:
+     case Op_RotateLeftV:
+-      if (bt != T_INT && bt != T_LONG) {
++      if (bt == T_INT || bt == T_LONG) {
++        return VM_Version::supports_evex() && ((size_in_bits == 512) || VM_Version::supports_avx512vl());
++      }
++      if (bt == T_SHORT && (!VM_Version::supports_avx512bw() || (size_in_bits != 512 && !VM_Version::supports_avx512vl()))) {
++        // AVX512BW support direct short vector shift instruction, thus do not incur unpacking penalty.
+         return false;
+-      } // fallthrough
++      }
++      break;
+     case Op_MacroLogicV:
+       if (!VM_Version::supports_evex() ||
+           ((size_in_bits != 512) && !VM_Version::supports_avx512vl())) {
+@@ -7115,16 +7120,8 @@ instruct vshift8S_var_nobw(vec dst, vec src, vec shift, vec vtmp) %{
+   format %{ "vector_var_shift_left_short $dst, $src, $shift\n\t" %}
+   ins_encode %{
+     assert(UseAVX >= 2, "required");
+-
+-    int opcode = this->ideal_Opcode();
+-    bool sign = (opcode != Op_URShiftVS);
+     int vlen_enc = Assembler::AVX_256bit;
+-    __ vextendwd(sign, $dst$$XMMRegister, $src$$XMMRegister, 1);
+-    __ vpmovzxwd($vtmp$$XMMRegister, $shift$$XMMRegister, 1);
+-    __ varshiftd(opcode, $dst$$XMMRegister, $dst$$XMMRegister, $vtmp$$XMMRegister, vlen_enc);
+-    __ vpand($dst$$XMMRegister, $dst$$XMMRegister, ExternalAddress(vector_int_to_short_mask()), vlen_enc, noreg);
+-    __ vextracti128_high($vtmp$$XMMRegister, $dst$$XMMRegister);
+-    __ vpackusdw($dst$$XMMRegister, $dst$$XMMRegister, $vtmp$$XMMRegister, 0);
++    __ varshiftbw(this->ideal_Opcode(), $dst$$XMMRegister, $src$$XMMRegister, $shift$$XMMRegister, vlen_enc, $vtmp$$XMMRegister);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -7140,27 +7137,9 @@ instruct vshift16S_var_nobw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2) %
+   format %{ "vector_var_shift_left_short $dst, $src, $shift\n\t" %}
+   ins_encode %{
+     assert(UseAVX >= 2, "required");
+-
+-    int opcode = this->ideal_Opcode();
+-    bool sign = (opcode != Op_URShiftVS);
+     int vlen_enc = Assembler::AVX_256bit;
+-    // Shift lower half, with result in vtmp2 using vtmp1 as TEMP
+-    __ vextendwd(sign, $vtmp2$$XMMRegister, $src$$XMMRegister, vlen_enc);
+-    __ vpmovzxwd($vtmp1$$XMMRegister, $shift$$XMMRegister, vlen_enc);
+-    __ varshiftd(opcode, $vtmp2$$XMMRegister, $vtmp2$$XMMRegister, $vtmp1$$XMMRegister, vlen_enc);
+-    __ vpand($vtmp2$$XMMRegister, $vtmp2$$XMMRegister, ExternalAddress(vector_int_to_short_mask()), vlen_enc, noreg);
+-
+-    // Shift upper half, with result in dst using vtmp1 as TEMP
+-    __ vextracti128_high($dst$$XMMRegister, $src$$XMMRegister);
+-    __ vextracti128_high($vtmp1$$XMMRegister, $shift$$XMMRegister);
+-    __ vextendwd(sign, $dst$$XMMRegister, $dst$$XMMRegister, vlen_enc);
+-    __ vpmovzxwd($vtmp1$$XMMRegister, $vtmp1$$XMMRegister, vlen_enc);
+-    __ varshiftd(opcode, $dst$$XMMRegister, $dst$$XMMRegister, $vtmp1$$XMMRegister, vlen_enc);
+-    __ vpand($dst$$XMMRegister, $dst$$XMMRegister, ExternalAddress(vector_int_to_short_mask()), vlen_enc, noreg);
+-
+-    // Merge lower and upper half result into dst
+-    __ vpackusdw($dst$$XMMRegister, $vtmp2$$XMMRegister, $dst$$XMMRegister, vlen_enc);
+-    __ vpermq($dst$$XMMRegister, $dst$$XMMRegister, 0xD8, vlen_enc);
++    __ vector_shift_legacy16S(this->ideal_Opcode(), $dst$$XMMRegister, $src$$XMMRegister, $shift$$XMMRegister,
++                              $vtmp1$$XMMRegister, $vtmp2$$XMMRegister, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}

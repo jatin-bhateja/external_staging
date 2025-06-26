@@ -1,0 +1,579 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 5a8569dc6e0..3f6d5a44b0d 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -6196,7 +6196,7 @@ instruct vshiftcnt(vec dst, rRegI cnt) %{
+ 
+ // Byte vector shift
+ instruct vshiftB(vec dst, vec src, vec shift, vec tmp, rRegI scratch) %{
+-  predicate(Matcher::vector_length(n) <= 8 && VectorNode::is_vshift_cnt(n->in(2)));
++  predicate(Matcher::vector_length(n) <= 8 && !n->as_ShiftV()->is_var_shift());
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+   match(Set dst (URShiftVB src shift));
+@@ -6216,7 +6216,7 @@ instruct vshiftB(vec dst, vec src, vec shift, vec tmp, rRegI scratch) %{
+ %}
+ 
+ instruct vshift16B(vec dst, vec src, vec shift, vec tmp1, vec tmp2, rRegI scratch) %{
+-  predicate(Matcher::vector_length(n) == 16 && VectorNode::is_vshift_cnt(n->in(2)) &&
++  predicate(Matcher::vector_length(n) == 16 && !n->as_ShiftV()->is_var_shift() &&
+             UseAVX <= 1);
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+@@ -6241,7 +6241,7 @@ instruct vshift16B(vec dst, vec src, vec shift, vec tmp1, vec tmp2, rRegI scratc
+ %}
+ 
+ instruct vshift16B_avx(vec dst, vec src, vec shift, vec tmp, rRegI scratch) %{
+-  predicate(Matcher::vector_length(n) == 16 && VectorNode::is_vshift_cnt(n->in(2)) &&
++  predicate(Matcher::vector_length(n) == 16 && !n->as_ShiftV()->is_var_shift() &&
+             UseAVX > 1);
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+@@ -6262,7 +6262,7 @@ instruct vshift16B_avx(vec dst, vec src, vec shift, vec tmp, rRegI scratch) %{
+ %}
+ 
+ instruct vshift32B_avx(vec dst, vec src, vec shift, vec tmp, rRegI scratch) %{
+-  predicate(Matcher::vector_length(n) == 32 && VectorNode::is_vshift_cnt(n->in(2)));
++  predicate(Matcher::vector_length(n) == 32 && !n->as_ShiftV()->is_var_shift());
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+   match(Set dst (URShiftVB src shift));
+@@ -6287,7 +6287,7 @@ instruct vshift32B_avx(vec dst, vec src, vec shift, vec tmp, rRegI scratch) %{
+ %}
+ 
+ instruct vshift64B_avx(vec dst, vec src, vec shift, vec tmp1, vec tmp2, rRegI scratch) %{
+-  predicate(Matcher::vector_length(n) == 64 && VectorNode::is_vshift_cnt(n->in(2)));
++  predicate(Matcher::vector_length(n) == 64 && !n->as_ShiftV()->is_var_shift());
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst  (RShiftVB src shift));
+   match(Set dst (URShiftVB src shift));
+@@ -6320,7 +6320,7 @@ instruct vshift64B_avx(vec dst, vec src, vec shift, vec tmp1, vec tmp2, rRegI sc
+ // unsigned values.
+ // Shorts/Chars vector left shift
+ instruct vshiftS(vec dst, vec src, vec shift) %{
+-  predicate(VectorNode::is_vshift_cnt(n->in(2)));
++  predicate(!n->as_ShiftV()->is_var_shift());
+   match(Set dst ( LShiftVS src shift));
+   match(Set dst ( RShiftVS src shift));
+   match(Set dst (URShiftVS src shift));
+@@ -6351,7 +6351,7 @@ instruct vshiftS(vec dst, vec src, vec shift) %{
+ 
+ // Integers vector left shift
+ instruct vshiftI(vec dst, vec src, vec shift) %{
+-  predicate(VectorNode::is_vshift_cnt(n->in(2)));
++  predicate(!n->as_ShiftV()->is_var_shift());
+   match(Set dst ( LShiftVI src shift));
+   match(Set dst ( RShiftVI src shift));
+   match(Set dst (URShiftVI src shift));
+@@ -6405,7 +6405,7 @@ instruct vshiftI_imm(vec dst, vec src, immI8 shift) %{
+ 
+ // Longs vector shift
+ instruct vshiftL(vec dst, vec src, vec shift) %{
+-  predicate(VectorNode::is_vshift_cnt(n->in(2)));
++  predicate(!n->as_ShiftV()->is_var_shift());
+   match(Set dst ( LShiftVL src shift));
+   match(Set dst (URShiftVL src shift));
+   effect(TEMP dst, USE src, USE shift);
+@@ -6446,7 +6446,7 @@ instruct vshiftL_imm(vec dst, vec src, immI8 shift) %{
+ // -------------------ArithmeticRightShift -----------------------------------
+ // Long vector arithmetic right shift
+ instruct vshiftL_arith_reg(vec dst, vec src, vec shift, vec tmp, rRegI scratch) %{
+-  predicate(VectorNode::is_vshift_cnt(n->in(2)) && UseAVX <= 2);
++  predicate(!n->as_ShiftV()->is_var_shift() && UseAVX <= 2);
+   match(Set dst (RShiftVL src shift));
+   effect(TEMP dst, TEMP tmp, TEMP scratch);
+   format %{ "vshiftq $dst,$src,$shift" %}
+@@ -6475,7 +6475,7 @@ instruct vshiftL_arith_reg(vec dst, vec src, vec shift, vec tmp, rRegI scratch)
+ %}
+ 
+ instruct vshiftL_arith_reg_evex(vec dst, vec src, vec shift) %{
+-  predicate(VectorNode::is_vshift_cnt(n->in(2)) && UseAVX > 2);
++  predicate(!n->as_ShiftV()->is_var_shift() && UseAVX > 2);
+   match(Set dst (RShiftVL src shift));
+   format %{ "vshiftq $dst,$src,$shift" %}
+   ins_encode %{
+@@ -6489,7 +6489,7 @@ instruct vshiftL_arith_reg_evex(vec dst, vec src, vec shift) %{
+ // Byte variable shift
+ instruct vshift8B_var_nobw(vec dst, vec src, vec shift, vec vtmp, rRegP scratch) %{
+   predicate(Matcher::vector_length(n) <= 8 &&
+-            !VectorNode::is_vshift_cnt(n->in(2)) &&
++            n->as_ShiftV()->is_var_shift() &&
+             !VM_Version::supports_avx512bw());
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+@@ -6509,7 +6509,7 @@ instruct vshift8B_var_nobw(vec dst, vec src, vec shift, vec vtmp, rRegP scratch)
+ 
+ instruct vshift16B_var_nobw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2, rRegP scratch) %{
+   predicate(Matcher::vector_length(n) == 16 &&
+-            !VectorNode::is_vshift_cnt(n->in(2)) &&
++            n->as_ShiftV()->is_var_shift() &&
+             !VM_Version::supports_avx512bw());
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+@@ -6537,7 +6537,7 @@ instruct vshift16B_var_nobw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2, r
+ 
+ instruct vshift32B_var_nobw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2, vec vtmp3, vec vtmp4, rRegP scratch) %{
+   predicate(Matcher::vector_length(n) == 32 &&
+-            !VectorNode::is_vshift_cnt(n->in(2)) &&
++            n->as_ShiftV()->is_var_shift() &&
+             !VM_Version::supports_avx512bw());
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+@@ -6573,7 +6573,7 @@ instruct vshift32B_var_nobw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2, v
+ 
+ instruct vshiftB_var_evex_bw(vec dst, vec src, vec shift, vec vtmp, rRegP scratch) %{
+   predicate(Matcher::vector_length(n) <= 32 &&
+-            !VectorNode::is_vshift_cnt(n->in(2)) &&
++            n->as_ShiftV()->is_var_shift() &&
+             VM_Version::supports_avx512bw());
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+@@ -6592,7 +6592,7 @@ instruct vshiftB_var_evex_bw(vec dst, vec src, vec shift, vec vtmp, rRegP scratc
+ 
+ instruct vshift64B_var_evex_bw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2, rRegP scratch) %{
+   predicate(Matcher::vector_length(n) == 64 &&
+-            !VectorNode::is_vshift_cnt(n->in(2)) &&
++            n->as_ShiftV()->is_var_shift() &&
+             VM_Version::supports_avx512bw());
+   match(Set dst ( LShiftVB src shift));
+   match(Set dst ( RShiftVB src shift));
+@@ -6616,7 +6616,7 @@ instruct vshift64B_var_evex_bw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2
+ // Short variable shift
+ instruct vshift8S_var_nobw(vec dst, vec src, vec shift, vec vtmp, rRegP scratch) %{
+   predicate(Matcher::vector_length(n) <= 8 &&
+-            !VectorNode::is_vshift_cnt(n->in(2)) &&
++            n->as_ShiftV()->is_var_shift() &&
+             !VM_Version::supports_avx512bw());
+   match(Set dst ( LShiftVS src shift));
+   match(Set dst ( RShiftVS src shift));
+@@ -6641,7 +6641,7 @@ instruct vshift8S_var_nobw(vec dst, vec src, vec shift, vec vtmp, rRegP scratch)
+ 
+ instruct vshift16S_var_nobw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2, rRegP scratch) %{
+   predicate(Matcher::vector_length(n) == 16 &&
+-            !VectorNode::is_vshift_cnt(n->in(2)) &&
++            n->as_ShiftV()->is_var_shift() &&
+             !VM_Version::supports_avx512bw());
+   match(Set dst ( LShiftVS src shift));
+   match(Set dst ( RShiftVS src shift));
+@@ -6676,7 +6676,7 @@ instruct vshift16S_var_nobw(vec dst, vec src, vec shift, vec vtmp1, vec vtmp2, r
+ %}
+ 
+ instruct vshift16S_var_evex_bw(vec dst, vec src, vec shift) %{
+-  predicate(!VectorNode::is_vshift_cnt(n->in(2)) &&
++  predicate(n->as_ShiftV()->is_var_shift() &&
+             VM_Version::supports_avx512bw());
+   match(Set dst ( LShiftVS src shift));
+   match(Set dst ( RShiftVS src shift));
+@@ -6697,7 +6697,7 @@ instruct vshift16S_var_evex_bw(vec dst, vec src, vec shift) %{
+ 
+ //Integer variable shift
+ instruct vshiftI_var(vec dst, vec src, vec shift) %{
+-  predicate(!VectorNode::is_vshift_cnt(n->in(2)));
++  predicate(n->as_ShiftV()->is_var_shift());
+   match(Set dst ( LShiftVI src shift));
+   match(Set dst ( RShiftVI src shift));
+   match(Set dst (URShiftVI src shift));
+@@ -6714,7 +6714,7 @@ instruct vshiftI_var(vec dst, vec src, vec shift) %{
+ 
+ //Long variable shift
+ instruct vshiftL_var(vec dst, vec src, vec shift) %{
+-  predicate(!VectorNode::is_vshift_cnt(n->in(2)));
++  predicate(n->as_ShiftV()->is_var_shift());
+   match(Set dst ( LShiftVL src shift));
+   match(Set dst (URShiftVL src shift));
+   format %{ "vector_varshift_long $dst,$src,$shift\t!" %}
+@@ -6731,7 +6731,7 @@ instruct vshiftL_var(vec dst, vec src, vec shift) %{
+ //Long variable right shift arithmetic
+ instruct vshiftL_arith_var(vec dst, vec src, vec shift, vec vtmp) %{
+   predicate(Matcher::vector_length(n) <= 4 &&
+-            !VectorNode::is_vshift_cnt(n->in(2)) &&
++            n->as_ShiftV()->is_var_shift() &&
+             UseAVX == 2);
+   match(Set dst (RShiftVL src shift));
+   effect(TEMP dst, TEMP vtmp);
+@@ -6746,7 +6746,7 @@ instruct vshiftL_arith_var(vec dst, vec src, vec shift, vec vtmp) %{
+ %}
+ 
+ instruct vshiftL_arith_var_evex(vec dst, vec src, vec shift) %{
+-  predicate(!VectorNode::is_vshift_cnt(n->in(2)) &&
++  predicate(n->as_ShiftV()->is_var_shift() &&
+             UseAVX > 2);
+   match(Set dst (RShiftVL src shift));
+   format %{ "vector_varfshift_long $dst,$src,$shift\t!" %}
+@@ -9033,6 +9033,7 @@ instruct vlshift_imm_masked(vec dst, immI8 shift, kReg mask) %{
+ %}
+ 
+ instruct vlshift_reg_masked(vec dst, vec src2, kReg mask) %{
++  predicate(!n->as_ShiftV()->is_var_shift());
+   match(Set dst (LShiftVS (Binary dst src2) mask));
+   match(Set dst (LShiftVI (Binary dst src2) mask));
+   match(Set dst (LShiftVL (Binary dst src2) mask));
+@@ -9041,9 +9042,24 @@ instruct vlshift_reg_masked(vec dst, vec src2, kReg mask) %{
+     int vlen_enc = vector_length_encoding(this);
+     BasicType bt = Matcher::vector_element_basic_type(this);
+     int opc = this->ideal_Opcode();
+-    bool is_varshift = !VectorNode::is_vshift_cnt_opcode(in(2)->isa_Mach()->ideal_Opcode());
+     __ evmasked_op(opc, bt, $mask$$KRegister, $dst$$XMMRegister,
+-                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, is_varshift);
++                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, false);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vlshiftv_reg_masked(vec dst, vec src2, kReg mask) %{
++  predicate(n->as_ShiftV()->is_var_shift());
++  match(Set dst (LShiftVS (Binary dst src2) mask));
++  match(Set dst (LShiftVI (Binary dst src2) mask));
++  match(Set dst (LShiftVL (Binary dst src2) mask));
++  format %{ "vplshiftv_masked $dst, $dst, $src2, $mask\t! lshift masked operation" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType bt = Matcher::vector_element_basic_type(this);
++    int opc = this->ideal_Opcode();
++    __ evmasked_op(opc, bt, $mask$$KRegister, $dst$$XMMRegister,
++                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, true);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -9079,6 +9095,7 @@ instruct vrshift_imm_masked(vec dst, immI8 shift, kReg mask) %{
+ %}
+ 
+ instruct vrshift_reg_masked(vec dst, vec src2, kReg mask) %{
++  predicate(!n->as_ShiftV()->is_var_shift());
+   match(Set dst (RShiftVS (Binary dst src2) mask));
+   match(Set dst (RShiftVI (Binary dst src2) mask));
+   match(Set dst (RShiftVL (Binary dst src2) mask));
+@@ -9087,9 +9104,24 @@ instruct vrshift_reg_masked(vec dst, vec src2, kReg mask) %{
+     int vlen_enc = vector_length_encoding(this);
+     BasicType bt = Matcher::vector_element_basic_type(this);
+     int opc = this->ideal_Opcode();
+-    bool is_varshift = !VectorNode::is_vshift_cnt_opcode(in(2)->isa_Mach()->ideal_Opcode());
+     __ evmasked_op(opc, bt, $mask$$KRegister, $dst$$XMMRegister,
+-                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, is_varshift);
++                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, false);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vrshiftv_reg_masked(vec dst, vec src2, kReg mask) %{
++  predicate(n->as_ShiftV()->is_var_shift());
++  match(Set dst (RShiftVS (Binary dst src2) mask));
++  match(Set dst (RShiftVI (Binary dst src2) mask));
++  match(Set dst (RShiftVL (Binary dst src2) mask));
++  format %{ "vprshiftv_masked $dst, $dst, $src2, $mask\t! rshift masked operation" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType bt = Matcher::vector_element_basic_type(this);
++    int opc = this->ideal_Opcode();
++    __ evmasked_op(opc, bt, $mask$$KRegister, $dst$$XMMRegister,
++                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, true);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -9125,6 +9157,7 @@ instruct vurshift_imm_masked(vec dst, immI8 shift, kReg mask) %{
+ %}
+ 
+ instruct vurshift_reg_masked(vec dst, vec src2, kReg mask) %{
++  predicate(!n->as_ShiftV()->is_var_shift());
+   match(Set dst (URShiftVS (Binary dst src2) mask));
+   match(Set dst (URShiftVI (Binary dst src2) mask));
+   match(Set dst (URShiftVL (Binary dst src2) mask));
+@@ -9133,9 +9166,24 @@ instruct vurshift_reg_masked(vec dst, vec src2, kReg mask) %{
+     int vlen_enc = vector_length_encoding(this);
+     BasicType bt = Matcher::vector_element_basic_type(this);
+     int opc = this->ideal_Opcode();
+-    bool is_varshift = !VectorNode::is_vshift_cnt_opcode(in(2)->isa_Mach()->ideal_Opcode());
+     __ evmasked_op(opc, bt, $mask$$KRegister, $dst$$XMMRegister,
+-                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, is_varshift);
++                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, false);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vurshiftv_reg_masked(vec dst, vec src2, kReg mask) %{
++  predicate(n->as_ShiftV()->is_var_shift());
++  match(Set dst (URShiftVS (Binary dst src2) mask));
++  match(Set dst (URShiftVI (Binary dst src2) mask));
++  match(Set dst (URShiftVL (Binary dst src2) mask));
++  format %{ "vpurshiftv_masked $dst, $dst, $src2, $mask\t! urshift masked operation" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType bt = Matcher::vector_element_basic_type(this);
++    int opc = this->ideal_Opcode();
++    __ evmasked_op(opc, bt, $mask$$KRegister, $dst$$XMMRegister,
++                   $dst$$XMMRegister, $src2$$XMMRegister, true, vlen_enc, true);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index 1c226cbf2a4..94fd6ac3385 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -175,6 +175,7 @@ class VectorMaskCmpNode;
+ class VectorUnboxNode;
+ class VectorSet;
+ class VectorReinterpretNode;
++class ShiftVNode;
+ 
+ // The type of all node counts and indexes.
+ // It must hold at least 16 bits, but must also be fast to load and store.
+@@ -711,6 +712,7 @@ public:
+         DEFINE_CLASS_ID(VectorMaskCmp, Vector, 0)
+         DEFINE_CLASS_ID(VectorUnbox, Vector, 1)
+         DEFINE_CLASS_ID(VectorReinterpret, Vector, 2)
++        DEFINE_CLASS_ID(ShiftV, Vector, 3)
+ 
+     DEFINE_CLASS_ID(Proj,  Node, 3)
+       DEFINE_CLASS_ID(CatchProj, Proj, 0)
+@@ -945,6 +947,7 @@ public:
+   DEFINE_CLASS_QUERY(LoadVectorGather)
+   DEFINE_CLASS_QUERY(StoreVector)
+   DEFINE_CLASS_QUERY(StoreVectorScatter)
++  DEFINE_CLASS_QUERY(ShiftV)
+   DEFINE_CLASS_QUERY(Unlock)
+ 
+   #undef DEFINE_CLASS_QUERY
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 95ca0ae6d2b..4894e0f5f44 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -523,10 +523,11 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+      }
+   } else {
+     const TypeVect* vt = TypeVect::make(elem_bt, num_elem, is_vector_mask(vbox_klass));
++    bool is_var_shift = VectorNode::is_shift_opcode(opc);
+     switch (n) {
+       case 1:
+       case 2: {
+-        operation = VectorNode::make(sopc, opd1, opd2, vt, is_vector_mask(vbox_klass));
++        operation = VectorNode::make(sopc, opd1, opd2, vt, is_vector_mask(vbox_klass), is_var_shift);
+         break;
+       }
+       case 3: {
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 6a5b0b9b014..866a5ee79d5 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -472,7 +472,7 @@ VectorNode* VectorNode::make_mask_node(int vopc, Node* n1, Node* n2, uint vlen,
+ }
+ 
+ // Make a vector node for binary operation
+-VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, bool is_mask) {
++VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, bool is_mask, bool is_var_shift) {
+   // This method should not be called for unimplemented vectors.
+   guarantee(vopc > 0, "vopc must be > 0");
+ 
+@@ -526,20 +526,20 @@ VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, b
+   case Op_RotateLeftV: return new RotateLeftVNode(n1, n2, vt);
+   case Op_RotateRightV: return new RotateRightVNode(n1, n2, vt);
+ 
+-  case Op_LShiftVB: return new LShiftVBNode(n1, n2, vt);
+-  case Op_LShiftVS: return new LShiftVSNode(n1, n2, vt);
+-  case Op_LShiftVI: return new LShiftVINode(n1, n2, vt);
+-  case Op_LShiftVL: return new LShiftVLNode(n1, n2, vt);
++  case Op_LShiftVB: return new LShiftVBNode(n1, n2, vt, is_var_shift);
++  case Op_LShiftVS: return new LShiftVSNode(n1, n2, vt, is_var_shift);
++  case Op_LShiftVI: return new LShiftVINode(n1, n2, vt, is_var_shift);
++  case Op_LShiftVL: return new LShiftVLNode(n1, n2, vt, is_var_shift);
+ 
+-  case Op_RShiftVB: return new RShiftVBNode(n1, n2, vt);
+-  case Op_RShiftVS: return new RShiftVSNode(n1, n2, vt);
+-  case Op_RShiftVI: return new RShiftVINode(n1, n2, vt);
+-  case Op_RShiftVL: return new RShiftVLNode(n1, n2, vt);
++  case Op_RShiftVB: return new RShiftVBNode(n1, n2, vt, is_var_shift);
++  case Op_RShiftVS: return new RShiftVSNode(n1, n2, vt, is_var_shift);
++  case Op_RShiftVI: return new RShiftVINode(n1, n2, vt, is_var_shift);
++  case Op_RShiftVL: return new RShiftVLNode(n1, n2, vt, is_var_shift);
+ 
+-  case Op_URShiftVB: return new URShiftVBNode(n1, n2, vt);
+-  case Op_URShiftVS: return new URShiftVSNode(n1, n2, vt);
+-  case Op_URShiftVI: return new URShiftVINode(n1, n2, vt);
+-  case Op_URShiftVL: return new URShiftVLNode(n1, n2, vt);
++  case Op_URShiftVB: return new URShiftVBNode(n1, n2, vt, is_var_shift);
++  case Op_URShiftVS: return new URShiftVSNode(n1, n2, vt, is_var_shift);
++  case Op_URShiftVI: return new URShiftVINode(n1, n2, vt, is_var_shift);
++  case Op_URShiftVL: return new URShiftVLNode(n1, n2, vt, is_var_shift);
+ 
+   case Op_AndV: return new AndVNode(n1, n2, vt);
+   case Op_OrV:  return new OrVNode (n1, n2, vt);
+@@ -555,12 +555,12 @@ VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, b
+ }
+ 
+ // Return the vector version of a scalar binary operation node.
+-VectorNode* VectorNode::make(int opc, Node* n1, Node* n2, uint vlen, BasicType bt) {
++VectorNode* VectorNode::make(int opc, Node* n1, Node* n2, uint vlen, BasicType bt, bool is_var_shift) {
+   const TypeVect* vt = TypeVect::make(bt, vlen);
+   int vopc = VectorNode::opcode(opc, bt);
+   // This method should not be called for unimplemented vectors.
+   guarantee(vopc > 0, "Vector for '%s' is not implemented", NodeClassNames[opc]);
+-  return make(vopc, n1, n2, vt);
++  return make(vopc, n1, n2, vt, false, is_var_shift);
+ }
+ 
+ // Make a vector node for ternary operation
+@@ -1289,8 +1289,8 @@ Node* VectorNode::degenerate_vector_rotate(Node* src, Node* cnt, bool is_rotate_
+     shiftRCnt = phase->transform(new RShiftCntVNode(shiftRCnt, vt));
+   }
+ 
+-  return new OrVNode(phase->transform(VectorNode::make(shiftLOpc, src, shiftLCnt, vlen, bt)),
+-                     phase->transform(VectorNode::make(shiftROpc, src, shiftRCnt, vlen, bt)),
++  return new OrVNode(phase->transform(VectorNode::make(shiftLOpc, src, shiftLCnt, vlen, bt, is_binary_vector_op)),
++                     phase->transform(VectorNode::make(shiftROpc, src, shiftRCnt, vlen, bt, is_binary_vector_op)),
+                      vt);
+ }
+ 
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 0b04a053f99..95079919f78 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -72,8 +72,8 @@ class VectorNode : public TypeNode {
+ 
+   static VectorNode* scalar2vector(Node* s, uint vlen, const Type* opd_t, bool is_mask = false);
+   static VectorNode* shift_count(int opc, Node* cnt, uint vlen, BasicType bt);
+-  static VectorNode* make(int opc, Node* n1, Node* n2, uint vlen, BasicType bt);
+-  static VectorNode* make(int vopc, Node* n1, Node* n2, const TypeVect* vt, bool is_mask = false);
++  static VectorNode* make(int opc, Node* n1, Node* n2, uint vlen, BasicType bt, bool is_var_shift = false);
++  static VectorNode* make(int vopc, Node* n1, Node* n2, const TypeVect* vt, bool is_mask = false, bool is_var_shift = false);
+   static VectorNode* make(int opc, Node* n1, Node* n2, Node* n3, uint vlen, BasicType bt);
+   static VectorNode* make(int vopc, Node* n1, Node* n2, Node* n3, const TypeVect* vt);
+   static VectorNode* make_mask_node(int vopc, Node* n1, Node* n2, uint vlen, BasicType bt);
+@@ -531,17 +531,24 @@ class SqrtVDNode : public VectorNode {
+ // Class ShiftV functionality.  This covers the common behaviors for all kinds
+ // of vector shifts.
+ class ShiftVNode : public VectorNode {
++ bool _is_var_shift;
+  public:
+-  ShiftVNode(Node* in1, Node* in2, const TypeVect* vt) : VectorNode(in1,in2,vt) {}
++  ShiftVNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift) :
++    VectorNode(in1,in2,vt), _is_var_shift(is_var_shift) {
++    init_class_id(Class_ShiftV);
++  }
+   virtual Node* Identity(PhaseGVN* phase);
+   virtual int Opcode() const = 0;
++  bool is_var_shift() { return _is_var_shift;}
++  virtual  uint  size_of() const { return sizeof(ShiftVNode); }
+ };
+ 
+ //------------------------------LShiftVBNode-----------------------------------
+ // Vector left shift bytes
+ class LShiftVBNode : public ShiftVNode {
+  public:
+-  LShiftVBNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  LShiftVBNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -549,7 +556,8 @@ class LShiftVBNode : public ShiftVNode {
+ // Vector left shift shorts
+ class LShiftVSNode : public ShiftVNode {
+  public:
+-  LShiftVSNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  LShiftVSNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -557,7 +565,8 @@ class LShiftVSNode : public ShiftVNode {
+ // Vector left shift ints
+ class LShiftVINode : public ShiftVNode {
+  public:
+-  LShiftVINode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  LShiftVINode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -565,7 +574,8 @@ class LShiftVINode : public ShiftVNode {
+ // Vector left shift longs
+ class LShiftVLNode : public ShiftVNode {
+  public:
+-  LShiftVLNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  LShiftVLNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -573,7 +583,8 @@ class LShiftVLNode : public ShiftVNode {
+ // Vector right arithmetic (signed) shift bytes
+ class RShiftVBNode : public ShiftVNode {
+  public:
+-  RShiftVBNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  RShiftVBNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -581,7 +592,8 @@ class RShiftVBNode : public ShiftVNode {
+ // Vector right arithmetic (signed) shift shorts
+ class RShiftVSNode : public ShiftVNode {
+  public:
+-  RShiftVSNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  RShiftVSNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -589,7 +601,8 @@ class RShiftVSNode : public ShiftVNode {
+ // Vector right arithmetic (signed) shift ints
+ class RShiftVINode : public ShiftVNode {
+  public:
+-  RShiftVINode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  RShiftVINode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -597,7 +610,8 @@ class RShiftVINode : public ShiftVNode {
+ // Vector right arithmetic (signed) shift longs
+ class RShiftVLNode : public ShiftVNode {
+  public:
+-  RShiftVLNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  RShiftVLNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -605,7 +619,8 @@ class RShiftVLNode : public ShiftVNode {
+ // Vector right logical (unsigned) shift bytes
+ class URShiftVBNode : public ShiftVNode {
+  public:
+-  URShiftVBNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  URShiftVBNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -613,7 +628,8 @@ class URShiftVBNode : public ShiftVNode {
+ // Vector right logical (unsigned) shift shorts
+ class URShiftVSNode : public ShiftVNode {
+  public:
+-  URShiftVSNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  URShiftVSNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -621,7 +637,8 @@ class URShiftVSNode : public ShiftVNode {
+ // Vector right logical (unsigned) shift ints
+ class URShiftVINode : public ShiftVNode {
+  public:
+-  URShiftVINode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  URShiftVINode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++    ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 
+@@ -629,7 +646,8 @@ class URShiftVINode : public ShiftVNode {
+ // Vector right logical (unsigned) shift longs
+ class URShiftVLNode : public ShiftVNode {
+  public:
+-  URShiftVLNode(Node* in1, Node* in2, const TypeVect* vt) : ShiftVNode(in1,in2,vt) {}
++  URShiftVLNode(Node* in1, Node* in2, const TypeVect* vt, bool is_var_shift=false) :
++     ShiftVNode(in1,in2,vt,is_var_shift) {}
+   virtual int Opcode() const;
+ };
+ 

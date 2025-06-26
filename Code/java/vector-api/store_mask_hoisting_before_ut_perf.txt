@@ -1,0 +1,123 @@
+import jdk.incubator.vector.*;
+class indexvec {
+   public static long micro(int offset, int limit) {
+      return VectorMask.fromLong(IntVector.SPECIES_512, -1).indexInRange(offset, limit).toLong();
+   }
+   public static void main(String [] args) {
+      long res = 0;
+      for (int i = 0; i < 8192; i++) {
+         res += micro(i, 8192 + 17);
+      }
+      long t1 = System.currentTimeMillis();
+      for (int i = 0; i < 8192; i++) {
+         res += micro(i, 8192 + 17);
+      }
+      long t2 = System.currentTimeMillis();
+      System.out.println("[Time] " + (t2-t1) + "ms [Res] " + res);
+   }
+}
+CompileCommand: print indexvec.micro bool print = true
+
+============================= C2-compiled nmethod ==============================
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)     210  190             indexvec::micro (18 bytes)
+ total in heap  [0x00007ffb7d112c10,0x00007ffb7d112f70] = 864
+ relocation     [0x00007ffb7d112d60,0x00007ffb7d112d78] = 24
+ main code      [0x00007ffb7d112d80,0x00007ffb7d112e50] = 208
+ stub code      [0x00007ffb7d112e50,0x00007ffb7d112e68] = 24
+ oops           [0x00007ffb7d112e68,0x00007ffb7d112e78] = 16
+ metadata       [0x00007ffb7d112e78,0x00007ffb7d112eb0] = 56
+ scopes data    [0x00007ffb7d112eb0,0x00007ffb7d112f10] = 96
+ scopes pcs     [0x00007ffb7d112f10,0x00007ffb7d112f60] = 80
+ dependencies   [0x00007ffb7d112f60,0x00007ffb7d112f70] = 16
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007ffb34411468} 'micro' '(II)J' in 'indexvec'
+  # parm0:    rsi       = int
+  # parm1:    rdx       = int
+  #           [sp+0x40]  (sp of caller)
+  0x00007ffb7d112d80:   mov    %eax,-0x14000(%rsp)
+  0x00007ffb7d112d87:   push   %rbp
+  0x00007ffb7d112d88:   sub    $0x30,%rsp
+  0x00007ffb7d112d8c:   cmpl   $0x1,0x20(%r15)
+  0x00007ffb7d112d94:   jne    0x00007ffb7d112e42
+  0x00007ffb7d112d9a:   mov    $0xffff,%eax
+  0x00007ffb7d112d9f:   kmovq  %rax,%k7
+  0x00007ffb7d112da4:   vpmovm2b %k7,%xmm0                 ; VectorStorMask is hoisted before uncommon_trap block, thus causing perf degradation in fast path.
+  0x00007ffb7d112daa:   vpabsb %xmm0,%xmm0
+  0x00007ffb7d112daf:   test   %esi,%esi
+  0x00007ffb7d112db1:   jl     0x00007ffb7d112df8
+  0x00007ffb7d112db3:   cmp    %edx,%esi
+  0x00007ffb7d112db5:   jge    0x00007ffb7d112e14
+  0x00007ffb7d112db7:   mov    %edx,%ebp
+  0x00007ffb7d112db9:   sub    %esi,%ebp
+  0x00007ffb7d112dbb:   nopl   0x0(%rax,%rax,1)
+  0x00007ffb7d112dc0:   cmp    $0x10,%ebp
+  0x00007ffb7d112dc3:   jl     0x00007ffb7d112ddb
+  0x00007ffb7d112dc5:   vzeroupper 
+  0x00007ffb7d112dc8:   add    $0x30,%rsp
+  0x00007ffb7d112dcc:   pop    %rbp
+  0x00007ffb7d112dcd:   cmp    0x378(%r15),%rsp             ;   {poll_return}
+  0x00007ffb7d112dd4:   ja     0x00007ffb7d112e2c
+  0x00007ffb7d112dda:   retq   
+  0x00007ffb7d112ddb:   mov    %esi,(%rsp)
+  0x00007ffb7d112dde:   mov    %edx,0x4(%rsp)
+  0x00007ffb7d112de2:   vmovdqu %xmm0,0x10(%rsp)
+  0x00007ffb7d112de8:   mov    $0xffffff45,%esi
+  0x00007ffb7d112ded:   data16 xchg %ax,%ax
+  0x00007ffb7d112df0:   vzeroupper 
+  0x00007ffb7d112df3:   callq  0x00007ffb7d06ca00           ; ImmutableOopMap {}
+                                                            ;*if_icmplt {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) jdk.incubator.vector.AbstractMask::indexInRange@38 (line 223)
+                                                            ; - indexvec::micro@11 (line 4)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007ffb7d112df8:   mov    %edx,(%rsp)
+  0x00007ffb7d112dfb:   mov    %esi,0x4(%rsp)
+  0x00007ffb7d112dff:   vmovdqu %xmm0,0x10(%rsp)
+  0x00007ffb7d112e05:   mov    $0xffffff45,%esi
+  0x00007ffb7d112e0a:   xchg   %ax,%ax
+  0x00007ffb7d112e0c:   vzeroupper 
+  0x00007ffb7d112e0f:   callq  0x00007ffb7d06ca00           ; ImmutableOopMap {}
+                                                            ;*ifge {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) jdk.incubator.vector.AbstractMask::indexInRange@1 (line 219)
+                                                            ; - indexvec::micro@11 (line 4)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007ffb7d112e14:   mov    %esi,%ebp
+  0x00007ffb7d112e16:   mov    %edx,(%rsp)
+  0x00007ffb7d112e19:   vmovdqu %xmm0,0x10(%rsp)
+  0x00007ffb7d112e1f:   mov    $0xffffff45,%esi
+  0x00007ffb7d112e24:   vzeroupper 
+  0x00007ffb7d112e27:   callq  0x00007ffb7d06ca00           ; ImmutableOopMap {}
+                                                            ;*if_icmplt {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) jdk.incubator.vector.AbstractMask::indexInRange@17 (line 221)
+                                                            ; - indexvec::micro@11 (line 4)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007ffb7d112e2c:   movabs $0x7ffb7d112dcd,%r10         ;   {internal_word}
+  0x00007ffb7d112e36:   mov    %r10,0x390(%r15)
+  0x00007ffb7d112e3d:   jmpq   0x00007ffb7d06b880           ;   {runtime_call SafepointBlob}
+  0x00007ffb7d112e42:   callq  Stub::nmethod_entry_barrier  ;   {runtime_call StubRoutines (2)}
+  0x00007ffb7d112e47:   jmpq   0x00007ffb7d112d9a
+  0x00007ffb7d112e4c:   hlt    
+  0x00007ffb7d112e4d:   hlt    
+  0x00007ffb7d112e4e:   hlt    
+  0x00007ffb7d112e4f:   hlt    
+[Exception Handler]
+  0x00007ffb7d112e50:   jmpq   0x00007ffb7d09c700           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007ffb7d112e55:   callq  0x00007ffb7d112e5a
+  0x00007ffb7d112e5a:   subq   $0x5,(%rsp)
+  0x00007ffb7d112e5f:   jmpq   0x00007ffb7d06cd20           ;   {runtime_call DeoptimizationBlob}
+  0x00007ffb7d112e64:   hlt    
+  0x00007ffb7d112e65:   hlt    
+  0x00007ffb7d112e66:   hlt    
+  0x00007ffb7d112e67:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+[Time] 1ms [Res] 1073725440

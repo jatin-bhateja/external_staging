@@ -1,0 +1,1563 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/make/Docs.gmk b/make/Docs.gmk
+index aff3a23c77b..0f4629c83d5 100644
+--- a/make/Docs.gmk
++++ b/make/Docs.gmk
+@@ -110,7 +110,7 @@ JAVA_WARNINGS_ARE_ERRORS ?= -Werror
+ JAVADOC_OPTIONS := -XDignore.symbol.file=true -use -keywords -notimestamp \
+     -encoding ISO-8859-1 -docencoding UTF-8 -breakiterator \
+     -splitIndex --system none -javafx --expand-requires transitive \
+-    -XDenableValueTypes \
++    -XDenableValueTypes -XDenablePrimitiveClasses \
+     --override-methods=summary
+ 
+ # The reference options must stay stable to allow for comparisons across the
+diff --git a/make/common/JavaCompilation.gmk b/make/common/JavaCompilation.gmk
+index 69defaed9e7..86c631e00af 100644
+--- a/make/common/JavaCompilation.gmk
++++ b/make/common/JavaCompilation.gmk
+@@ -268,7 +268,7 @@ define SetupJavaCompilationBody
+   endif
+ 
+   # Allow overriding on the command line
+-  JAVA_WARNINGS_ARE_ERRORS ?= -Werror
++  JAVA_WARNINGS_ARE_ERRORS ?=
+ 
+   # Tell javac to do exactly as told and no more
+   PARANOIA_FLAGS := -implicit:none -Xprefer:source -XDignore.symbol.file=true -encoding ascii
+diff --git a/src/hotspot/share/ci/ciField.cpp b/src/hotspot/share/ci/ciField.cpp
+index f9a7df6d17d..f967940989d 100644
+--- a/src/hotspot/share/ci/ciField.cpp
++++ b/src/hotspot/share/ci/ciField.cpp
+@@ -204,12 +204,14 @@ ciField::ciField(fieldDescriptor *fd) :
+ 
+   BasicType field_type = fd->field_type();
+ 
++  initialize_from(fd);
++
+   // If the field is a pointer type, get the klass of the
+   // field.
+   if (is_reference_type(field_type)) {
+     _type = NULL;  // must call compute_type on first access
+   } else {
+-    _type = ciType::make(field_type);
++    _type = ciType::make(field_type, _secondary_fields_count);
+   }
+ 
+   initialize_from(fd);
+@@ -242,6 +244,10 @@ ciField::ciField(ciField* field, ciInstanceKlass* holder, int offset, bool is_fi
+   _is_flattened = false;
+   _is_null_free = field->_is_null_free;
+   _original_holder = (field->_original_holder != NULL) ? field->_original_holder : field->_holder;
++  _is_multifield = field->_is_multifield;
++  _is_multifield_base = field->_is_multifield_base;
++  _secondary_fields_count = field->_secondary_fields_count;
++
+ }
+ 
+ static bool trust_final_non_static_fields(ciInstanceKlass* holder) {
+@@ -295,6 +301,10 @@ void ciField::initialize_from(fieldDescriptor* fd) {
+   _is_null_free = fd->signature()->is_Q_signature();
+   _original_holder = NULL;
+ 
++  _is_multifield = fd->is_multifield();
++  _is_multifield_base = fd->is_multifield_base();
++  _secondary_fields_count = fd->secondary_fields_count(fd->index());
++
+   // Check to see if the field is constant.
+   Klass* k = _holder->get_Klass();
+   bool is_stable_field = FoldStableValues && is_stable();
+diff --git a/src/hotspot/share/ci/ciField.hpp b/src/hotspot/share/ci/ciField.hpp
+index f923b78eeeb..d69a26d40a5 100644
+--- a/src/hotspot/share/ci/ciField.hpp
++++ b/src/hotspot/share/ci/ciField.hpp
+@@ -49,9 +49,12 @@ private:
+   ciSymbol*        _signature;
+   ciType*          _type;
+   int              _offset;
++  int              _secondary_fields_count;
+   bool             _is_constant;
+   bool             _is_flattened;
+   bool             _is_null_free;
++  bool             _is_multifield;
++  bool             _is_multifield_base;
+   ciMethod*        _known_to_link_with_put;
+   ciInstanceKlass* _known_to_link_with_get;
+   ciConstant       _constant_value;
+@@ -105,6 +108,10 @@ public:
+   // Of what type is this field?
+   ciType* type() { return (_type == NULL) ? compute_type() : _type; }
+ 
++  bool is_multifield() { return _is_multifield; }
++  bool is_multifield_base() { return _is_multifield_base; }
++  int secondary_fields_count() { return _secondary_fields_count; } const
++
+   // How is this field actually stored in memory?
+   BasicType layout_type() { return type2field[type()->basic_type()]; }
+ 
+@@ -180,6 +187,8 @@ public:
+   bool is_transient            () const { return flags().is_transient(); }
+   bool is_flattened            () const { return _is_flattened; }
+   bool is_null_free            () const { return _is_null_free; }
++  bool is_multifield           () const { return _is_multifield; }
++
+ 
+   // The field is modified outside of instance initializer methods
+   // (or class/initializer methods if the field is static).
+diff --git a/src/hotspot/share/ci/ciInstanceKlass.cpp b/src/hotspot/share/ci/ciInstanceKlass.cpp
+index e07447aebb6..0071447689f 100644
+--- a/src/hotspot/share/ci/ciInstanceKlass.cpp
++++ b/src/hotspot/share/ci/ciInstanceKlass.cpp
+@@ -531,6 +531,7 @@ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(Growable
+   InstanceKlass* k = get_instanceKlass();
+   for (JavaFieldStream fs(k); !fs.done(); fs.next()) {
+     if (fs.access_flags().is_static())  continue;
++    if (fs.is_multifield()) continue;
+     flen += 1;
+   }
+ 
+@@ -549,6 +550,7 @@ GrowableArray<ciField*>* ciInstanceKlass::compute_nonstatic_fields_impl(Growable
+ 
+   for (JavaFieldStream fs(k); !fs.done(); fs.next()) {
+     if (fs.access_flags().is_static())  continue;
++    if (fs.is_multifield()) continue;
+     fieldDescriptor& fd = fs.field_descriptor();
+     if (fd.is_inlined() && flatten) {
+       // Inline type fields are embedded
+diff --git a/src/hotspot/share/ci/ciType.cpp b/src/hotspot/share/ci/ciType.cpp
+index 79512966846..19fe37ae69d 100644
+--- a/src/hotspot/share/ci/ciType.cpp
++++ b/src/hotspot/share/ci/ciType.cpp
+@@ -39,13 +39,15 @@ ciType* ciType::_basic_types[T_CONFLICT+1];
+ // ------------------------------------------------------------------
+ // ciType::ciType
+ //
+-ciType::ciType(BasicType basic_type) : ciMetadata() {
++ciType::ciType(BasicType basic_type, int bundle_size) : ciMetadata() {
+   assert(basic_type >= T_BOOLEAN && basic_type <= T_CONFLICT, "range check");
+   _basic_type = basic_type;
++  _bundle_size = bundle_size;
+ }
+ 
+ ciType::ciType(Klass* k) : ciMetadata(k) {
+   _basic_type = k->is_array_klass() ? T_ARRAY : (k->is_inline_klass() ? T_PRIMITIVE_OBJECT : T_OBJECT);
++  _bundle_size = 1;
+ }
+ 
+ 
+@@ -106,13 +108,17 @@ ciInstance* ciType::java_mirror() {
+ // Produce the ciType for a given primitive BasicType.
+ // As a bonus, produce the right reference type for T_OBJECT.
+ // Does not work on T_ARRAY.
+-ciType* ciType::make(BasicType t) {
+-  // short, etc.
+-  // Note: Bare T_ADDRESS means a raw pointer type, not a return_address.
+-  assert((uint)t < T_CONFLICT+1, "range check");
+-  if (t == T_OBJECT)  return ciEnv::_Object_klass;  // java/lang/Object
+-  assert(_basic_types[t] != NULL, "domain check");
+-  return _basic_types[t];
++ciType* ciType::make(BasicType t, int bundle_size) {
++  if (bundle_size == 1) {
++    // short, etc.
++    // Note: Bare T_ADDRESS means a raw pointer type, not a return_address.
++    assert((uint)t < T_CONFLICT+1, "range check");
++    if (t == T_OBJECT)  return ciEnv::_Object_klass;  // java/lang/Object
++    assert(_basic_types[t] != NULL, "domain check");
++    return _basic_types[t];
++  } else {
++    return new (CURRENT_ENV->arena()) ciType(t, bundle_size);
++  }
+ }
+ 
+ // ciReturnAddress
+diff --git a/src/hotspot/share/ci/ciType.hpp b/src/hotspot/share/ci/ciType.hpp
+index 2df869600ba..f8fd47675d5 100644
+--- a/src/hotspot/share/ci/ciType.hpp
++++ b/src/hotspot/share/ci/ciType.hpp
+@@ -39,8 +39,9 @@ class ciType : public ciMetadata {
+ 
+ private:
+   BasicType _basic_type;
++  int _bundle_size;
+ 
+-  ciType(BasicType t);     // for primitive and unloaded types
++  ciType(BasicType t, int bundle_size = 1);     // for primitive and unloaded types
+   ciType(Klass* k);        // for subclasses (reference types)
+ 
+   const char* type_string() { return "ciType"; }
+@@ -63,7 +64,8 @@ public:
+ 
+   // Returns true if this is not a klass or array (i.e., not a reference type).
+   bool is_primitive_type() const            { return !is_reference_type(basic_type()); }
+-  int size() const                          { return type2size[basic_type()]; }
++  int size() const                          { return _bundle_size * type2size[basic_type()]; }
++  int bundle_size() const                   { return _bundle_size; }
+   bool is_void() const                      { return basic_type() == T_VOID; }
+   bool is_one_word() const                  { return size() == 1; }
+   bool is_two_word() const                  { return size() == 2; }
+@@ -81,7 +83,7 @@ public:
+     print_name_on(tty);
+   }
+ 
+-  static ciType* make(BasicType t);
++  static ciType* make(BasicType t, int bundle_size = 1);
+ };
+ 
+ 
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index 64a6ff82580..fd60f2184cd 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -99,6 +99,7 @@
+   template(jdk_internal_vm_vector_VectorPayloadMF256, "jdk/internal/vm/vector/VectorSupport$VectorPayloadMF256") \
+   template(jdk_internal_vm_vector_VectorPayloadMF512, "jdk/internal/vm/vector/VectorSupport$VectorPayloadMF512") \
+   template(payload_name,                              "payload")                                  \
++  template(mfield_name,                               "mfield")                                   \
+   template(ETYPE_name,                                "ETYPE")                                    \
+   template(VLENGTH_name,                              "VLENGTH")                                  \
+                                                                                                   \
+diff --git a/src/hotspot/share/oops/inlineKlass.cpp b/src/hotspot/share/oops/inlineKlass.cpp
+index 0e422f4f3e5..9de98e55210 100644
+--- a/src/hotspot/share/oops/inlineKlass.cpp
++++ b/src/hotspot/share/oops/inlineKlass.cpp
+@@ -237,6 +237,7 @@ int InlineKlass::collect_fields(GrowableArray<SigEntry>* sig, int base_off) {
+   SigEntry::add_entry(sig, T_PRIMITIVE_OBJECT, name(), base_off);
+   for (JavaFieldStream fs(this); !fs.done(); fs.next()) {
+     if (fs.access_flags().is_static()) continue;
++    if (fs.is_multifield()) continue;
+     int offset = base_off + fs.offset() - (base_off > 0 ? first_field_offset() : 0);
+     if (fs.is_inlined()) {
+       // Resolve klass of inlined field and recursively collect fields
+diff --git a/src/hotspot/share/opto/callGenerator.cpp b/src/hotspot/share/opto/callGenerator.cpp
+index 4a9dc0ad329..27fdf0541b3 100644
+--- a/src/hotspot/share/opto/callGenerator.cpp
++++ b/src/hotspot/share/opto/callGenerator.cpp
+@@ -790,7 +790,7 @@ void CallGenerator::do_late_inline_helper() {
+ 
+     // Handle inline type returns
+     InlineTypeNode* vt = result->isa_InlineType();
+-    if (vt != NULL) {
++    if (vt != NULL && !result->is_VectorBox()) {
+       if (call->tf()->returns_inline_type_as_fields()) {
+         vt->replace_call_results(&kit, call, C, inline_method->signature()->returns_null_free_inline_type());
+       } else if (vt->is_InlineType()) {
+diff --git a/src/hotspot/share/opto/cfgnode.cpp b/src/hotspot/share/opto/cfgnode.cpp
+index a76d62078ee..135c7c7d022 100644
+--- a/src/hotspot/share/opto/cfgnode.cpp
++++ b/src/hotspot/share/opto/cfgnode.cpp
+@@ -2696,9 +2696,9 @@ Node* PhiNode::merge_through_phi(Node* root_phi, PhaseIterGVN* igvn) {
+   assert(cached_vbox != NULL, "sanity");
+   const TypeInstPtr* btype = cached_vbox->box_type();
+   const TypeVect*    vtype = cached_vbox->vec_type();
+-  Node* new_vbox_phi = clone_through_phi(root_phi, btype, VectorBoxNode::Box,   igvn);
+-  Node* new_vect_phi = clone_through_phi(root_phi, vtype, VectorBoxNode::Value, igvn);
+-  return new VectorBoxNode(igvn->C, new_vbox_phi, new_vect_phi, btype, vtype);
++  Node* new_vbox_phi = clone_through_phi(root_phi, btype, 1, igvn);
++  Node* new_vect_phi = clone_through_phi(root_phi, vtype, 3, igvn);
++  return VectorBoxNode::make_box_node(*igvn, igvn->C, new_vbox_phi, new_vect_phi, btype, vtype);
+ }
+ 
+ bool PhiNode::is_data_loop(RegionNode* r, Node* uin, const PhaseGVN* phase) {
+diff --git a/src/hotspot/share/opto/compile.cpp b/src/hotspot/share/opto/compile.cpp
+index bbb9a91fdf1..b9beb54deef 100644
+--- a/src/hotspot/share/opto/compile.cpp
++++ b/src/hotspot/share/opto/compile.cpp
+@@ -2739,16 +2739,6 @@ void Compile::Optimize() {
+   // so keep only the actual candidates for optimizations.
+   cleanup_expensive_nodes(igvn);
+ 
+-  assert(EnableVectorSupport || !has_vbox_nodes(), "sanity");
+-  if (EnableVectorSupport && has_vbox_nodes()) {
+-    TracePhase tp("", &timers[_t_vector]);
+-    PhaseVector pv(igvn);
+-    pv.optimize_vector_boxes();
+-
+-    print_method(PHASE_ITER_GVN_AFTER_VECTOR, 2);
+-  }
+-  assert(!has_vbox_nodes(), "sanity");
+-
+   if (!failing() && RenumberLiveNodes && live_nodes() + NodeLimitFudgeFactor < unique()) {
+     Compile::TracePhase tp("", &timers[_t_renumberLive]);
+     initial_gvn()->replace_with(&igvn);
+@@ -2773,6 +2763,17 @@ void Compile::Optimize() {
+   // Process inline type nodes now that all inlining is over
+   process_inline_types(igvn);
+ 
++  assert(EnableVectorSupport || !has_vbox_nodes(), "sanity");
++  if (EnableVectorSupport && has_vbox_nodes()) {
++    TracePhase tp("", &timers[_t_vector]);
++    PhaseVector pv(igvn);
++    pv.optimize_vector_boxes();
++
++    print_method(PHASE_ITER_GVN_AFTER_VECTOR, 2);
++  }
++  assert(!has_vbox_nodes(), "sanity");
++
++
+   adjust_flattened_array_access_aliases(igvn);
+ 
+   // Perform escape analysis
+diff --git a/src/hotspot/share/opto/graphKit.cpp b/src/hotspot/share/opto/graphKit.cpp
+index c5a514eb1aa..e398b1a10cc 100644
+--- a/src/hotspot/share/opto/graphKit.cpp
++++ b/src/hotspot/share/opto/graphKit.cpp
+@@ -1837,7 +1837,6 @@ void GraphKit::set_arguments_for_java_call(CallJavaNode* call, bool is_late_inli
+     if (t->is_inlinetypeptr() && call->method()->is_scalarized_arg(arg_num)) {
+       // We don't pass inline type arguments by reference but instead pass each field of the inline type
+       if (!arg->is_InlineType()) {
+-        assert(_gvn.type(arg)->is_zero_type() && !t->inline_klass()->is_null_free(), "Unexpected argument type");
+         arg = InlineTypeNode::make_from_oop(this, arg, t->inline_klass(), t->inline_klass()->is_null_free());
+       }
+       InlineTypeNode* vt = arg->as_InlineType();
+diff --git a/src/hotspot/share/opto/inlinetypenode.cpp b/src/hotspot/share/opto/inlinetypenode.cpp
+index 9a0d8bd2911..14b6f894597 100644
+--- a/src/hotspot/share/opto/inlinetypenode.cpp
++++ b/src/hotspot/share/opto/inlinetypenode.cpp
+@@ -32,6 +32,8 @@
+ #include "opto/inlinetypenode.hpp"
+ #include "opto/rootnode.hpp"
+ #include "opto/phaseX.hpp"
++#include "opto/vectornode.hpp"
++
+ 
+ uint InlineTypeNode::size_of() const {
+   return sizeof(*this);
+@@ -84,6 +86,9 @@ InlineTypeNode* InlineTypeNode::clone_with_phis(PhaseGVN* gvn, Node* region, boo
+       value = value->as_InlineType()->clone_with_phis(gvn, region);
+     } else {
+       phi_type = Type::get_const_type(type);
++      if (vt->is_multifield_base(i)) {
++        phi_type = TypeVect::make(phi_type, vt->secondary_field_count(i));
++      }
+       value = PhiNode::make(region, value, phi_type);
+       gvn->set_type(value, phi_type);
+       gvn->record_for_igvn(value);
+@@ -233,6 +238,21 @@ ciType* InlineTypeNode::field_type(uint index) const {
+   return inline_klass()->declared_nonstatic_field_at(index)->type();
+ }
+ 
++int InlineTypeNode::secondary_field_count(uint index) const {
++  assert(is_multifield_base(index), "non-multifield field at index");
++  return inline_klass()->declared_nonstatic_field_at(index)->secondary_fields_count();
++}
++
++bool InlineTypeNode::is_multifield(uint index) const {
++  assert(index < field_count(), "index out of bounds");
++  return inline_klass()->declared_nonstatic_field_at(index)->is_multifield();
++}
++
++bool InlineTypeNode::is_multifield_base(uint index) const {
++  assert(index < field_count(), "index out of bounds");
++  return inline_klass()->declared_nonstatic_field_at(index)->is_multifield_base();
++}
++
+ bool InlineTypeNode::field_is_flattened(uint index) const {
+   assert(index < field_count(), "index out of bounds");
+   ciField* field = inline_klass()->declared_nonstatic_field_at(index);
+@@ -398,7 +418,11 @@ void InlineTypeNode::load(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass*
+         if (is_array) {
+           decorators |= IS_ARRAY;
+         }
+-        value = kit->access_load_at(base, adr, adr_type, val_type, bt, decorators);
++        if (ft->bundle_size() > 1) {
++          value = kit->gvn().transform(LoadVectorNode::make(0, kit->control(), kit->memory(adr), adr, adr_type, ft->bundle_size(), ft->basic_type()));
++        } else {
++          value = kit->access_load_at(base, adr, adr_type, val_type, bt, decorators);
++        }
+       }
+       // Loading a non-flattened inline type from memory
+       if (ft->is_inlinetype()) {
+@@ -429,11 +453,19 @@ void InlineTypeNode::store(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass
+     Node* value = field_value(i);
+     ciType* ft = field_type(i);
+     if (field_is_flattened(i)) {
+-      // Recursively store the flattened inline type field
+-      if (!value->is_InlineType()) {
+-        value = InlineTypeNode::make_from_oop(kit, value, ft->as_inline_klass());
++      if (kit->gvn().type(value)->isa_vect()) {
++        int vec_len = kit->gvn().type(value)->is_vect()->length();
++        const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
++        Node* adr = kit->basic_plus_adr(base, ptr, offset);
++        Node* store = kit->gvn().transform(StoreVectorNode::make(0, kit->control(), kit->memory(adr), adr, adr_type, value, vec_len));
++        kit->set_memory(store, adr_type);
++      } else {
++        if (!value->is_InlineType()) {
++          // Recursively store the flattened inline type field
++          value = InlineTypeNode::make_from_oop(kit, value, ft->as_inline_klass());
++        }
++        value->as_InlineType()->store_flattened(kit, base, ptr, holder, offset, decorators);
+       }
+-      value->as_InlineType()->store_flattened(kit, base, ptr, holder, offset, decorators);
+     } else {
+       // Store field value to memory
+       const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
+@@ -445,7 +477,16 @@ void InlineTypeNode::store(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass
+       if (ary_type != NULL) {
+         decorators |= IS_ARRAY;
+       }
+-      kit->access_store_at(base, adr, adr_type, value, val_type, bt, decorators);
++      if (ft->bundle_size() > 1) {
++        // Handling for non-flattened case, with default InlineFieldMaxFlatSize of 128
++        // all the concrete vectors should be fully flattened.
++        value = value->bottom_type()->isa_vect() ? value : kit->gvn().transform(VectorNode::scalar2vector(value, ft->bundle_size(), val_type, false));
++        assert(value->bottom_type()->isa_vect() && value->bottom_type()->is_vect()->length() == (uint)ft->bundle_size(), "");
++        Node* store = kit->gvn().transform(StoreVectorNode::make(0, kit->control(), kit->memory(adr), adr, adr_type, value, ft->bundle_size()));
++        kit->set_memory(store, adr_type);
++      } else {
++        kit->access_store_at(base, adr, adr_type, value, val_type, bt, decorators);
++      }
+     }
+   }
+ }
+@@ -551,6 +592,7 @@ bool InlineTypeNode::is_allocated(PhaseGVN* phase) const {
+   }
+   Node* oop = get_oop();
+   const Type* oop_type = (phase != NULL) ? phase->type(oop) : oop->bottom_type();
++  // Primitive objects are always null free.
+   return !oop_type->maybe_null();
+ }
+ 
+@@ -637,14 +679,18 @@ static void replace_allocation(PhaseIterGVN* igvn, Node* res, Node* dom) {
+ 
+ Node* InlineTypeNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+   Node* oop = get_oop();
+-  if (is_default(phase) && inline_klass()->is_initialized() &&
++  // An InlineTypeNode in larval state is up for updation and
++  // should not be replaced by precomputed default oops.
++  Node* alloc = AllocateNode::Ideal_allocation(oop, phase);
++  bool is_larval_alloc = alloc && alloc->as_Allocate()->_larval == true;
++  if (!is_larval_alloc && is_default(phase) && inline_klass()->is_initialized() &&
+       (!oop->is_Con() || phase->type(oop)->is_zero_type())) {
+     // Use the pre-allocated oop for default inline types
+     set_oop(default_oop(*phase, inline_klass()));
+     assert(is_allocated(phase), "should now be allocated");
+     return this;
+   }
+-  if (oop->isa_InlineType() && !phase->type(oop)->maybe_null()) {
++  if (oop->isa_InlineType() && !oop->isa_VectorBox() && !phase->type(oop)->maybe_null()) {
+     InlineTypeNode* vtptr = oop->as_InlineType();
+     set_oop(vtptr->get_oop());
+     set_is_init(*phase);
+@@ -703,6 +749,14 @@ Node* InlineTypeNode::default_oop(PhaseGVN& gvn, ciInlineKlass* vk) {
+   return gvn.makecon(TypeInstPtr::make(vk->default_instance()));
+ }
+ 
++Node* InlineTypeNode::default_value(PhaseGVN& gvn, ciType* field_type) {
++  Node* value = gvn.zerocon(field_type->basic_type());
++  if (field_type->bundle_size() > 1)  {
++    value = gvn.transform(VectorNode::scalar2vector(value, field_type->bundle_size(), Type::get_const_type(field_type), false));
++  }
++  return value;
++}
++
+ InlineTypeNode* InlineTypeNode::make_default(PhaseGVN& gvn, ciInlineKlass* vk) {
+   // Create a new InlineTypeNode with default values
+   Node* oop = vk->is_initialized() ? default_oop(gvn, vk) : gvn.zerocon(T_PRIMITIVE_OBJECT);
+@@ -710,7 +764,7 @@ InlineTypeNode* InlineTypeNode::make_default(PhaseGVN& gvn, ciInlineKlass* vk) {
+   vt->set_is_init(gvn);
+   for (uint i = 0; i < vt->field_count(); ++i) {
+     ciType* field_type = vt->field_type(i);
+-    Node* value = gvn.zerocon(field_type->basic_type());
++    Node* value = default_value(gvn, field_type);
+     if (field_type->is_inlinetype()) {
+       ciInlineKlass* vk = field_type->as_inline_klass();
+       if (vt->field_is_null_free(i)) {
+@@ -742,7 +796,8 @@ bool InlineTypeNode::is_default(PhaseGVN* gvn) const {
+     } else if (value->is_InlineType()) {
+       value = value->as_InlineType()->get_oop();
+     }
+-    if (!gvn->type(value)->is_zero_type()) {
++    if (!gvn->type(value)->is_zero_type() &&
++        !VectorNode::is_all_zeros_vector(value)) {
+       return false;
+     }
+   }
+@@ -1030,7 +1085,12 @@ void InlineTypeNode::initialize_fields(GraphKit* kit, MultiNode* multi, uint& ba
+       vt->initialize_fields(kit, multi, base_input, in, true, null_check_region);
+       parm = gvn.transform(vt);
+     } else {
+-      if (multi->is_Start()) {
++      if (type->bundle_size() > 1) {
++        ciInlineKlass* ik = inline_klass();
++        bool is_null_free = ik->get_InlineKlass()->is_null_free();
++        InlineTypeNode* temp = make_from_oop(kit, get_oop(), ik, is_null_free);
++        parm = temp->field_value(i);
++      } else if (multi->is_Start()) {
+         assert(in, "return from start?");
+         parm = gvn.transform(new ParmNode(multi->as_Start(), base_input));
+       } else if (in) {
+@@ -1048,7 +1108,7 @@ void InlineTypeNode::initialize_fields(GraphKit* kit, MultiNode* multi, uint& ba
+         }
+         parm = make_from_oop(kit, parm, type->as_inline_klass(), field_is_null_free(i));
+       }
+-      base_input += type->size();
++      base_input += (type->size() / type->bundle_size());
+     }
+     assert(parm != NULL, "should never be null");
+     assert(field_value(i) == NULL, "already set");
+@@ -1109,7 +1169,7 @@ InlineTypeNode* InlineTypeNode::make_null(PhaseGVN& gvn, ciInlineKlass* vk) {
+   ptr->set_req(IsInit, gvn.intcon(0));
+   for (uint i = 0; i < ptr->field_count(); i++) {
+     ciType* field_type = ptr->field_type(i);
+-    Node* value = gvn.zerocon(field_type->basic_type());
++    Node* value = default_value(gvn, field_type);
+     if (field_type->is_inlinetype()) {
+       value = InlineTypeNode::make_null(gvn, field_type->as_inline_klass());
+     }
+diff --git a/src/hotspot/share/opto/inlinetypenode.hpp b/src/hotspot/share/opto/inlinetypenode.hpp
+index dee49217c00..4bf1bdece08 100644
+--- a/src/hotspot/share/opto/inlinetypenode.hpp
++++ b/src/hotspot/share/opto/inlinetypenode.hpp
+@@ -54,9 +54,6 @@ protected:
+                     // Nodes are connected in increasing order of the index of the field they correspond to.
+   };
+ 
+-  // Get the klass defining the field layout of the inline type
+-  ciInlineKlass* inline_klass() const { return type()->inline_klass(); }
+-
+   void make_scalar_in_safepoint(PhaseIterGVN* igvn, Unique_Node_List& worklist, SafePointNode* sfpt);
+ 
+   const TypePtr* field_adr_type(Node* base, int offset, ciInstanceKlass* holder, DecoratorSet decorators, PhaseGVN& gvn) const;
+@@ -71,6 +68,8 @@ protected:
+   void initialize_fields(GraphKit* kit, MultiNode* multi, uint& base_input, bool in, bool null_free = true, Node* null_check_region = NULL);
+ 
+ public:
++  // Get the klass defining the field layout of the inline type
++  ciInlineKlass* inline_klass() const { return type()->inline_klass(); }
+ 
+   // Create with default field values
+   static InlineTypeNode* make_default(PhaseGVN& gvn, ciInlineKlass* vk);
+@@ -88,6 +87,8 @@ public:
+   // Returns the constant oop of the default inline type allocation
+   static Node* default_oop(PhaseGVN& gvn, ciInlineKlass* vk);
+ 
++  static Node* default_value(PhaseGVN& gvn, ciType* field_type);
++
+   // Support for control flow merges
+   bool has_phi_inputs(Node* region);
+   InlineTypeNode* clone_with_phis(PhaseGVN* gvn, Node* region, bool is_init = false);
+@@ -102,13 +103,18 @@ public:
+   void  set_is_buffered() { _is_buffered = true; }
+ 
+   // Inline type fields
+-  uint          field_count() const { return req() - Values; }
+-  Node*         field_value(uint index) const;
++  virtual uint  field_count() const { return req() - Values; }
++  virtual Node* field_value(uint index) const;
++  uint          field_index(int offset) const;
++
+   Node*         field_value_by_offset(int offset, bool recursive = false) const;
+-  void      set_field_value(uint index, Node* value);
+-  void      set_field_value_by_offset(int offset, Node* value);
++  void          set_field_value(uint index, Node* value);
++  void          set_field_value_by_offset(int offset, Node* value);
+   int           field_offset(uint index) const;
+-  uint          field_index(int offset) const;
++  bool          is_multifield(uint index) const;
++  bool          is_multifield_base(uint index) const;
++  int           secondary_field_count(uint index) const;
++  bool          is_multifield() const;
+   ciType*       field_type(uint index) const;
+   bool          field_is_flattened(uint index) const;
+   bool          field_is_null_free(uint index) const;
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index e201ba5cb50..73f660ac396 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -2317,6 +2317,8 @@ bool LibraryCallKit::inline_unsafe_access(bool is_store, const BasicType type, c
+         return false;
+       }
+       base = vt->get_oop();
++      AllocateNode* alloc = AllocateNode::Ideal_allocation(base, &_gvn);
++      assert(alloc->_larval, "InlineType instance must be in _larval state for unsafe put operation.\n");
+     } else {
+       if (offset->is_Con()) {
+         long off = find_long_con(offset, 0);
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index e12d042d25b..f170174701b 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -109,7 +109,9 @@ class LibraryCallKit : public GraphKit {
+     Node* res = result();
+     if (!stopped() && res != NULL) {
+       BasicType bt = res->bottom_type()->basic_type();
+-      if (C->inlining_incrementally() && res->is_InlineType()) {
++      // VectorBoxes should be treated as special InlineTypeNodes, we will defer its buffering
++      // to a later stage to give opportunity for consumption by subsequent expanders.
++      if (C->inlining_incrementally() && res->is_InlineType() && !res->is_VectorBox()) {
+         // The caller expects an oop when incrementally inlining an intrinsic that returns an
+         // inline type. Make sure the call is re-executed if the allocation triggers a deoptimization.
+         PreserveReexecuteState preexecs(this);
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index a30e2ab8e5b..b969b2ba7e9 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -167,6 +167,7 @@ class Type;
+ class TypeNode;
+ class UnlockNode;
+ class InlineTypeNode;
++class VectorBoxNode;
+ class VectorNode;
+ class LoadVectorNode;
+ class LoadVectorMaskedNode;
+@@ -719,6 +720,7 @@ public:
+         DEFINE_CLASS_ID(ExpandV, Vector, 5)
+         DEFINE_CLASS_ID(CompressM, Vector, 6)
+       DEFINE_CLASS_ID(InlineType, Type, 8)
++        DEFINE_CLASS_ID(VectorBox, InlineType, 0)
+ 
+     DEFINE_CLASS_ID(Proj,  Node, 3)
+       DEFINE_CLASS_ID(CatchProj, Proj, 0)
+@@ -952,6 +954,7 @@ public:
+   DEFINE_CLASS_QUERY(SubTypeCheck)
+   DEFINE_CLASS_QUERY(Type)
+   DEFINE_CLASS_QUERY(InlineType)
++  DEFINE_CLASS_QUERY(VectorBox)
+   DEFINE_CLASS_QUERY(Vector)
+   DEFINE_CLASS_QUERY(VectorMaskCmp)
+   DEFINE_CLASS_QUERY(VectorUnbox)
+diff --git a/src/hotspot/share/opto/parse1.cpp b/src/hotspot/share/opto/parse1.cpp
+index 3f71b2dee11..79fdae1c2d9 100644
+--- a/src/hotspot/share/opto/parse1.cpp
++++ b/src/hotspot/share/opto/parse1.cpp
+@@ -921,9 +921,16 @@ void Compile::return_values(JVMState* jvms) {
+     kit.inc_sp(-ret_size);  // pop the return value(s)
+     kit.sync_jvms();
+     Node* res = kit.argument(0);
+-    if (tf()->returns_inline_type_as_fields()) {
++    if (res->isa_InlineType() &&
++        (VectorSupport::is_vector(res->as_InlineType()->inline_klass()) ||
++         VectorSupport::is_vector_payload_mf(res->as_InlineType()->inline_klass()))) {
++      InlineTypeNode* vt = res->as_InlineType();
++      kit.set_all_memory(C->immutable_memory());
++      vt = vt->buffer(&kit, true);
++      ret->add_req(vt->get_oop());
++    } else if (tf()->returns_inline_type_as_fields()) {
+       // Multiple return values (inline type fields): add as many edges
+-      // to the Return node as returned values.
++      // to the Return node as turned values.
+       InlineTypeNode* vt = res->as_InlineType();
+       ret->add_req_batch(NULL, tf()->range_cc()->cnt() - TypeFunc::Parms);
+       if (vt->is_allocated(&kit.gvn()) && !StressInlineTypeReturnedAsFields) {
+@@ -1134,7 +1141,7 @@ void Parse::do_exits() {
+   // See GraphKit::add_exception_state, which performs the commoning.
+   bool do_synch = method()->is_synchronized() && GenerateSynchronizationCode;
+ 
+-  // record exit from a method if compiled while Dtrace is turned on.
++  // record exit from a method if compiled while Dtrace is returned on.
+   if (do_synch || C->env()->dtrace_method_probes() || _replaced_nodes_for_exceptions) {
+     // First move the exception list out of _exits:
+     GraphKit kit(_exits.transfer_exceptions_into_jvms());
+diff --git a/src/hotspot/share/opto/parseHelper.cpp b/src/hotspot/share/opto/parseHelper.cpp
+index 39a11a50f7f..86018d2220d 100644
+--- a/src/hotspot/share/opto/parseHelper.cpp
++++ b/src/hotspot/share/opto/parseHelper.cpp
+@@ -36,6 +36,7 @@
+ #include "opto/parse.hpp"
+ #include "opto/rootnode.hpp"
+ #include "opto/runtime.hpp"
++#include "opto/vectornode.hpp"
+ #include "runtime/sharedRuntime.hpp"
+ 
+ //------------------------------make_dtrace_method_entry_exit ----------------
+@@ -368,6 +369,9 @@ void Parse::do_withfield() {
+   for (uint i = 2; i < holder->req(); ++i) {
+     new_vt->set_req(i, holder->in(i));
+   }
++  if (field->secondary_fields_count() > 1 && !val->bottom_type()->isa_vect()) {
++    val = _gvn.transform(VectorNode::scalar2vector(val, field->secondary_fields_count(), Type::get_const_type(field->type()), false));
++  }
+   new_vt->set_field_value_by_offset(field->offset(), val);
+   push(_gvn.transform(new_vt));
+ }
+diff --git a/src/hotspot/share/opto/vector.cpp b/src/hotspot/share/opto/vector.cpp
+index 7000372c0e7..61b096586b6 100644
+--- a/src/hotspot/share/opto/vector.cpp
++++ b/src/hotspot/share/opto/vector.cpp
+@@ -31,6 +31,11 @@
+ #include "opto/rootnode.hpp"
+ #include "opto/vector.hpp"
+ #include "utilities/macros.hpp"
++#include "prims/vectorSupport.hpp"
++
++static bool is_vector(ciKlass* klass) {
++  return klass->is_subclass_of(ciEnv::current()->vector_Vector_klass());
++}
+ 
+ static bool is_vector_mask(ciKlass* klass) {
+   return klass->is_subclass_of(ciEnv::current()->vector_VectorMask_klass());
+@@ -40,7 +45,6 @@ static bool is_vector_shuffle(ciKlass* klass) {
+   return klass->is_subclass_of(ciEnv::current()->vector_VectorShuffle_klass());
+ }
+ 
+-
+ void PhaseVector::optimize_vector_boxes() {
+   Compile::TracePhase tp("vector_elimination", &timers[_t_vector_elimination]);
+ 
+@@ -179,7 +183,7 @@ static JVMState* clone_jvms(Compile* C, SafePointNode* sfpt) {
+ }
+ 
+ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+-  Node* vec_value = vec_box->in(VectorBoxNode::Value);
++  Node* vec_value = vec_box->get_vec();
+   PhaseGVN& gvn = *C->initial_gvn();
+ 
+   // Process merged VBAs
+@@ -190,7 +194,7 @@ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+       Node* use = vec_box->fast_out(i);
+       if (use->is_CallJava()) {
+         CallJavaNode* call = use->as_CallJava();
+-        if (call->has_non_debug_use(vec_box) && vec_box->in(VectorBoxNode::Box)->is_Phi()) {
++        if (call->has_non_debug_use(vec_box) && vec_box->get_oop()->is_Phi()) {
+           calls.push(call);
+         }
+       }
+@@ -214,7 +218,7 @@ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+ 
+       Node* new_vbox = NULL;
+       {
+-        Node* vect = vec_box->in(VectorBoxNode::Value);
++        Node* vect = vec_box->get_vec();
+         const TypeInstPtr* vbox_type = vec_box->box_type();
+         const TypeVect* vt = vec_box->vec_type();
+         BasicType elem_bt = vt->element_basic_type();
+@@ -238,6 +242,13 @@ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+     }
+   }
+ 
++  ciInstanceKlass* iklass = vec_box->box_type()->instance_klass();
++  // Multi-field based vectors are InlineTypeNodes and are already
++  // scalarized by process_inline_types.
++  if (is_vector(iklass)) {
++    return;
++  }
++
+   // Process debug uses at safepoints
+   Unique_Node_List safepoints(C->comp_arena());
+ 
+@@ -258,7 +269,6 @@ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+     }
+   }
+ 
+-  ciInstanceKlass* iklass = vec_box->box_type()->instance_klass();
+   int n_fields = iklass->nof_nonstatic_fields();
+   assert(n_fields == 1, "sanity");
+ 
+@@ -304,16 +314,17 @@ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+ 
+ void PhaseVector::expand_vbox_node(VectorBoxNode* vec_box) {
+   if (vec_box->outcnt() > 0) {
+-    Node* vbox = vec_box->in(VectorBoxNode::Box);
+-    Node* vect = vec_box->in(VectorBoxNode::Value);
+-    Node* result = expand_vbox_node_helper(vbox, vect, vec_box->box_type(), vec_box->vec_type());
++    Node* vbox = vec_box->get_oop();
++    Node* vect = vec_box->get_vec();
++    Node* result = expand_vbox_node_helper(vec_box, vbox, vect, vec_box->box_type(), vec_box->vec_type());
+     C->gvn_replace_by(vec_box, result);
+     C->print_method(PHASE_EXPAND_VBOX, 3, vec_box);
+   }
+   C->remove_macro_node(vec_box);
+ }
+ 
+-Node* PhaseVector::expand_vbox_node_helper(Node* vbox,
++Node* PhaseVector::expand_vbox_node_helper(Node* vec_box,
++                                           Node* vbox,
+                                            Node* vect,
+                                            const TypeInstPtr* box_type,
+                                            const TypeVect* vect_type) {
+@@ -321,7 +332,7 @@ Node* PhaseVector::expand_vbox_node_helper(Node* vbox,
+     assert(vbox->as_Phi()->region() == vect->as_Phi()->region(), "");
+     Node* new_phi = new PhiNode(vbox->as_Phi()->region(), box_type);
+     for (uint i = 1; i < vbox->req(); i++) {
+-      Node* new_box = expand_vbox_node_helper(vbox->in(i), vect->in(i), box_type, vect_type);
++      Node* new_box = expand_vbox_node_helper(vec_box, vbox->in(i), vect->in(i), box_type, vect_type);
+       new_phi->set_req(i, new_box);
+     }
+     new_phi = C->initial_gvn()->transform(new_phi);
+@@ -336,14 +347,14 @@ Node* PhaseVector::expand_vbox_node_helper(Node* vbox,
+     // move up and are guaranteed to dominate.
+     Node* new_phi = new PhiNode(vbox->as_Phi()->region(), box_type);
+     for (uint i = 1; i < vbox->req(); i++) {
+-      Node* new_box = expand_vbox_node_helper(vbox->in(i), vect, box_type, vect_type);
++      Node* new_box = expand_vbox_node_helper(vec_box, vbox->in(i), vect, box_type, vect_type);
+       new_phi->set_req(i, new_box);
+     }
+     new_phi = C->initial_gvn()->transform(new_phi);
+     return new_phi;
+   } else if (vbox->is_Proj() && vbox->in(0)->Opcode() == Op_VectorBoxAllocate) {
+     VectorBoxAllocateNode* vbox_alloc = static_cast<VectorBoxAllocateNode*>(vbox->in(0));
+-    return expand_vbox_alloc_node(vbox_alloc, vect, box_type, vect_type);
++    return expand_vbox_alloc_node(vec_box, vbox_alloc, vect, box_type, vect_type);
+   } else {
+     assert(!vbox->is_Phi(), "");
+     // TODO: assert that expanded vbox is initialized with the same value (vect).
+@@ -351,15 +362,72 @@ Node* PhaseVector::expand_vbox_node_helper(Node* vbox,
+   }
+ }
+ 
+-Node* PhaseVector::expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
++Node* PhaseVector::expand_vbox_alloc_node_mf(Node* vbox,
++                                             VectorBoxAllocateNode* vbox_alloc,
++                                             Node* value,
++                                             const TypeInstPtr* box_type,
++                                             const TypeVect* vect_type) {
++  assert(vbox->isa_InlineType(), "");
++  JVMState* jvms = clone_jvms(C, vbox_alloc);
++  GraphKit kit(jvms);
++  PhaseGVN& gvn = kit.gvn();
++
++  ciInstanceKlass* box_klass = box_type->instance_klass();
++  BasicType bt = vect_type->element_basic_type();
++  int num_elem = vect_type->length();
++  int elem_size = type2aelembytes(bt);
++
++  const TypeKlassPtr* klass_type = box_type->as_klass_type();
++  Node* klass_node = kit.makecon(klass_type);
++  Node* buffer_mem = kit.new_instance(klass_node, NULL, NULL, /* deoptimize_on_exception */ true, vbox->as_InlineType());
++  // TODO: Re-use existing value storage routine from InlineTypeNode.
++  //vbox->as_InlineType()->store(&kit, buffer, buffer, box_klass);
++
++  // Store the vector value into the array.
++  // (The store should be captured by InitializeNode and turned into initialized store later.)
++  ciSymbol* payload_sig = ciSymbol::make(VectorSupport::get_vector_payload_field_signature(num_elem * elem_size)->as_C_string());
++  ciSymbol* payload_name = ciSymbol::make(vmSymbols::payload_name()->as_C_string());
++  ciField* payload = box_klass->get_field_by_name(payload_name, payload_sig, false);
++
++  Node* buffer_start_adr = kit.basic_plus_adr(buffer_mem, payload->offset());
++  const TypePtr* buffer_adr_type = buffer_start_adr->bottom_type()->is_ptr();
++  Node* buffer_mem_start = kit.memory(buffer_start_adr);
++  Node* vstore = gvn.transform(StoreVectorNode::make(0,
++                                                     kit.control(),
++                                                     buffer_mem_start,
++                                                     buffer_start_adr,
++                                                     buffer_adr_type,
++                                                     value,
++                                                     num_elem));
++  // TODO: With respect to aliasing behaviour multi-field alias type should be same as that of
++  // array, since multi-field is a bundle of scalars. An alias type determines the size of
++  // memory slice updated in global memory at a particular alias index, subsequent memory read
++  // with same alias type can directly fetch the value thus saving an extra load operation.
++  kit.set_memory(vstore, buffer_adr_type);
++
++  C->set_max_vector_size(MAX2(C->max_vector_size(), vect_type->length_in_bytes()));
++
++  kit.replace_call(vbox_alloc, buffer_mem, true);
++  C->remove_macro_node(vbox_alloc);
++
++  return buffer_mem;
++}
++
++
++Node* PhaseVector::expand_vbox_alloc_node(Node* vbox,
++                                          VectorBoxAllocateNode* vbox_alloc,
+                                           Node* value,
+                                           const TypeInstPtr* box_type,
+                                           const TypeVect* vect_type) {
++  ciInstanceKlass* box_klass = box_type->instance_klass();
++  if (is_vector(box_klass)) {
++    return expand_vbox_alloc_node_mf(vbox, vbox_alloc, value, box_type, vect_type);
++  }
++
+   JVMState* jvms = clone_jvms(C, vbox_alloc);
+   GraphKit kit(jvms);
+   PhaseGVN& gvn = kit.gvn();
+ 
+-  ciInstanceKlass* box_klass = box_type->instance_klass();
+   BasicType bt = vect_type->element_basic_type();
+   int num_elem = vect_type->length();
+ 
+@@ -424,6 +492,64 @@ Node* PhaseVector::expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
+   return vec_obj;
+ }
+ 
++Node* PhaseVector::get_loaded_payload(VectorUnboxNode* vec_unbox) {
++   Node* obj = vec_unbox->obj();
++   while(obj->is_InlineType()) {
++      obj = obj->as_InlineType()->field_value(0);
++   }
++   if (obj->bottom_type()->isa_vect()) {
++     return obj;
++   }
++   return NULL;
++}
++
++void PhaseVector::expand_vunbox_node_mf(VectorUnboxNode* vec_unbox) {
++  if (vec_unbox->outcnt() > 0) {
++    GraphKit kit;
++    PhaseGVN& gvn = kit.gvn();
++
++    Node* obj = vec_unbox->obj();
++    const TypeInstPtr* tinst = gvn.type(obj)->isa_instptr();
++    ciInstanceKlass* from_kls = tinst->instance_klass();
++    const TypeVect* vt = vec_unbox->bottom_type()->is_vect();
++    BasicType bt = vt->element_basic_type();
++    BasicType masktype = bt;
++    int num_elem = vt->length();
++
++    int elem_size = type2aelembytes(bt);
++    Node* vec_val_load = get_loaded_payload(vec_unbox);
++    if (vec_val_load == NULL) {
++      assert(obj->isa_InlineType(), "");
++      ciSymbol* payload_sig = ciSymbol::make(VectorSupport::get_vector_payload_field_signature(num_elem * elem_size)->as_C_string());
++      ciSymbol* payload_name = ciSymbol::make(vmSymbols::payload_name()->as_C_string());
++      ciField* payload = from_kls->get_field_by_name(payload_name, payload_sig, false);
++
++      Node* mem = vec_unbox->mem();
++      Node* ctrl = vec_unbox->in(0);
++      Node* vec_adr = gvn.transform(kit.basic_plus_adr(obj, payload->offset()));
++
++      const TypePtr *adr_type = gvn.type(vec_adr)->isa_ptr();
++
++      int num_elem = vt->length();
++      vec_val_load = LoadVectorNode::make(0,
++                                          ctrl,
++                                          mem,
++                                          vec_adr,
++                                          adr_type,
++                                          num_elem,
++                                          bt);
++      vec_val_load = gvn.transform(vec_val_load);
++    }
++
++    C->set_max_vector_size(MAX2(C->max_vector_size(), vt->length_in_bytes()));
++
++    gvn.hash_delete(vec_unbox);
++    vec_unbox->disconnect_inputs(C);
++    C->gvn_replace_by(vec_unbox, vec_val_load);
++  }
++  C->remove_macro_node(vec_unbox);
++}
++
+ void PhaseVector::expand_vunbox_node(VectorUnboxNode* vec_unbox) {
+   if (vec_unbox->outcnt() > 0) {
+     GraphKit kit;
+@@ -436,6 +562,10 @@ void PhaseVector::expand_vunbox_node(VectorUnboxNode* vec_unbox) {
+     BasicType bt = vt->element_basic_type();
+     BasicType masktype = bt;
+ 
++    if (is_vector(from_kls)) {
++      return expand_vunbox_node_mf(vec_unbox);
++    }
++
+     if (is_vector_mask(from_kls)) {
+       bt = T_BOOLEAN;
+     } else if (is_vector_shuffle(from_kls)) {
+diff --git a/src/hotspot/share/opto/vector.hpp b/src/hotspot/share/opto/vector.hpp
+index 067a2280d30..0c5329027bb 100644
+--- a/src/hotspot/share/opto/vector.hpp
++++ b/src/hotspot/share/opto/vector.hpp
+@@ -37,17 +37,27 @@ class PhaseVector : public Phase {
+   void expand_vbox_nodes();
+   void expand_vbox_node(VectorBoxNode* vec_box);
+   Node* expand_vbox_node_helper(Node* vbox,
++                                Node* vbox_alloc,
+                                 Node* vect,
+                                 const TypeInstPtr* box_type,
+                                 const TypeVect* vect_type);
+-  Node* expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
++  Node* expand_vbox_alloc_node(Node* vbox,
++                               VectorBoxAllocateNode* vbox_alloc,
+                                Node* value,
+                                const TypeInstPtr* box_type,
+                                const TypeVect* vect_type);
++  Node* expand_vbox_alloc_node_mf(Node* vbox,
++                                  VectorBoxAllocateNode* vbox_alloc,
++                                  Node* value,
++                                  const TypeInstPtr* box_type,
++                                  const TypeVect* vect_type);
++  Node* get_loaded_payload(VectorUnboxNode* vec_unbox);
++
+   void scalarize_vbox_nodes();
+   void scalarize_vbox_node(VectorBoxNode* vec_box);
+   void expand_vunbox_nodes();
+   void expand_vunbox_node(VectorUnboxNode* vec_box);
++  void expand_vunbox_node_mf(VectorUnboxNode* vec_unbox);
+   void eliminate_vbox_alloc_nodes();
+   void eliminate_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc);
+   void do_cleanup();
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index ec4ed774ada..caa55a19aec 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -157,7 +157,7 @@ Node* GraphKit::box_vector(Node* vector, const TypeInstPtr* vbox_type, BasicType
+ 
+   assert(check_vbox(vbox_type), "");
+   const TypeVect* vt = TypeVect::make(elem_bt, num_elem, is_vector_mask(vbox_type->instance_klass()));
+-  VectorBoxNode* vbox = new VectorBoxNode(C, ret, vector, vbox_type, vt);
++  Node* vbox = VectorBoxNode::make_box_node(gvn(), C, ret, vector, vbox_type, vt);
+   return gvn().transform(vbox);
+ }
+ 
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index dfc81402ede..74b5b2e09e0 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -28,6 +28,7 @@
+ #include "opto/subnode.hpp"
+ #include "opto/vectornode.hpp"
+ #include "opto/convertnode.hpp"
++#include "opto/inlinetypenode.hpp"
+ #include "utilities/powerOfTwo.hpp"
+ #include "utilities/globalDefinitions.hpp"
+ 
+@@ -1623,9 +1624,13 @@ Node* VectorInsertNode::make(Node* vec, Node* new_val, int position) {
+ }
+ 
+ Node* VectorUnboxNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+-  Node* n = obj()->uncast();
++  Node* n = obj();
++  if (n->is_InlineType() && !n->is_VectorBox() && n->as_InlineType()->field_count() == 1) {
++    n = n->as_InlineType()->get_oop();
++  }
++  n = n->uncast();
+   if (EnableVectorReboxing && n->Opcode() == Op_VectorBox) {
+-    if (Type::cmp(bottom_type(), n->in(VectorBoxNode::Value)->bottom_type()) == 0) {
++    if (Type::cmp(bottom_type(), n->as_VectorBox()->get_vec()->bottom_type()) == 0) {
+       // Handled by VectorUnboxNode::Identity()
+     } else {
+       VectorBoxNode* vbox = static_cast<VectorBoxNode*>(n);
+@@ -1634,7 +1639,7 @@ Node* VectorUnboxNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+       const TypeVect* out_vt = type()->is_vect();
+ 
+       if (in_vt->length() == out_vt->length()) {
+-        Node* value = vbox->in(VectorBoxNode::Value);
++        Node* value = vbox->field_value(0);
+ 
+         bool is_vector_mask    = vbox_klass->is_subclass_of(ciEnv::current()->vector_VectorMask_klass());
+         bool is_vector_shuffle = vbox_klass->is_subclass_of(ciEnv::current()->vector_VectorShuffle_klass());
+@@ -1660,10 +1665,14 @@ Node* VectorUnboxNode::Ideal(PhaseGVN* phase, bool can_reshape) {
+ }
+ 
+ Node* VectorUnboxNode::Identity(PhaseGVN* phase) {
+-  Node* n = obj()->uncast();
++  Node* n = obj();
++  if (n->is_InlineType() && !n->is_VectorBox() && n->as_InlineType()->field_count() == 1) {
++    n = n->as_InlineType()->get_oop();
++  }
++  n = n->uncast();
+   if (EnableVectorReboxing && n->Opcode() == Op_VectorBox) {
+-    if (Type::cmp(bottom_type(), n->in(VectorBoxNode::Value)->bottom_type()) == 0) {
+-      return n->in(VectorBoxNode::Value); // VectorUnbox (VectorBox v) ==> v
++    if (Type::cmp(bottom_type(), n->as_VectorBox()->get_vec()->bottom_type()) == 0) {
++      return n->as_VectorBox()->get_vec(); // VectorUnbox (VectorBox v) ==> v
+     } else {
+       // Handled by VectorUnboxNode::Ideal().
+     }
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 21a8a8737a6..d2a1e4f9f49 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -28,6 +28,7 @@
+ #include "opto/matcher.hpp"
+ #include "opto/memnode.hpp"
+ #include "opto/node.hpp"
++#include "opto/inlinetypenode.hpp"
+ #include "opto/opcodes.hpp"
+ #include "prims/vectorSupport.hpp"
+ 
+@@ -1665,24 +1666,36 @@ class VectorInsertNode : public VectorNode {
+   static Node* make(Node* vec, Node* new_val, int position);
+ };
+ 
+-class VectorBoxNode : public Node {
++class VectorBoxNode : public InlineTypeNode {
+  private:
+-  const TypeInstPtr* const _box_type;
+-  const TypeVect*    const _vec_type;
+- public:
+-  enum {
+-     Box   = 1,
+-     Value = 2
+-  };
+-  VectorBoxNode(Compile* C, Node* box, Node* val,
+-                const TypeInstPtr* box_type, const TypeVect* vt)
+-    : Node(NULL, box, val), _box_type(box_type), _vec_type(vt) {
+-    init_flags(Flag_is_macro);
+-    C->add_macro_node(this);
++  const TypeInstPtr* _box_type;
++  const TypeVect*    _vec_type;
++
++ public:
++  void set_box_type(const TypeInstPtr* box_type) { _box_type = box_type; }
++  void set_vec_type(const TypeVect* vec_type) { _vec_type = vec_type; }
++
++  VectorBoxNode(ciInlineKlass* vk, Node* oop, bool null_free, bool is_buffered) :
++    InlineTypeNode(vk, oop, null_free, is_buffered) {}
++
++  static VectorBoxNode* make_box_node(PhaseGVN& gvn, Compile* C, Node* box, Node* val,
++                                      const TypeInstPtr* box_type, const TypeVect* vt) {
++    ciInlineKlass* vk = static_cast<ciInlineKlass*>(box_type->inline_klass());
++    VectorBoxNode* box_node = new VectorBoxNode(vk, box, true, vk->is_empty() && vk->is_initialized());
++    box_node->set_is_init(gvn);
++    box_node->set_vec_type(vt);
++    box_node->set_box_type(box_type);
++    box_node->init_flags(Flag_is_macro);
++    box_node->init_class_id(Class_VectorBox);
++    box_node->init_req(InlineTypeNode::Values, val);
++    C->add_macro_node(box_node);
++
++    return box_node;
+   }
+ 
+   const  TypeInstPtr* box_type() const { assert(_box_type != NULL, ""); return _box_type; };
+   const  TypeVect*    vec_type() const { assert(_vec_type != NULL, ""); return _vec_type; };
++  Node*  get_vec() { return field_value(0); }
+ 
+   virtual int Opcode() const;
+   virtual const Type* bottom_type() const { return _box_type; }
+diff --git a/src/hotspot/share/prims/vectorSupport.cpp b/src/hotspot/share/prims/vectorSupport.cpp
+index 92d0371806c..ed0eb7181ac 100644
+--- a/src/hotspot/share/prims/vectorSupport.cpp
++++ b/src/hotspot/share/prims/vectorSupport.cpp
+@@ -26,6 +26,7 @@
+ #include "classfile/javaClasses.inline.hpp"
+ #include "classfile/vmClasses.hpp"
+ #include "classfile/vmSymbols.hpp"
++#include "classfile/vmClassMacros.hpp"
+ #include "code/location.hpp"
+ #include "jni.h"
+ #include "jvm.h"
+@@ -38,6 +39,7 @@
+ #include "runtime/interfaceSupport.inline.hpp"
+ #include "runtime/jniHandles.inline.hpp"
+ #include "runtime/stackValue.hpp"
++#include "utilities/debug.hpp"
+ #ifdef COMPILER2
+ #include "opto/matcher.hpp"
+ #endif // COMPILER2
+@@ -65,10 +67,23 @@ const char* VectorSupport::svmlname[VectorSupport::NUM_SVML_OP] = {
+ };
+ #endif
+ 
++
++bool VectorSupport::is_vector(ciKlass* klass) {
++  return klass->is_subclass_of(ciEnv::current()->vector_VectorPayload_klass());
++}
++
+ bool VectorSupport::is_vector(Klass* klass) {
+   return klass->is_subclass_of(vmClasses::vector_VectorPayload_klass());
+ }
+ 
++bool VectorSupport::is_vector_payload_mf(ciKlass* klass) {
++  return klass->is_subclass_of(ciEnv::current()->vector_VectorPayloadMF_klass());
++}
++
++bool VectorSupport::is_vector_payload_mf(Klass* klass) {
++  return klass->is_subclass_of(vmClasses::vector_VectorPayloadMF_klass());
++}
++
+ bool VectorSupport::is_vector_mask(Klass* klass) {
+   return klass->is_subclass_of(vmClasses::vector_VectorMask_klass());
+ }
+@@ -132,43 +147,107 @@ void VectorSupport::init_payload_element(typeArrayOop arr, BasicType elem_bt, in
+   }
+ }
+ 
+-Handle VectorSupport::allocate_vector_payload_helper(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, Location location, TRAPS) {
+-  int num_elem = klass2length(ik);
+-  BasicType elem_bt = klass2bt(ik);
++Handle VectorSupport::allocate_vector_payload_helper(InstanceKlass* ik, int num_elem, BasicType elem_bt, frame* fr, RegisterMap* reg_map, Location location, TRAPS) {
+   int elem_size = type2aelembytes(elem_bt);
+ 
++  // FIXME: Existing handling is used for shuffles and mask classes, to be removed after
++  // complete support.
+   // On-heap vector values are represented as primitive arrays.
+-  TypeArrayKlass* tak = TypeArrayKlass::cast(Universe::typeArrayKlassObj(elem_bt));
++  if (is_vector_shuffle(ik) || is_vector_mask(ik)) {
++    TypeArrayKlass* tak = TypeArrayKlass::cast(Universe::typeArrayKlassObj(elem_bt));
++    typeArrayOop arr = tak->allocate(num_elem, CHECK_NH); // safepoint
+ 
+-  typeArrayOop arr = tak->allocate(num_elem, CHECK_NH); // safepoint
++    if (location.is_register()) {
++      // Value was in a callee-saved register.
++      VMReg vreg = VMRegImpl::as_VMReg(location.register_number());
+ 
+-  if (location.is_register()) {
+-    // Value was in a callee-saved register.
+-    VMReg vreg = VMRegImpl::as_VMReg(location.register_number());
++      for (int i = 0; i < num_elem; i++) {
++        int vslot = (i * elem_size) / VMRegImpl::stack_slot_size;
++        int off   = (i * elem_size) % VMRegImpl::stack_slot_size;
+ 
+-    for (int i = 0; i < num_elem; i++) {
+-      int vslot = (i * elem_size) / VMRegImpl::stack_slot_size;
+-      int off   = (i * elem_size) % VMRegImpl::stack_slot_size;
+-
+-      address elem_addr = reg_map->location(vreg, vslot) + off; // assumes little endian element order
+-      init_payload_element(arr, elem_bt, i, elem_addr);
++        address elem_addr = reg_map->location(vreg, vslot) + off; // assumes little endian element order
++        init_payload_element(arr, elem_bt, i, elem_addr);
++      }
++    } else {
++      // Value was directly saved on the stack.
++      address base_addr = ((address)fr->unextended_sp()) + location.stack_offset();
++      for (int i = 0; i < num_elem; i++) {
++        init_payload_element(arr, elem_bt, i, base_addr + i * elem_size);
++      }
+     }
++    return Handle(THREAD, arr);
+   } else {
+-    // Value was directly saved on the stack.
+-    address base_addr = ((address)fr->unextended_sp()) + location.stack_offset();
+-    for (int i = 0; i < num_elem; i++) {
+-      init_payload_element(arr, elem_bt, i, base_addr + i * elem_size);
+-    }
++    // On-heap vector values are represented as primitive class instances with a multi-field payload.
++    int vec_size = elem_size * num_elem;
++    InstanceKlass* payload_kls = get_vector_payload_klass(vec_size);
++    assert(payload_kls->is_inline_klass(), "");
++    instanceOop obj = InlineKlass::cast(payload_kls)->allocate_instance(THREAD);
++
++    fieldDescriptor fd;
++    Klass* def = payload_kls->find_field(vmSymbols::mfield_name(), vmSymbols::type_signature(T_BYTE), false, &fd);
++    assert(fd.is_multifield_base() && fd.secondary_fields_count(fd.index()) == vec_size, "");
++
++    int ffo = InlineKlass::cast(payload_kls)->first_field_offset();
++
++    if (location.is_register()) {
++      // Value was in a callee-saved register.
++      VMReg vreg = VMRegImpl::as_VMReg(location.register_number());
++      for (int i = 0; i < vec_size; i++) {
++        int vslot = i / VMRegImpl::stack_slot_size;
++        int off   = i % VMRegImpl::stack_slot_size;
++        address elem_addr = reg_map->location(vreg, vslot) + off; // assumes little endian element order
++        obj->byte_field_put(ffo + i, *(jbyte*)elem_addr);
++      }
++    } else {
++      // Value was directly saved on the stack.
++      address base_addr = ((address)fr->unextended_sp()) + location.stack_offset();
++      for (int i = 0; i < elem_size * num_elem; i++) {
++        obj->byte_field_put(ffo + i, *(jbyte*)(base_addr + i));
++      }
++    }
++    return Handle(THREAD, obj);
++  }
++}
++
++Symbol* VectorSupport::get_vector_payload_field_signature(int vec_size) {
++  switch(vec_size) {
++    case  8: return vmSymbols::vector_VectorPayloadMF64_signature();
++    case 16: return vmSymbols::vector_VectorPayloadMF128_signature();
++    case 32: return vmSymbols::vector_VectorPayloadMF256_signature();
++    case 64: return vmSymbols::vector_VectorPayloadMF512_signature();
++    default: ShouldNotReachHere();
++  }
++  return NULL;
++}
++
++InstanceKlass* VectorSupport::get_vector_payload_klass(int vec_size) {
++  switch(vec_size) {
++    case  8: return vmClasses::klass_at(VM_CLASS_ID(vector_VectorPayloadMF64_klass));
++    case 16: return vmClasses::klass_at(VM_CLASS_ID(vector_VectorPayloadMF128_klass));
++    case 32: return vmClasses::klass_at(VM_CLASS_ID(vector_VectorPayloadMF256_klass));
++    case 64: return vmClasses::klass_at(VM_CLASS_ID(vector_VectorPayloadMF512_klass));
++    default: ShouldNotReachHere();
++  }
++  return NULL;
++}
++
++Symbol* VectorSupport::get_vector_payload_klass_symbol(int vec_size) {
++  switch(vec_size) {
++    case  8: return vmSymbols::jdk_internal_vm_vector_VectorPayloadMF64();
++    case 16: return vmSymbols::jdk_internal_vm_vector_VectorPayloadMF128();
++    case 32: return vmSymbols::jdk_internal_vm_vector_VectorPayloadMF256();
++    case 64: return vmSymbols::jdk_internal_vm_vector_VectorPayloadMF512();
++    default: ShouldNotReachHere();
+   }
+-  return Handle(THREAD, arr);
++  return NULL;
+ }
+ 
+-Handle VectorSupport::allocate_vector_payload(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, ScopeValue* payload, TRAPS) {
++Handle VectorSupport::allocate_vector_payload(InstanceKlass* ik, int num_elem, BasicType elem_bt, frame* fr, RegisterMap* reg_map, ScopeValue* payload, TRAPS) {
+   if (payload->is_location()) {
+     Location location = payload->as_LocationValue()->location();
+     if (location.type() == Location::vector) {
+-      // Vector value in an aligned adjacent tuple (1, 2, 4, 8, or 16 slots).
+-      return allocate_vector_payload_helper(ik, fr, reg_map, location, THREAD); // safepoint
++      // Vector payload value in an aligned adjacent tuple (8, 16, 32 or 64 bytes).
++      return allocate_vector_payload_helper(ik, num_elem, T_BYTE, fr, reg_map, location, THREAD); // safepoint
+     }
+ #ifdef ASSERT
+     // Other payload values are: 'oop' type location and scalar-replaced boxed vector representation.
+@@ -187,14 +266,41 @@ Handle VectorSupport::allocate_vector_payload(InstanceKlass* ik, frame* fr, Regi
+   return Handle(THREAD, nullptr);
+ }
+ 
++instanceOop VectorSupport::allocate_vector_payload(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, ObjectValue* ov, TRAPS) {
++  assert(is_vector_payload_mf(ik), "%s not a vector payload", ik->name()->as_C_string());
++  assert(ov->field_size() == 1, "%s not a vector", ik->name()->as_C_string());
++  assert(ik->is_inline_klass(), "");
++
++  ScopeValue* payload_value = ov->field_at(0);
++  int num_elem = InlineKlass::cast(ik)->get_exact_size_in_bytes();
++  Handle payload_instance = VectorSupport::allocate_vector_payload(ik, num_elem, T_BYTE, fr, reg_map, payload_value, CHECK_NULL);
++  return (instanceOop)payload_instance();
++}
++
+ instanceOop VectorSupport::allocate_vector(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, ObjectValue* ov, TRAPS) {
+   assert(is_vector(ik), "%s not a vector", ik->name()->as_C_string());
+   assert(ov->field_size() == 1, "%s not a vector", ik->name()->as_C_string());
++  assert(ik->is_inline_klass(), "");
+ 
++  int num_elem = klass2length(ik);
++  BasicType elem_bt = klass2bt(ik);
+   ScopeValue* payload_value = ov->field_at(0);
+-  Handle payload_instance = VectorSupport::allocate_vector_payload(ik, fr, reg_map, payload_value, CHECK_NULL);
+-  instanceOop vbox = ik->allocate_instance(CHECK_NULL);
+-  vector_VectorPayload::set_payload(vbox, payload_instance());
++  Handle payload_instance = VectorSupport::allocate_vector_payload(ik, num_elem, elem_bt, fr, reg_map, payload_value, CHECK_NULL);
++  instanceOop vbox = ik->allocate_instance(THREAD);
++  Handle vbox_h = Handle(THREAD, vbox);
++
++  fieldDescriptor fd;
++  int elem_size = type2aelembytes(elem_bt);
++  Symbol* payload_sig = VectorSupport::get_vector_payload_field_signature(num_elem * elem_size);
++  Klass* def = ik->find_field(vmSymbols::payload_name(), payload_sig, false, &fd);
++  assert(def != NULL, "");
++
++  if (fd.is_inlined()) {
++    InlineKlass* field_ik = InlineKlass::cast(ik->get_inline_type_field_klass(fd.index()));
++    field_ik->write_inlined_field(vbox_h(), fd.offset(), payload_instance(), THREAD);
++  } else {
++    vbox_h()->obj_field_put(fd.offset(), payload_instance());
++  }
+   return vbox;
+ }
+ 
+diff --git a/src/hotspot/share/prims/vectorSupport.hpp b/src/hotspot/share/prims/vectorSupport.hpp
+index 7302e006064..1f4dd49d3b3 100644
+--- a/src/hotspot/share/prims/vectorSupport.hpp
++++ b/src/hotspot/share/prims/vectorSupport.hpp
+@@ -31,6 +31,7 @@
+ #include "oops/typeArrayOop.hpp"
+ #include "runtime/registerMap.hpp"
+ #include "utilities/exceptions.hpp"
++#include "ci/ciKlass.hpp"
+ 
+ extern "C" {
+   void JNICALL JVM_RegisterVectorSupportMethods(JNIEnv* env, jclass vsclass);
+@@ -38,8 +39,8 @@ extern "C" {
+ 
+ class VectorSupport : AllStatic {
+  private:
+-  static Handle allocate_vector_payload(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, ScopeValue* payload, TRAPS);
+-  static Handle allocate_vector_payload_helper(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, Location location, TRAPS);
++  static Handle allocate_vector_payload_helper(InstanceKlass* ik, int num_elem, BasicType elem_bt, frame* fr, RegisterMap* reg_map, Location location, TRAPS);
++  static Handle allocate_vector_payload(InstanceKlass* ik, int num_elem, BasicType elem_bt, frame* fr, RegisterMap* reg_map, ScopeValue* payload, TRAPS);
+ 
+   static void init_payload_element(typeArrayOop arr, BasicType elem_bt, int index, address addr);
+ 
+@@ -144,8 +145,16 @@ class VectorSupport : AllStatic {
+   static int vop2ideal(jint vop, BasicType bt);
+ 
+   static instanceOop allocate_vector(InstanceKlass* holder, frame* fr, RegisterMap* reg_map, ObjectValue* sv, TRAPS);
++  static instanceOop allocate_vector_payload(InstanceKlass* ik, frame* fr, RegisterMap* reg_map, ObjectValue* sv, TRAPS);
++
++  static InstanceKlass* get_vector_payload_klass(int vec_size);
++  static Symbol* get_vector_payload_klass_symbol(int vec_size);
++  static Symbol* get_vector_payload_field_signature(int vec_size);
+ 
+   static bool is_vector(Klass* klass);
++  static bool is_vector(ciKlass* klass);
++  static bool is_vector_payload_mf(Klass* klass);
++  static bool is_vector_payload_mf(ciKlass* klass);
+   static bool is_vector_mask(Klass* klass);
+   static bool is_vector_shuffle(Klass* klass);
+ };
+diff --git a/src/hotspot/share/runtime/deoptimization.cpp b/src/hotspot/share/runtime/deoptimization.cpp
+index 98ea8c2e022..c87534f2c1d 100644
+--- a/src/hotspot/share/runtime/deoptimization.cpp
++++ b/src/hotspot/share/runtime/deoptimization.cpp
+@@ -1143,6 +1143,8 @@ bool Deoptimization::realloc_objects(JavaThread* thread, frame* fr, RegisterMap*
+ #ifdef COMPILER2
+         if (EnableVectorSupport && VectorSupport::is_vector(ik)) {
+           obj = VectorSupport::allocate_vector(ik, fr, reg_map, sv, THREAD);
++        } else if (EnableVectorSupport && VectorSupport::is_vector_payload_mf(ik)) {
++          obj = VectorSupport::allocate_vector_payload(ik, fr, reg_map, sv, THREAD); 
+         } else {
+           obj = ik->allocate_instance(THREAD);
+         }
+@@ -1390,7 +1392,7 @@ static int reassign_fields_by_klass(InstanceKlass* klass, frame* fr, RegisterMap
+   InstanceKlass* ik = klass;
+   while (ik != NULL) {
+     for (AllFieldStream fs(ik); !fs.done(); fs.next()) {
+-      if (!fs.access_flags().is_static() && (!skip_internal || !fs.access_flags().is_internal())) {
++      if (!fs.access_flags().is_static() && !fs.is_multifield() && (!skip_internal || !fs.access_flags().is_internal())) {
+         ReassignedField field;
+         field._offset = fs.offset();
+         field._type = Signature::basic_type(fs.signature());
+@@ -1543,7 +1545,7 @@ void Deoptimization::reassign_fields(frame* fr, RegisterMap* reg_map, GrowableAr
+     }
+ #endif // INCLUDE_JVMCI
+ #ifdef COMPILER2
+-    if (EnableVectorSupport && VectorSupport::is_vector(k)) {
++    if (EnableVectorSupport && (VectorSupport::is_vector(k) || VectorSupport::is_vector_payload_mf(k))) {
+       assert(sv->field_size() == 1, "%s not a vector", k->name()->as_C_string());
+       ScopeValue* payload = sv->field_at(0);
+       if (payload->is_location() &&
+diff --git a/src/hotspot/share/runtime/fieldDescriptor.hpp b/src/hotspot/share/runtime/fieldDescriptor.hpp
+index df15d10a6cb..a4f655f2f44 100644
+--- a/src/hotspot/share/runtime/fieldDescriptor.hpp
++++ b/src/hotspot/share/runtime/fieldDescriptor.hpp
+@@ -91,8 +91,11 @@ class fieldDescriptor {
+   inline bool is_inlined() const;
+   inline bool is_inline_type()    const;
+   inline bool is_multifield()            const;
++  inline bool is_multifield_base()       const;
+   inline u2   multifield_base()          const;
+   inline jbyte multifield_index()        const;
++  inline int secondary_fields_count(int base_idx) const;
++
+ 
+   bool is_synthetic()             const    { return access_flags().is_synthetic(); }
+ 
+diff --git a/src/hotspot/share/runtime/fieldDescriptor.inline.hpp b/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
+index 3b321328012..37a4eb57ac0 100644
+--- a/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
++++ b/src/hotspot/share/runtime/fieldDescriptor.inline.hpp
+@@ -85,8 +85,23 @@ inline BasicType fieldDescriptor::field_type() const {
+ inline bool fieldDescriptor::is_inlined()  const  { return field()->is_inlined(); }
+ inline bool fieldDescriptor::is_inline_type() const { return Signature::basic_type(field()->signature(_cp())) == T_PRIMITIVE_OBJECT; }
+ 
+-inline bool fieldDescriptor::is_multifield() const { return field()->is_multifield(); };
++inline bool fieldDescriptor::is_multifield() const { return field()->is_multifield(); }
++inline bool fieldDescriptor::is_multifield_base() const { return field()->is_multifield_base(); }
+ inline u2   fieldDescriptor::multifield_base() const { return field_holder()->multifield_info(field()->secondary_index()).base_index(); }
+ inline jbyte fieldDescriptor::multifield_index() const { return  field_holder()->multifield_info(field()->secondary_index()).multifield_index(); }
+ 
+-#endif // SHARE_RUNTIME_FIELDDESCRIPTOR_INLINE_HPP
+\ No newline at end of file
++inline int fieldDescriptor::secondary_fields_count(int base_idx) const {
++  Array<MultiFieldInfo>* multifield_info = field_holder()->multifield_info();
++  if (!is_multifield_base() || NULL == multifield_info) {
++    return 1;
++  }
++  int sec_fields_count = 1;
++  for (int i = 0; i < multifield_info->length(); i++) {
++    if (field_holder()->multifield_info(i).base_index() == base_idx) {
++      sec_fields_count++;
++    }
++  }
++  return  sec_fields_count;
++}
++
++#endif // SHARE_RUNTIME_FIELDDESCRIPTOR_INLINE_HPP
+diff --git a/src/java.base/share/classes/java/lang/MultiField.java b/src/java.base/share/classes/java/lang/MultiField.java
+deleted file mode 100644
+index db5d6b6d149..00000000000
+--- a/src/java.base/share/classes/java/lang/MultiField.java
++++ /dev/null
+@@ -1,52 +0,0 @@
+-/*
+-* Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
+-* DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+-*
+-* This code is free software; you can redistribute it and/or modify it
+-* under the terms of the GNU General Public License version 2 only, as
+-* published by the Free Software Foundation.  Oracle designates this
+-* particular file as subject to the "Classpath" exception as provided
+-* by Oracle in the LICENSE file that accompanied this code.
+-*
+-* This code is distributed in the hope that it will be useful, but WITHOUT
+-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+-* FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+-* version 2 for more details (a copy is included in the LICENSE file that
+-* accompanied this code).
+-*
+-* You should have received a copy of the GNU General Public License version
+-* 2 along with this work; if not, write to the Free Software Foundation,
+-* Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+-*
+-* Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+-* or visit www.oracle.com if you need additional information or have any
+-* questions.
+-*/
+-
+-package jdk.internal.vm.annotation;
+-
+-import java.lang.annotation.ElementType;
+-import java.lang.annotation.Retention;
+-import java.lang.annotation.RetentionPolicy;
+-import java.lang.annotation.Target;
+-
+-/**
+-* <p>An annotation expressing that the field has to be
+-* replicated several times and all replication must be
+-* layed out contiguously in memory. The annotation is
+-* ignored if the type of the field is not one of the
+-* eight Java basic primitive types: boolean, byte, short,
+-* char, int, long, float, double.
+-*/
+-@Retention(RetentionPolicy.RUNTIME)
+-@Target({ElementType.FIELD})
+-public @interface MultiField {
+-
+-   /**
+-    * The total number of fields (initial plus replicated).
+-    * This tag is only meaningful for field level annotations.
+-    *
+-    * @return total number of fields to layout.
+-    */
+-   byte value() default 0;
+-}
+\ No newline at end of file
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index c803f638f29..df078bc59c4 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -185,7 +185,7 @@ public class VectorSupport {
+     public abstract static class VectorPayloadMF {
+         public abstract long multiFieldOffset();
+ 
+-        private static VectorPayloadMF newInstanceFactory(int elemSize, int length)  {
++        private static VectorPayloadMF newInstanceFactory(int elemSize, int length) {
+             VectorPayloadMF obj = null;
+             int vecSize = elemSize * length;
+             switch(vecSize) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractSpecies.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractSpecies.java
+index 35549609903..c7981cce1e0 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractSpecies.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractSpecies.java
+@@ -115,6 +115,7 @@ abstract class AbstractSpecies<E> extends VectorSupport.VectorSpecies<E>
+ 
+     @Stable //lazy JIT constant
+     AbstractVector<E> dummyVectorMF;
++
+     @Override
+     @ForceInline
+     public final int length() {
+@@ -324,6 +325,7 @@ abstract class AbstractSpecies<E> extends VectorSupport.VectorSpecies<E>
+         return makeDummyVectorMF();
+     }
+ 
++    @ForceInline
+     private AbstractVector<E> makeDummyVector() {
+         Object za = Array.newInstance(elementType(), laneCount);
+         return dummyVector = vectorFactory.apply(za);
+@@ -332,6 +334,7 @@ abstract class AbstractSpecies<E> extends VectorSupport.VectorSpecies<E>
+         // through the dummy vector.
+     }
+ 
++    @ForceInline
+     VectorSupport.VectorPayloadMF createVectorMF(Object initarr) {
+         VectorSupport.VectorPayloadMF za = null;
+         switch (laneType.switchKey) {
+@@ -360,6 +363,7 @@ abstract class AbstractSpecies<E> extends VectorSupport.VectorSpecies<E>
+         return za;
+     }
+ 
++    @ForceInline
+     private AbstractVector<E> makeDummyVectorMF() {
+         Object za = null;
+         switch (laneType.switchKey) {
+@@ -380,6 +384,7 @@ abstract class AbstractSpecies<E> extends VectorSupport.VectorSpecies<E>
+         // All other factory requests are routed
+         // through the dummy vector.
+     }
++
+     /**
+      * Build a mask by directly calling its constructor.
+      * It is an error if the array is aliased elsewhere.

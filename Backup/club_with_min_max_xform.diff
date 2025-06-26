@@ -1,0 +1,39 @@
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 3d20b22a175..85dc56fdc49 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -365,7 +365,7 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   }
+ 
+   BasicType elem_bt = elem_type->basic_type();
+-  bool has_scalar_op = VectorSupport::has_scalar_op(opr->get_con());
++  bool has_scalar_op = VectorSupport::is_scalar_op(opr->get_con());
+   bool is_unsigned = VectorSupport::is_unsigned_op(opr->get_con());
+ 
+   int num_elem = vlen->get_con();
+diff --git a/src/hotspot/share/prims/vectorSupport.cpp b/src/hotspot/share/prims/vectorSupport.cpp
+index 9eb0b46131b..bd10eabb4d8 100644
+--- a/src/hotspot/share/prims/vectorSupport.cpp
++++ b/src/hotspot/share/prims/vectorSupport.cpp
+@@ -199,7 +199,7 @@ instanceOop VectorSupport::allocate_vector(InstanceKlass* ik, frame* fr, Registe
+ }
+ 
+ #ifdef COMPILER2
+-bool VectorSupport::has_scalar_op(jint id) {
++bool VectorSupport::is_scalar_op(jint id) {
+   VectorOperation vop = (VectorOperation)id;
+   switch (vop) {
+     case VECTOR_OP_COMPRESS:
+diff --git a/src/hotspot/share/prims/vectorSupport.hpp b/src/hotspot/share/prims/vectorSupport.hpp
+index 001484874e2..f797409f4f4 100644
+--- a/src/hotspot/share/prims/vectorSupport.hpp
++++ b/src/hotspot/share/prims/vectorSupport.hpp
+@@ -150,7 +150,7 @@ class VectorSupport : AllStatic {
+   static const char* mathname[VectorSupport::NUM_VECTOR_OP_MATH];
+ 
+   static int vop2ideal(jint vop, BasicType bt);
+-  static bool has_scalar_op(jint id);
++  static bool is_scalar_op(jint id);
+   static bool is_unsigned_op(jint id);
+ 
+   static instanceOop allocate_vector(InstanceKlass* holder, frame* fr, RegisterMap* reg_map, ObjectValue* sv, TRAPS);

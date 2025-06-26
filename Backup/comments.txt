@@ -1,0 +1,32 @@
+
+Current Java implementation sub-word gather APIs allocates temporary storage to accumulate
+sub-word element from gather indices in a scalar loop.
+By intrinsifying these APIs and emitting optimized instruction sequence using integral gather operations we 
+can save expensive allocations.
+
+Following is a brief overview of the algorithm:-
+ - Pick maximum integral vector size supported by the target platform, this 
+   is capped by number of subword gather lane to prevent any additional redundant
+   loads by integral gather instruction.
+ - Normalize sub-word gather indices to multiple of integer size.
+ - Loads integral elements from normalized indices.
+ - Compute the bit offset of actual subword in the gathered index lanes.
+ - Shift the subwords from existing bit-offsets to lower order bits of an integral lane.
+ - Pack integral lanes into sub-word lanes.
+
+
+Validation:- all existing VectorAPI JTREG regressions are passing at various AVX level.
+
+Following are performance number of and existing gather JMH benchmark.
+
+System Configuration:
+
+Sapphire Rapids:
+ - AVX3
+ - AVX2
+
+MTL
+ - AVX2
+
+Note to self: For some of the x86 client parts gather operation is micro-coded and may result into 
+preformance may degrade.

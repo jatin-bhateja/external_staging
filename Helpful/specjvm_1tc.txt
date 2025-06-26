@@ -1,0 +1,14 @@
+export JAVA_HOME=/home/jatinbha/sandboxes/jdk-mainline-vanilla/build/linux-x86_64-server-release/jdk/
+export PATH=$JAVA_HOME/bin/:$PATH
+export DISPLAY=10.66.74.145:0
+
+echo "Running: Mainline : $JAVA_HOME" 
+
+numactl --localalloc java -Xmx20g -Xms20g -Xmn12g -XX:-TieredCompilation -jar SPECjvm2008.jar -peak -coe -bt 1 -ict -ikv  -wt 30 -it 60 -ctf startup.crypto.aes crypto.aes | tee log_29_7_aes.txt
+
+export JAVA_HOME=/home/jatinbha/sandboxes/generic-operands-mainline/build/linux-x86_64-server-release/jdk/
+export PATH=$JAVA_HOME/bin:$PATH
+
+echo "Running: Mainline-global-oper : $JAVA_HOME " 
+
+numactl --localalloc java -Xmx20g -Xms20g -Xmn12g -XX:-TieredCompilation -jar SPECjvm2008.jar -peak  -coe -bt 1 -ict -ikv  -wt 30 -it 60 -ctf startup.crypto.aes crypto.aes | tee log_gen_oper_29_7_aes.txt

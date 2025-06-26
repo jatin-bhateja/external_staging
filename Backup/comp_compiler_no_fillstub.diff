@@ -1,0 +1,471 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index bef0530c6be..a657bfc48ce 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -2528,6 +2528,13 @@ void Assembler::knotwl(KRegister dst, KRegister src) {
+   emit_int16(0x44, (0xC0 | encode));
+ }
+ 
++void Assembler::knotql(KRegister dst, KRegister src) {
++  assert(VM_Version::supports_avx512bw(), "");
++  InstructionAttr attributes(AVX_128bit, /* rex_w */ true, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x44, (0xC0 | encode));
++}
++
+ // This instruction produces ZF or CF flags
+ void Assembler::kortestbl(KRegister src1, KRegister src2) {
+   assert(VM_Version::supports_avx512dq(), "");
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 2cc357d4258..5091c727f00 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1470,6 +1470,7 @@ private:
+   void kmovql(Register dst, KRegister src);
+ 
+   void knotwl(KRegister dst, KRegister src);
++  void knotql(KRegister dst, KRegister src);
+ 
+   void kortestbl(KRegister dst, KRegister src);
+   void kortestwl(KRegister dst, KRegister src);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 5fdc6d0e419..ec4f8be182f 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -1894,7 +1894,7 @@ void C2_MacroAssembler::reduce8L(int opcode, Register dst, Register src1, XMMReg
+ }
+ 
+ void C2_MacroAssembler::genmask(KRegister dst, Register len, Register temp) {
+-  assert(ArrayCopyPartialInlineSize <= 64,"");
++  assert(UsePartialInlineSize <= 64,"");
+   mov64(temp, -1L);
+   bzhiq(temp, temp, len);
+   kmovql(dst, temp);
+@@ -2111,11 +2111,37 @@ void C2_MacroAssembler::get_elem(BasicType typ, XMMRegister dst, XMMRegister src
+   }
+ }
+ 
++void C2_MacroAssembler::evpcmp(BasicType typ, KRegister kdmask, KRegister ksmask, XMMRegister src1, XMMRegister src2, int comparison, int vector_len) {
++  switch(typ) {
++    case T_BYTE:
++    case T_BOOLEAN:
++      evpcmpb(kdmask, ksmask, src1, src2, comparison, vector_len);
++      break;
++    case T_SHORT:
++    case T_CHAR:
++      evpcmpw(kdmask, ksmask, src1, src2, comparison, vector_len);
++      break;
++    case T_INT:
++    case T_FLOAT:
++      evpcmpd(kdmask, ksmask, src1, src2, comparison, vector_len);
++      break;
++    case T_LONG:
++    case T_DOUBLE:
++      evpcmpq(kdmask, ksmask, src1, src2, comparison, vector_len);
++      break;
++    default:
++      assert(false,"Should not reach here.");
++      break;
++  }
++}
++
+ void C2_MacroAssembler::evpcmp(BasicType typ, KRegister kdmask, KRegister ksmask, XMMRegister src1, AddressLiteral adr, int comparison, int vector_len, Register scratch) {
+   switch(typ) {
++    case T_BOOLEAN:
+     case T_BYTE:
+       evpcmpb(kdmask, ksmask, src1, adr, comparison, vector_len, scratch);
+       break;
++    case T_CHAR:
+     case T_SHORT:
+       evpcmpw(kdmask, ksmask, src1, adr, comparison, vector_len, scratch);
+       break;
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index d9f409e3942..610afcd8492 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -135,6 +135,7 @@ public:
+ 
+   // blend
+   void evpcmp(BasicType typ, KRegister kdmask, KRegister ksmask, XMMRegister src1, AddressLiteral adr, int comparison, int vector_len, Register scratch = rscratch1);
++  void evpcmp(BasicType typ, KRegister kdmask, KRegister ksmask, XMMRegister src1, XMMRegister src2, int comparison, int vector_len);
+   void evpblend(BasicType typ, XMMRegister dst, KRegister kmask, XMMRegister src1, XMMRegister src2, bool merge, int vector_len);
+ 
+   void load_vector_mask(XMMRegister dst, XMMRegister src, int vlen_in_bytes, BasicType elem_bt);
+diff --git a/src/hotspot/cpu/x86/vm_version_x86.cpp b/src/hotspot/cpu/x86/vm_version_x86.cpp
+index dfa2bcacb4c..ef2d7eb0688 100644
+--- a/src/hotspot/cpu/x86/vm_version_x86.cpp
++++ b/src/hotspot/cpu/x86/vm_version_x86.cpp
+@@ -1406,12 +1406,12 @@ void VM_Version::get_processor_features() {
+     }
+ #ifdef COMPILER2
+     if (UseAVX > 2) {
+-      if (FLAG_IS_DEFAULT(ArrayCopyPartialInlineSize) ||
+-          (!FLAG_IS_DEFAULT(ArrayCopyPartialInlineSize) &&
+-           ArrayCopyPartialInlineSize != 0 &&
+-           ArrayCopyPartialInlineSize != 32 &&
+-           ArrayCopyPartialInlineSize != 16 &&
+-           ArrayCopyPartialInlineSize != 64)) {
++      if (FLAG_IS_DEFAULT(UsePartialInlineSize) ||
++          (!FLAG_IS_DEFAULT(UsePartialInlineSize) &&
++           UsePartialInlineSize != 0 &&
++           UsePartialInlineSize != 32 &&
++           UsePartialInlineSize != 16 &&
++           UsePartialInlineSize != 64)) {
+         int inline_size = 0;
+         if (MaxVectorSize >= 64 && AVX3Threshold == 0) {
+           inline_size = 64;
+@@ -1420,18 +1420,18 @@ void VM_Version::get_processor_features() {
+         } else if (MaxVectorSize >= 16) {
+           inline_size = 16;
+         }
+-        if(!FLAG_IS_DEFAULT(ArrayCopyPartialInlineSize)) {
+-          warning("Setting ArrayCopyPartialInlineSize as %d", inline_size);
++        if(!FLAG_IS_DEFAULT(UsePartialInlineSize)) {
++          warning("Setting UsePartialInlineSize as %d", inline_size);
+         }
+-        ArrayCopyPartialInlineSize = inline_size;
++        UsePartialInlineSize = inline_size;
+       }
+ 
+-      if (ArrayCopyPartialInlineSize > MaxVectorSize) {
+-        ArrayCopyPartialInlineSize = MaxVectorSize >= 16 ? MaxVectorSize : 0;
+-        if (ArrayCopyPartialInlineSize) {
+-          warning("Setting ArrayCopyPartialInlineSize as MaxVectorSize" INTX_FORMAT ")", MaxVectorSize);
++      if (UsePartialInlineSize > MaxVectorSize) {
++        UsePartialInlineSize = MaxVectorSize >= 16 ? MaxVectorSize : 0;
++        if (UsePartialInlineSize) {
++          warning("Setting UsePartialInlineSize as MaxVectorSize" INTX_FORMAT ")", MaxVectorSize);
+         } else {
+-          warning("Setting ArrayCopyPartialInlineSize as " INTX_FORMAT, ArrayCopyPartialInlineSize);
++          warning("Setting UsePartialInlineSize as " INTX_FORMAT, UsePartialInlineSize);
+         }
+       }
+     }
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index c8aa03e2cd6..fbd1bee19ac 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1574,6 +1574,7 @@ const bool Matcher::match_rule_supported(int opcode) {
+       }
+       break;
+ 
++    case Op_VectorSmallCompare:
+     case Op_VectorMaskGen:
+     case Op_LoadVectorMasked:
+     case Op_StoreVectorMasked:
+@@ -8010,7 +8011,31 @@ instruct vprorate(vec dst, vec src, vec shift) %{
+ %}
+ 
+ #ifdef _LP64
+-// ---------------------------------- Masked Block Copy ------------------------------------
++// ---------------------------------- Masked Operations ------------------------------------
++
++instruct vmask_cmp_node(rRegI dst, vec src1, vec src2, rRegL mask) %{
++  match(Set dst (VectorSmallCompare src1 (Binary src2 mask)));
++  effect(TEMP_DEF dst);
++  format %{ "vector_mask_cmp $src1, $src2, $mask \t! vector mask comparison" %}
++  ins_encode %{
++    Label DONE;
++    const MachNode* src1_node = static_cast<const MachNode*>(this->in(this->operand_index($src1)));
++    int vector_len = vector_length_encoding(src1_node);
++    BasicType elmType =  src1_node->bottom_type()->is_vect()->element_basic_type();
++    __ kmovql(k1, $mask$$Register);
++    __ knotql(k3, k1);
++    __ mov64($dst$$Register, -1L);
++    __ evpcmp(elmType, k2, k1, $src1$$XMMRegister, $src2$$XMMRegister, Assembler::eq, vector_len);
++    __ kortestql(k3, k2);
++    __ jccb(Assembler::carrySet, DONE);
++    __ kmovql($dst$$Register, k2);
++    __ notq($dst$$Register);
++    __ tzcntq($dst$$Register, $dst$$Register);
++    __ bind(DONE);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct vmasked_load64(vec dst, memory mem, kReg mask) %{
+   match(Set dst (LoadVectorMasked mem mask));
+   format %{ "vector_masked_load $dst, $mem, $mask \t! vector masked copy" %}
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index 673558e9dea..31e8c0adb3e 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -782,6 +782,7 @@ bool InstructForm::captures_bottom_type(FormDict &globals) const {
+        !strcmp(_matrule->_rChild->_opType,"ShenandoahCompareAndExchangeN") ||
+ #endif
+        !strcmp(_matrule->_rChild->_opType,"StrInflatedCopy") ||
++       !strcmp(_matrule->_rChild->_opType,"VectorSmallCompare")||
+        !strcmp(_matrule->_rChild->_opType,"VectorMaskGen")||
+        !strcmp(_matrule->_rChild->_opType,"CompareAndExchangeP") ||
+        !strcmp(_matrule->_rChild->_opType,"CompareAndExchangeN"))) return true;
+diff --git a/src/hotspot/share/opto/arraycopynode.cpp b/src/hotspot/share/opto/arraycopynode.cpp
+index f0e25b8f81e..d04dc5a55f3 100644
+--- a/src/hotspot/share/opto/arraycopynode.cpp
++++ b/src/hotspot/share/opto/arraycopynode.cpp
+@@ -738,7 +738,7 @@ bool ArrayCopyNode::modifies(intptr_t offset_lo, intptr_t offset_hi, PhaseTransf
+ 
+ // As an optimization, choose optimum vector size for copy length known at compile time.
+ int ArrayCopyNode::get_partial_inline_vector_lane_count(BasicType type, int const_len) {
+-  int lane_count = ArrayCopyPartialInlineSize/type2aelembytes(type);
++  int lane_count = UsePartialInlineSize/type2aelembytes(type);
+   if (const_len > 0) {
+     int size_in_bytes = const_len * type2aelembytes(type);
+     if (size_in_bytes <= 16)
+diff --git a/src/hotspot/share/opto/c2_globals.hpp b/src/hotspot/share/opto/c2_globals.hpp
+index eaf2f5c05f3..d998cbbdcd1 100644
+--- a/src/hotspot/share/opto/c2_globals.hpp
++++ b/src/hotspot/share/opto/c2_globals.hpp
+@@ -82,7 +82,7 @@
+           "actual size could be less depending on elements type")           \
+           range(0, max_jint)                                                \
+                                                                             \
+-  product(intx, ArrayCopyPartialInlineSize, -1, DIAGNOSTIC,                 \
++  product(intx, UsePartialInlineSize, -1, DIAGNOSTIC,                 \
+           "Partial inline size used for array copy acceleration.")          \
+           range(-1, 64)                                                     \
+                                                                             \
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index e78c7f919dd..447c05dbcb5 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -412,6 +412,7 @@ macro(StoreVector)
+ macro(StoreVectorScatter)
+ macro(LoadVectorMasked)
+ macro(StoreVectorMasked)
++macro(VectorSmallCompare)
+ macro(VectorMaskGen)
+ macro(Pack)
+ macro(PackB)
+diff --git a/src/hotspot/share/opto/compile.cpp b/src/hotspot/share/opto/compile.cpp
+index a5f27abc9f7..4dab66b8710 100644
+--- a/src/hotspot/share/opto/compile.cpp
++++ b/src/hotspot/share/opto/compile.cpp
+@@ -3412,6 +3412,7 @@ void Compile::final_graph_reshaping_main_switch(Node* n, Final_Reshape_Counts& f
+   case Op_StoreVector:
+   case Op_LoadVectorGather:
+   case Op_StoreVectorScatter:
++  case Op_VectorSmallCompare:
+   case Op_VectorMaskGen:
+   case Op_LoadVectorMasked:
+   case Op_StoreVectorMasked:
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index 5905f735e5c..d441053da08 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -5203,7 +5203,7 @@ bool LibraryCallKit::inline_vectorizedMismatch() {
+   const TypeAryPtr* top_a = a_type->isa_aryptr();
+   const TypeAryPtr* top_b = b_type->isa_aryptr();
+   if (top_a == NULL || top_a->klass() == NULL ||
+-    top_b == NULL || top_b->klass() == NULL) {
++      top_b == NULL || top_b->klass() == NULL) {
+     // failed array check
+     return false;
+   }
+@@ -5214,13 +5214,108 @@ bool LibraryCallKit::inline_vectorizedMismatch() {
+   Node* obja_adr = make_unsafe_address(obja, aoffset, ACCESS_READ);
+   Node* objb_adr = make_unsafe_address(objb, boffset, ACCESS_READ);
+ 
+-  call = make_runtime_call(RC_LEAF,
+-    OptoRuntime::vectorizedMismatch_Type(),
+-    stubAddr, stubName, TypePtr::BOTTOM,
+-    obja_adr, objb_adr, length, scale);
++  BasicType type_a_basic = top_a->elem()->array_element_basic_type();
++  BasicType type_b_basic = top_b->elem()->array_element_basic_type();
++  assert(type_a_basic == type_b_basic, "Source objects type mismatch");
++  BasicType vecType = type_a_basic;
++  if(vecType == T_OBJECT) {
++    vecType = UseCompressedOops ? T_INT : T_LONG;
++  }
++
++  bool gen_stub = true;
++  assert(scale->is_Con() && scale->bottom_type()->isa_int(), "non-constant scale value");
++  int scale_val  =  scale->get_int();
++  BasicType prim_types[] = {T_BYTE, T_SHORT, T_INT, T_LONG};
++  vecType = prim_types[scale_val];
++  assert(vecType >= type_a_basic, "element scale type mismatch");
++  int vecLen = UsePartialInlineSize / type2aelembytes(vecType);
++  bool partially_inline_compare =
++       (Matcher::match_rule_supported_vector(Op_VectorMaskGen , vecLen, vecType) &&
++        Matcher::match_rule_supported_vector(Op_LoadVectorMasked , vecLen, vecType) &&
++        Matcher::match_rule_supported_vector(Op_VectorSmallCompare, vecLen, vecType));
++
++  Node* len_cmp;
++  Node* fast_path;
++  Node* slow_path;
++  Node* cmp_size;
++  Node* cmp_length;
++  Node* fastcomp_result;
++
++  if (partially_inline_compare) {
++    cmp_size       = _gvn.transform(new LShiftINode(length, scale));
++    cmp_length     = _gvn.transform(new CmpINode(cmp_size, intcon(UsePartialInlineSize)));
++    len_cmp        = _gvn.transform(new BoolNode(cmp_length, BoolTest::le));
++
++    if (len_cmp->is_Con() && len_cmp->bottom_type()->isa_int()) {
++      partially_inline_compare = len_cmp->get_int() == 1 ? true : false;
++      gen_stub = partially_inline_compare ? false : true;
++    }
++  }
+ 
+-  Node* result = _gvn.transform(new ProjNode(call, TypeFunc::Parms));
+-  set_result(result);
++  if (partially_inline_compare) {
++    if(false == gen_stub) {
++      fast_path = slow_path = control();
++    } else {
++      fast_path      = generate_guard(len_cmp, NULL, PROB_MAX);
++      slow_path      = control();
++    }
++
++    const TypeVect* vt = TypeVect::make(vecType, vecLen);
++    Node* mask_gen     = _gvn.transform(new VectorMaskGenNode(ConvI2L(length), TypeLong::LONG,
++                                        Type::get_const_basic_type(vecType)));
++
++    //Node* mask_not = _gvn.transform(new VectorMaskOpNode(Op_Not, mask_gen));
++    const TypePtr* top_a = obja_adr->Value(&_gvn)->isa_ptr();
++    const TypePtr* top_b = objb_adr->Value(&_gvn)->isa_ptr();
++
++    int alias_idx = C->get_alias_index(top_a);
++    Node* mm = memory(alias_idx);
++    Node* masked_load1  = _gvn.transform(new LoadVectorMaskedNode(fast_path, mm, obja_adr, top_a, vt, mask_gen));
++
++
++    alias_idx = C->get_alias_index(top_b);
++    mm = memory(alias_idx);
++    Node* masked_load2 = _gvn.transform(new LoadVectorMaskedNode(fast_path, mm, objb_adr, top_b, vt, mask_gen));
++    fastcomp_result = _gvn.transform(new VectorSmallCompareNode(masked_load1, masked_load2, mask_gen, TypeInt::INT));
++    assert(control() == slow_path, "control == slow_path");
++
++    if (false == gen_stub) {
++      set_result(fastcomp_result);
++      return true;
++    }
++  }
++
++  Node* init_mem = map()->memory();
++  call = make_runtime_call(RC_LEAF,
++                           OptoRuntime::vectorizedMismatch_Type(),
++                           stubAddr, stubName, TypePtr::BOTTOM,
++                           obja_adr, objb_adr, length, scale);
++
++  Node* call_result = _gvn.transform(new ProjNode(call, TypeFunc::Parms));
++  if (partially_inline_compare) {
++    Node* call_mem = map()->memory();
++
++    Node* exit_block = new RegionNode(3);
++    exit_block->init_req(1, fast_path);
++    exit_block->init_req(2, control());
++    exit_block = _gvn.transform(exit_block);
++
++    Node* result = new PhiNode(exit_block, TypeInt::INT);
++    result->init_req(1, fastcomp_result);
++    result->init_req(2, call_result);
++    result = _gvn.transform(result);
++
++    Node* mem_phi = new PhiNode(exit_block, Type::MEMORY, TypePtr::BOTTOM);
++    mem_phi->init_req(1, init_mem);
++    mem_phi->init_req(2, call_mem);
++
++    C->set_max_vector_size(UsePartialInlineSize);
++    set_all_memory(_gvn.transform(mem_phi));
++    set_result(((RegionNode*)exit_block), ((PhiNode*)result));
++    clear_upper_avx();
++  } else {
++    set_result(call_result);
++  }
+   return true;
+ }
+ 
+diff --git a/src/hotspot/share/opto/macroArrayCopy.cpp b/src/hotspot/share/opto/macroArrayCopy.cpp
+index 34f157900bd..6f626ca3bbc 100644
+--- a/src/hotspot/share/opto/macroArrayCopy.cpp
++++ b/src/hotspot/share/opto/macroArrayCopy.cpp
+@@ -174,8 +174,8 @@ void PhaseMacroExpand::generate_limit_guard(Node** ctrl, Node* offset, Node* sub
+ 
+ //
+ // Partial in-lining handling for smaller conjoint/disjoint array copies having
+-// length(in bytes) less than ArrayCopyPartialInlineSize.
+-//  if (length <= ArrayCopyPartialInlineSize) {
++// length(in bytes) less than UsePartialInlineSize.
++//  if (length <= UsePartialInlineSize) {
+ //    partial_inlining_block:
+ //      mask = Mask_Gen
+ //      vload = LoadVectorMasked src , mask
+@@ -216,7 +216,7 @@ void PhaseMacroExpand::generate_partial_inlining_block(Node** ctrl, MergeMemNode
+   // Return if copy length is greater than partial inline size limit or
+   // target does not supports masked load/stores.
+   int lane_count = ArrayCopyNode::get_partial_inline_vector_lane_count(type, const_len);
+-  if ( const_len > ArrayCopyPartialInlineSize ||
++  if ( const_len > UsePartialInlineSize ||
+       !Matcher::match_rule_supported_vector(Op_LoadVectorMasked, lane_count, type)  ||
+       !Matcher::match_rule_supported_vector(Op_StoreVectorMasked, lane_count, type) ||
+       !Matcher::match_rule_supported_vector(Op_VectorMaskGen, lane_count, type)) {
+@@ -226,7 +226,7 @@ void PhaseMacroExpand::generate_partial_inlining_block(Node** ctrl, MergeMemNode
+   Node* copy_bytes = new LShiftXNode(length, intcon(shift));
+   transform_later(copy_bytes);
+ 
+-  Node* cmp_le = new CmpULNode(copy_bytes, longcon(ArrayCopyPartialInlineSize));
++  Node* cmp_le = new CmpULNode(copy_bytes, longcon(UsePartialInlineSize));
+   transform_later(cmp_le);
+   Node* bol_le = new BoolNode(cmp_le, BoolTest::le);
+   transform_later(bol_le);
+@@ -1187,7 +1187,7 @@ bool PhaseMacroExpand::generate_unchecked_arraycopy(Node** ctrl, MergeMemNode**
+ 
+   Node* result_memory = NULL;
+   RegionNode* exit_block = NULL;
+-  if (ArrayCopyPartialInlineSize > 0 && is_subword_type(basic_elem_type) &&
++  if (UsePartialInlineSize > 0 && is_subword_type(basic_elem_type) &&
+     Matcher::vector_width_in_bytes(basic_elem_type) >= 16) {
+     generate_partial_inlining_block(ctrl, mem, adr_type, &exit_block, &result_memory,
+                                     copy_length, src_start, dest_start, basic_elem_type);
+diff --git a/src/hotspot/share/opto/matcher.cpp b/src/hotspot/share/opto/matcher.cpp
+index 13d24a41355..5193b56ba45 100644
+--- a/src/hotspot/share/opto/matcher.cpp
++++ b/src/hotspot/share/opto/matcher.cpp
+@@ -2224,6 +2224,7 @@ bool Matcher::find_shared_visit(MStack& mstack, Node* n, uint opcode, bool& mem_
+     case Op_FmaVF:
+     case Op_MacroLogicV:
+     case Op_LoadVectorMasked:
++    case Op_VectorSmallCompare:
+       set_shared(n); // Force result into register (it will be anyways)
+       break;
+     case Op_ConP: {  // Convert pointers above the centerline to NUL
+@@ -2317,6 +2318,12 @@ void Matcher::find_shared_post_visit(Node* n, uint opcode) {
+       n->del_req(3);
+       break;
+     }
++    case Op_VectorSmallCompare: {
++      Node* pair1 = new BinaryNode(n->in(2), n->in(3));
++      n->set_req(2, pair1);
++      n->del_req(3);
++      break;
++    }
+     case Op_MacroLogicV: {
+       Node* pair1 = new BinaryNode(n->in(1), n->in(2));
+       Node* pair2 = new BinaryNode(n->in(3), n->in(4));
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 06af47efc77..2ce2940613f 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -836,6 +836,18 @@ class LoadVectorMaskedNode : public LoadVectorNode {
+   Node* Ideal(PhaseGVN* phase, bool can_reshape);
+ };
+ 
++class VectorSmallCompareNode : public TypeNode {
++  public:
++   VectorSmallCompareNode(Node* src1, Node* src2, Node* mask, const Type* ty): TypeNode(ty, 4)  {
++     init_req(1, src1);
++     init_req(2, src2);
++     init_req(3, mask);
++   }
++
++  virtual int Opcode() const;
++};
++
++
+ class VectorMaskGenNode : public TypeNode {
+  public:
+   VectorMaskGenNode(Node* length, const Type* ty, const Type* ety): TypeNode(ty, 2), _elemType(ety) {

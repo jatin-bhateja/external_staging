@@ -1,0 +1,84 @@
+
+1) mvn clean install -Pci-test -Djapicmp.skip=true -o
+2) Licence update for newly added file.
+
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [ '1.8', '11', '17' ]
+        codes: [ 'uncompressed,brotli', 'gzip,snappy' ]
+    name: Build Parquet with JDK ${{ matrix.java }} and ${{ matrix.codes }}
+
+    steps:
+      - uses: actions/checkout@master
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+      - name: before_install
+        env:
+          CI_TARGET_BRANCH: $GITHUB_HEAD_REF
+        run: |
+          bash dev/ci-before_install.sh
+      - name: install
+        run: |
+          EXTRA_JAVA_TEST_ARGS=$(mvn help:evaluate -Dexpression=extraJavaTestArgs -q -DforceStdout)
+          export MAVEN_OPTS="$MAVEN_OPTS $EXTRA_JAVA_TEST_ARGS"
+          mvn install --batch-mode -DskipTests=true -Dmaven.javadoc.skip=true -Dsource.skip=true -Djava.version=${{ matrix.java }}
+      - name: verify
+        env:
+          TEST_CODECS: ${{ matrix.codes }}
+          JAVA_VERSION: ${{ matrix.java }}
+        run: |
+          EXTRA_JAVA_TEST_ARGS=$(mvn help:evaluate -Dexpression=extraJavaTestArgs -q -DforceStdout)
+          export MAVEN_OPTS="$MAVEN_OPTS $EXTRA_JAVA_TEST_ARGS"
+          mvn verify --batch-mode javadoc:javadoc -Pci-test
+
+
+ 2065  export JAVA_HOME=/home/jatinbha/softwares/jdk-17.0.2/
+ 2066  export PATH=$JAVA_HOME/bin:$PATH
+ 2067  pwd
+ 2068  ld
+ 2069  which java
+ 2070  pwd
+ 2071  s
+ 2072  pwd
+ 2073  ls
+ 2074  mvn clean install --offline -Pci-test -Djapicmp.skip=true
+ 2075  mvn clean install --offline -Pci-test  -Pvector -Djapicmp.skip=true
+ 2076  vi /home/jatinbha/sandboxes/parquet-mr/parquet-encoding/target/generated-src/org/apache/parquet/column/values/bitpacking/ByteBitPackingVectorLE.java 
+ 2077  pwd
+ 2078  ls
+ 2079  mvn help:effective-pon clean install --offline -Pci-test -Djapicmp.skip=true
+ 2080  mvn help:effective-pom clean install --offline -Pci-test -Djapicmp.skip=true
+ 2081  mvn help:effective-pom clean install --offline -Pci-test -Djapicmp.skip=true >& /home/intel/effective_pom.txt
+ 2082  which java
+ 2083  vimdiff /home/intel/effective_pom.txt /home/intel/pom_extended11.txt 
+ 2084  vi /home/intel/effective_pom.txt 
+ 2085  vi parquet-encoding/pom.xml 
+

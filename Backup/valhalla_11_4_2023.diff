@@ -1,0 +1,495 @@
+diff --git a/src/hotspot/share/opto/cfgnode.cpp b/src/hotspot/share/opto/cfgnode.cpp
+index 135c7c7d022..009aef92409 100644
+--- a/src/hotspot/share/opto/cfgnode.cpp
++++ b/src/hotspot/share/opto/cfgnode.cpp
+@@ -2600,10 +2600,12 @@ Node *PhiNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+     }
+   }
+ 
++  // Since VectorBox is now an InlineTypeNode hence, InlineTypeNode::merge_with should handle back propagation of
++  // Phi nodes across VectorBoxes.
+   // Phi (VB ... VB) => VB (Phi ...) (Phi ...)
+-  if (EnableVectorReboxing && can_reshape && progress == NULL && type()->isa_oopptr()) {
+-    progress = merge_through_phi(this, phase->is_IterGVN());
+-  }
++  //if (EnableVectorReboxing && can_reshape && progress == NULL && type()->isa_oopptr()) {
++  //  progress = merge_through_phi(this, phase->is_IterGVN());
++  //}
+ 
+   return progress;              // Return any progress
+ }
+@@ -2653,6 +2655,7 @@ Node* PhiNode::clone_through_phi(Node* root_phi, const Type* t, uint c, PhaseIte
+   return new_phi;
+ }
+ 
++#if 0
+ Node* PhiNode::merge_through_phi(Node* root_phi, PhaseIterGVN* igvn) {
+   Node_Stack stack(1);
+   VectorSet  visited;
+@@ -2700,6 +2703,7 @@ Node* PhiNode::merge_through_phi(Node* root_phi, PhaseIterGVN* igvn) {
+   Node* new_vect_phi = clone_through_phi(root_phi, vtype, 3, igvn);
+   return VectorBoxNode::make_box_node(*igvn, igvn->C, new_vbox_phi, new_vect_phi, btype, vtype);
+ }
++#endif
+ 
+ bool PhiNode::is_data_loop(RegionNode* r, Node* uin, const PhaseGVN* phase) {
+   // First, take the short cut when we know it is a loop and the EntryControl data path is dead.
+diff --git a/src/hotspot/share/opto/cfgnode.hpp b/src/hotspot/share/opto/cfgnode.hpp
+index a52f239f095..2a667e1c7e3 100644
+--- a/src/hotspot/share/opto/cfgnode.hpp
++++ b/src/hotspot/share/opto/cfgnode.hpp
+@@ -144,7 +144,7 @@ class PhiNode : public TypeNode {
+   bool is_data_loop(RegionNode* r, Node* uin, const PhaseGVN* phase);
+ 
+   static Node* clone_through_phi(Node* root_phi, const Type* t, uint c, PhaseIterGVN* igvn);
+-  static Node* merge_through_phi(Node* root_phi, PhaseIterGVN* igvn);
++  //static Node* merge_through_phi(Node* root_phi, PhaseIterGVN* igvn);
+ 
+ public:
+   // Node layout (parallels RegionNode):
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index b1faed0dcd2..a5c30427a8f 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -488,7 +488,6 @@ macro(LowerCase)
+ macro(UpperCase)
+ macro(Whitespace)
+ macro(VectorBox)
+-macro(VectorBoxAllocate)
+ macro(VectorUnbox)
+ macro(VectorMaskWrapper)
+ macro(VectorMaskCmp)
+diff --git a/src/hotspot/share/opto/compile.cpp b/src/hotspot/share/opto/compile.cpp
+index b9beb54deef..d485aea2fce 100644
+--- a/src/hotspot/share/opto/compile.cpp
++++ b/src/hotspot/share/opto/compile.cpp
+@@ -2987,7 +2987,7 @@ bool Compile::has_vbox_nodes() {
+   for (int macro_idx = C->macro_count() - 1; macro_idx >= 0; macro_idx--) {
+     Node * n = C->macro_node(macro_idx);
+     assert(n->is_macro(), "only macro nodes expected here");
+-    if (n->Opcode() == Op_VectorUnbox || n->Opcode() == Op_VectorBox || n->Opcode() == Op_VectorBoxAllocate) {
++    if (n->Opcode() == Op_VectorUnbox || n->Opcode() == Op_VectorBox) {
+       return true;
+     }
+   }
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index e9bdd470381..b969b2ba7e9 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -168,7 +168,6 @@ class TypeNode;
+ class UnlockNode;
+ class InlineTypeNode;
+ class VectorBoxNode;
+-class VectorBoxAllocateNode;
+ class VectorNode;
+ class LoadVectorNode;
+ class LoadVectorMaskedNode;
+@@ -645,7 +644,6 @@ public:
+         DEFINE_CLASS_ID(Call,      SafePoint, 0)
+           DEFINE_CLASS_ID(CallJava,         Call, 0)
+             DEFINE_CLASS_ID(CallStaticJava,   CallJava, 0)
+-              DEFINE_CLASS_ID(VectorBoxAllocate, CallStaticJava, 0)
+             DEFINE_CLASS_ID(CallDynamicJava,  CallJava, 1)
+           DEFINE_CLASS_ID(CallRuntime,      Call, 1)
+             DEFINE_CLASS_ID(CallLeaf,         CallRuntime, 0)
+@@ -957,7 +955,6 @@ public:
+   DEFINE_CLASS_QUERY(Type)
+   DEFINE_CLASS_QUERY(InlineType)
+   DEFINE_CLASS_QUERY(VectorBox)
+-  DEFINE_CLASS_QUERY(VectorBoxAllocate)
+   DEFINE_CLASS_QUERY(Vector)
+   DEFINE_CLASS_QUERY(VectorMaskCmp)
+   DEFINE_CLASS_QUERY(VectorUnbox)
+diff --git a/src/hotspot/share/opto/phasetype.hpp b/src/hotspot/share/opto/phasetype.hpp
+index e15867633d8..074f20f6414 100644
+--- a/src/hotspot/share/opto/phasetype.hpp
++++ b/src/hotspot/share/opto/phasetype.hpp
+@@ -39,7 +39,6 @@
+   flags(SCALARIZE_VBOX,               "Scalarize VectorBox") \
+   flags(INLINE_VECTOR_REBOX,          "Inline Vector Rebox Calls") \
+   flags(EXPAND_VBOX,                  "Expand VectorBox") \
+-  flags(ELIMINATE_VBOX_ALLOC,         "Eliminate VectorBoxAllocate") \
+   flags(ITER_GVN_BEFORE_EA,           "Iter GVN before EA") \
+   flags(ITER_GVN_AFTER_VECTOR,        "Iter GVN after vector box elimination") \
+   flags(BEFORE_BEAUTIFY_LOOPS,        "Before beautify loops") \
+diff --git a/src/hotspot/share/opto/vector.cpp b/src/hotspot/share/opto/vector.cpp
+index 2a3108260d0..4a913a65104 100644
+--- a/src/hotspot/share/opto/vector.cpp
++++ b/src/hotspot/share/opto/vector.cpp
+@@ -61,7 +61,6 @@ void PhaseVector::optimize_vector_boxes() {
+   C->inline_vector_reboxing_calls();
+ 
+   expand_vbox_nodes();
+-  eliminate_vbox_alloc_nodes();
+ 
+   C->set_inlining_incrementally(false);
+ 
+@@ -142,24 +141,6 @@ void PhaseVector::expand_vunbox_nodes() {
+   }
+ }
+ 
+-void PhaseVector::eliminate_vbox_alloc_nodes() {
+-  if (C->failing())  return;
+-
+-  int macro_idx = C->macro_count() - 1;
+-  while (macro_idx >= 0) {
+-    Node * n = C->macro_node(macro_idx);
+-    assert(n->is_macro(), "only macro nodes expected here");
+-    if (n->Opcode() == Op_VectorBoxAllocate) {
+-      VectorBoxAllocateNode* vbox_alloc = static_cast<VectorBoxAllocateNode*>(n);
+-      eliminate_vbox_alloc_node(vbox_alloc);
+-      if (C->failing())  return;
+-      C->print_method(PHASE_ELIMINATE_VBOX_ALLOC, 3, vbox_alloc);
+-    }
+-    if (C->failing())  return;
+-    macro_idx = MIN2(macro_idx - 1, C->macro_count() - 1);
+-  }
+-}
+-
+ static JVMState* clone_jvms(Compile* C, SafePointNode* sfpt) {
+   JVMState* new_jvms = sfpt->jvms()->clone_shallow(C);
+   uint size = sfpt->req();
+@@ -312,39 +293,146 @@ void PhaseVector::scalarize_vbox_node(VectorBoxNode* vec_box) {
+   }
+ }
+ 
+-void PhaseVector::expand_vbox_node(VectorBoxNode* vec_box) {
+-  if (vec_box->outcnt() > 0) {
+-    Node* vbox_alloc = vec_box->get_oop();
+-    assert(vbox_alloc->is_Proj() && vbox_alloc->in(0)->isa_VectorBoxAllocate(), "");
+-    VectorBoxAllocateNode* vba = vbox_alloc->in(0)->as_VectorBoxAllocate();
+-
+-    JVMState* jvms = clone_jvms(C, vba);
+-    GraphKit kit(jvms);
++void PhaseVector::expand_vbox_node(VectorBoxNode* vbox) {
++  if (vbox->outcnt() > 0) {
++    Node* vbuff = vbox->get_oop();
++    Node* vect = vbox->get_vec();
++    Node* result = expand_vbox_node_helper(vbox, vbuff, vect, vbox->box_type(), vbox->vec_type());
++    C->gvn_replace_by(vbox, result);
++    C->print_method(PHASE_EXPAND_VBOX, 3, vbox);
++  }
++  C->remove_macro_node(vbox);
++}
+ 
+-    ciInlineKlass* vk = vec_box->inline_klass();
+-    Node* klass_node = kit.makecon(TypeKlassPtr::make(vk));
+-    Node* alloc_oop  = kit.new_instance(klass_node, NULL, NULL, /* deoptimize_on_exception */ true);
+-    vec_box->store(&kit, alloc_oop, alloc_oop, vk);
++Node* PhaseVector::expand_vbox_node_helper(VectorBoxNode* vbox,
++                                           Node* vbuff,
++                                           Node* vect,
++                                           const TypeInstPtr* box_type,
++                                           const TypeVect* vect_type) {
++  if (vbox->is_Phi() && vect->is_Phi()) {
++    assert(vbuff->as_Phi()->region() == vect->as_Phi()->region(), "");
++    Node* new_phi = new PhiNode(vbuff->as_Phi()->region(), box_type);
++    for (uint i = 1; i < vbuff->req(); i++) {
++      Node* new_box = expand_vbox_node_helper(vbox, vbuff->in(i), vect->in(i), box_type, vect_type);
++      new_phi->set_req(i, new_box);
++    }
++    new_phi = C->initial_gvn()->transform(new_phi);
++    return new_phi;
++  } else if (vbuff->is_Phi() && (vect->is_Vector() || vect->is_LoadVector())) {
++    // Handle the case when the allocation input to VectorBoxNode is a phi
++    // but the vector input is not, which can definitely be the case if the
++    // vector input has been value-numbered. It seems to be safe to do by
++    // construction because VectorBoxNode and VectorBoxAllocate come in a
++    // specific order as a result of expanding an intrinsic call. After that, if
++    // any of the inputs to VectorBoxNode are value-numbered they can only
++    // move up and are guaranteed to dominate.
++    Node* new_phi = new PhiNode(vbuff->as_Phi()->region(), box_type);
++    for (uint i = 1; i < vbuff->req(); i++) {
++      Node* new_box = expand_vbox_node_helper(vbox, vbuff->in(i), vect, box_type, vect_type);
++      new_phi->set_req(i, new_box);
++    }
++    new_phi = C->initial_gvn()->transform(new_phi);
++    return new_phi;
++  } else if (vbox->is_buffered() && vbuff->is_CheckCastPP()) {
++    return expand_vbox_alloc_node(vbox, vbuff, vect, box_type, vect_type);
++  } else {
++    assert(!vbuff->is_Phi(), "");
++    // TODO: assert that expanded vbox is initialized with the same value (vect).
++    return vbox; // already expanded
++  }
++}
+ 
+-    // Do not let stores that initialize this buffer be reordered with a subsequent
+-    // store that would make this buffer accessible by other threads.
+-    AllocateNode* alloc = AllocateNode::Ideal_allocation(alloc_oop, &kit.gvn());
+-    assert(alloc != NULL, "must have an allocation node");
+-    kit.insert_mem_bar(Op_MemBarStoreStore, alloc->proj_out_or_null(AllocateNode::RawAddress));
++Node* PhaseVector::expand_vbox_alloc_node(VectorBoxNode* vbox,
++                                          Node* vbuff,
++                                          Node* value,
++                                          const TypeInstPtr* box_type,
++                                          const TypeVect* vect_type) {
+ 
+-    kit.replace_call(vba, alloc_oop, true);
+-    C->remove_macro_node(vba);
++  ciInstanceKlass* box_klass = box_type->instance_klass();
++  if (is_vector(box_klass)) {
++    return expand_vbox_alloc_node_mf(vbox);
++  }
+ 
+-    C->gvn_replace_by(vec_box, alloc_oop);
+-    C->print_method(PHASE_EXPAND_VBOX, 3, vec_box);
++  assert(false, "");
++#if 0
++  JVMState* jvms = clone_jvms(C, vbox_state);
++  GraphKit kit(jvms);
++  PhaseGVN& gvn = kit.gvn();
++
++  BasicType bt = vect_type->element_basic_type();
++  int num_elem = vect_type->length();
++
++  bool is_mask = is_vector_mask(box_klass);
++  // If boxed mask value is present in a predicate register, it must be
++  // spilled to a vector though a VectorStoreMaskOperation before actual StoreVector
++  // operation to vector payload field.
++  if (is_mask && (value->bottom_type()->isa_vectmask() || bt != T_BOOLEAN)) {
++    value = gvn.transform(VectorStoreMaskNode::make(gvn, value, bt, num_elem));
++    // Although type of mask depends on its definition, in terms of storage everything is stored in boolean array.
++    bt = T_BOOLEAN;
++    assert(value->bottom_type()->is_vect()->element_basic_type() == bt,
++           "must be consistent with mask representation");
+   }
+-  C->remove_macro_node(vec_box);
++
++  // Generate array allocation for the field which holds the values.
++  const TypeKlassPtr* array_klass = TypeKlassPtr::make(ciTypeArrayKlass::make(bt));
++  Node* arr = kit.new_array(kit.makecon(array_klass), kit.intcon(num_elem), 1);
++
++  // Store the vector value into the array.
++  // (The store should be captured by InitializeNode and turned into initialized store later.)
++  Node* arr_adr = kit.array_element_address(arr, kit.intcon(0), bt);
++  const TypePtr* arr_adr_type = arr_adr->bottom_type()->is_ptr();
++  Node* arr_mem = kit.memory(arr_adr);
++  Node* vstore = gvn.transform(StoreVectorNode::make(0,
++                                                     kit.control(),
++                                                     arr_mem,
++                                                     arr_adr,
++                                                     arr_adr_type,
++                                                     value,
++                                                     num_elem));
++  kit.set_memory(vstore, arr_adr_type);
++
++  C->set_max_vector_size(MAX2(C->max_vector_size(), vect_type->length_in_bytes()));
++
++  // Generate the allocate for the Vector object.
++  const TypeKlassPtr* klass_type = box_type->as_klass_type();
++  Node* klass_node = kit.makecon(klass_type);
++  Node* vec_obj = kit.new_instance(klass_node);
++
++  // Store the allocated array into object.
++  ciField* field = ciEnv::current()->vector_VectorPayload_klass()->get_field_by_name(ciSymbols::payload_name(),
++                                                                                     ciSymbols::object_signature(),
++                                                                                     false);
++  assert(field != nullptr, "");
++  Node* vec_field = kit.basic_plus_adr(vec_obj, field->offset_in_bytes());
++  const TypePtr* vec_adr_type = vec_field->bottom_type()->is_ptr();
++
++  // The store should be captured by InitializeNode and turned into initialized store later.
++  Node* field_store = gvn.transform(kit.access_store_at(vec_obj,
++                                                        vec_field,
++                                                        vec_adr_type,
++                                                        arr,
++                                                        TypeOopPtr::make_from_klass(field->type()->as_klass()),
++                                                        T_OBJECT,
++                                                        IN_HEAP));
++  kit.set_memory(field_store, vec_adr_type);
++  return vec_obj;
++#endif
++  return NULL;
++}
++
++Node* PhaseVector::expand_vbox_alloc_node_mf(VectorBoxNode* vec_box) {
++  GraphKit kit;
++  Node* alloc_oop  = vec_box->get_oop();
++  AllocateNode* alloc = AllocateNode::Ideal_allocation(alloc_oop, &kit.gvn());
++  assert(alloc != NULL, "must have an allocation node");
++  return alloc_oop;
+ }
+ 
+ Node* PhaseVector::get_loaded_payload(VectorUnboxNode* vec_unbox) {
+    Node* obj = vec_unbox->obj();
+    while(obj->is_InlineType()) {
+-      obj = obj->as_InlineType()->field_value(0);
++     obj = obj->as_InlineType()->field_value(0);
+    }
+    if (obj->bottom_type()->isa_vect()) {
+      return obj;
+@@ -474,12 +562,3 @@ void PhaseVector::expand_vunbox_node(VectorUnboxNode* vec_unbox) {
+   }
+   C->remove_macro_node(vec_unbox);
+ }
+-
+-void PhaseVector::eliminate_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc) {
+-  JVMState* jvms = clone_jvms(C, vbox_alloc);
+-  GraphKit kit(jvms);
+-  // Remove VBA, but leave a safepoint behind.
+-  // Otherwise, it may end up with a loop without any safepoint polls.
+-  kit.replace_call(vbox_alloc, kit.map(), true);
+-  C->remove_macro_node(vbox_alloc);
+-}
+diff --git a/src/hotspot/share/opto/vector.hpp b/src/hotspot/share/opto/vector.hpp
+index 7ce200e7e53..bfdf0799787 100644
+--- a/src/hotspot/share/opto/vector.hpp
++++ b/src/hotspot/share/opto/vector.hpp
+@@ -36,11 +36,20 @@ class PhaseVector : public Phase {
+ 
+   void expand_vbox_nodes();
+   void expand_vbox_node(VectorBoxNode* vec_box);
+-  Node* expand_vbox_node_helper(Node* vbox,
+-                                Node* vbox_alloc,
++  Node* expand_vbox_node_helper(VectorBoxNode* vec_box,
++                                Node* vbox,
+                                 Node* vect,
+                                 const TypeInstPtr* box_type,
+                                 const TypeVect* vect_type);
++
++  Node* expand_vbox_alloc_node_mf(VectorBoxNode* vec_box);
++
++  Node* expand_vbox_alloc_node(VectorBoxNode* vbox,
++                               Node* vbuff,
++                               Node* value,
++                               const TypeInstPtr* box_type,
++                               const TypeVect* vect_type);
++
+   Node* get_loaded_payload(VectorUnboxNode* vec_unbox);
+ 
+   void scalarize_vbox_nodes();
+@@ -48,8 +57,6 @@ class PhaseVector : public Phase {
+   void expand_vunbox_nodes();
+   void expand_vunbox_node(VectorUnboxNode* vec_box);
+   void expand_vunbox_node_mf(VectorUnboxNode* vec_unbox);
+-  void eliminate_vbox_alloc_nodes();
+-  void eliminate_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc);
+   void do_cleanup();
+   void scalarize_vector_boxes();
+   void expand_vector_boxes();
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 80b20ccd56c..52f0f3d3a40 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -140,16 +140,9 @@ Node* GraphKit::box_vector(Node* vector, const TypeInstPtr* vbox_type, BasicType
+   PreserveReexecuteState preexecs(this);
+   jvms()->set_should_reexecute(true);
+ 
+-  VectorBoxAllocateNode* alloc = new VectorBoxAllocateNode(C, vbox_type);
+-  set_edges_for_java_call(alloc, /*must_throw=*/false, /*separate_io_proj=*/true);
+-  make_slow_call_ex(alloc, env()->Throwable_klass(), /*separate_io_proj=*/true, deoptimize_on_exception);
+-  set_i_o(gvn().transform( new ProjNode(alloc, TypeFunc::I_O) ));
+-  set_all_memory(gvn().transform( new ProjNode(alloc, TypeFunc::Memory) ));
+-  Node* ret = gvn().transform(new ProjNode(alloc, TypeFunc::Parms));
+-
+   assert(check_vbox(vbox_type), "");
+   const TypeVect* vt = TypeVect::make(elem_bt, num_elem, is_vector_mask(vbox_type->instance_klass()));
+-  Node* vbox = VectorBoxNode::make_box_node(gvn(), C, ret, vector, vbox_type, vt);
++  Node* vbox = VectorBoxNode::make_box_node(this, C, vector, vbox_type, vt);
+   return gvn().transform(vbox);
+ }
+ 
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index dc4c8fece4c..768e3ecde36 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -1996,10 +1996,3 @@ Node* VectorBlendNode::Identity(PhaseGVN* phase) {
+   }
+   return this;
+ }
+-
+-#ifndef PRODUCT
+-void VectorBoxAllocateNode::dump_spec(outputStream *st) const {
+-  CallStaticJavaNode::dump_spec(st);
+-}
+-
+-#endif // !PRODUCT
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 3b76fb3f2bb..5f9bd3bdb04 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -25,6 +25,7 @@
+ #define SHARE_OPTO_VECTORNODE_HPP
+ 
+ #include "opto/callnode.hpp"
++#include "opto/graphKit.hpp"
+ #include "opto/matcher.hpp"
+ #include "opto/memnode.hpp"
+ #include "opto/node.hpp"
+@@ -1678,21 +1679,37 @@ class VectorBoxNode : public InlineTypeNode {
+   VectorBoxNode(ciInlineKlass* vk, Node* oop, bool null_free, bool is_buffered) :
+     InlineTypeNode(vk, oop, null_free, is_buffered) {}
+ 
+-  static VectorBoxNode* make_box_node(PhaseGVN& gvn, Compile* C, Node* box, Node* val,
+-                                      const TypeInstPtr* box_type, const TypeVect* vt) {
++  static VectorBoxNode* make_box_node(GraphKit* kit, Compile* C, Node* val, const TypeInstPtr* box_type, const TypeVect* vt) {
++
++    PhaseGVN& gvn = kit->gvn();
+     ciInlineKlass* vk = static_cast<ciInlineKlass*>(box_type->inline_klass());
++
+     ciInlineKlass* payload = vk->declared_nonstatic_field_at(0)->type()->as_inline_klass();
+     Node* payload_oop = payload->is_initialized() ? default_oop(gvn, payload) : gvn.zerocon(T_PRIMITIVE_OBJECT);
+     Node* payload_value = InlineTypeNode::make_uninitialized(gvn, payload, true);
+     payload_value->as_InlineType()->set_field_value(0, val);
++
+     payload_value = gvn.transform(payload_value);
+-    VectorBoxNode* box_node = new VectorBoxNode(vk, box, false, vk->is_empty() && vk->is_initialized());
++    VectorBoxNode* box_node = new VectorBoxNode(vk, NULL, false, vk->is_empty() && vk->is_initialized());
++    box_node->set_field_value(0, payload_value);
++
++    Node* klass_node = kit->makecon(TypeKlassPtr::make(vk));
++    Node* alloc_oop  = kit->new_instance(klass_node, NULL, NULL, /* deoptimize_on_exception */ true);
++    box_node->store(kit, alloc_oop, alloc_oop, vk);
++    box_node->set_oop(alloc_oop);
++
++    // Do not let stores that initialize this buffer be reordered with a subsequent
++    // store that would make this buffer accessible by other threads.
++    AllocateNode* alloc = AllocateNode::Ideal_allocation(alloc_oop, &gvn);
++    assert(alloc != NULL, "must have an allocation node");
++    kit->insert_mem_bar(Op_MemBarStoreStore, alloc->proj_out_or_null(AllocateNode::RawAddress));
++
++    box_node->_is_buffered = true;
+     box_node->set_is_init(gvn);
+     box_node->set_vec_type(vt);
+     box_node->set_box_type(box_type);
+     box_node->init_flags(Flag_is_macro);
+     box_node->init_class_id(Class_VectorBox);
+-    box_node->set_field_value(0, payload_value);
+     C->add_macro_node(box_node);
+ 
+     return box_node;
+@@ -1710,21 +1727,6 @@ class VectorBoxNode : public InlineTypeNode {
+   static const TypeFunc* vec_box_type(const TypeInstPtr* box_type);
+ };
+ 
+-class VectorBoxAllocateNode : public CallStaticJavaNode {
+- public:
+-  VectorBoxAllocateNode(Compile* C, const TypeInstPtr* vbox_type)
+-    : CallStaticJavaNode(C, VectorBoxNode::vec_box_type(vbox_type), NULL, NULL) {
+-    init_class_id(Class_VectorBoxAllocate);
+-    init_flags(Flag_is_macro);
+-    C->add_macro_node(this);
+-  }
+-
+-  virtual int Opcode() const;
+-#ifndef PRODUCT
+-  virtual void dump_spec(outputStream *st) const;
+-#endif // !PRODUCT
+-};
+-
+ class VectorUnboxNode : public VectorNode {
+  private:
+   bool _shuffle_to_vector;
+diff --git a/src/hotspot/share/runtime/vmStructs.cpp b/src/hotspot/share/runtime/vmStructs.cpp
+index 62b69b6f901..2134ea062db 100644
+--- a/src/hotspot/share/runtime/vmStructs.cpp
++++ b/src/hotspot/share/runtime/vmStructs.cpp
+@@ -1879,7 +1879,6 @@
+   declare_c2_type(OrVMaskNode, VectorNode)                                \
+   declare_c2_type(XorVMaskNode, VectorNode)                               \
+   declare_c2_type(VectorBoxNode, Node)                                    \
+-  declare_c2_type(VectorBoxAllocateNode, CallStaticJavaNode)              \
+   declare_c2_type(VectorTestNode, Node)                                   \
+                                                                           \
+   /*********************/                                                 \

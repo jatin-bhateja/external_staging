@@ -1,0 +1,845 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 4658d37ce4d..a0dda1c1fac 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -6454,6 +6454,21 @@ void Assembler::vrndscalepd(XMMRegister dst, Address src, int32_t rmode, int vec
+ }
+ 
+ 
++void Assembler::vroundps(XMMRegister dst, XMMRegister src, int32_t rmode, int vector_len) {
++  assert(VM_Version::supports_avx(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int24(0x08, (0xC0 | encode), (rmode));
++}
++
++void Assembler::vrndscaleps(XMMRegister dst,  XMMRegister src,  int32_t rmode, int vector_len) {
++  assert(VM_Version::supports_evex(), "requires EVEX support");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int24(0x08, (0xC0 | encode), (rmode));
++}
++
+ void Assembler::vsqrtpd(XMMRegister dst, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx(), "");
+   InstructionAttr attributes(vector_len, /* vex_w */ VM_Version::supports_evex(), /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -9313,7 +9328,7 @@ void Assembler::evpsraq(XMMRegister dst, KRegister mask, XMMRegister src, int sh
+     attributes.reset_is_clear_context();
+   }
+   int encode = vex_prefix_and_encode(xmm4->encoding(), dst->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
+-  emit_int24(0x73, (0xC0 | encode), shift & 0xFF);
++  emit_int24(0x72, (0xC0 | encode), shift & 0xFF);
+ }
+ 
+ void Assembler::evpsllw(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len) {
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 844d5ad25e0..b31fd08fb84 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -2248,6 +2248,10 @@ private:
+   void vrndscalepd(XMMRegister dst,  XMMRegister src,  int32_t rmode, int vector_len);
+   void vrndscalepd(XMMRegister dst, Address src, int32_t rmode, int vector_len);
+ 
++  // Round Packed Single precision value.
++  void vroundps(XMMRegister dst, XMMRegister src, int32_t rmode, int vector_len);
++  void vrndscaleps(XMMRegister dst,  XMMRegister src,  int32_t rmode, int vector_len);
++
+   // Bitwise Logical AND of Packed Floating-Point Values
+   void andpd(XMMRegister dst, XMMRegister src);
+   void andps(XMMRegister dst, XMMRegister src);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index fe9d7aa7490..145b2ab31b2 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -4071,51 +4071,11 @@ void C2_MacroAssembler::masked_op(int ideal_opc, int mask_len, KRegister dst,
+   }
+ }
+ 
+-/*
+- * Algorithm for vector D2L and F2I conversions:-
+- * a) Perform vector D2L/F2I cast.
+- * b) Choose fast path if none of the result vector lane contains 0x80000000 value.
+- *    It signifies that source value could be any of the special floating point
+- *    values(NaN,-Inf,Inf,Max,-Min).
+- * c) Set destination to zero if source is NaN value.
+- * d) Replace 0x80000000 with MaxInt if source lane contains a +ve value.
+- */
+-
+-void C2_MacroAssembler::vector_castD2L_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+-                                            KRegister ktmp1, KRegister ktmp2, AddressLiteral double_sign_flip,
+-                                            Register scratch, int vec_enc, bool roundD) {
+-  Label done;
+-  if (roundD) {
+-    evcvtpd2qq(dst, src, vec_enc);
+-  } else {
+-    evcvttpd2qq(dst, src, vec_enc);
+-  }
+-  evmovdqul(xtmp1, k0, double_sign_flip, false, vec_enc, scratch);
+-  evpcmpeqq(ktmp1, xtmp1, dst, vec_enc);
+-  kortestwl(ktmp1, ktmp1);
+-  jccb(Assembler::equal, done);
+-
+-  vpxor(xtmp2, xtmp2, xtmp2, vec_enc);
+-  evcmppd(ktmp2, k0, src, src, Assembler::UNORD_Q, vec_enc);
+-  evmovdquq(dst, ktmp2, xtmp2, true, vec_enc);
+-
+-  kxorwl(ktmp1, ktmp1, ktmp2);
+-  evcmppd(ktmp1, ktmp1, src, xtmp2, Assembler::NLT_UQ, vec_enc);
+-  vpternlogq(xtmp2, 0x11, xtmp1, xtmp1, vec_enc);
+-  evmovdquq(dst, ktmp1, xtmp2, true, vec_enc);
+-  bind(done);
+-}
+-
+-void C2_MacroAssembler::vector_castF2I_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
+-                                           XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
+-                                           AddressLiteral float_sign_flip, Register scratch, int vec_enc,
+-                                           bool roundF) {
++void C2_MacroAssembler::vector_cast_float_special_cases_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                                            XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
++                                                            Register scratch, AddressLiteral float_sign_flip,
++                                                            int vec_enc) {
+   Label done;
+-  if (roundF) {
+-    vcvtps2dq(dst, src, vec_enc);
+-  } else {
+-    vcvttps2dq(dst, src, vec_enc);
+-  }
+   vmovdqu(xtmp1, float_sign_flip, scratch, vec_enc);
+   vpcmpeqd(xtmp2, dst, xtmp1, vec_enc);
+   vptest(xtmp2, xtmp2, vec_enc);
+@@ -4140,15 +4100,11 @@ void C2_MacroAssembler::vector_castF2I_avx(XMMRegister dst, XMMRegister src, XMM
+   bind(done);
+ }
+ 
+-void C2_MacroAssembler::vector_castF2I_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+-                                            KRegister ktmp1, KRegister ktmp2, AddressLiteral float_sign_flip,
+-                                            Register scratch, int vec_enc, bool roundF) {
++void C2_MacroAssembler::vector_cast_float_special_cases_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                                             XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2,
++                                                             Register scratch, AddressLiteral float_sign_flip,
++                                                             int vec_enc) {
+   Label done;
+-  if (roundF) {
+-    vcvtps2dq(dst, src, vec_enc);
+-  } else {
+-    vcvttps2dq(dst, src, vec_enc);
+-  }
+   evmovdqul(xtmp1, k0, float_sign_flip, false, vec_enc, scratch);
+   Assembler::evpcmpeqd(ktmp1, k0, xtmp1, dst, vec_enc);
+   kortestwl(ktmp1, ktmp1);
+@@ -4165,6 +4121,180 @@ void C2_MacroAssembler::vector_castF2I_evex(XMMRegister dst, XMMRegister src, XM
+   bind(done);
+ }
+ 
++void C2_MacroAssembler::vector_cast_double_special_cases_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                                              XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2,
++                                                              Register scratch, AddressLiteral double_sign_flip,
++                                                              int vec_enc) {
++  Label done;
++  evmovdqul(xtmp1, k0, double_sign_flip, false, vec_enc, scratch);
++  evpcmpeqq(ktmp1, xtmp1, dst, vec_enc);
++  kortestwl(ktmp1, ktmp1);
++  jccb(Assembler::equal, done);
++
++  vpxor(xtmp2, xtmp2, xtmp2, vec_enc);
++  evcmppd(ktmp2, k0, src, src, Assembler::UNORD_Q, vec_enc);
++  evmovdquq(dst, ktmp2, xtmp2, true, vec_enc);
++
++  kxorwl(ktmp1, ktmp1, ktmp2);
++  evcmppd(ktmp1, ktmp1, src, xtmp2, Assembler::NLT_UQ, vec_enc);
++  vpternlogq(xtmp2, 0x11, xtmp1, xtmp1, vec_enc);
++  evmovdquq(dst, ktmp1, xtmp2, true, vec_enc);
++  bind(done);
++}
++
++/*
++ * Algorithm for vector D2L and F2I conversions:-
++ * a) Perform vector D2L/F2I cast.
++ * b) Choose fast path if none of the result vector lane contains 0x80000000 value.
++ *    It signifies that source value could be any of the special floating point
++ *    values(NaN,-Inf,Inf,Max,-Min).
++ * c) Set destination to zero if source is NaN value.
++ * d) Replace 0x80000000 with MaxInt if source lane contains a +ve value.
++ */
++
++void C2_MacroAssembler::vector_castD2L_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                            KRegister ktmp1, KRegister ktmp2, AddressLiteral double_sign_flip,
++                                            Register scratch, int vec_enc) {
++  evcvttpd2qq(dst, src, vec_enc);
++  vector_cast_double_special_cases_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, scratch, double_sign_flip, vec_enc);
++}
++
++void C2_MacroAssembler::vector_castF2I_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                           XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
++                                           AddressLiteral float_sign_flip, Register scratch, int vec_enc) {
++  vcvttps2dq(dst, src, vec_enc);
++  vector_cast_float_special_cases_avx(dst, src, xtmp1, xtmp2, xtmp3, xtmp4, scratch, float_sign_flip, vec_enc);
++}
++
++void C2_MacroAssembler::vector_castF2I_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                            KRegister ktmp1, KRegister ktmp2, AddressLiteral float_sign_flip,
++                                            Register scratch, int vec_enc) {
++  vcvttps2dq(dst, src, vec_enc);
++  vector_cast_float_special_cases_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, scratch, float_sign_flip, vec_enc);
++}
++
++void C2_MacroAssembler::vector_round_double_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                                 XMMRegister xtmp3, KRegister ktmp1, KRegister ktmp2, KRegister ktmp3,
++                                                 AddressLiteral double_sign_flip, Register scratch, int vec_enc) {
++  // Following assembly snippet is vectorized translation of Math.round(double) algorithm
++  // for AVX512 target.
++  evmovdquq(xtmp1, k0, src, true, vec_enc);
++  mov64(scratch, 0x7ff0000000000000L);
++  evpbroadcastq(xtmp2, scratch, vec_enc);
++  evpandq(xtmp2, k0, xtmp2, xtmp1, true, vec_enc);
++  Assembler::evpsraq(xtmp2, k0, xtmp2, 0x34, true, vec_enc);
++  mov64(scratch, 0x432);
++  evpbroadcastq(dst, scratch, vec_enc);
++  vpsubq(dst, dst, xtmp2, vec_enc);
++  evmovdquq(xtmp3, k0, dst, true, vec_enc);
++  mov64(scratch, 0xffffffffffffffc0L);
++  evpbroadcastq(xtmp2, scratch, vec_enc);
++  evpandq(xtmp2, k0, dst, xtmp2, true, vec_enc);
++  vpxor(dst, dst, dst, vec_enc);
++  Assembler::evpcmpeqq(ktmp1, xtmp2, dst, vec_enc);
++  mov64(scratch, 0xfffffffffffffL);
++  evpbroadcastq(xtmp2, scratch, vec_enc);
++  mov64(scratch, 0x10000000000000L);
++  evpbroadcastq(dst, scratch, vec_enc);
++  evpternlogq(xtmp1, 0xea, k0, xtmp2, dst, true, vec_enc);
++  vpxor(dst, dst, dst, vec_enc);
++  evpcmpq(ktmp2, k0, src, dst, Assembler::lt, true, vec_enc);
++  kandwl(ktmp2, ktmp2, ktmp1);
++  evpsubq(xtmp1, ktmp2, dst, xtmp1, true, vec_enc);
++  evpsravq(xtmp1, ktmp1, xtmp1, xtmp3, true, vec_enc);
++  mov64(scratch, 0x1);
++  evpbroadcastq(xtmp3, scratch, vec_enc);
++  evpaddq(xtmp1, ktmp1, xtmp1, xtmp3, true, vec_enc);
++  evpsravq(xtmp3, ktmp1, xtmp1, xtmp3, true, vec_enc);
++  evcvtpd2qq(dst, src, vec_enc);
++  vector_cast_double_special_cases_evex(dst, src, xtmp1, xtmp2, ktmp2, ktmp3, scratch, double_sign_flip, vec_enc);
++  evpblendmq(dst, ktmp1, dst, xtmp3, true, vec_enc);
++}
++
++void C2_MacroAssembler::vector_round_float_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                                XMMRegister xtmp3, KRegister ktmp1, KRegister ktmp2, KRegister ktmp3,
++                                                AddressLiteral float_sign_flip, Register scratch, int vec_enc) {
++  // Following assembly snippet is vectorized translation of Math.round(float) algorithm
++  // for AVX512 target.
++  evmovdquq(xtmp1, k0, src, true, vec_enc);
++  movl(scratch, 0x7F800000);
++  evpbroadcastd(xtmp2, scratch, vec_enc);
++  evpandd(xtmp2, k0, xtmp2, xtmp1, true, vec_enc);
++  Assembler::evpsrad(xtmp2, k0, xtmp2, 0x17, true, vec_enc);
++  movl(scratch, 0x95);
++  evpbroadcastd(dst, scratch, vec_enc);
++  vpsubd(dst, dst, xtmp2, vec_enc);
++  evmovdquq(xtmp3, k0, dst, true, vec_enc);
++  movl(scratch, 0XFFFFFFE0);
++  evpbroadcastd(xtmp2, scratch, vec_enc);
++  evpandd(xtmp2, k0, dst, xtmp2, true, vec_enc);
++  vpxor(dst, dst, dst, vec_enc);
++  Assembler::evpcmpeqd(ktmp1, k0, xtmp2, dst, vec_enc);
++  movl(scratch, 0X007FFFFF);
++  evpbroadcastd(xtmp2, scratch, vec_enc);
++  movl(scratch, 0X00800000);
++  evpbroadcastd(dst, scratch, vec_enc);
++  evpternlogd(xtmp1, 0xea, k0, xtmp2, dst, true, vec_enc);
++  vpxor(dst, dst, dst, vec_enc);
++  evpcmpd(ktmp2, k0, src, dst, Assembler::lt, true, vec_enc);
++  kandwl(ktmp2, ktmp2, ktmp1);
++  evpsubd(xtmp1, ktmp2, dst, xtmp1, true, vec_enc);
++  evpsravd(xtmp1, ktmp1, xtmp1, xtmp3, true, vec_enc);
++  movl(scratch, 0x1);
++  evpbroadcastd(xtmp3, scratch, vec_enc);
++  evpaddd(xtmp1, ktmp1, xtmp1, xtmp3, true, vec_enc);
++  evpsravd(xtmp3, ktmp1, xtmp1, xtmp3, true, vec_enc);
++  vcvtps2dq(dst, src, vec_enc);
++  vector_cast_float_special_cases_evex(dst, src, xtmp1, xtmp2, ktmp2, ktmp3, scratch, float_sign_flip, vec_enc);
++  evpblendmd(dst, ktmp1, dst, xtmp3, true, vec_enc);
++}
++
++void C2_MacroAssembler::vector_round_float_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                               XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5, XMMRegister xtmp6,
++                                               AddressLiteral float_sign_flip, Register scratch, int vec_enc) {
++  // Following assembly snippet is vectorized translation of Math.round(float) algorithm
++  // for AVX2 target.
++  vmovdqu(xtmp1, src);
++  movl(scratch, 0x7F800000);
++  movdl(xtmp2, scratch);
++  vpbroadcastd(xtmp2, xtmp2, vec_enc);
++  vpand(xtmp2, xtmp2, xtmp1, vec_enc);
++  Assembler::vpsrad(xtmp2, xtmp2, 0x17, vec_enc);
++  movl(scratch, 0x95);
++  movdl(dst, scratch);
++  vpbroadcastd(dst, dst, vec_enc);
++  vpsubd(dst, dst, xtmp2, vec_enc);
++  vmovdqu(xtmp3, dst);
++  movl(scratch, 0xFFFFFFE0);
++  movdl(xtmp2, scratch);
++  vpbroadcastd(xtmp2, xtmp2, vec_enc);
++  vpand(xtmp2, dst, xtmp2, vec_enc);
++  vpxor(dst, dst, dst, vec_enc);
++  Assembler::vpcmpeqd(xtmp5, xtmp2, dst, vec_enc);
++  movl(scratch, 0x007FFFFF);
++  movdl(xtmp2, scratch);
++  vpbroadcastd(xtmp2, xtmp2, vec_enc);
++  movl(scratch, 0x00800000);
++  movdl(dst, scratch);
++  vpbroadcastd(dst, dst, vec_enc);
++  vpand(xtmp1, xtmp2, xtmp1, vec_enc);
++  vpor(xtmp1, xtmp1, dst, vec_enc);
++  vpxor(dst, dst, dst, vec_enc);
++  vpcmpCCW(xtmp4, src, dst, Assembler::lt, Assembler::D, vec_enc, scratch);
++  vpand(xtmp4, xtmp4, xtmp5, vec_enc);
++  vpsubd(dst, dst, xtmp1, vec_enc);
++  vblendvps(xtmp1, xtmp1, dst, xtmp4, vec_enc);
++  vpsravd(xtmp1, xtmp1, xtmp3, vec_enc);
++  movl(scratch, 0x1);
++  movdl(xtmp4, scratch);
++  vpbroadcastd(xtmp4, xtmp4, vec_enc);
++  vpaddd(xtmp1, xtmp1, xtmp4, vec_enc);
++  Assembler::vpsrad(xtmp3, xtmp1, 0x1, vec_enc);
++  vcvtps2dq(dst, src, vec_enc);
++  vector_cast_float_special_cases_avx(dst, src, xtmp1, xtmp2, xtmp6, xtmp4, scratch, float_sign_flip, vec_enc);
++  vblendvps(dst, dst, xtmp3, xtmp5, vec_enc);
++}
++
+ void C2_MacroAssembler::evpternlog(XMMRegister dst, int func, KRegister mask, XMMRegister src2, XMMRegister src3,
+                                    bool merge, BasicType bt, int vlen_enc) {
+   if (bt == T_INT) {
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index a326b5065f5..b5e6a414f20 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -302,15 +302,43 @@ public:
+ 
+   void vector_castF2I_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
+                           XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
+-                          AddressLiteral float_sign_flip, Register scratch, int vec_enc, bool roundF);
++                          AddressLiteral float_sign_flip, Register scratch, int vec_enc);
+ 
+   void vector_castF2I_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+                            KRegister ktmp1, KRegister ktmp2, AddressLiteral float_sign_flip,
+-                           Register scratch, int vec_enc, bool roundF);
++                           Register scratch, int vec_enc);
++
+ 
+   void vector_castD2L_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+                            KRegister ktmp1, KRegister ktmp2, AddressLiteral double_sign_flip,
+-                           Register scratch, int vec_enc, bool roundD);
++                           Register scratch, int vec_enc);
++
++  void vector_cast_double_special_cases_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                             KRegister ktmp1, KRegister ktmp2, Register scratch, AddressLiteral double_sign_flip,
++                                             int vec_enc);
++
++  void vector_cast_float_special_cases_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                            KRegister ktmp1, KRegister ktmp2, Register scratch, AddressLiteral float_sign_flip,
++                                            int vec_enc);
++
++  void vector_cast_float_special_cases_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                           XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
++                                           Register scratch, AddressLiteral float_sign_flip,
++                                           int vec_enc);
++
++  void vector_round_double_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                XMMRegister xtmp3, KRegister ktmp1, KRegister ktmp2, KRegister ktmp3,
++                                AddressLiteral double_sign_flip, Register scratch, int vec_enc);
++
++
++  void vector_round_float_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                               XMMRegister xtmp3, KRegister ktmp1, KRegister ktmp2, KRegister ktmp3,
++                               AddressLiteral float_sign_flip, Register scratch, int vec_enc);
++
++  void vector_round_float_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                              XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5, XMMRegister xtmp6,
++                              AddressLiteral float_sign_flip, Register scratch, int vec_enc);
++
+ 
+   void evpternlog(XMMRegister dst, int func, KRegister mask, XMMRegister src2, XMMRegister src3,
+                   bool merge, BasicType bt, int vlen_enc);
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.cpp b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+index 8e870d8cadd..e45585adf99 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+@@ -8884,13 +8884,10 @@ void MacroAssembler::generate_fill_avx3(BasicType type, Register to, Register va
+ 
+ 
+ #ifdef _LP64
+-void MacroAssembler::convert_f2i(Register dst, XMMRegister src, bool roundF) {
++void MacroAssembler::convert_f2i(Register dst, XMMRegister src) {
+   Label done;
+-  if (roundF) {
+-    cvtss2sil(dst, src);
+-  } else {
+-    cvttss2sil(dst, src);
+-  }
++  cvttss2sil(dst, src);
++
+   // Conversion instructions do not match JLS for overflow, underflow and NaN -> fixup in stub
+   cmpl(dst, 0x80000000); // float_sign_flip
+   jccb(Assembler::notEqual, done);
+@@ -8926,13 +8923,72 @@ void MacroAssembler::convert_f2l(Register dst, XMMRegister src) {
+   bind(done);
+ }
+ 
+-void MacroAssembler::convert_d2l(Register dst, XMMRegister src, bool roundD) {
++void MacroAssembler::round_float(Register dst, XMMRegister src, Register rtmp, Register rcx) {
++  // Following code is exactly mimicking the functionality of java.lang.Math.round(float) method.
++  Label L_special_case, L_block1, L_exit;
++  movl(rtmp, 0x7F800000);
++  movdl(dst, src);
++  andl(dst, rtmp);
++  sarl(dst, 0x17);
++  movl(rtmp, 0x95);
++  subl(rtmp, dst);
++  movl(rcx, rtmp);
++  movl(dst, 0xffffffe0);
++  testl(rtmp, dst);
++  jccb(Assembler::notEqual, L_special_case);
++  movdl(dst, src);
++  andl(dst, 0x7fffff);
++  orl(dst, 0x800000);
++  movdl(rtmp, src);
++  testl(rtmp, rtmp);
++  jccb(Assembler::greaterEqual, L_block1);
++  negl(dst);
++  bind(L_block1);
++  sarl(dst);
++  addl(dst, 0x1);
++  sarl(dst, 0x1);
++  jmp(L_exit);
++  bind(L_special_case);
++  convert_f2i(dst, src);
++  bind(L_exit);
++}
++
++void MacroAssembler::round_double(Register dst, XMMRegister src, Register rtmp, Register rcx) {
++  // Following code is exactly mimicking the functionality of java.lang.Math.round(double) method.
++  Label L_special_case, L_block1, L_exit;
++  mov64(rtmp, 0x7ff0000000000000L);
++  movq(dst, src);
++  andq(dst, rtmp);
++  sarq(dst, 0x34);
++  mov64(rtmp, 0x432);
++  subq(rtmp, dst);
++  movq(rcx, rtmp);
++  mov64(dst, 0xffffffffffffffc0L);
++  testq(rtmp, dst);
++  jccb(Assembler::notEqual, L_special_case);
++  movq(dst, src);
++  mov64(rtmp, 0xfffffffffffffL);
++  andq(dst, rtmp);
++  mov64(rtmp, 0x10000000000000L);
++  orq(dst, rtmp);
++  movq(rtmp, src);
++  testq(rtmp, rtmp);
++  jccb(Assembler::greaterEqual, L_block1);
++  negq(dst);
++  bind(L_block1);
++  sarq(dst);
++  addq(dst, 0x1);
++  sarq(dst, 0x1);
++  jmp(L_exit);
++  bind(L_special_case);
++  convert_d2l(dst, src);
++  bind(L_exit);
++}
++
++void MacroAssembler::convert_d2l(Register dst, XMMRegister src) {
+   Label done;
+-  if (roundD) {
+-    cvtsd2siq(dst, src);
+-  } else {
+-    cvttsd2siq(dst, src);
+-  }
++  cvttsd2siq(dst, src);
++
+   cmp64(dst, ExternalAddress((address) StubRoutines::x86::double_sign_flip()));
+   jccb(Assembler::notEqual, done);
+   subptr(rsp, 8);
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.hpp b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+index dd9a63ad55e..ecd43066931 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+@@ -1958,10 +1958,13 @@ public:
+   void fill64(Register dst, int dis, XMMRegister xmm, bool use64byteVector = false);
+ 
+ #ifdef _LP64
+-  void convert_f2i(Register dst, XMMRegister src, bool roundF = false);
++  void convert_f2i(Register dst, XMMRegister src);
+   void convert_d2i(Register dst, XMMRegister src);
+   void convert_f2l(Register dst, XMMRegister src);
+-  void convert_d2l(Register dst, XMMRegister src, bool roundD = false);
++  void convert_d2l(Register dst, XMMRegister src);
++  void round_double(Register dst, XMMRegister src, Register rtmp, Register rcx);
++  void round_float(Register dst, XMMRegister src, Register rtmp, Register rcx);
++
+ 
+   void cache_wb(Address line);
+   void cache_wbsync(bool is_pre);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 44e49a2f419..36ca7b55f2f 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1452,6 +1452,9 @@ const bool Matcher::match_rule_supported(int opcode) {
+     case Op_SqrtVF:
+     case Op_RoundVF:
+     case Op_RoundVD:
++      if (UseAVX < 2) { // enabled for AVX2 only
++        return false;
++      }
+     case Op_VectorMaskCmp:
+     case Op_VectorCastB2X:
+     case Op_VectorCastS2X:
+@@ -7208,38 +7211,34 @@ instruct vcastFtoD_reg(vec dst, vec src) %{
+ %}
+ 
+ 
+-instruct vround_or_castFtoI_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, rRegP scratch, rFlagsReg cr) %{
++instruct castFtoI_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, rRegP scratch, rFlagsReg cr) %{
+   predicate(!VM_Version::supports_avx512vl() &&
+             Matcher::vector_length_in_bytes(n) < 64 &&
+             Matcher::vector_element_basic_type(n) == T_INT);
+   match(Set dst (VectorCastF2X src));
+-  match(Set dst (RoundVF src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP scratch, KILL cr);
+-  format %{ "vector_round_or_cast_f2i $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3 and $xtmp4 as TEMP" %}
++  format %{ "vector_cast_f2i $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3, $xtmp4 and $scratch as TEMP" %}
+   ins_encode %{
+-    bool is_rounding = this->ideal_Opcode() == Op_RoundVF ? true : false;
+     int vlen_enc = vector_length_encoding(this);
+     __ vector_castF2I_avx($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
+                           $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $xtmp4$$XMMRegister,
+-                          ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc, is_rounding);
++                          ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vround_or_castFtoI_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rRegP scratch, rFlagsReg cr) %{
++instruct castFtoI_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rRegP scratch, rFlagsReg cr) %{
+   predicate((VM_Version::supports_avx512vl() ||
+              Matcher::vector_length_in_bytes(n) == 64) &&
+              Matcher::vector_element_basic_type(n) == T_INT);
+   match(Set dst (VectorCastF2X src));
+-  match(Set dst (RoundVF src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2, TEMP scratch, KILL cr);
+-  format %{ "vector_round_or_cast_f2i $dst,$src\t! using $xtmp1, $xtmp2, $ktmp1 and $ktmp2 as TEMP" %}
++  format %{ "vector_cast_f2i $dst,$src\t! using $xtmp1, $xtmp2, $ktmp1, $ktmp2 and $scratch as TEMP" %}
+   ins_encode %{
+-    bool is_rounding = this->ideal_Opcode() == Op_RoundVF ? true : false;
+     int vlen_enc = vector_length_encoding(this);
+     __ vector_castF2I_evex($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
+                            $xtmp2$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister,
+-                           ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc, is_rounding);
++                           ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -7255,18 +7254,61 @@ instruct vcastDtoF_reg(vec dst, vec src) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct vround_or_castDtoL_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rRegP scratch, rFlagsReg cr) %{
++instruct castDtoL_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rRegP scratch, rFlagsReg cr) %{
+   predicate(Matcher::vector_element_basic_type(n) == T_LONG);
+   match(Set dst (VectorCastD2X src));
+-  match(Set dst (RoundVD src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2, TEMP scratch, KILL cr);
+-  format %{ "vector_round_or_cast_d2l $dst,$src\t! using $xtmp1, $xtmp2, $ktmp1 and $ktmp2 as TEMP" %}
++  format %{ "vector_cast_d2l $dst,$src\t! using $xtmp1, $xtmp2, $ktmp1, $ktmp2 and $scratch as TEMP" %}
+   ins_encode %{
+-    bool is_rounding = this->ideal_Opcode() == Op_RoundVD ? true : false;
+     int vlen_enc = vector_length_encoding(this);
+     __ vector_castD2L_evex($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
+                            $xtmp2$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister,
+-                           ExternalAddress(vector_double_signflip()), $scratch$$Register, vlen_enc, is_rounding);
++                           ExternalAddress(vector_double_signflip()), $scratch$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vround_float_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, vec xtmp5, vec xtmp6, rRegP scratch, rFlagsReg cr) %{
++  predicate(!VM_Version::supports_avx512vl() &&
++            Matcher::vector_length_in_bytes(n) < 64 &&
++            Matcher::vector_element_basic_type(n) == T_INT);
++  match(Set dst (RoundVF src));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP xtmp5, TEMP xtmp6, TEMP scratch, KILL cr);
++  format %{ "vector_round_float $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3, $xtmp4, $xtmp5 ,$xtmp6 and $scratch as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vector_round_float_avx($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister, $xtmp2$$XMMRegister,
++                              $xtmp3$$XMMRegister, $xtmp4$$XMMRegister, $xtmp5$$XMMRegister, $xtmp6$$XMMRegister,
++                              ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vround_float_evex(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, kReg ktmp1, kReg ktmp2, kReg ktmp3,  rRegP scratch, rFlagsReg cr) %{
++  predicate((VM_Version::supports_avx512vl() ||
++             Matcher::vector_length_in_bytes(n) == 64) &&
++             Matcher::vector_element_basic_type(n) == T_INT);
++  match(Set dst (RoundVF src));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP ktmp1, TEMP ktmp2, TEMP ktmp3, TEMP scratch, KILL cr);
++  format %{ "vector_round_float $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3, $ktmp1, $ktmp2, $ktmp3 and $scratch as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vector_round_float_evex($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister, $xtmp2$$XMMRegister,
++                               $xtmp3$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister, $ktmp3$$KRegister,
++                               ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vround_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, kReg ktmp1, kReg ktmp2, kReg ktmp3, rRegP scratch, rFlagsReg cr) %{
++  predicate(Matcher::vector_element_basic_type(n) == T_LONG);
++  match(Set dst (RoundVD src));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP ktmp1, TEMP ktmp2, TEMP ktmp3, TEMP scratch, KILL cr);
++  format %{ "vector_round_long $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3, $ktmp1, $ktmp2, $ktmp3 and $scratch as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vector_round_double_evex($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister, $xtmp2$$XMMRegister,                                                                         $xtmp3$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister, $ktmp3$$KRegister,
++                                ExternalAddress(vector_double_signflip()), $scratch$$Register, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index 7084ba8799e..df14155761b 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -10659,15 +10659,13 @@ instruct convD2F_reg_mem(regF dst, memory src)
+ %}
+ 
+ // XXX do mem variants
+-instruct round_or_convF2I_reg_reg(rRegI dst, regF src, rFlagsReg cr)
++instruct convF2I_reg_reg(rRegI dst, regF src, rFlagsReg cr)
+ %{
+   match(Set dst (ConvF2I src));
+-  match(Set dst (RoundF src));
+   effect(KILL cr);
+   format %{ "round_or_convert_f2i $dst,$src" %}
+   ins_encode %{
+-  bool is_rounding = this->ideal_Opcode() == Op_RoundF ? true : false;
+-    __ convert_f2i($dst$$Register, $src$$XMMRegister, is_rounding);
++    __ convert_f2i($dst$$Register, $src$$XMMRegister);
+   %}
+   ins_pipe(pipe_slow);
+ %}
+@@ -10694,15 +10692,35 @@ instruct convD2I_reg_reg(rRegI dst, regD src, rFlagsReg cr)
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct round_or_convD2L_reg_reg(rRegL dst, regD src, rFlagsReg cr)
++instruct convD2L_reg_reg(rRegL dst, regD src, rFlagsReg cr)
+ %{
+   match(Set dst (ConvD2L src));
+-  match(Set dst (RoundD src));
+   effect(KILL cr);
+   format %{ "round_or_convert_d2l $dst,$src"%}
+   ins_encode %{
+-  bool is_rounding = this->ideal_Opcode() == Op_RoundD ? true : false;
+-    __ convert_d2l($dst$$Register, $src$$XMMRegister, is_rounding);
++    __ convert_d2l($dst$$Register, $src$$XMMRegister);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct round_double_reg(rRegL dst, regD src, rRegL rtmp, rcx_RegL rcx, rFlagsReg cr)
++%{
++  match(Set dst (RoundD src));
++  effect(TEMP dst, TEMP rtmp, TEMP rcx, KILL cr);
++  format %{ "round_double $dst,$src \t! using $rtmp and $rcx as TEMP"%}
++  ins_encode %{
++    __ round_double($dst$$Register, $src$$XMMRegister, $rtmp$$Register, $rcx$$Register);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct round_float_reg(rRegI dst, regF src, rRegL rtmp, rcx_RegL rcx, rFlagsReg cr)
++%{
++  match(Set dst (RoundF src));
++  effect(TEMP dst, TEMP rtmp, TEMP rcx, KILL cr);
++  format %{ "round_float $dst,$src" %}
++  ins_encode %{
++    __ round_float($dst$$Register, $src$$XMMRegister, $rtmp$$Register, $rcx$$Register);
+   %}
+   ins_pipe(pipe_slow);
+ %}
+diff --git a/src/hotspot/share/opto/loopTransform.cpp b/src/hotspot/share/opto/loopTransform.cpp
+index 36f9ce11f35..a8ea4e5a236 100644
+--- a/src/hotspot/share/opto/loopTransform.cpp
++++ b/src/hotspot/share/opto/loopTransform.cpp
+@@ -968,6 +968,8 @@ bool IdealLoopTree::policy_unroll(PhaseIdealLoop *phase) {
+       case Op_ModL: body_size += 30; break;
+       case Op_DivL: body_size += 30; break;
+       case Op_MulL: body_size += 10; break;
++      case Op_RoundVF: body_size += 100; break;
++      case Op_RoundVD: body_size += 100; break;
+       case Op_StrComp:
+       case Op_StrEquals:
+       case Op_StrIndexOf:
+diff --git a/test/hotspot/jtreg/compiler/c2/cr6340864/TestDoubleVect.java b/test/hotspot/jtreg/compiler/c2/cr6340864/TestDoubleVect.java
+index f3f440dd923..8f6a58d3487 100644
+--- a/test/hotspot/jtreg/compiler/c2/cr6340864/TestDoubleVect.java
++++ b/test/hotspot/jtreg/compiler/c2/cr6340864/TestDoubleVect.java
+@@ -359,16 +359,6 @@ public class TestDoubleVect {
+         errn += verify("test_negc: ", i, a0[i], (double)(-((double)(ADD_INIT+i))));
+       }
+ 
+-      test_round(l0, a1);
+-      errn += verify("test_round: ", 0, l0[0], 0L);
+-      errn += verify("test_round: ", 1, l0[1], Long.MAX_VALUE);
+-      errn += verify("test_round: ", 2, l0[2], Long.MIN_VALUE);
+-      errn += verify("test_round: ", 3, l0[3], Long.MAX_VALUE);
+-      errn += verify("test_round: ", 4, l0[4], 0L);
+-      errn += verify("test_round: ", 5, l0[5], 0L);
+-      for (int i=6; i<ARRLEN; i++) {
+-        errn += verify("test_round: ", i, l0[i], Math.round((double)(ADD_INIT+i)));
+-      }
+ 
+       // To test -ve and +ve Zero scenarios.
+       double [] other_corner_cases     = { -0.0, 0.0, 9.007199254740992E15 };
+@@ -436,6 +426,31 @@ public class TestDoubleVect {
+       for (int i=8; i<ARRLEN; i++) {
+         errn += verify("test_sqrt: ", i, a0[i], Math.sqrt((double)(ADD_INIT+i)));
+       }
++
++      a1[6] = +0x1.fffffffffffffp-2;
++      a1[7] = +0x1.0p-1;
++      a1[8] = +0x1.0000000000001p-1;
++      a1[9] = -0x1.fffffffffffffp-2;
++      a1[10] = -0x1.0p-1;
++      a1[11] = -0x1.0000000000001p-1;
++
++      test_round(l0, a1);
++      errn += verify("test_round: ", 0, l0[0], 0L);
++      errn += verify("test_round: ", 1, l0[1], Long.MAX_VALUE);
++      errn += verify("test_round: ", 2, l0[2], Long.MIN_VALUE);
++      errn += verify("test_round: ", 3, l0[3], Long.MAX_VALUE);
++      errn += verify("test_round: ", 4, l0[4], 0L);
++      errn += verify("test_round: ", 5, l0[5], 0L);
++
++      errn += verify("test_round: ", 6, l0[6], 0L);
++      errn += verify("test_round: ", 7, l0[7], 1L);
++      errn += verify("test_round: ", 8, l0[8], 1L);
++      errn += verify("test_round: ", 9, l0[9], 0L);
++      errn += verify("test_round: ", 10, l0[10], 0L);
++      errn += verify("test_round: ", 11, l0[11], -1L);
++      for (int i=12; i<ARRLEN; i++) {
++        errn += verify("test_round: ", i, l0[i], Math.round((double)(ADD_INIT+i)));
++      }
+     }
+ 
+     if (errn > 0)
+diff --git a/test/hotspot/jtreg/compiler/c2/cr6340864/TestFloatVect.java b/test/hotspot/jtreg/compiler/c2/cr6340864/TestFloatVect.java
+index e1a3e9f64ff..3b8f963ab4d 100644
+--- a/test/hotspot/jtreg/compiler/c2/cr6340864/TestFloatVect.java
++++ b/test/hotspot/jtreg/compiler/c2/cr6340864/TestFloatVect.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2012, 2022, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -357,17 +357,6 @@ public class TestFloatVect {
+         errn += verify("test_negc: ", i, a0[i], (float)(-((float)(ADD_INIT+i))));
+       }
+ 
+-      test_round(i0, a1);
+-      errn += verify("test_round: ", 0, i0[0], 0);
+-      errn += verify("test_round: ", 1, i0[1], Integer.MAX_VALUE);
+-      errn += verify("test_round: ", 2, i0[2], Integer.MIN_VALUE);
+-      errn += verify("test_round: ", 3, i0[3], Integer.MAX_VALUE);
+-      errn += verify("test_round: ", 4, i0[4], 0);
+-      errn += verify("test_round: ", 5, i0[5], 0);
+-      for (int i=6; i<ARRLEN; i++) {
+-        errn += verify("test_round: ", i, i0[i], Math.round(((float)(ADD_INIT+i))));
+-      }
+-
+       // Overwrite with +0.0/-0.0 values
+       a1[6] = (float)0.0;
+       a1[7] = (float)-0.0;
+@@ -384,6 +373,31 @@ public class TestFloatVect {
+         errn += verify("test_sqrt: ", i, a0[i], (float)(Math.sqrt((double)(ADD_INIT+i))));
+       }
+ 
++      a1[6] = +0x1.fffffep-2f;
++      a1[7] = +0x1.0p-1f;
++      a1[8] = +0x1.000002p-1f;
++      a1[9] = -0x1.fffffep-2f;
++      a1[10] = -0x1.0p-1f;
++      a1[11] = -0x1.000002p-1f;
++
++      test_round(i0, a1);
++      errn += verify("test_round: ", 0, i0[0], 0);
++      errn += verify("test_round: ", 1, i0[1], Integer.MAX_VALUE);
++      errn += verify("test_round: ", 2, i0[2], Integer.MIN_VALUE);
++      errn += verify("test_round: ", 3, i0[3], Integer.MAX_VALUE);
++      errn += verify("test_round: ", 4, i0[4], 0);
++      errn += verify("test_round: ", 5, i0[5], 0);
++      errn += verify("test_round: ", 6, i0[6], 0);
++      errn += verify("test_round: ", 7, i0[7], 1);
++      errn += verify("test_round: ", 8, i0[8], 1);
++      errn += verify("test_round: ", 9, i0[9], 0);
++      errn += verify("test_round: ", 10, i0[10], 0);
++      errn += verify("test_round: ", 11, i0[11], -1);
++
++      for (int i=12; i<ARRLEN; i++) {
++        errn += verify("test_round: ", i, i0[i], Math.round(((float)(ADD_INIT+i))));
++      }
++
+     }
+ 
+     if (errn > 0)
+diff --git a/test/hotspot/jtreg/compiler/vectorization/TestRoundVect.java b/test/hotspot/jtreg/compiler/vectorization/TestRoundVect.java
+index 7960f2f2d6f..5cda12edfed 100644
+--- a/test/hotspot/jtreg/compiler/vectorization/TestRoundVect.java
++++ b/test/hotspot/jtreg/compiler/vectorization/TestRoundVect.java
+@@ -75,7 +75,7 @@ public class TestRoundVect {
+   }
+ 
+   @Test
+-  @IR(applyIf = {"UseAVX", " > 0"}, counts = {"RoundVF" , " > 0 "})
++  @IR(applyIf = {"UseAVX", " > 1"}, counts = {"RoundVF" , " > 0 "})
+   public void test_round_float(int[] iout, float[] finp) {
+       for (int i = 0; i < finp.length; i+=1) {
+           iout[i] = Math.round(finp[i]);
+diff --git a/test/jdk/java/lang/Math/RoundTests.java b/test/jdk/java/lang/Math/RoundTests.java
+index cae190f9770..c8f28ca1210 100644
+--- a/test/jdk/java/lang/Math/RoundTests.java
++++ b/test/jdk/java/lang/Math/RoundTests.java
+@@ -29,16 +29,17 @@
+ public class RoundTests {
+     public static void main(String... args) {
+         int failures = 0;
+-
+-        failures += testNearFloatHalfCases();
+-        failures += testNearDoubleHalfCases();
+-        failures += testUnityULPCases();
+-        failures += testSpecialCases();
+-
+-        if (failures > 0) {
+-            System.err.println("Testing {Math, StrictMath}.round incurred "
+-                               + failures + " failures.");
+-            throw new RuntimeException();
++        for (int i = 0; i < 100000; i++) {
++            failures += testNearFloatHalfCases();
++            failures += testNearDoubleHalfCases();
++            failures += testUnityULPCases();
++            failures += testSpecialCases();
++
++            if (failures > 0) {
++                System.err.println("Testing {Math, StrictMath}.round incurred "
++                                   + failures + " failures.");
++                throw new RuntimeException();
++            }
+         }
+     }
+ 

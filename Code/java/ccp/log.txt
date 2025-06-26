@@ -1,0 +1,905 @@
+CompileCommand: print ccp.func bool print = true
+
+============================= C2-compiled nmethod ==============================
+#r018 rsi:rsi   : parm 0: rawptr:BotPTR
+# -- Old rsp -- Framesize: 48 --
+#r591 rsp+44: in_preserve
+#r590 rsp+40: return address
+#r589 rsp+36: in_preserve
+#r588 rsp+32: saved fp register
+#r587 rsp+28: pad2, stack alignment
+#r586 rsp+24: pad2, stack alignment
+#r585 rsp+20: Fixed slot 1
+#r584 rsp+16: Fixed slot 0
+#r595 rsp+12: spill
+#r594 rsp+ 8: spill
+#r593 rsp+ 4: spill
+#r592 rsp+ 0: spill
+#
+----------------------- MetaData before Compile_id = 143 ------------------------
+{method}
+ - this oop:          0x00007fa9dc510d28
+ - method holder:     'ccp'
+ - constants:         0x00007fa9dc510848 constant pool [61]/operands[5] {0x00007fa9dc510848} for 'ccp' cache=0x00007fa9dc700000
+ - access:            0xc1000009  public static 
+ - name:              'func'
+ - signature:         '(I)I'
+ - max stack:         5
+ - max locals:        3
+ - size of params:    1
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007faa4501f400
+ - adapters:          AHE@0x00007faa482590e0: 0xa i2c: 0x00007faa451293e0 c2i: 0x00007faa45129499 c2iUV: 0x00007faa45129463 c2iNCI: 0x00007faa451294d3
+ - compiled entry     0x00007faa45129499
+ - code size:         46
+ - code start:        0x00007fa9dc510ce8
+ - code end (excl):   0x00007fa9dc510d16
+ - method data:       0x00007fa9dc7001c0
+ - checked ex length: 0
+ - linenumber start:  0x00007fa9dc510d16
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 143 -----------------------
+#
+#  int ( rawptr:BotPTR )
+#
+000     N164: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # breakpoint
+        nop 	# 11 bytes pad for loops and calls
+
+010     B1: #	out( B11 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+010     # stack bang (152 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #32	# Create frame
+
+01c     movl    R13, [RSI]	# int
+01f     movl    RBX, [RSI + #16 (8-bit)]	# int
+022     movq    RDI, RSI	# spill
+025     call_leaf,runtime  OSR_migration_end
+        No JVM State Info
+        # 
+        nop 	# 14 bytes pad for loops and calls
+040     cmpl    R13, #1024
+047     jge     B11  P=0.000962 C=27031.000000
+
+04d     B2: #	out( B3 ) <- in( B1 )  Freq: 0.999038
+04d     movl    R11, R13	# spill
+050     incl    R11	# int
+053     movl    R8, #1024	# int
+059     movl    R10, #1	# int
+05f     cmpl    R11, #1
+063     cmovll R11, R10	# signed, int
+067     cmpl    R11, R8
+06a     cmovlgt R11, R8	# min
+
+06e     B3: #	out( B16 B4 ) <- in( B2 B4 ) Loop( B3-B4 inner pre of N200) Freq: 1.99808
+06e     cmpl    R13, #1
+072     jl     B16  P=0.000000 C=27005.000000
+
+078     B4: #	out( B3 B5 ) <- in( B3 )  Freq: 1.99807
+078     incl    R13	# int
+        nop 	# 5 bytes pad for loops and calls
+080     cmpl    R13, R11
+083     jl,s   B3	# loop end  P=0.500000 C=27031.000000
+
+085     B5: #	out( B15 B6 ) <- in( B4 )  Freq: 0.999037
+085     cmpl    R13, #1023
+08c     jge     B15  P=0.000001 C=-1.000000
+
+092     B6: #	out( B7 ) <- in( B5 )  Freq: 0.999036
+092     # castII of R13
+092     movslq  R10, R13	# i2l
+095     movl    R11, #1024	# long (unsigned 32-bit)
+09b     subq    R11, R10	# long
+09e     andq    R11, #-2	# long
+0a2     movl    RBP, R11	# l2i
+0a5     addl    RBP, R13	# int
+
+0a8     B7: #	out( B11 B8 ) <- in( B15 B6 )  Freq: 0.999037
+0a8     cmpl    RBP, #1024
+0ae     jge,s   B11  P=0.500000 C=-1.000000
+
+0b0     B8: #	out( B9 ) <- in( B7 )  Freq: 0.499519
+0b0     # castII of RBP
+
+0b0     B9: #	out( B17 B10 ) <- in( B8 B10 ) Loop( B9-B10 inner post of N200) Freq: 0.999037
+0b0     cmpl    RBP, #1
+0b3     jl     B17  P=0.000000 C=27005.000000
+
+0b9     B10: #	out( B9 B11 ) <- in( B9 )  Freq: 0.999036
+0b9     incl    RBP	# int
+        nop 	# 5 bytes pad for loops and calls
+0c0     cmpl    RBP, #1024
+0c6     jl,s   B9	# loop end  P=0.500000 C=27031.000000
+
+0c8     B11: #	out( B18 B12 ) <- in( B1 B7 B10 )  Freq: 0.999999
+0c8     movq    R10, java/lang/Class:exact *	# ptr
+0d2     movl    RBP, [R10 + #112 (8-bit)]	# compressed ptr ! Field: ccp.arr
+        nop 	# 10 bytes pad for loops and calls
+0e0     movl    R11, [R12 + RBP << 3 + #12] (compressed oop addressing)	# range
+0e5     NullCheck RBP
+
+0e5     B12: #	out( B14 B13 ) <- in( B11 )  Freq: 0.999998
+0e5     cmpl    RBX, R11	# unsigned
+0e8     jae,us  B14  P=0.000001 C=-1.000000
+
+0ea     B13: #	out( N164 ) <- in( B12 )  Freq: 0.999997
+0ea     decode_heap_oop_not_null R10,RBP
+0ee     movl    RAX, [R10 + #16 + RBX << #2]	# int
+0f3     addq    rsp, 32	# Destroy frame
+	popq    rbp
+	cmpq     rsp, poll_offset[r15_thread] 
+	ja       #safepoint_stub	# Safepoint: poll for GC
+
+105     ret
+
+106     B14: #	out( N164 ) <- in( B12 )  Freq: 1.01328e-06
+106     movl    RSI, #-28	# int
+10b     movl    [rsp + #0], RBX	# spill
+        nop 	# 1 bytes pad for loops and calls
+10f     call,static  wrapper for: uncommon_trap(reason='range_check' action='make_not_entrant' debug_id='0')
+        # ccp::func @ bci:44 (line 31) L[0]=_ L[1]=_ L[2]=_ STK[0]=RBP STK[1]=rsp + #0
+        # OopMap {rbp=NarrowOop off=276/0x114}
+114     stop	# ShouldNotReachHere
+
+128     B15: #	out( B7 ) <- in( B5 )  Freq: 1.0123e-06
+128     movl    RBP, R13	# spill
+12b     jmp     B7
+
+130     B16: #	out( B17 ) <- in( B3 )  Freq: 9.52757e-07
+130     movl    RBP, R13	# spill
+
+133     B17: #	out( N164 ) <- in( B9 B16 )  Freq: 1.42913e-06
+133     movl    RSI, #-187	# int
+138     movl    [rsp + #0], RBX	# spill
+13b     call,static  wrapper for: uncommon_trap(reason='unstable_if' action='reinterpret' debug_id='0')
+        # ccp::func @ bci:16 (line 25) L[0]=rsp + #0 L[1]=_ L[2]=RBP STK[0]=RBP STK[1]=#1
+        # OopMap {off=320/0x140}
+140     stop	# ShouldNotReachHere
+
+154     B18: #	out( N164 ) <- in( B11 )  Freq: 1.01328e-06
+154     movl    RSI, #-10	# int
+159     movl    RBP, RBX	# spill
+15b     call,static  wrapper for: uncommon_trap(reason='null_check' action='maybe_recompile' debug_id='0')
+        # ccp::func @ bci:44 (line 31) L[0]=_ L[1]=_ L[2]=_ STK[0]=#NULL STK[1]=RBP
+        # OopMap {off=352/0x160}
+160     stop	# ShouldNotReachHere
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)     470  143 %           ccp::func @ 5 (46 bytes)
+ total in heap  [0x00007faa45134f10,0x00007faa45135428] = 1304
+ relocation     [0x00007faa45135088,0x00007faa451350c8] = 64
+ main code      [0x00007faa451350e0,0x00007faa45135270] = 400
+ stub code      [0x00007faa45135270,0x00007faa45135288] = 24
+ oops           [0x00007faa45135288,0x00007faa45135290] = 8
+ metadata       [0x00007faa45135290,0x00007faa45135298] = 8
+ scopes data    [0x00007faa45135298,0x00007faa451352f0] = 88
+ scopes pcs     [0x00007faa451352f0,0x00007faa45135410] = 288
+ dependencies   [0x00007faa45135410,0x00007faa45135418] = 8
+ nul chk table  [0x00007faa45135418,0x00007faa45135428] = 16
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007fa9dc510d28} 'func' '(I)I' in 'ccp'
+ ;; N164: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007faa451350e0:   callq  0x00007faa4dd7f740           ;   {runtime_call os::breakpoint()}
+  0x00007faa451350e5:   nop
+  0x00007faa451350e6:   nop
+  0x00007faa451350e7:   nop
+  0x00007faa451350e8:   nop
+  0x00007faa451350e9:   nop
+  0x00007faa451350ea:   nop
+  0x00007faa451350eb:   nop
+  0x00007faa451350ec:   nop
+  0x00007faa451350ed:   nop
+  0x00007faa451350ee:   nop
+  0x00007faa451350ef:   nop
+ ;; B1: #	out( B11 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007faa451350f0:   mov    %eax,-0x18000(%rsp)
+  0x00007faa451350f7:   push   %rbp
+  0x00007faa451350f8:   sub    $0x20,%rsp
+  0x00007faa451350fc:   mov    (%rsi),%r13d
+  0x00007faa451350ff:   mov    0x10(%rsi),%ebx
+  0x00007faa45135102:   mov    %rsi,%rdi
+  0x00007faa45135105:   movabs $0x7faa4df08010,%r10
+  0x00007faa4513510f:   callq  *%r10                        ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@5 (line 23)
+  0x00007faa45135112:   nop
+  0x00007faa45135113:   nop
+  0x00007faa45135114:   nop
+  0x00007faa45135115:   nop
+  0x00007faa45135116:   nop
+  0x00007faa45135117:   nop
+  0x00007faa45135118:   nop
+  0x00007faa45135119:   nop
+  0x00007faa4513511a:   nop
+  0x00007faa4513511b:   nop
+  0x00007faa4513511c:   nop
+  0x00007faa4513511d:   nop
+  0x00007faa4513511e:   nop
+  0x00007faa4513511f:   nop
+  0x00007faa45135120:   cmp    $0x400,%r13d
+  0x00007faa45135127:   jge    0x00007faa451351a8           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@9 (line 23)
+ ;; B2: #	out( B3 ) <- in( B1 )  Freq: 0.999038
+  0x00007faa4513512d:   mov    %r13d,%r11d
+  0x00007faa45135130:   inc    %r11d
+  0x00007faa45135133:   mov    $0x400,%r8d
+  0x00007faa45135139:   mov    $0x1,%r10d
+  0x00007faa4513513f:   cmp    $0x1,%r11d
+  0x00007faa45135143:   cmovl  %r10d,%r11d
+  0x00007faa45135147:   cmp    %r8d,%r11d
+  0x00007faa4513514a:   cmovg  %r8d,%r11d
+ ;; B3: #	out( B16 B4 ) <- in( B2 B4 ) Loop( B3-B4 inner pre of N200) Freq: 1.99808
+  0x00007faa4513514e:   cmp    $0x1,%r13d
+  0x00007faa45135152:   jl     0x00007faa45135210           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@16 (line 25)
+ ;; B4: #	out( B3 B5 ) <- in( B3 )  Freq: 1.99807
+  0x00007faa45135158:   inc    %r13d                        ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@34 (line 29)
+  0x00007faa4513515b:   nop
+  0x00007faa4513515c:   nop
+  0x00007faa4513515d:   nop
+  0x00007faa4513515e:   nop
+  0x00007faa4513515f:   nop
+  0x00007faa45135160:   cmp    %r11d,%r13d
+  0x00007faa45135163:   jl     0x00007faa4513514e           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@9 (line 23)
+ ;; B5: #	out( B15 B6 ) <- in( B4 )  Freq: 0.999037
+  0x00007faa45135165:   cmp    $0x3ff,%r13d
+  0x00007faa4513516c:   jge    0x00007faa45135208
+ ;; B6: #	out( B7 ) <- in( B5 )  Freq: 0.999036
+  0x00007faa45135172:   movslq %r13d,%r10
+  0x00007faa45135175:   mov    $0x400,%r11d
+  0x00007faa4513517b:   sub    %r10,%r11
+  0x00007faa4513517e:   and    $0xfffffffffffffffe,%r11
+  0x00007faa45135182:   mov    %r11d,%ebp
+  0x00007faa45135185:   add    %r13d,%ebp                   ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@34 (line 29)
+ ;; B7: #	out( B11 B8 ) <- in( B15 B6 )  Freq: 0.999037
+  0x00007faa45135188:   cmp    $0x400,%ebp
+  0x00007faa4513518e:   jge    0x00007faa451351a8
+ ;; B8: #	out( B9 ) <- in( B7 )  Freq: 0.499519
+ ;; B9: #	out( B17 B10 ) <- in( B8 B10 ) Loop( B9-B10 inner post of N200) Freq: 0.999037
+  0x00007faa45135190:   cmp    $0x1,%ebp
+  0x00007faa45135193:   jl     0x00007faa45135213           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@16 (line 25)
+ ;; B10: #	out( B9 B11 ) <- in( B9 )  Freq: 0.999036
+  0x00007faa45135199:   inc    %ebp                         ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@34 (line 29)
+  0x00007faa4513519b:   nop
+  0x00007faa4513519c:   nop
+  0x00007faa4513519d:   nop
+  0x00007faa4513519e:   nop
+  0x00007faa4513519f:   nop
+  0x00007faa451351a0:   cmp    $0x400,%ebp
+  0x00007faa451351a6:   jl     0x00007faa45135190           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@9 (line 23)
+ ;; B11: #	out( B18 B12 ) <- in( B1 B7 B10 )  Freq: 0.999999
+  0x00007faa451351a8:   movabs $0x11f96edb8,%r10            ;   {oop(a 'java/lang/Class'{0x000000011f96edb8} = 'ccp')}
+  0x00007faa451351b2:   mov    0x70(%r10),%ebp              ;*getstatic arr {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@40 (line 31)
+  0x00007faa451351b6:   nop
+  0x00007faa451351b7:   nop
+  0x00007faa451351b8:   nop
+  0x00007faa451351b9:   nop
+  0x00007faa451351ba:   nop
+  0x00007faa451351bb:   nop
+  0x00007faa451351bc:   nop
+  0x00007faa451351bd:   nop
+  0x00007faa451351be:   nop
+  0x00007faa451351bf:   nop
+  0x00007faa451351c0:   mov    0xc(%r12,%rbp,8),%r11d       ; implicit exception: dispatches to 0x00007faa45135234
+ ;; B12: #	out( B14 B13 ) <- in( B11 )  Freq: 0.999998
+  0x00007faa451351c5:   cmp    %r11d,%ebx
+  0x00007faa451351c8:   jae    0x00007faa451351e6
+ ;; B13: #	out( N164 ) <- in( B12 )  Freq: 0.999997
+  0x00007faa451351ca:   lea    (%r12,%rbp,8),%r10
+  0x00007faa451351ce:   mov    0x10(%r10,%rbx,4),%eax
+  0x00007faa451351d3:   add    $0x20,%rsp
+  0x00007faa451351d7:   pop    %rbp
+  0x00007faa451351d8:   cmp    0x3c8(%r15),%rsp             ;   {poll_return}
+  0x00007faa451351df:   ja     0x00007faa45135254
+  0x00007faa451351e5:   retq   
+ ;; B14: #	out( N164 ) <- in( B12 )  Freq: 1.01328e-06
+  0x00007faa451351e6:   mov    $0xffffffe4,%esi
+  0x00007faa451351eb:   mov    %ebx,(%rsp)
+  0x00007faa451351ee:   nop
+  0x00007faa451351ef:   callq  0x00007faa45132b20           ; ImmutableOopMap {rbp=NarrowOop }
+                                                            ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@44 (line 31)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007faa451351f4:   movabs $0x7faa4e4ca108,%rdi         ;   {external_word}
+  0x00007faa451351fe:   and    $0xfffffffffffffff0,%rsp
+  0x00007faa45135202:   callq  0x00007faa4db312d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007faa45135207:   hlt                                 ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@44 (line 31)
+ ;; B15: #	out( B7 ) <- in( B5 )  Freq: 1.0123e-06
+  0x00007faa45135208:   mov    %r13d,%ebp
+  0x00007faa4513520b:   jmpq   0x00007faa45135188
+ ;; B16: #	out( B17 ) <- in( B3 )  Freq: 9.52757e-07
+  0x00007faa45135210:   mov    %r13d,%ebp                   ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@5 (line 23)
+ ;; B17: #	out( N164 ) <- in( B9 B16 )  Freq: 1.42913e-06
+  0x00007faa45135213:   mov    $0xffffff45,%esi
+  0x00007faa45135218:   mov    %ebx,(%rsp)
+  0x00007faa4513521b:   callq  0x00007faa45132b20           ; ImmutableOopMap {}
+                                                            ;*if_icmpge {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) ccp::func@16 (line 25)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007faa45135220:   movabs $0x7faa4e4ca108,%rdi         ;   {external_word}
+  0x00007faa4513522a:   and    $0xfffffffffffffff0,%rsp
+  0x00007faa4513522e:   callq  0x00007faa4db312d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007faa45135233:   hlt    
+ ;; B18: #	out( N164 ) <- in( B11 )  Freq: 1.01328e-06
+  0x00007faa45135234:   mov    $0xfffffff6,%esi
+  0x00007faa45135239:   mov    %ebx,%ebp
+  0x00007faa4513523b:   callq  0x00007faa45132b20           ; ImmutableOopMap {}
+                                                            ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@44 (line 31)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007faa45135240:   movabs $0x7faa4e4ca108,%rdi         ;   {external_word}
+  0x00007faa4513524a:   and    $0xfffffffffffffff0,%rsp
+  0x00007faa4513524e:   callq  0x00007faa4db312d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007faa45135253:   hlt                                 ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@44 (line 31)
+  0x00007faa45135254:   movabs $0x7faa451351d8,%r10         ;   {internal_word}
+  0x00007faa4513525e:   mov    %r10,0x3e0(%r15)
+  0x00007faa45135265:   jmpq   0x00007faa451319a0           ;   {runtime_call SafepointBlob}
+  0x00007faa4513526a:   hlt    
+  0x00007faa4513526b:   hlt    
+  0x00007faa4513526c:   hlt    
+  0x00007faa4513526d:   hlt    
+  0x00007faa4513526e:   hlt    
+  0x00007faa4513526f:   hlt    
+[Exception Handler]
+  0x00007faa45135270:   jmpq   0x00007faa45094b20           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007faa45135275:   callq  0x00007faa4513527a
+  0x00007faa4513527a:   subq   $0x5,(%rsp)
+  0x00007faa4513527f:   jmpq   0x00007faa45132e60           ;   {runtime_call DeoptimizationBlob}
+  0x00007faa45135284:   hlt    
+  0x00007faa45135285:   hlt    
+  0x00007faa45135286:   hlt    
+  0x00007faa45135287:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007faa45135288:   0x000000011f8a3370 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f8a3370}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007faa45135290:   0x00007fa9dc510d28 {method} {0x00007fa9dc510d28} 'func' '(I)I' in 'ccp'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007faa451350df offset=ffffffff bits=0):
+PcDesc(pc=0x00007faa45135112 offset=32 bits=0):
+   ccp::func@5 (line 23)
+PcDesc(pc=0x00007faa4513512d offset=4d bits=0):
+   ccp::func@9 (line 23)
+PcDesc(pc=0x00007faa45135158 offset=78 bits=0):
+   ccp::func@16 (line 25)
+PcDesc(pc=0x00007faa4513515b offset=7b bits=0):
+   ccp::func@34 (line 29)
+PcDesc(pc=0x00007faa45135165 offset=85 bits=0):
+   ccp::func@9 (line 23)
+PcDesc(pc=0x00007faa45135188 offset=a8 bits=0):
+   ccp::func@34 (line 29)
+PcDesc(pc=0x00007faa45135199 offset=b9 bits=0):
+   ccp::func@16 (line 25)
+PcDesc(pc=0x00007faa4513519b offset=bb bits=0):
+   ccp::func@34 (line 29)
+PcDesc(pc=0x00007faa451351a8 offset=c8 bits=0):
+   ccp::func@9 (line 23)
+PcDesc(pc=0x00007faa451351b6 offset=d6 bits=0):
+   ccp::func@40 (line 31)
+PcDesc(pc=0x00007faa451351f4 offset=114 bits=0):
+   ccp::func@44 (line 31)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: reg rbp [10],narrowoop
+    - @1: stack[0]
+PcDesc(pc=0x00007faa45135208 offset=128 bits=0):
+   ccp::func@44 (line 31)
+PcDesc(pc=0x00007faa45135213 offset=133 bits=0):
+   ccp::func@5 (line 23)
+PcDesc(pc=0x00007faa45135220 offset=140 bits=1):
+   ccp::func@16 (line 25)  reexecute=true
+   Locals
+    - l0: stack[0]
+    - l1: empty
+    - l2: reg rbp [10],int
+   Expression stack
+    - @0: reg rbp [10],int
+    - @1: 1
+PcDesc(pc=0x00007faa45135240 offset=160 bits=0):
+   ccp::func@44 (line 31)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: NULL
+    - @1: reg rbp [10],int
+PcDesc(pc=0x00007faa45135254 offset=174 bits=0):
+   ccp::func@44 (line 31)
+PcDesc(pc=0x00007faa45135289 offset=1a9 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 3 OopMaps
+
+ImmutableOopMap {rbp=NarrowOop } pc offsets: 276 
+ImmutableOopMap {} pc offsets: 320 352 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007faa45135112 offset=32):
+   ccp::func@5 (line 23)
+ScopeDesc(pc=0x00007faa4513512d offset=4d):
+   ccp::func@9 (line 23)
+ScopeDesc(pc=0x00007faa45135158 offset=78):
+   ccp::func@16 (line 25)
+ScopeDesc(pc=0x00007faa4513515b offset=7b):
+   ccp::func@34 (line 29)
+ScopeDesc(pc=0x00007faa45135165 offset=85):
+   ccp::func@9 (line 23)
+ScopeDesc(pc=0x00007faa45135188 offset=a8):
+   ccp::func@34 (line 29)
+ScopeDesc(pc=0x00007faa45135199 offset=b9):
+   ccp::func@16 (line 25)
+ScopeDesc(pc=0x00007faa4513519b offset=bb):
+   ccp::func@34 (line 29)
+ScopeDesc(pc=0x00007faa451351a8 offset=c8):
+   ccp::func@9 (line 23)
+ScopeDesc(pc=0x00007faa451351b6 offset=d6):
+   ccp::func@40 (line 31)
+ScopeDesc(pc=0x00007faa451351f4 offset=114):
+   ccp::func@44 (line 31)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: reg rbp [10],narrowoop
+    - @1: stack[0]
+ScopeDesc(pc=0x00007faa45135208 offset=128):
+   ccp::func@44 (line 31)
+ScopeDesc(pc=0x00007faa45135213 offset=133):
+   ccp::func@5 (line 23)
+ScopeDesc(pc=0x00007faa45135220 offset=140):
+   ccp::func@16 (line 25)  reexecute=true
+   Locals
+    - l0: stack[0]
+    - l1: empty
+    - l2: reg rbp [10],int
+   Expression stack
+    - @0: reg rbp [10],int
+    - @1: 1
+ScopeDesc(pc=0x00007faa45135240 offset=160):
+   ccp::func@44 (line 31)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: NULL
+    - @1: reg rbp [10],int
+ScopeDesc(pc=0x00007faa45135254 offset=174):
+   ccp::func@44 (line 31)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007faa45135088: 3200
+relocInfo@0x00007faa45135088 [type=6(runtime_call) addr=0x00007faa451350e0 offset=0 format=1] | [destination=0x00007faa4dd7f740]
+         @0x00007faa4513508a: 08c8
+relocInfo@0x00007faa4513508a [type=1(oop) addr=0x00007faa451351a8 offset=200] | [oop_addr=0x00007faa451351aa *=0x000000011f96edb8 offset=0]
+         @0x00007faa4513508c: 5830
+relocInfo@0x00007faa4513508c [type=11(poll_return) addr=0x00007faa451351d8 offset=48]
+         @0x00007faa4513508e: 3217
+relocInfo@0x00007faa4513508e [type=6(runtime_call) addr=0x00007faa451351ef offset=23 format=1] | [destination=0x00007faa45132b20]
+         @0x00007faa45135090: 7c034e4ca1087faa3805
+relocInfo@0x00007faa45135098 [type=7(external_word) addr=0x00007faa451351f4 offset=5 data={4e4ca1087faa}] | [target=0x00007faa4e4ca108]
+         @0x00007faa4513509a: 320e
+relocInfo@0x00007faa4513509a [type=6(runtime_call) addr=0x00007faa45135202 offset=14 format=1] | [destination=0x00007faa4db312d0]
+         @0x00007faa4513509c: 3219
+relocInfo@0x00007faa4513509c [type=6(runtime_call) addr=0x00007faa4513521b offset=25 format=1] | [destination=0x00007faa45132b20]
+         @0x00007faa4513509e: 7c034e4ca1087faa3805
+relocInfo@0x00007faa451350a6 [type=7(external_word) addr=0x00007faa45135220 offset=5 data={4e4ca1087faa}] | [target=0x00007faa4e4ca108]
+         @0x00007faa451350a8: 320e
+relocInfo@0x00007faa451350a8 [type=6(runtime_call) addr=0x00007faa4513522e offset=14 format=1] | [destination=0x00007faa4db312d0]
+         @0x00007faa451350aa: 320d
+relocInfo@0x00007faa451350aa [type=6(runtime_call) addr=0x00007faa4513523b offset=13 format=1] | [destination=0x00007faa45132b20]
+         @0x00007faa451350ac: 7c034e4ca1087faa3805
+relocInfo@0x00007faa451350b4 [type=7(external_word) addr=0x00007faa45135240 offset=5 data={4e4ca1087faa}] | [target=0x00007faa4e4ca108]
+         @0x00007faa451350b6: 320e
+relocInfo@0x00007faa451350b6 [type=6(runtime_call) addr=0x00007faa4513524e offset=14 format=1] | [destination=0x00007faa4db312d0]
+         @0x00007faa451350b8: 787c4006
+relocInfo@0x00007faa451350ba [type=8(internal_word) addr=0x00007faa45135254 offset=6 data=124] | [target=0x00007faa451351d8]
+         @0x00007faa451350bc: 3211
+relocInfo@0x00007faa451350bc [type=6(runtime_call) addr=0x00007faa45135265 offset=17 format=1] | [destination=0x00007faa451319a0]
+         @0x00007faa451350be: 000b
+relocInfo@0x00007faa451350be [type=0(none) addr=0x00007faa45135270 offset=11]
+         @0x00007faa451350c0: 3200
+relocInfo@0x00007faa451350c0 [type=6(runtime_call) addr=0x00007faa45135270 offset=0 format=1] | [destination=0x00007faa45094b20]
+         @0x00007faa451350c2: 320f
+relocInfo@0x00007faa451350c2 [type=6(runtime_call) addr=0x00007faa4513527f offset=15 format=1] | [destination=0x00007faa45132e60]
+         @0x00007faa451350c4: 0000
+relocInfo@0x00007faa451350c4 [type=0(none) addr=0x00007faa4513527f offset=0]
+         @0x00007faa451350c6: 0000
+relocInfo@0x00007faa451350c6 [type=0(none) addr=0x00007faa4513527f offset=0]
+         @0x00007faa451350c8: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable (size = 1 entries, 12 bytes):
+{
+   < 0x00007faa451351c0, 0x00007faa45135234 > 
+}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x000000011f8a3370 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f8a3370}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x00007fa9dc510d28 {method} {0x00007fa9dc510d28} 'func' '(I)I' in 'ccp'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+============================= C2-compiled nmethod ==============================
+#r018 rsi   : parm 0: int
+# -- Old rsp -- Framesize: 48 --
+#r591 rsp+44: in_preserve
+#r590 rsp+40: return address
+#r589 rsp+36: in_preserve
+#r588 rsp+32: saved fp register
+#r587 rsp+28: pad2, stack alignment
+#r586 rsp+24: pad2, stack alignment
+#r585 rsp+20: Fixed slot 1
+#r584 rsp+16: Fixed slot 0
+#r595 rsp+12: spill
+#r594 rsp+ 8: spill
+#r593 rsp+ 4: spill
+#r592 rsp+ 0: spill
+#
+----------------------- MetaData before Compile_id = 144 ------------------------
+{method}
+ - this oop:          0x00007fa9dc510d28
+ - method holder:     'ccp'
+ - constants:         0x00007fa9dc510848 constant pool [61]/operands[5] {0x00007fa9dc510848} for 'ccp' cache=0x00007fa9dc700000
+ - access:            0xc1000009  public static 
+ - name:              'func'
+ - signature:         '(I)I'
+ - max stack:         5
+ - max locals:        3
+ - size of params:    1
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007faa4501f400
+ - adapters:          AHE@0x00007faa482590e0: 0xa i2c: 0x00007faa451293e0 c2i: 0x00007faa45129499 c2iUV: 0x00007faa45129463 c2iNCI: 0x00007faa451294d3
+ - compiled entry     0x00007faa45129499
+ - code size:         46
+ - code start:        0x00007fa9dc510ce8
+ - code end (excl):   0x00007fa9dc510d16
+ - method data:       0x00007fa9dc7001c0
+ - checked ex length: 0
+ - linenumber start:  0x00007fa9dc510d16
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 144 -----------------------
+#
+#  int ( int )
+#
+000     N1: #	out( B1 ) <- in( B4 B5 B3 )  Freq: 1
+
+000     B1: #	out( B5 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (152 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #32	# Create frame
+
+00c     movq    R10, java/lang/Class:exact *	# ptr
+016     movl    R10, [R10 + #112 (8-bit)]	# compressed ptr ! Field: ccp.arr
+        nop 	# 6 bytes pad for loops and calls
+020     movl    R8, [R12 + R10 << 3 + #12] (compressed oop addressing)	# range
+025     NullCheck R10
+
+025     B2: #	out( B4 B3 ) <- in( B1 )  Freq: 0.999999
+025     cmpl    RSI, R8	# unsigned
+028     jae,us  B4  P=0.000001 C=-1.000000
+
+02a     B3: #	out( N1 ) <- in( B2 )  Freq: 0.999998
+02a     decode_heap_oop_not_null R10,R10
+02e     movl    RAX, [R10 + #16 + RSI << #2]	# int
+033     addq    rsp, 32	# Destroy frame
+	popq    rbp
+	cmpq     rsp, poll_offset[r15_thread] 
+	ja       #safepoint_stub	# Safepoint: poll for GC
+
+045     ret
+
+046     B4: #	out( N1 ) <- in( B2 )  Freq: 1.01328e-06
+046     movl    RBP, R10	# spill
+049     movl    [rsp + #0], RSI	# spill
+04c     movl    RSI, #-28	# int
+        nop 	# 2 bytes pad for loops and calls
+053     call,static  wrapper for: uncommon_trap(reason='range_check' action='make_not_entrant' debug_id='0')
+        # ccp::func @ bci:44 (line 31) L[0]=_ L[1]=_ L[2]=_ STK[0]=RBP STK[1]=rsp + #0
+        # OopMap {rbp=NarrowOop off=88/0x58}
+058     stop	# ShouldNotReachHere
+
+06c     B5: #	out( N1 ) <- in( B1 )  Freq: 1.01328e-06
+06c     movl    RBP, RSI	# spill
+06e     movl    RSI, #-10	# int
+073     call,static  wrapper for: uncommon_trap(reason='null_check' action='maybe_recompile' debug_id='0')
+        # ccp::func @ bci:44 (line 31) L[0]=_ L[1]=_ L[2]=_ STK[0]=#NULL STK[1]=RBP
+        # OopMap {off=120/0x78}
+078     stop	# ShouldNotReachHere
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2)     481  144             ccp::func (46 bytes)
+ total in heap  [0x00007faa4503df90,0x00007faa4503e2d0] = 832
+ relocation     [0x00007faa4503e108,0x00007faa4503e138] = 48
+ main code      [0x00007faa4503e140,0x00007faa4503e1e8] = 168
+ stub code      [0x00007faa4503e1e8,0x00007faa4503e200] = 24
+ oops           [0x00007faa4503e200,0x00007faa4503e208] = 8
+ metadata       [0x00007faa4503e208,0x00007faa4503e210] = 8
+ scopes data    [0x00007faa4503e210,0x00007faa4503e248] = 56
+ scopes pcs     [0x00007faa4503e248,0x00007faa4503e2b8] = 112
+ dependencies   [0x00007faa4503e2b8,0x00007faa4503e2c0] = 8
+ nul chk table  [0x00007faa4503e2c0,0x00007faa4503e2d0] = 16
+
+[Disassembly]
+--------------------------------------------------------------------------------
+[Constant Pool (empty)]
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007fa9dc510d28} 'func' '(I)I' in 'ccp'
+  # parm0:    rsi       = int
+  #           [sp+0x30]  (sp of caller)
+ ;; N1: #	out( B1 ) <- in( B4 B5 B3 )  Freq: 1
+ ;; B1: #	out( B5 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007faa4503e140:   mov    %eax,-0x18000(%rsp)
+  0x00007faa4503e147:   push   %rbp
+  0x00007faa4503e148:   sub    $0x20,%rsp                   ;*synchronization entry
+                                                            ; - ccp::func@-1 (line 21)
+  0x00007faa4503e14c:   movabs $0x11f96edb8,%r10            ;   {oop(a 'java/lang/Class'{0x000000011f96edb8} = 'ccp')}
+  0x00007faa4503e156:   mov    0x70(%r10),%r10d             ;*getstatic arr {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@40 (line 31)
+  0x00007faa4503e15a:   nop
+  0x00007faa4503e15b:   nop
+  0x00007faa4503e15c:   nop
+  0x00007faa4503e15d:   nop
+  0x00007faa4503e15e:   nop
+  0x00007faa4503e15f:   nop
+  0x00007faa4503e160:   mov    0xc(%r12,%r10,8),%r8d        ; implicit exception: dispatches to 0x00007faa4503e1ac
+ ;; B2: #	out( B4 B3 ) <- in( B1 )  Freq: 0.999999
+  0x00007faa4503e165:   cmp    %r8d,%esi
+  0x00007faa4503e168:   jae    0x00007faa4503e186
+ ;; B3: #	out( N1 ) <- in( B2 )  Freq: 0.999998
+  0x00007faa4503e16a:   shl    $0x3,%r10
+  0x00007faa4503e16e:   mov    0x10(%r10,%rsi,4),%eax
+  0x00007faa4503e173:   add    $0x20,%rsp
+  0x00007faa4503e177:   pop    %rbp
+  0x00007faa4503e178:   cmp    0x3c8(%r15),%rsp             ;   {poll_return}
+  0x00007faa4503e17f:   ja     0x00007faa4503e1cc
+  0x00007faa4503e185:   retq   
+ ;; B4: #	out( N1 ) <- in( B2 )  Freq: 1.01328e-06
+  0x00007faa4503e186:   mov    %r10d,%ebp
+  0x00007faa4503e189:   mov    %esi,(%rsp)
+  0x00007faa4503e18c:   mov    $0xffffffe4,%esi
+  0x00007faa4503e191:   nop
+  0x00007faa4503e192:   nop
+  0x00007faa4503e193:   callq  0x00007faa45132b20           ; ImmutableOopMap {rbp=NarrowOop }
+                                                            ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@44 (line 31)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007faa4503e198:   movabs $0x7faa4e4ca108,%rdi         ;   {external_word}
+  0x00007faa4503e1a2:   and    $0xfffffffffffffff0,%rsp
+  0x00007faa4503e1a6:   callq  0x00007faa4db312d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007faa4503e1ab:   hlt    
+ ;; B5: #	out( N1 ) <- in( B1 )  Freq: 1.01328e-06
+  0x00007faa4503e1ac:   mov    %esi,%ebp
+  0x00007faa4503e1ae:   mov    $0xfffffff6,%esi
+  0x00007faa4503e1b3:   callq  0x00007faa45132b20           ; ImmutableOopMap {}
+                                                            ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@44 (line 31)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007faa4503e1b8:   movabs $0x7faa4e4ca108,%rdi         ;   {external_word}
+  0x00007faa4503e1c2:   and    $0xfffffffffffffff0,%rsp
+  0x00007faa4503e1c6:   callq  0x00007faa4db312d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007faa4503e1cb:   hlt                                 ;*iaload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - ccp::func@44 (line 31)
+  0x00007faa4503e1cc:   movabs $0x7faa4503e178,%r10         ;   {internal_word}
+  0x00007faa4503e1d6:   mov    %r10,0x3e0(%r15)
+  0x00007faa4503e1dd:   jmpq   0x00007faa451319a0           ;   {runtime_call SafepointBlob}
+  0x00007faa4503e1e2:   hlt    
+  0x00007faa4503e1e3:   hlt    
+  0x00007faa4503e1e4:   hlt    
+  0x00007faa4503e1e5:   hlt    
+  0x00007faa4503e1e6:   hlt    
+  0x00007faa4503e1e7:   hlt    
+[Exception Handler]
+  0x00007faa4503e1e8:   jmpq   0x00007faa45094b20           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007faa4503e1ed:   callq  0x00007faa4503e1f2
+  0x00007faa4503e1f2:   subq   $0x5,(%rsp)
+  0x00007faa4503e1f7:   jmpq   0x00007faa45132e60           ;   {runtime_call DeoptimizationBlob}
+  0x00007faa4503e1fc:   hlt    
+  0x00007faa4503e1fd:   hlt    
+  0x00007faa4503e1fe:   hlt    
+  0x00007faa4503e1ff:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007faa4503e200:   0x000000011f8a3370 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f8a3370}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007faa4503e208:   0x00007fa9dc510d28 {method} {0x00007fa9dc510d28} 'func' '(I)I' in 'ccp'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007faa4503e13f offset=ffffffff bits=0):
+PcDesc(pc=0x00007faa4503e14c offset=c bits=0):
+   ccp::func@-1 (line 21)
+PcDesc(pc=0x00007faa4503e15a offset=1a bits=0):
+   ccp::func@40 (line 31)
+PcDesc(pc=0x00007faa4503e198 offset=58 bits=0):
+   ccp::func@44 (line 31)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: reg rbp [10],narrowoop
+    - @1: stack[0]
+PcDesc(pc=0x00007faa4503e1b8 offset=78 bits=0):
+   ccp::func@44 (line 31)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: NULL
+    - @1: reg rbp [10],int
+PcDesc(pc=0x00007faa4503e1cc offset=8c bits=0):
+   ccp::func@44 (line 31)
+PcDesc(pc=0x00007faa4503e201 offset=c1 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 2 OopMaps
+
+ImmutableOopMap {rbp=NarrowOop } pc offsets: 88 
+ImmutableOopMap {} pc offsets: 120 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007faa4503e14c offset=c):
+   ccp::func@-1 (line 21)
+ScopeDesc(pc=0x00007faa4503e15a offset=1a):
+   ccp::func@40 (line 31)
+ScopeDesc(pc=0x00007faa4503e198 offset=58):
+   ccp::func@44 (line 31)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: reg rbp [10],narrowoop
+    - @1: stack[0]
+ScopeDesc(pc=0x00007faa4503e1b8 offset=78):
+   ccp::func@44 (line 31)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: NULL
+    - @1: reg rbp [10],int
+ScopeDesc(pc=0x00007faa4503e1cc offset=8c):
+   ccp::func@44 (line 31)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007faa4503e108: 080c
+relocInfo@0x00007faa4503e108 [type=1(oop) addr=0x00007faa4503e14c offset=12] | [oop_addr=0x00007faa4503e14e *=0x000000011f96edb8 offset=0]
+         @0x00007faa4503e10a: 582c
+relocInfo@0x00007faa4503e10a [type=11(poll_return) addr=0x00007faa4503e178 offset=44]
+         @0x00007faa4503e10c: 321b
+relocInfo@0x00007faa4503e10c [type=6(runtime_call) addr=0x00007faa4503e193 offset=27 format=1] | [destination=0x00007faa45132b20]
+         @0x00007faa4503e10e: 7c034e4ca1087faa3805
+relocInfo@0x00007faa4503e116 [type=7(external_word) addr=0x00007faa4503e198 offset=5 data={4e4ca1087faa}] | [target=0x00007faa4e4ca108]
+         @0x00007faa4503e118: 320e
+relocInfo@0x00007faa4503e118 [type=6(runtime_call) addr=0x00007faa4503e1a6 offset=14 format=1] | [destination=0x00007faa4db312d0]
+         @0x00007faa4503e11a: 320d
+relocInfo@0x00007faa4503e11a [type=6(runtime_call) addr=0x00007faa4503e1b3 offset=13 format=1] | [destination=0x00007faa45132b20]
+         @0x00007faa4503e11c: 7c034e4ca1087faa3805
+relocInfo@0x00007faa4503e124 [type=7(external_word) addr=0x00007faa4503e1b8 offset=5 data={4e4ca1087faa}] | [target=0x00007faa4e4ca108]
+         @0x00007faa4503e126: 320e
+relocInfo@0x00007faa4503e126 [type=6(runtime_call) addr=0x00007faa4503e1c6 offset=14 format=1] | [destination=0x00007faa4db312d0]
+         @0x00007faa4503e128: 78544006
+relocInfo@0x00007faa4503e12a [type=8(internal_word) addr=0x00007faa4503e1cc offset=6 data=84] | [target=0x00007faa4503e178]
+         @0x00007faa4503e12c: 3211
+relocInfo@0x00007faa4503e12c [type=6(runtime_call) addr=0x00007faa4503e1dd offset=17 format=1] | [destination=0x00007faa451319a0]
+         @0x00007faa4503e12e: 000b
+relocInfo@0x00007faa4503e12e [type=0(none) addr=0x00007faa4503e1e8 offset=11]
+         @0x00007faa4503e130: 3200
+relocInfo@0x00007faa4503e130 [type=6(runtime_call) addr=0x00007faa4503e1e8 offset=0 format=1] | [destination=0x00007faa45094b20]
+         @0x00007faa4503e132: 320f
+relocInfo@0x00007faa4503e132 [type=6(runtime_call) addr=0x00007faa4503e1f7 offset=15 format=1] | [destination=0x00007faa45132e60]
+         @0x00007faa4503e134: 0000
+relocInfo@0x00007faa4503e134 [type=0(none) addr=0x00007faa4503e1f7 offset=0]
+         @0x00007faa4503e136: 0000
+relocInfo@0x00007faa4503e136 [type=0(none) addr=0x00007faa4503e1f7 offset=0]
+         @0x00007faa4503e138: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable (size = 1 entries, 12 bytes):
+{
+   < 0x00007faa4503e160, 0x00007faa4503e1ac > 
+}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x000000011f8a3370 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x000000011f8a3370}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 NULL-oop
+#1: 0x00007fa9dc510d28 {method} {0x00007fa9dc510d28} 'func' '(I)I' in 'ccp'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+[Res] 7500000
+------------------------------------------------------------------------
+static ccp::func(I)I
+  interpreter_invocation_count:        1379
+  invocation_counter:                  1379
+  backedge_counter:                  808950
+  decompile_count:                        0
+  mdo size: 504 bytes
+
+0 iconst_0
+1 istore_1
+2 bipush 10
+4 istore_2
+5 iload_2
+6 sipush 1024
+9 if_icmpge 40
+  0   bci: 9    BranchData          taken(786) displacement(88)
+                                    not taken(803830)
+12 iload_2
+13 istore_1
+14 iload_1
+15 iconst_1
+16 if_icmpge 34
+  32  bci: 16   BranchData          taken(803830) displacement(32)
+                                    not taken(0)
+19 getstatic 13 <ccp.arr/[I> 
+22 iload_0
+23 iaload
+24 istore_2
+25 getstatic 13 <ccp.arr/[I> 
+28 iload_0
+29 iload_2
+30 bipush 10
+32 iadd
+33 iastore
+34 iinc #2 1
+37 goto 5
+  64  bci: 37   JumpData            taken(803830) displacement(-64)
+40 getstatic 13 <ccp.arr/[I> 
+43 iload_0
+44 iaload
+45 ireturn
+------------------------------------------------------------------------
+Total MDO size: 504 bytes

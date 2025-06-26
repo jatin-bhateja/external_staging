@@ -1,0 +1,155 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 352cfc00188..c9b655c6aa2 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -11967,6 +11967,13 @@ void Assembler::evpclmulqdq(XMMRegister dst, XMMRegister nds, XMMRegister src, i
+   emit_int24(0x44, (0xC0 | encode), (unsigned char)mask);
+ }
+ 
++void Assembler::vpmuldq(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(UseAVX > 0, "requires some form of AVX");
++  InstructionAttr attributes(vector_len, /* vex_w */ VM_Version::supports_evex(), /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x28, (0xC0 | encode));
++}
++
+ void Assembler::vzeroupper_uncached() {
+   if (VM_Version::supports_vzeroupper()) {
+     InstructionAttr attributes(AVX_128bit, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 7f4790e0566..01d4c5c1726 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -3057,6 +3057,8 @@ class Assembler : public AbstractAssembler  {
+   void evscatterdps(Address dst, KRegister mask, XMMRegister src, int vector_len);
+   void evscatterdpd(Address dst, KRegister mask, XMMRegister src, int vector_len);
+ 
++  void vpmuldq(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++
+   // Carry-Less Multiplication Quadword
+   void pclmulqdq(XMMRegister dst, XMMRegister src, int mask);
+   void vpclmulqdq(XMMRegister dst, XMMRegister nds, XMMRegister src, int mask);
+diff --git a/src/hotspot/cpu/x86/peephole_x86_64.hpp b/src/hotspot/cpu/x86/peephole_x86_64.hpp
+index deb53f0dfd7..e9ff5310d11 100644
+--- a/src/hotspot/cpu/x86/peephole_x86_64.hpp
++++ b/src/hotspot/cpu/x86/peephole_x86_64.hpp
+@@ -36,6 +36,8 @@ class Peephole {
+                                MachNode* (*new_root)(), uint inst0_rule);
+   static bool test_may_remove(Block* block, int block_index, PhaseCFG* cfg_, PhaseRegAlloc* ra_,
+                               MachNode* (*new_root)(), uint inst0_rule);
++  static bool infer_vmuldq(Block* block, int block_index, PhaseCFG* cfg_, PhaseRegAlloc* ra_,
++                           MachNode* (*new_root)(), uint inst0_rule);
+ };
+ 
+ #endif // CPU_X86_PEEPHOLE_X86_64_HPP
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 2b29dd14e4b..300762fd194 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1251,6 +1251,37 @@ static inline bool is_clz_non_subword_predicate_evex(BasicType bt, int vlen_byte
+            (VM_Version::supports_avx512vl() || vlen_bytes == 64);
+ }
+ 
++// match(Set dst (MulVL (AndV src1 (Replicate maxint) (URShiftVL src2 (RShiftCntV shift))));
++static inline bool is_muldq_pattern(const Node *n) {
++  if (n->Opcode() == Op_MulVL) {
++    Node *andV = n->in(1)->Opcode() == Op_AndV   ? n->in(1)
++                 : n->in(2)->Opcode() == Op_AndV ? n->in(2)
++                                                 : nullptr;
++    Node *urshiftVL = n->in(1)->Opcode() == Op_URShiftVL   ? n->in(1)
++                      : n->in(2)->Opcode() == Op_URShiftVL ? n->in(2)
++                                                           : nullptr;
++    if (!andV || !urshiftVL) {
++      return false;
++    }
++    Node *replicateL = andV->in(1)->Opcode() == Op_Replicate   ? andV->in(1)
++                       : andV->in(2)->Opcode() == Op_Replicate ? andV->in(2)
++                                                               : nullptr;
++    if (!replicateL) {
++      return false;
++    }
++    assert(replicateL->bottom_type()->is_vect()->element_basic_type() == T_LONG, "");
++
++    return replicateL->in(1)->is_Con() &&
++           replicateL->in(1)->bottom_type()->isa_long() &&
++           replicateL->in(1)->bottom_type()->is_long()->get_con() == 4294967295L &&
++           urshiftVL->in(2)->Opcode() == Op_RShiftCntV &&
++           urshiftVL->in(2)->in(1)->is_Con() &&
++           urshiftVL->in(2)->in(1)->bottom_type()->isa_int() &&
++           urshiftVL->in(2)->in(1)->bottom_type()->is_int()->get_con() == 32L;
++  }
++  return false;
++}
++
+ class Node::PD {
+ public:
+   enum NodeFlags {
+@@ -6128,11 +6159,13 @@ instruct vmulI_mem(vec dst, vec src, memory mem) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
++
+ // Longs vector mul
+ instruct evmulL_reg(vec dst, vec src1, vec src2) %{
+-  predicate((Matcher::vector_length_in_bytes(n) == 64 &&
++  predicate(!is_muldq_pattern(n) &&
++            ((Matcher::vector_length_in_bytes(n) == 64 &&
+              VM_Version::supports_avx512dq()) ||
+-            VM_Version::supports_avx512vldq());
++            VM_Version::supports_avx512vldq()));
+   match(Set dst (MulVL src1 src2));
+   format %{ "evpmullq $dst,$src1,$src2\t! mul packedL" %}
+   ins_encode %{
+@@ -6144,10 +6177,11 @@ instruct evmulL_reg(vec dst, vec src1, vec src2) %{
+ %}
+ 
+ instruct evmulL_mem(vec dst, vec src, memory mem) %{
+-  predicate((Matcher::vector_length_in_bytes(n) == 64 &&
++  predicate(!is_muldq_pattern(n) &&
++            ((Matcher::vector_length_in_bytes(n) == 64 &&
+              VM_Version::supports_avx512dq()) ||
+             (Matcher::vector_length_in_bytes(n) > 8 &&
+-             VM_Version::supports_avx512vldq()));
++             VM_Version::supports_avx512vldq())));
+   match(Set dst (MulVL src (LoadVector mem)));
+   format %{ "evpmullq $dst,$src,$mem\t! mul packedL" %}
+   ins_encode %{
+@@ -6159,7 +6193,7 @@ instruct evmulL_mem(vec dst, vec src, memory mem) %{
+ %}
+ 
+ instruct vmulL(vec dst, vec src1, vec src2, vec xtmp) %{
+-  predicate(UseAVX == 0);
++  predicate(UseAVX == 0 && !is_muldq_pattern(n));
+   match(Set dst (MulVL src1 src2));
+   effect(TEMP dst, TEMP xtmp);
+   format %{ "mulVL   $dst, $src1, $src2\t! using $xtmp as TEMP" %}
+@@ -6181,6 +6215,7 @@ instruct vmulL(vec dst, vec src1, vec src2, vec xtmp) %{
+ 
+ instruct vmulL_reg(vec dst, vec src1, vec src2, vec xtmp1, vec xtmp2) %{
+   predicate(UseAVX > 0 &&
++            !is_muldq_pattern(n) &&
+             ((Matcher::vector_length_in_bytes(n) == 64 &&
+               !VM_Version::supports_avx512dq()) ||
+              (Matcher::vector_length_in_bytes(n) < 64 &&
+@@ -6203,6 +6238,18 @@ instruct vmulL_reg(vec dst, vec src1, vec src2, vec xtmp1, vec xtmp2) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct vmuldq_reg(vec dst, vec src1, vec src2) %{
++  predicate(UseAVX > 0 && is_muldq_pattern(n));
++  match(Set dst (MulVL src1 src2));
++  ins_cost(100);
++  format %{ "vpmuldq $dst,$src1,$src2\t! muldq packedL" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vpmuldq($dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ // Floats vector mul
+ instruct vmulF(vec dst, vec src) %{
+   predicate(UseAVX == 0);

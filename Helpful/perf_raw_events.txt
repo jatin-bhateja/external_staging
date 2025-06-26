@@ -1,0 +1,19 @@
+[root@CLX-205-RH76 fill_opt]# perf stat -e cpu/event=0x28,umask=0x7,name=LVL0/,cpu/event=0x28,umask=0x18,name=LVL1/,cpu/event=0x28,umask=0x20,name=LVL2/,r0728,r1828,r2028 ./clear32.out 0 .00097656250000000000 1
+sz_mult = 0.000977
+init_offset = 0
+mem_size = 32 bytes
+[iters : 33554432] Res = 536870912
+
+ Performance counter stats for './clear32.out 0 .00097656250000000000 1':
+
+       260,555,346      LVL0                                                          (66.41%)
+                 0      LVL1                                                          (66.42%)
+                 0      LVL2                                                          (66.41%)
+       259,928,091      r0728                                                         (66.41%)
+                 0      r1828                                                         (67.18%)
+                 0      r2028                                                         (67.18%)
+
+       0.065919103 seconds time elapsed
+
+
+perf stat -e cycles,instructions,cpu/umask=0x07,event=0x28,name=LVL0/,cpu/umask=0x018,event=0x28,name=LVL1/,cpu/umask=0x20,event=0x28,name=LVL2/,cpu/umask=0x02,event=0xc5,name=BR_NEAR/,cpu/umask=0x11,event=0xd0,name=MEM_LOAD/,cpu/umask=0x12,event=0xd0,name=MEM_STORE/ -C 1  numactl --membind=0 --cpunodebind=0  java -XX:-TieredCompilation -XX:UseAVX=3  -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe  -ict -ikv  -wt 45 -i 3 -it 5 -ctf true derby

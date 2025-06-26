@@ -1,0 +1,1834 @@
+CompileCommand: print is_finite.micro bool print = true
+
+============================= C2-compiled nmethod ==============================
+#r018 rsi:rsi   : parm 0: rawptr:BotPTR
+# -- Old rsp -- Framesize: 80 --
+#r623 rsp+76: in_preserve
+#r622 rsp+72: return address
+#r621 rsp+68: in_preserve
+#r620 rsp+64: saved fp register
+#r619 rsp+60: pad2, stack alignment
+#r618 rsp+56: pad2, stack alignment
+#r617 rsp+52: Fixed slot 1
+#r616 rsp+48: Fixed slot 0
+#r635 rsp+44: spill
+#r634 rsp+40: spill
+#r633 rsp+36: spill
+#r632 rsp+32: spill
+#r631 rsp+28: spill
+#r630 rsp+24: spill
+#r629 rsp+20: spill
+#r628 rsp+16: spill
+#r627 rsp+12: spill
+#r626 rsp+ 8: spill
+#r625 rsp+ 4: spill
+#r624 rsp+ 0: spill
+#
+----------------------- MetaData before Compile_id = 34 ------------------------
+{method}
+ - this oop:          0x00007f23ba400638
+ - method holder:     'is_finite'
+ - constants:         0x00007f23ba400080 constant pool [117]/operands[12] {0x00007f23ba400080} for 'is_finite' cache=0x00007f23ba400b58
+ - access:            0x9  public static 
+ - flags:             0x6080  queued_for_compilation has_loops_flag has_loops_flag_init 
+ - name:              'micro'
+ - signature:         '([I[F)V'
+ - max stack:         5
+ - max locals:        3
+ - size of params:    2
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007f244c485b60
+ - adapters:          AHE@0x00007f2458330a80: 0xbb i2c: 0x00007f244c4ec980 c2i: 0x00007f244c4eca60 c2iUV: 0x00007f244c4eca3f c2iNCI: 0x00007f244c4eca9a
+ - compiled entry     0x00007f244c4eca60
+ - code size:         34
+ - code start:        0x00007f23ba400608
+ - code end (excl):   0x00007f23ba40062a
+ - method data:       0x00007f23ba4020e8
+ - checked ex length: 0
+ - linenumber start:  0x00007f23ba40062a
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 34 -----------------------
+#
+#  void ( rawptr:BotPTR )
+#
+000     N389: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # breakpoint
+        nop 	# 11 bytes pad for loops and calls
+
+010     B1: #	out( B32 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+010     # stack bang (248 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #64	# Create frame
+
+02a     movq    RBP, [RSI + #16 (8-bit)]	# ptr
+02e     movq    RBX, [RSI + #8 (8-bit)]	# ptr
+032     movl    R13, [RSI]	# int
+035     movq    RDI, RSI	# spill
+038     call_leaf,runtime  OSR_migration_end
+        No JVM State Info
+        # 
+04d     testq   RBP, RBP	# ptr
+050     je     B32  P=0.001000 C=-1.000000
+
+056     B2: #	out( B40 B3 ) <- in( B1 )  Freq: 0.999
+056     movl    R10, [RBP + #8 (8-bit)]	# compressed klass ptr
+        nop 	# 6 bytes pad for loops and calls
+060     cmpl    R10, narrowklass: precise [int (java/lang/Cloneable,java/io/Serializable): :Constant:exact *	# compressed klass ptr
+067     jne,u   B40  P=0.000001 C=-1.000000
+
+06d     B3: #	out( B4 ) <- in( B2 )  Freq: 0.998999
+06d     movq    R11, RBP	# spill
+070     # checkcastPP of R11
+
+070     B4: #	out( B33 B5 ) <- in( B3 B32 )  Freq: 0.999999
+070     testq   RBX, RBX	# ptr
+073     je     B33  P=0.001000 C=-1.000000
+
+079     B5: #	out( B40 B6 ) <- in( B4 )  Freq: 0.998999
+079     movl    R8, [RBX + #8 (8-bit)]	# compressed klass ptr
+        nop 	# 3 bytes pad for loops and calls
+080     cmpl    R8, narrowklass: precise [float (java/lang/Cloneable,java/io/Serializable): :Constant:exact *	# compressed klass ptr
+087     jne,u   B40  P=0.000001 C=-1.000000
+
+08d     B6: #	out( B7 ) <- in( B5 )  Freq: 0.998998
+08d     # checkcastPP of RBX
+
+08d     B7: #	out( B41 B8 ) <- in( B6 B33 )  Freq: 0.999998
+08d     movl    RDI, [R11 + #12 (8-bit)]	# range
+091     NullCheck R11
+
+091     B8: #	out( B42 B9 ) <- in( B7 )  Freq: 0.999997
+091     movl    RCX, [RBX + #12 (8-bit)]	# range
+094     NullCheck RBX
+
+094     B9: #	out( B30 B10 ) <- in( B8 )  Freq: 0.999996
+094     cmpl    R13, RDI
+097     jge     B30  P=0.000976 C=20500.000000
+
+09d     B10: #	out( B11 ) <- in( B9 )  Freq: 0.99902
+09d     leal    R8, [R13 + #1]
+0a1     movslq  R10, R8	# i2l
+0a4     xorl    R9, R9	# long
+0a7     testl   R8, R8
+0aa     cmovql R10, R9	# signed, long
+0ae     movl    R8, R10	# l2i
+0b1     cmpl    R8, RDI
+0b4     cmovlgt R8, RDI	# min
+0b8     # MachConstantBaseNode (empty encoding)
+0b8     movss   XMM1, [constant table base + #0]	# load from constant table: float=#340282346638528859811704183484516925440.000000
+
+0c0     B11: #	out( B34 B12 ) <- in( B10 B14 ) Loop( B11-B14 inner pre of N383) Freq: 1.99804
+0c0     cmpl    R13, RCX	# unsigned
+0c3     jae,u   B34  P=0.000001 C=-1.000000
+
+0c9     B12: #	out( B31 B13 ) <- in( B11 )  Freq: 1.99803
+0c9     movss   XMM2, [RBX + #16 + R13 << #2]	# float
+0d0     vandps  XMM0, XMM2, [0x7fffffff]	# abs float by sign masking
+        nop 	# 8 bytes pad for loops and calls
+0e0     ucomiss XMM1, XMM0
+0e4     jb,u   B31  P=0.000000 C=6785.000000
+
+0ea     B13: #	out( B35 B14 ) <- in( B12 )  Freq: 1.99803
+0ea     cmpl    R13, RDI	# unsigned
+0ed     jae,u   B35  P=0.000001 C=-1.000000
+
+0f3     B14: #	out( B11 B15 ) <- in( B13 )  Freq: 1.99803
+0f3     movl    [R11 + #16 + R13 << #2], #9	# int
+0fc     incl    R13	# int
+        nop 	# 1 bytes pad for loops and calls
+100     cmpl    R13, R8
+103     jl,s   B11	# loop end  P=0.500000 C=20500.000000
+
+105     B15: #	out( B25 B16 ) <- in( B14 )  Freq: 0.999015
+105     movslq  R10, RCX	# i2l
+108     movslq  R8, RDI	# i2l
+10b     cmpq    R8, R10
+10e     cmovql R10, R8	# signed, long
+112     cmpq    R8, R10
+115     cmovql R10, R8	# signed, long
+119     movl    R10, R10	# l2i
+        nop 	# 4 bytes pad for loops and calls
+120     cmpl    R13, R10
+123     jge     B25  P=0.000001 C=-1.000000
+
+129     B16: #	out( B36 B17 ) <- in( B15 )  Freq: 0.999014
+129     leal    R8, [R10 + #-1]
+12d     cmpl    R8, RCX	# unsigned
+130     jae,u   B36  P=0.000001 C=-1.000000
+
+136     B17: #	out( B37 B18 ) <- in( B16 )  Freq: 0.999013
+136     cmpl    R13, RCX	# unsigned
+139     jae,u   B37  P=0.000001 C=-1.000000
+
+13f     B18: #	out( B38 B19 ) <- in( B17 )  Freq: 0.999012
+        nop 	# 1 bytes pad for loops and calls
+140     cmpl    R8, RDI	# unsigned
+143     jae,u   B38  P=0.000001 C=-1.000000
+
+149     B19: #	out( B39 B20 ) <- in( B18 )  Freq: 0.999011
+149     cmpl    R13, RDI	# unsigned
+14c     jae,u   B39  P=0.000001 C=-1.000000
+
+152     B20: #	out( B21 ) <- in( B19 )  Freq: 0.99901
+152     movl    R8, #1000	# int
+158     # TLS is in R15
+158     xorl    RDX, RDX	# int
+
+15a     B21: #	out( B22 ) <- in( B20 B24 ) Loop( B21-B24 ) Freq: 671.672
+15a     movl    RSI, R10	# spill
+15d     subl    RSI, R13	# int
+160     cmpl    R10, R13
+163     cmovll RSI, RDX	# signed, int
+166     cmpl    RSI, #1000	# unsigned
+16c     cmovla RSI, R8	# unsigned, int
+170     addl    RSI, R13	# int
+        nop 	# 13 bytes pad for loops and calls
+
+180     B22: #	out( B31 B23 ) <- in( B21 B23 ) Loop( B22-B23 inner main of N171 strip mined) Freq: 688113
+180     movss   XMM0, [RBX + #16 + R13 << #2]	# float
+187     vandps  XMM0, XMM0, [0x7fffffff]	# abs float by sign masking
+18f     ucomiss XMM1, XMM0
+193     jb,u   B31  P=0.000000 C=6785.000000
+
+199     B23: #	out( B22 B24 ) <- in( B22 )  Freq: 688112
+199     movl    [R11 + #16 + R13 << #2], #9	# int
+1a2     incl    R13	# int
+1a5     cmpl    R13, RSI
+1a8     jl,s   B22	# loop end  P=0.999024 C=20500.000000
+
+1aa     B24: #	out( B21 B25 ) <- in( B23 )  Freq: 671.328
+1aa     movq    R9, [R15 + #48 (8-bit)]	# ptr
+1ae     testl   rax, [R9]	# Safepoint: poll for GC        # is_finite::micro @ bci:30 (line 8) L[0]=R11 L[1]=RBX L[2]=R13
+        # OopMap {r11=Oop rbx=Oop off=430/0x1ae}
+1b1     cmpl    R13, R10
+1b4     jl,s   B21  P=0.999024 C=20500.000000
+
+1b6     B25: #	out( B30 B26 ) <- in( B15 B24 )  Freq: 0.654955
+1b6     cmpl    R13, RDI
+1b9     jge     B30  P=0.500000 C=-1.000000
+        nop 	# 1 bytes pad for loops and calls
+
+1c0     B26: #	out( B34 B27 ) <- in( B25 B29 ) Loop( B26-B29 inner post of N383) Freq: 0.654953
+1c0     cmpl    R13, RCX	# unsigned
+1c3     jae,u   B34  P=0.000001 C=-1.000000
+
+1c9     B27: #	out( B31 B28 ) <- in( B26 )  Freq: 0.654953
+1c9     movss   XMM0, [RBX + #16 + R13 << #2]	# float
+1d0     vandps  XMM0, XMM0, [0x7fffffff]	# abs float by sign masking
+1d8     ucomiss XMM1, XMM0
+1dc     jb,us  B31  P=0.000000 C=6785.000000
+
+1de     B28: #	out( B35 B29 ) <- in( B27 )  Freq: 0.654952
+        nop 	# 2 bytes pad for loops and calls
+1e0     cmpl    R13, RDI	# unsigned
+1e3     jae,u   B35  P=0.000001 C=-1.000000
+
+1e9     B29: #	out( B26 B30 ) <- in( B28 )  Freq: 0.654952
+1e9     movl    [R11 + #16 + R13 << #2], #9	# int
+1f2     incl    R13	# int
+1f5     cmpl    R13, RDI
+1f8     jl,s   B26	# loop end  P=0.500000 C=20500.000000
+
+1fa     B30: #	out( N389 ) <- in( B9 B29 B25 )  Freq: 0.655929
+1fa     addq    rsp, 64	# Destroy frame
+	popq    rbp
+	cmpq    rsp, poll_offset[r15_thread] 
+	ja      #safepoint_stub	# Safepoint: poll for GC
+
+209     ret
+
+20a     B31: #	out( N389 ) <- in( B27 B12 B22 )  Freq: 0.344058
+20a     ucomiss XMM1, XMM0
+	movl    RBP, #-1
+	jp,s    done
+	jb,s    done
+	setne   RBP
+	movzbl  RBP, RBP
+done:
+227     negl    RBP	# int
+229     movl    RSI, #-179	# int
+22e     movq    [rsp + #8], RBX	# spill
+233     movq    [rsp + #24], R11	# spill
+238     movl    [rsp + #20], R13	# spill
+        nop 	# 2 bytes pad for loops and calls
+23f     call,static  wrapper for: uncommon_trap(reason='unstable_if' action='reinterpret' debug_id='0')
+        # java.lang.Float::isFinite @ bci:7 (line 650) L[0]=_ STK[0]=RBP
+        # is_finite::micro @ bci:13 (line 9) L[0]=rsp + #24 L[1]=rsp + #8 L[2]=rsp + #20 STK[0]=rsp + #24 STK[1]=rsp + #20
+        # OopMap {[8]=Oop [24]=Oop off=580/0x244}
+24c     stop	# ShouldNotReachHere
+
+260     B32: #	out( B4 ) <- in( B1 )  Freq: 0.000999987
+260     xorl    R11, R11	# ptr
+263     jmp     B4
+
+268     B33: #	out( B7 ) <- in( B4 )  Freq: 0.000999986
+268     xorl    RBX, RBX	# ptr
+26a     jmp     B7
+
+26f     B34: #	out( N389 ) <- in( B26 B11 )  Freq: 2.68822e-06
+26f     movl    RSI, #-28	# int
+274     movq    [rsp + #16], R11	# spill
+279     movl    [rsp + #12], R13	# spill
+27e     movq    [rsp + #24], RBX	# spill
+283     movl    [rsp + #32], R13	# spill
+        nop 	# 3 bytes pad for loops and calls
+28b     call,static  wrapper for: uncommon_trap(reason='range_check' action='make_not_entrant' debug_id='0')
+        # is_finite::micro @ bci:12 (line 9) L[0]=rsp + #16 L[1]=rsp + #24 L[2]=rsp + #12 STK[0]=rsp + #16 STK[1]=rsp + #32 STK[2]=rsp + #24 STK[3]=rsp + #12
+        # OopMap {[16]=Oop [24]=Oop off=656/0x290}
+298     stop	# ShouldNotReachHere
+
+2ac     B35: #	out( N389 ) <- in( B28 B13 )  Freq: 2.68821e-06
+2ac     movl    RSI, #-28	# int
+2b1     movq    [rsp + #0], RBX	# spill
+2b5     movq    [rsp + #16], R11	# spill
+2ba     movl    [rsp + #12], R13	# spill
+2bf     call,static  wrapper for: uncommon_trap(reason='range_check' action='make_not_entrant' debug_id='0')
+        # is_finite::micro @ bci:26 (line 9) L[0]=rsp + #16 L[1]=rsp + #0 L[2]=rsp + #12 STK[0]=rsp + #16 STK[1]=rsp + #12 STK[2]=#9
+        # OopMap {[0]=Oop [16]=Oop off=708/0x2c4}
+2cc     stop	# ShouldNotReachHere
+
+2e0     B36: #	out( N389 ) <- in( B16 )  Freq: 1.01228e-06
+2e0     stop	# ShouldNotReachHere
+
+2f4     B37: #	out( N389 ) <- in( B17 )  Freq: 1.01228e-06
+2f4     stop	# ShouldNotReachHere
+
+308     B38: #	out( N389 ) <- in( B18 )  Freq: 1.01228e-06
+308     stop	# ShouldNotReachHere
+
+31c     B39: #	out( N389 ) <- in( B19 )  Freq: 1.01228e-06
+31c     stop	# ShouldNotReachHere
+
+330     B40: #	out( N389 ) <- in( B2 B5 )  Freq: 1.998e-06
+330     movl    RSI, #-115	# int
+335     movq    [rsp + #0], RBX	# spill
+339     movl    [rsp + #8], R13	# spill
+        nop 	# 1 bytes pad for loops and calls
+33f     call,static  wrapper for: uncommon_trap(reason='constraint' action='reinterpret' debug_id='0')
+        # is_finite::micro @ bci:2 (line 8) L[0]=RBP L[1]=rsp + #0 L[2]=rsp + #8
+        # OopMap {rbp=Oop [0]=Oop off=836/0x344}
+34c     stop	# ShouldNotReachHere
+
+360     B41: #	out( N389 ) <- in( B7 )  Freq: 1.01328e-06
+360     movl    RSI, #-138	# int
+365     movq    RBP, R11	# spill
+368     movq    [rsp + #0], RBX	# spill
+36c     movl    [rsp + #8], R13	# spill
+        nop 	# 2 bytes pad for loops and calls
+373     call,static  wrapper for: uncommon_trap(reason='predicate' action='maybe_recompile' debug_id='0')
+        # is_finite::micro @ bci:2 (line 8) L[0]=RBP L[1]=rsp + #0 L[2]=rsp + #8
+        # OopMap {rbp=Oop [0]=Oop off=888/0x378}
+380     stop	# ShouldNotReachHere
+
+394     B42: #	out( N389 ) <- in( B8 )  Freq: 1.01328e-06
+394     movl    RSI, #-66	# int
+399     movq    RBP, R11	# spill
+39c     movq    [rsp + #0], RBX	# spill
+3a0     movl    [rsp + #8], R13	# spill
+        nop 	# 2 bytes pad for loops and calls
+3a7     call,static  wrapper for: uncommon_trap(reason='profile_predicate' action='maybe_recompile' debug_id='0')
+        # is_finite::micro @ bci:2 (line 8) L[0]=RBP L[1]=rsp + #0 L[2]=rsp + #8
+        # OopMap {rbp=Oop [0]=Oop off=940/0x3ac}
+3b4     stop	# ShouldNotReachHere
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2) 202   34 %           is_finite::micro @ 2 (34 bytes)
+ total in heap  [0x00007f244c5d8408,0x00007f244c5d89c8] = 1472
+ relocation     [0x00007f244c5d84f0,0x00007f244c5d8578] = 136
+ constants      [0x00007f244c5d8580,0x00007f244c5d85a0] = 32
+ main code      [0x00007f244c5d85a0,0x00007f244c5d8988] = 1000
+ stub code      [0x00007f244c5d8988,0x00007f244c5d89a0] = 24
+ oops           [0x00007f244c5d89a0,0x00007f244c5d89a8] = 8
+ metadata       [0x00007f244c5d89a8,0x00007f244c5d89c8] = 32
+ immutable data [0x00007f23a00b27b0,0x00007f23a00b2ae0] = 816
+ dependencies   [0x00007f23a00b27b0,0x00007f23a00b27b8] = 8
+ nul chk table  [0x00007f23a00b27b8,0x00007f23a00b27d0] = 24
+ scopes pcs     [0x00007f23a00b27d0,0x00007f23a00b2a30] = 608
+ scopes data    [0x00007f23a00b2a30,0x00007f23a00b2ae0] = 176
+
+[Disassembly]
+--------------------------------------------------------------------------------
+
+[Constant Pool]
+             Address          hex4                    hex8      
+  0x00007f244c5d8580:   0x7f7fffff      0xf4f4f4f47f7fffff      
+  0x00007f244c5d8584:   0xf4f4f4f4                              
+  0x00007f244c5d8588:   0xf4f4f4f4      0xf4f4f4f4f4f4f4f4      
+  0x00007f244c5d858c:   0xf4f4f4f4                              
+  0x00007f244c5d8590:   0xf4f4f4f4      0xf4f4f4f4f4f4f4f4      
+  0x00007f244c5d8594:   0xf4f4f4f4                              
+  0x00007f244c5d8598:   0xf4f4f4f4      0xf4f4f4f4f4f4f4f4      
+  0x00007f244c5d859c:   0xf4f4f4f4                              
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007f23ba400638} 'micro' '([I[F)V' in 'is_finite'
+ ;; N389: #	out( B1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f244c5d85a0:   callq  0x00007f245d93d1f0           ;   {no_reloc}
+  0x00007f244c5d85a5:   nop
+  0x00007f244c5d85a6:   nop
+  0x00007f244c5d85a7:   nop
+  0x00007f244c5d85a8:   nop
+  0x00007f244c5d85a9:   nop
+  0x00007f244c5d85aa:   nop
+  0x00007f244c5d85ab:   nop
+  0x00007f244c5d85ac:   nop
+  0x00007f244c5d85ad:   nop
+  0x00007f244c5d85ae:   nop
+  0x00007f244c5d85af:   nop
+ ;; B1: #	out( B32 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f244c5d85b0:   mov    %eax,-0x18000(%rsp)
+  0x00007f244c5d85b7:   push   %rbp
+  0x00007f244c5d85b8:   sub    $0x40,%rsp
+  0x00007f244c5d85bc:   cmpl   $0x0,0x20(%r15)
+  0x00007f244c5d85c4:   jne    0x00007f244c5d897e
+  0x00007f244c5d85ca:   mov    0x10(%rsi),%rbp
+  0x00007f244c5d85ce:   mov    0x8(%rsi),%rbx
+  0x00007f244c5d85d2:   mov    (%rsi),%r13d
+  0x00007f244c5d85d5:   mov    %rsi,%rdi
+  0x00007f244c5d85d8:   movabs $0x7f245dac4e30,%r10
+  0x00007f244c5d85e2:   callq  *%r10
+  0x00007f244c5d85e5:   nopl   0x0(%rax,%rax,1)             ;   {post_call_nop}
+  0x00007f244c5d85ed:   test   %rbp,%rbp
+  0x00007f244c5d85f0:   je     0x00007f244c5d8800
+ ;; B2: #	out( B40 B3 ) <- in( B1 )  Freq: 0.999
+  0x00007f244c5d85f6:   mov    0x8(%rbp),%r10d
+  0x00007f244c5d85fa:   nop
+  0x00007f244c5d85fb:   nop
+  0x00007f244c5d85fc:   nop
+  0x00007f244c5d85fd:   nop
+  0x00007f244c5d85fe:   nop
+  0x00007f244c5d85ff:   nop
+  0x00007f244c5d8600:   cmp    $0x1c3bd0,%r10d              ;   {metadata({type array int})}
+  0x00007f244c5d8607:   jne    0x00007f244c5d88d0
+ ;; B3: #	out( B4 ) <- in( B2 )  Freq: 0.998999
+  0x00007f244c5d860d:   mov    %rbp,%r11
+ ;; B4: #	out( B33 B5 ) <- in( B3 B32 )  Freq: 0.999999
+  0x00007f244c5d8610:   test   %rbx,%rbx
+  0x00007f244c5d8613:   je     0x00007f244c5d8808
+ ;; B5: #	out( B40 B6 ) <- in( B4 )  Freq: 0.998999
+  0x00007f244c5d8619:   mov    0x8(%rbx),%r8d
+  0x00007f244c5d861d:   nop
+  0x00007f244c5d861e:   nop
+  0x00007f244c5d861f:   nop
+  0x00007f244c5d8620:   cmp    $0x1c3390,%r8d               ;   {metadata({type array float})}
+  0x00007f244c5d8627:   jne    0x00007f244c5d88d0           ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@2 (line 8)
+ ;; B6: #	out( B7 ) <- in( B5 )  Freq: 0.998998
+ ;; B7: #	out( B41 B8 ) <- in( B6 B33 )  Freq: 0.999998
+  0x00007f244c5d862d:   mov    0xc(%r11),%edi               ; implicit exception: dispatches to 0x00007f244c5d8900
+                                                            ;*arraylength {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@4 (line 8)
+ ;; B8: #	out( B42 B9 ) <- in( B7 )  Freq: 0.999997
+  0x00007f244c5d8631:   mov    0xc(%rbx),%ecx               ; implicit exception: dispatches to 0x00007f244c5d8934
+                                                            ;*faload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@12 (line 9)
+ ;; B9: #	out( B30 B10 ) <- in( B8 )  Freq: 0.999996
+  0x00007f244c5d8634:   cmp    %edi,%r13d
+  0x00007f244c5d8637:   jge    0x00007f244c5d879a           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@5 (line 8)
+ ;; B10: #	out( B11 ) <- in( B9 )  Freq: 0.99902
+  0x00007f244c5d863d:   lea    0x1(%r13),%r8d
+  0x00007f244c5d8641:   movslq %r8d,%r10
+  0x00007f244c5d8644:   xor    %r9d,%r9d
+  0x00007f244c5d8647:   test   %r8d,%r8d
+  0x00007f244c5d864a:   cmovl  %r9,%r10
+  0x00007f244c5d864e:   mov    %r10d,%r8d
+  0x00007f244c5d8651:   cmp    %edi,%r8d
+  0x00007f244c5d8654:   cmovg  %edi,%r8d
+  0x00007f244c5d8658:   vmovss -0xe0(%rip),%xmm1        # 0x00007f244c5d8580
+                                                            ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@26 (line 9)
+                                                            ;   {section_word}
+ ;; B11: #	out( B34 B12 ) <- in( B10 B14 ) Loop( B11-B14 inner pre of N383) Freq: 1.99804
+  0x00007f244c5d8660:   cmp    %ecx,%r13d
+  0x00007f244c5d8663:   jae    0x00007f244c5d880f
+ ;; B12: #	out( B31 B13 ) <- in( B11 )  Freq: 1.99803
+  0x00007f244c5d8669:   vmovss 0x10(%rbx,%r13,4),%xmm2
+  0x00007f244c5d8670:   vandps -0x15e638(%rip),%xmm2,%xmm0        # Stub::float_sign_mask
+                                                            ;*invokestatic abs {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@1 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+                                                            ;   {external_word}
+  0x00007f244c5d8678:   nop
+  0x00007f244c5d8679:   nop
+  0x00007f244c5d867a:   nop
+  0x00007f244c5d867b:   nop
+  0x00007f244c5d867c:   nop
+  0x00007f244c5d867d:   nop
+  0x00007f244c5d867e:   nop
+  0x00007f244c5d867f:   nop
+  0x00007f244c5d8680:   vucomiss %xmm0,%xmm1
+  0x00007f244c5d8684:   jb     0x00007f244c5d87aa           ;*ifgt {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+ ;; B13: #	out( B35 B14 ) <- in( B12 )  Freq: 1.99803
+  0x00007f244c5d868a:   cmp    %edi,%r13d
+  0x00007f244c5d868d:   jae    0x00007f244c5d884c
+ ;; B14: #	out( B11 B15 ) <- in( B13 )  Freq: 1.99803
+  0x00007f244c5d8693:   movl   $0x9,0x10(%r11,%r13,4)       ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@26 (line 9)
+  0x00007f244c5d869c:   inc    %r13d                        ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@27 (line 8)
+  0x00007f244c5d869f:   nop
+  0x00007f244c5d86a0:   cmp    %r8d,%r13d
+  0x00007f244c5d86a3:   jl     0x00007f244c5d8660           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@5 (line 8)
+ ;; B15: #	out( B25 B16 ) <- in( B14 )  Freq: 0.999015
+  0x00007f244c5d86a5:   movslq %ecx,%r10
+  0x00007f244c5d86a8:   movslq %edi,%r8
+  0x00007f244c5d86ab:   cmp    %r10,%r8
+  0x00007f244c5d86ae:   cmovl  %r8,%r10
+  0x00007f244c5d86b2:   cmp    %r10,%r8
+  0x00007f244c5d86b5:   cmovl  %r8,%r10
+  0x00007f244c5d86b9:   mov    %r10d,%r10d
+  0x00007f244c5d86bc:   nop
+  0x00007f244c5d86bd:   nop
+  0x00007f244c5d86be:   nop
+  0x00007f244c5d86bf:   nop
+  0x00007f244c5d86c0:   cmp    %r10d,%r13d
+  0x00007f244c5d86c3:   jge    0x00007f244c5d8756
+ ;; B16: #	out( B36 B17 ) <- in( B15 )  Freq: 0.999014
+  0x00007f244c5d86c9:   lea    -0x1(%r10),%r8d
+  0x00007f244c5d86cd:   cmp    %ecx,%r8d
+  0x00007f244c5d86d0:   jae    0x00007f244c5d8880
+ ;; B17: #	out( B37 B18 ) <- in( B16 )  Freq: 0.999013
+  0x00007f244c5d86d6:   cmp    %ecx,%r13d
+  0x00007f244c5d86d9:   jae    0x00007f244c5d8894
+ ;; B18: #	out( B38 B19 ) <- in( B17 )  Freq: 0.999012
+  0x00007f244c5d86df:   nop
+  0x00007f244c5d86e0:   cmp    %edi,%r8d
+  0x00007f244c5d86e3:   jae    0x00007f244c5d88a8
+ ;; B19: #	out( B39 B20 ) <- in( B18 )  Freq: 0.999011
+  0x00007f244c5d86e9:   cmp    %edi,%r13d
+  0x00007f244c5d86ec:   jae    0x00007f244c5d88bc
+ ;; B20: #	out( B21 ) <- in( B19 )  Freq: 0.99901
+  0x00007f244c5d86f2:   mov    $0x3e8,%r8d                  ;*goto {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@30 (line 8)
+  0x00007f244c5d86f8:   xor    %edx,%edx
+ ;; B21: #	out( B22 ) <- in( B20 B24 ) Loop( B21-B24 ) Freq: 671.672
+  0x00007f244c5d86fa:   mov    %r10d,%esi
+  0x00007f244c5d86fd:   sub    %r13d,%esi
+  0x00007f244c5d8700:   cmp    %r13d,%r10d
+  0x00007f244c5d8703:   cmovl  %edx,%esi
+  0x00007f244c5d8706:   cmp    $0x3e8,%esi
+  0x00007f244c5d870c:   cmova  %r8d,%esi
+  0x00007f244c5d8710:   add    %r13d,%esi
+  0x00007f244c5d8713:   nop
+  0x00007f244c5d8714:   nop
+  0x00007f244c5d8715:   nop
+  0x00007f244c5d8716:   nop
+  0x00007f244c5d8717:   nop
+  0x00007f244c5d8718:   nop
+  0x00007f244c5d8719:   nop
+  0x00007f244c5d871a:   nop
+  0x00007f244c5d871b:   nop
+  0x00007f244c5d871c:   nop
+  0x00007f244c5d871d:   nop
+  0x00007f244c5d871e:   nop
+  0x00007f244c5d871f:   nop                                 ;*faload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@12 (line 9)
+ ;; B22: #	out( B31 B23 ) <- in( B21 B23 ) Loop( B22-B23 inner main of N171 strip mined) Freq: 688113
+  0x00007f244c5d8720:   vmovss 0x10(%rbx,%r13,4),%xmm0
+  0x00007f244c5d8727:   vandps -0x15e6ef(%rip),%xmm0,%xmm0        # Stub::float_sign_mask
+                                                            ;*invokestatic abs {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@1 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+                                                            ;   {external_word}
+  0x00007f244c5d872f:   vucomiss %xmm0,%xmm1
+  0x00007f244c5d8733:   jb     0x00007f244c5d87aa           ;*ifgt {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+ ;; B23: #	out( B22 B24 ) <- in( B22 )  Freq: 688112
+  0x00007f244c5d8739:   movl   $0x9,0x10(%r11,%r13,4)       ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@26 (line 9)
+  0x00007f244c5d8742:   inc    %r13d                        ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@27 (line 8)
+  0x00007f244c5d8745:   cmp    %esi,%r13d
+  0x00007f244c5d8748:   jl     0x00007f244c5d8720           ;*goto {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@30 (line 8)
+ ;; B24: #	out( B21 B25 ) <- in( B23 )  Freq: 671.328
+  0x00007f244c5d874a:   mov    0x30(%r15),%r9               ; ImmutableOopMap {r11=Oop rbx=Oop }
+                                                            ;*goto {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) is_finite::micro@30 (line 8)
+  0x00007f244c5d874e:   test   %eax,(%r9)                   ;*goto {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@30 (line 8)
+                                                            ;   {poll}
+  0x00007f244c5d8751:   cmp    %r10d,%r13d
+  0x00007f244c5d8754:   jl     0x00007f244c5d86fa
+ ;; B25: #	out( B30 B26 ) <- in( B15 B24 )  Freq: 0.654955
+  0x00007f244c5d8756:   cmp    %edi,%r13d
+  0x00007f244c5d8759:   jge    0x00007f244c5d879a
+  0x00007f244c5d875f:   nop                                 ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@26 (line 9)
+ ;; B26: #	out( B34 B27 ) <- in( B25 B29 ) Loop( B26-B29 inner post of N383) Freq: 0.654953
+  0x00007f244c5d8760:   cmp    %ecx,%r13d
+  0x00007f244c5d8763:   jae    0x00007f244c5d880f
+ ;; B27: #	out( B31 B28 ) <- in( B26 )  Freq: 0.654953
+  0x00007f244c5d8769:   vmovss 0x10(%rbx,%r13,4),%xmm0
+  0x00007f244c5d8770:   vandps -0x15e738(%rip),%xmm0,%xmm0        # Stub::float_sign_mask
+                                                            ;*invokestatic abs {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@1 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+                                                            ;   {external_word}
+  0x00007f244c5d8778:   vucomiss %xmm0,%xmm1
+  0x00007f244c5d877c:   jb     0x00007f244c5d87aa           ;*ifgt {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+ ;; B28: #	out( B35 B29 ) <- in( B27 )  Freq: 0.654952
+  0x00007f244c5d877e:   nop
+  0x00007f244c5d877f:   nop
+  0x00007f244c5d8780:   cmp    %edi,%r13d
+  0x00007f244c5d8783:   jae    0x00007f244c5d884c
+ ;; B29: #	out( B26 B30 ) <- in( B28 )  Freq: 0.654952
+  0x00007f244c5d8789:   movl   $0x9,0x10(%r11,%r13,4)       ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@26 (line 9)
+  0x00007f244c5d8792:   inc    %r13d                        ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@27 (line 8)
+  0x00007f244c5d8795:   cmp    %edi,%r13d
+  0x00007f244c5d8798:   jl     0x00007f244c5d8760           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@5 (line 8)
+ ;; B30: #	out( N389 ) <- in( B9 B29 B25 )  Freq: 0.655929
+  0x00007f244c5d879a:   add    $0x40,%rsp
+  0x00007f244c5d879e:   pop    %rbp
+  0x00007f244c5d879f:   cmp    0x28(%r15),%rsp              ;   {poll_return}
+  0x00007f244c5d87a3:   ja     0x00007f244c5d8968
+  0x00007f244c5d87a9:   retq                                ;*ifgt {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+ ;; B31: #	out( N389 ) <- in( B27 B12 B22 )  Freq: 0.344058
+  0x00007f244c5d87aa:   vucomiss %xmm0,%xmm1
+  0x00007f244c5d87ae:   mov    $0xffffffff,%ebp
+  0x00007f244c5d87b3:   jp     0x00007f244c5d87c7
+  0x00007f244c5d87b9:   jb     0x00007f244c5d87c7
+  0x00007f244c5d87bf:   setne  %bpl
+  0x00007f244c5d87c3:   movzbl %bpl,%ebp
+  0x00007f244c5d87c7:   neg    %ebp                         ;*fcmpg {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@6 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+  0x00007f244c5d87c9:   mov    $0xffffff4d,%esi
+  0x00007f244c5d87ce:   mov    %rbx,0x8(%rsp)
+  0x00007f244c5d87d3:   mov    %r11,0x18(%rsp)
+  0x00007f244c5d87d8:   mov    %r13d,0x14(%rsp)
+  0x00007f244c5d87dd:   nop
+  0x00007f244c5d87de:   nop
+  0x00007f244c5d87df:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {[8]=Oop [24]=Oop }
+                                                            ;*ifgt {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5d87e4:   nopl   0x10003dc(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5d87ec:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5d87f6:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d87fa:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d87ff:   hlt                                 ;*ifgt {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+ ;; B32: #	out( B4 ) <- in( B1 )  Freq: 0.000999987
+  0x00007f244c5d8800:   xor    %r11d,%r11d
+  0x00007f244c5d8803:   jmpq   0x00007f244c5d8610
+ ;; B33: #	out( B7 ) <- in( B4 )  Freq: 0.000999986
+  0x00007f244c5d8808:   xor    %ebx,%ebx
+  0x00007f244c5d880a:   jmpq   0x00007f244c5d862d
+ ;; B34: #	out( N389 ) <- in( B26 B11 )  Freq: 2.68822e-06
+  0x00007f244c5d880f:   mov    $0xffffffe4,%esi
+  0x00007f244c5d8814:   mov    %r11,0x10(%rsp)
+  0x00007f244c5d8819:   mov    %r13d,0xc(%rsp)
+  0x00007f244c5d881e:   mov    %rbx,0x18(%rsp)
+  0x00007f244c5d8823:   mov    %r13d,0x20(%rsp)
+  0x00007f244c5d8828:   nop
+  0x00007f244c5d8829:   nop
+  0x00007f244c5d882a:   nop
+  0x00007f244c5d882b:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {[16]=Oop [24]=Oop }
+                                                            ;*faload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@12 (line 9)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5d8830:   nopl   0x2000428(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5d8838:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5d8842:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d8846:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d884b:   hlt    
+ ;; B35: #	out( N389 ) <- in( B28 B13 )  Freq: 2.68821e-06
+  0x00007f244c5d884c:   mov    $0xffffffe4,%esi
+  0x00007f244c5d8851:   mov    %rbx,(%rsp)
+  0x00007f244c5d8855:   mov    %r11,0x10(%rsp)
+  0x00007f244c5d885a:   mov    %r13d,0xc(%rsp)
+  0x00007f244c5d885f:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {[0]=Oop [16]=Oop }
+                                                            ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@26 (line 9)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5d8864:   nopl   0x300045c(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5d886c:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5d8876:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d887a:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d887f:   hlt                                 ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@26 (line 9)
+ ;; B36: #	out( N389 ) <- in( B16 )  Freq: 1.01228e-06
+  0x00007f244c5d8880:   movabs $0x7f245e17f788,%rdi         ;   {external_word}
+  0x00007f244c5d888a:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d888e:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d8893:   hlt    
+ ;; B37: #	out( N389 ) <- in( B17 )  Freq: 1.01228e-06
+  0x00007f244c5d8894:   movabs $0x7f245e17f788,%rdi         ;   {external_word}
+  0x00007f244c5d889e:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d88a2:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d88a7:   hlt    
+ ;; B38: #	out( N389 ) <- in( B18 )  Freq: 1.01228e-06
+  0x00007f244c5d88a8:   movabs $0x7f245e17f788,%rdi         ;   {external_word}
+  0x00007f244c5d88b2:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d88b6:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d88bb:   hlt    
+ ;; B39: #	out( N389 ) <- in( B19 )  Freq: 1.01228e-06
+  0x00007f244c5d88bc:   movabs $0x7f245e17f788,%rdi         ;   {external_word}
+  0x00007f244c5d88c6:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d88ca:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d88cf:   hlt    
+ ;; B40: #	out( N389 ) <- in( B2 B5 )  Freq: 1.998e-06
+  0x00007f244c5d88d0:   mov    $0xffffff8d,%esi
+  0x00007f244c5d88d5:   mov    %rbx,(%rsp)
+  0x00007f244c5d88d9:   mov    %r13d,0x8(%rsp)
+  0x00007f244c5d88de:   nop
+  0x00007f244c5d88df:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {rbp=Oop [0]=Oop }
+                                                            ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@2 (line 8)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5d88e4:   nopl   0x40004dc(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5d88ec:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5d88f6:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d88fa:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d88ff:   hlt    
+ ;; B41: #	out( N389 ) <- in( B7 )  Freq: 1.01328e-06
+  0x00007f244c5d8900:   mov    $0xffffff76,%esi
+  0x00007f244c5d8905:   mov    %r11,%rbp
+  0x00007f244c5d8908:   mov    %rbx,(%rsp)
+  0x00007f244c5d890c:   mov    %r13d,0x8(%rsp)
+  0x00007f244c5d8911:   nop
+  0x00007f244c5d8912:   nop
+  0x00007f244c5d8913:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {rbp=Oop [0]=Oop }
+                                                            ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@2 (line 8)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5d8918:   nopl   0x5000510(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5d8920:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5d892a:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d892e:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d8933:   hlt    
+ ;; B42: #	out( N389 ) <- in( B8 )  Freq: 1.01328e-06
+  0x00007f244c5d8934:   mov    $0xffffffbe,%esi
+  0x00007f244c5d8939:   mov    %r11,%rbp
+  0x00007f244c5d893c:   mov    %rbx,(%rsp)
+  0x00007f244c5d8940:   mov    %r13d,0x8(%rsp)
+  0x00007f244c5d8945:   nop
+  0x00007f244c5d8946:   nop
+  0x00007f244c5d8947:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {rbp=Oop [0]=Oop }
+                                                            ;*iload_2 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@2 (line 8)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5d894c:   nopl   0x6000544(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5d8954:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5d895e:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5d8962:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5d8967:   hlt                                 ;*ifgt {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+  0x00007f244c5d8968:   movabs $0x7f244c5d879f,%r10         ;   {internal_word}
+  0x00007f244c5d8972:   mov    %r10,0x490(%r15)
+  0x00007f244c5d8979:   jmpq   0x00007f244c599360           ;   {runtime_call SafepointBlob}
+  0x00007f244c5d897e:   callq  Stub::nmethod_entry_barrier  ;   {runtime_call StubRoutines (final stubs)}
+  0x00007f244c5d8983:   jmpq   0x00007f244c5d85ca
+[Exception Handler]
+  0x00007f244c5d8988:   jmpq   0x00007f244c599860           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007f244c5d898d:   callq  0x00007f244c5d8992
+  0x00007f244c5d8992:   subq   $0x5,(%rsp)
+  0x00007f244c5d8997:   jmpq   0x00007f244c59a7a0           ;   {runtime_call DeoptimizationBlob}
+  0x00007f244c5d899c:   hlt    
+  0x00007f244c5d899d:   hlt    
+  0x00007f244c5d899e:   hlt    
+  0x00007f244c5d899f:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007f244c5d89a0:   0x00000007ff061a40 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff061a40}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007f244c5d89a8:   0x00007f23be1c3bd0 {type array int}
+  0x00007f244c5d89b0:   0x00007f23be1c3390 {type array float}
+  0x00007f244c5d89b8:   0x00007f23ba400638 {method} {0x00007f23ba400638} 'micro' '([I[F)V' in 'is_finite'
+  0x00007f244c5d89c0:   0x00007f23be1f2d58 {method} {0x00007f23be1f2d58} 'isFinite' '(F)Z' in 'java/lang/Float'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007f244c5d859f offset=ffffffff bits=0):
+PcDesc(pc=0x00007f244c5d862d offset=8d bits=0):
+   is_finite::micro@2 (line 8)
+PcDesc(pc=0x00007f244c5d8631 offset=91 bits=0):
+   is_finite::micro@4 (line 8)
+PcDesc(pc=0x00007f244c5d8634 offset=94 bits=0):
+   is_finite::micro@12 (line 9)
+PcDesc(pc=0x00007f244c5d863d offset=9d bits=0):
+   is_finite::micro@5 (line 8)
+PcDesc(pc=0x00007f244c5d8660 offset=c0 bits=0):
+   is_finite::micro@26 (line 9)
+PcDesc(pc=0x00007f244c5d8678 offset=d8 bits=0):
+   java.lang.Float::isFinite@1 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d868a offset=ea bits=0):
+   java.lang.Float::isFinite@7 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d869c offset=fc bits=0):
+   is_finite::micro@26 (line 9)
+PcDesc(pc=0x00007f244c5d869f offset=ff bits=0):
+   is_finite::micro@27 (line 8)
+PcDesc(pc=0x00007f244c5d86a5 offset=105 bits=0):
+   is_finite::micro@5 (line 8)
+PcDesc(pc=0x00007f244c5d86f8 offset=158 bits=0):
+   is_finite::micro@30 (line 8)
+PcDesc(pc=0x00007f244c5d8720 offset=180 bits=0):
+   is_finite::micro@12 (line 9)
+PcDesc(pc=0x00007f244c5d872f offset=18f bits=0):
+   java.lang.Float::isFinite@1 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d8739 offset=199 bits=0):
+   java.lang.Float::isFinite@7 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d8742 offset=1a2 bits=0):
+   is_finite::micro@26 (line 9)
+PcDesc(pc=0x00007f244c5d8745 offset=1a5 bits=0):
+   is_finite::micro@27 (line 8)
+PcDesc(pc=0x00007f244c5d874a offset=1aa bits=0):
+   is_finite::micro@30 (line 8)
+PcDesc(pc=0x00007f244c5d874e offset=1ae bits=1):
+   is_finite::micro@30 (line 8)  reexecute=true
+   Locals
+    - l0: reg r11 [22],oop
+    - l1: reg rbx [6],oop
+    - l2: reg r13 [26],int
+PcDesc(pc=0x00007f244c5d8751 offset=1b1 bits=0):
+   is_finite::micro@30 (line 8)
+PcDesc(pc=0x00007f244c5d8760 offset=1c0 bits=0):
+   is_finite::micro@26 (line 9)
+PcDesc(pc=0x00007f244c5d8778 offset=1d8 bits=0):
+   java.lang.Float::isFinite@1 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d877e offset=1de bits=0):
+   java.lang.Float::isFinite@7 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d8792 offset=1f2 bits=0):
+   is_finite::micro@26 (line 9)
+PcDesc(pc=0x00007f244c5d8795 offset=1f5 bits=0):
+   is_finite::micro@27 (line 8)
+PcDesc(pc=0x00007f244c5d879a offset=1fa bits=0):
+   is_finite::micro@5 (line 8)
+PcDesc(pc=0x00007f244c5d87aa offset=20a bits=0):
+   java.lang.Float::isFinite@7 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d87c9 offset=229 bits=0):
+   java.lang.Float::isFinite@6 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d87e4 offset=244 bits=1):
+   java.lang.Float::isFinite@7 (line 650)  reexecute=true
+   Locals
+    - l0: empty
+   Expression stack
+    - @0: reg rbp [10],int
+   is_finite::micro@13 (line 9)
+   Locals
+    - l0: stack[24],oop
+    - l1: stack[8],oop
+    - l2: stack[20]
+   Expression stack
+    - @0: stack[24],oop
+    - @1: stack[20]
+PcDesc(pc=0x00007f244c5d8800 offset=260 bits=0):
+   java.lang.Float::isFinite@7 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d8830 offset=290 bits=0):
+   is_finite::micro@12 (line 9)
+   Locals
+    - l0: stack[16],oop
+    - l1: stack[24],oop
+    - l2: stack[12]
+   Expression stack
+    - @0: stack[16],oop
+    - @1: stack[32]
+    - @2: stack[24],oop
+    - @3: stack[12]
+PcDesc(pc=0x00007f244c5d8864 offset=2c4 bits=0):
+   is_finite::micro@26 (line 9)
+   Locals
+    - l0: stack[16],oop
+    - l1: stack[0],oop
+    - l2: stack[12]
+   Expression stack
+    - @0: stack[16],oop
+    - @1: stack[12]
+    - @2: 9
+PcDesc(pc=0x00007f244c5d8880 offset=2e0 bits=0):
+   is_finite::micro@26 (line 9)
+PcDesc(pc=0x00007f244c5d88e4 offset=344 bits=0):
+   is_finite::micro@2 (line 8)
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0],oop
+    - l2: stack[8]
+PcDesc(pc=0x00007f244c5d8918 offset=378 bits=0):
+   is_finite::micro@2 (line 8)
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0],oop
+    - l2: stack[8]
+PcDesc(pc=0x00007f244c5d894c offset=3ac bits=0):
+   is_finite::micro@2 (line 8)
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0],oop
+    - l2: stack[8]
+PcDesc(pc=0x00007f244c5d8968 offset=3c8 bits=0):
+   java.lang.Float::isFinite@7 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5d89c1 offset=421 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 7 OopMaps
+
+ImmutableOopMap {r11=Oop rbx=Oop } pc offsets: 430 
+ImmutableOopMap {[8]=Oop [24]=Oop } pc offsets: 580 
+ImmutableOopMap {[16]=Oop [24]=Oop } pc offsets: 656 
+ImmutableOopMap {[0]=Oop [16]=Oop } pc offsets: 708 
+ImmutableOopMap {rbp=Oop [0]=Oop } pc offsets: 836 888 940 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007f244c5d862d offset=8d):
+   is_finite::micro@2 (line 8)
+ScopeDesc(pc=0x00007f244c5d8631 offset=91):
+   is_finite::micro@4 (line 8)
+ScopeDesc(pc=0x00007f244c5d8634 offset=94):
+   is_finite::micro@12 (line 9)
+ScopeDesc(pc=0x00007f244c5d863d offset=9d):
+   is_finite::micro@5 (line 8)
+ScopeDesc(pc=0x00007f244c5d8660 offset=c0):
+   is_finite::micro@26 (line 9)
+ScopeDesc(pc=0x00007f244c5d8678 offset=d8):
+   java.lang.Float::isFinite@1 (line 650)
+ScopeDesc(pc=0x00007f244c5d8678 offset=d8):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d868a offset=ea):
+   java.lang.Float::isFinite@7 (line 650)
+ScopeDesc(pc=0x00007f244c5d868a offset=ea):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d869c offset=fc):
+   is_finite::micro@26 (line 9)
+ScopeDesc(pc=0x00007f244c5d869f offset=ff):
+   is_finite::micro@27 (line 8)
+ScopeDesc(pc=0x00007f244c5d86a5 offset=105):
+   is_finite::micro@5 (line 8)
+ScopeDesc(pc=0x00007f244c5d86f8 offset=158):
+   is_finite::micro@30 (line 8)
+ScopeDesc(pc=0x00007f244c5d8720 offset=180):
+   is_finite::micro@12 (line 9)
+ScopeDesc(pc=0x00007f244c5d872f offset=18f):
+   java.lang.Float::isFinite@1 (line 650)
+ScopeDesc(pc=0x00007f244c5d872f offset=18f):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d8739 offset=199):
+   java.lang.Float::isFinite@7 (line 650)
+ScopeDesc(pc=0x00007f244c5d8739 offset=199):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d8742 offset=1a2):
+   is_finite::micro@26 (line 9)
+ScopeDesc(pc=0x00007f244c5d8745 offset=1a5):
+   is_finite::micro@27 (line 8)
+ScopeDesc(pc=0x00007f244c5d874a offset=1aa):
+   is_finite::micro@30 (line 8)
+ScopeDesc(pc=0x00007f244c5d874e offset=1ae):
+   is_finite::micro@30 (line 8)  reexecute=true
+   Locals
+    - l0: reg r11 [22],oop
+    - l1: reg rbx [6],oop
+    - l2: reg r13 [26],int
+ScopeDesc(pc=0x00007f244c5d8751 offset=1b1):
+   is_finite::micro@30 (line 8)
+ScopeDesc(pc=0x00007f244c5d8760 offset=1c0):
+   is_finite::micro@26 (line 9)
+ScopeDesc(pc=0x00007f244c5d8778 offset=1d8):
+   java.lang.Float::isFinite@1 (line 650)
+ScopeDesc(pc=0x00007f244c5d8778 offset=1d8):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d877e offset=1de):
+   java.lang.Float::isFinite@7 (line 650)
+ScopeDesc(pc=0x00007f244c5d877e offset=1de):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d8792 offset=1f2):
+   is_finite::micro@26 (line 9)
+ScopeDesc(pc=0x00007f244c5d8795 offset=1f5):
+   is_finite::micro@27 (line 8)
+ScopeDesc(pc=0x00007f244c5d879a offset=1fa):
+   is_finite::micro@5 (line 8)
+ScopeDesc(pc=0x00007f244c5d87aa offset=20a):
+   java.lang.Float::isFinite@7 (line 650)
+ScopeDesc(pc=0x00007f244c5d87aa offset=20a):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d87c9 offset=229):
+   java.lang.Float::isFinite@6 (line 650)
+ScopeDesc(pc=0x00007f244c5d87c9 offset=229):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d87e4 offset=244):
+   java.lang.Float::isFinite@7 (line 650)  reexecute=true
+   Locals
+    - l0: empty
+   Expression stack
+    - @0: reg rbp [10],int
+ScopeDesc(pc=0x00007f244c5d87e4 offset=244):
+   is_finite::micro@13 (line 9)
+   Locals
+    - l0: stack[24],oop
+    - l1: stack[8],oop
+    - l2: stack[20]
+   Expression stack
+    - @0: stack[24],oop
+    - @1: stack[20]
+ScopeDesc(pc=0x00007f244c5d8800 offset=260):
+   java.lang.Float::isFinite@7 (line 650)
+ScopeDesc(pc=0x00007f244c5d8800 offset=260):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5d8830 offset=290):
+   is_finite::micro@12 (line 9)
+   Locals
+    - l0: stack[16],oop
+    - l1: stack[24],oop
+    - l2: stack[12]
+   Expression stack
+    - @0: stack[16],oop
+    - @1: stack[32]
+    - @2: stack[24],oop
+    - @3: stack[12]
+ScopeDesc(pc=0x00007f244c5d8864 offset=2c4):
+   is_finite::micro@26 (line 9)
+   Locals
+    - l0: stack[16],oop
+    - l1: stack[0],oop
+    - l2: stack[12]
+   Expression stack
+    - @0: stack[16],oop
+    - @1: stack[12]
+    - @2: 9
+ScopeDesc(pc=0x00007f244c5d8880 offset=2e0):
+   is_finite::micro@26 (line 9)
+ScopeDesc(pc=0x00007f244c5d88e4 offset=344):
+   is_finite::micro@2 (line 8)
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0],oop
+    - l2: stack[8]
+ScopeDesc(pc=0x00007f244c5d8918 offset=378):
+   is_finite::micro@2 (line 8)
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0],oop
+    - l2: stack[8]
+ScopeDesc(pc=0x00007f244c5d894c offset=3ac):
+   is_finite::micro@2 (line 8)
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0],oop
+    - l2: stack[8]
+ScopeDesc(pc=0x00007f244c5d8968 offset=3c8):
+   java.lang.Float::isFinite@7 (line 650)
+ScopeDesc(pc=0x00007f244c5d8968 offset=3c8):
+   is_finite::micro@13 (line 9)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007f244c5d84f0: 0020
+relocInfo@0x00007f244c5d84f0 [type=0(none) addr=0x00007f244c5d85a0 offset=32]
+         @0x00007f244c5d84f2: 3100
+relocInfo@0x00007f244c5d84f2 [type=6(runtime_call) addr=0x00007f244c5d85a0 offset=0 format=1] | [destination=0x00007f245d93d1f0]
+         @0x00007f244c5d84f4: 8045
+relocInfo@0x00007f244c5d84f4 [type=16(post_call_nop) addr=0x00007f244c5d85e5 offset=69]
+         @0x00007f244c5d84f6: 7801631b
+relocInfo@0x00007f244c5d84f8 [type=12(metadata) addr=0x00007f244c5d8600 offset=27 format=3 data=1] | [metadata_addr=0x00007f244c5d89a8 *=0x00007f23be1c3bd0]metadata_value=0x00007f23be1c3bd0: {type array int}
+         @0x00007f244c5d84fa: 78026320
+relocInfo@0x00007f244c5d84fc [type=12(metadata) addr=0x00007f244c5d8620 offset=32 format=3 data=2] | [metadata_addr=0x00007f244c5d89b0 *=0x00007f23be1c3390]metadata_value=0x00007f23be1c3390: {type array float}
+         @0x00007f244c5d84fe: 4938
+relocInfo@0x00007f244c5d84fe [type=9(section_word) addr=0x00007f244c5d8658 offset=56 format=1] | [target=0x00007f244c5d8580]
+         @0x00007f244c5d8500: 781d3918
+relocInfo@0x00007f244c5d8502 [type=7(external_word) addr=0x00007f244c5d8670 offset=24 format=1 data=29] | [target=0x00007f244c47a040]
+         @0x00007f244c5d8504: 781d39b7
+relocInfo@0x00007f244c5d8506 [type=7(external_word) addr=0x00007f244c5d8727 offset=183 format=1 data=29] | [target=0x00007f244c47a040]
+         @0x00007f244c5d8508: 5027
+relocInfo@0x00007f244c5d8508 [type=10(poll) addr=0x00007f244c5d874e offset=39]
+         @0x00007f244c5d850a: 781d3922
+relocInfo@0x00007f244c5d850c [type=7(external_word) addr=0x00007f244c5d8770 offset=34 format=1 data=29] | [target=0x00007f244c47a040]
+         @0x00007f244c5d850e: 582f
+relocInfo@0x00007f244c5d850e [type=11(poll_return) addr=0x00007f244c5d879f offset=47]
+         @0x00007f244c5d8510: 3140
+relocInfo@0x00007f244c5d8510 [type=6(runtime_call) addr=0x00007f244c5d87df offset=64 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5d8512: 8005
+relocInfo@0x00007f244c5d8512 [type=16(post_call_nop) addr=0x00007f244c5d87e4 offset=5]
+         @0x00007f244c5d8514: 781e3808
+relocInfo@0x00007f244c5d8516 [type=7(external_word) addr=0x00007f244c5d87ec offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5d8518: 310e
+relocInfo@0x00007f244c5d8518 [type=6(runtime_call) addr=0x00007f244c5d87fa offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d851a: 3131
+relocInfo@0x00007f244c5d851a [type=6(runtime_call) addr=0x00007f244c5d882b offset=49 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5d851c: 8005
+relocInfo@0x00007f244c5d851c [type=16(post_call_nop) addr=0x00007f244c5d8830 offset=5]
+         @0x00007f244c5d851e: 781e3808
+relocInfo@0x00007f244c5d8520 [type=7(external_word) addr=0x00007f244c5d8838 offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5d8522: 310e
+relocInfo@0x00007f244c5d8522 [type=6(runtime_call) addr=0x00007f244c5d8846 offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d8524: 3119
+relocInfo@0x00007f244c5d8524 [type=6(runtime_call) addr=0x00007f244c5d885f offset=25 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5d8526: 8005
+relocInfo@0x00007f244c5d8526 [type=16(post_call_nop) addr=0x00007f244c5d8864 offset=5]
+         @0x00007f244c5d8528: 781e3808
+relocInfo@0x00007f244c5d852a [type=7(external_word) addr=0x00007f244c5d886c offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5d852c: 310e
+relocInfo@0x00007f244c5d852c [type=6(runtime_call) addr=0x00007f244c5d887a offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d852e: 781f3806
+relocInfo@0x00007f244c5d8530 [type=7(external_word) addr=0x00007f244c5d8880 offset=6 data=31] | [target=0x00007f245e17f788]
+         @0x00007f244c5d8532: 310e
+relocInfo@0x00007f244c5d8532 [type=6(runtime_call) addr=0x00007f244c5d888e offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d8534: 781f3806
+relocInfo@0x00007f244c5d8536 [type=7(external_word) addr=0x00007f244c5d8894 offset=6 data=31] | [target=0x00007f245e17f788]
+         @0x00007f244c5d8538: 310e
+relocInfo@0x00007f244c5d8538 [type=6(runtime_call) addr=0x00007f244c5d88a2 offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d853a: 781f3806
+relocInfo@0x00007f244c5d853c [type=7(external_word) addr=0x00007f244c5d88a8 offset=6 data=31] | [target=0x00007f245e17f788]
+         @0x00007f244c5d853e: 310e
+relocInfo@0x00007f244c5d853e [type=6(runtime_call) addr=0x00007f244c5d88b6 offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d8540: 781f3806
+relocInfo@0x00007f244c5d8542 [type=7(external_word) addr=0x00007f244c5d88bc offset=6 data=31] | [target=0x00007f245e17f788]
+         @0x00007f244c5d8544: 310e
+relocInfo@0x00007f244c5d8544 [type=6(runtime_call) addr=0x00007f244c5d88ca offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d8546: 3115
+relocInfo@0x00007f244c5d8546 [type=6(runtime_call) addr=0x00007f244c5d88df offset=21 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5d8548: 8005
+relocInfo@0x00007f244c5d8548 [type=16(post_call_nop) addr=0x00007f244c5d88e4 offset=5]
+         @0x00007f244c5d854a: 781e3808
+relocInfo@0x00007f244c5d854c [type=7(external_word) addr=0x00007f244c5d88ec offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5d854e: 310e
+relocInfo@0x00007f244c5d854e [type=6(runtime_call) addr=0x00007f244c5d88fa offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d8550: 3119
+relocInfo@0x00007f244c5d8550 [type=6(runtime_call) addr=0x00007f244c5d8913 offset=25 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5d8552: 8005
+relocInfo@0x00007f244c5d8552 [type=16(post_call_nop) addr=0x00007f244c5d8918 offset=5]
+         @0x00007f244c5d8554: 781e3808
+relocInfo@0x00007f244c5d8556 [type=7(external_word) addr=0x00007f244c5d8920 offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5d8558: 310e
+relocInfo@0x00007f244c5d8558 [type=6(runtime_call) addr=0x00007f244c5d892e offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d855a: 3119
+relocInfo@0x00007f244c5d855a [type=6(runtime_call) addr=0x00007f244c5d8947 offset=25 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5d855c: 8005
+relocInfo@0x00007f244c5d855c [type=16(post_call_nop) addr=0x00007f244c5d894c offset=5]
+         @0x00007f244c5d855e: 781e3808
+relocInfo@0x00007f244c5d8560 [type=7(external_word) addr=0x00007f244c5d8954 offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5d8562: 310e
+relocInfo@0x00007f244c5d8562 [type=6(runtime_call) addr=0x00007f244c5d8962 offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5d8564: 79c94006
+relocInfo@0x00007f244c5d8566 [type=8(internal_word) addr=0x00007f244c5d8968 offset=6 data=457] | [target=0x00007f244c5d879f]
+         @0x00007f244c5d8568: 3111
+relocInfo@0x00007f244c5d8568 [type=6(runtime_call) addr=0x00007f244c5d8979 offset=17 format=1] | [destination=0x00007f244c599360]
+         @0x00007f244c5d856a: 3105
+relocInfo@0x00007f244c5d856a [type=6(runtime_call) addr=0x00007f244c5d897e offset=5 format=1] | [destination=0x00007f244c4f6700]
+         @0x00007f244c5d856c: 000a
+relocInfo@0x00007f244c5d856c [type=0(none) addr=0x00007f244c5d8988 offset=10]
+         @0x00007f244c5d856e: 3100
+relocInfo@0x00007f244c5d856e [type=6(runtime_call) addr=0x00007f244c5d8988 offset=0 format=1] | [destination=0x00007f244c599860]
+         @0x00007f244c5d8570: 310f
+relocInfo@0x00007f244c5d8570 [type=6(runtime_call) addr=0x00007f244c5d8997 offset=15 format=1] | [destination=0x00007f244c59a7a0]
+         @0x00007f244c5d8572: 0000
+relocInfo@0x00007f244c5d8572 [type=0(none) addr=0x00007f244c5d8997 offset=0]
+         @0x00007f244c5d8574: 0000
+relocInfo@0x00007f244c5d8574 [type=0(none) addr=0x00007f244c5d8997 offset=0]
+         @0x00007f244c5d8576: 0000
+relocInfo@0x00007f244c5d8576 [type=0(none) addr=0x00007f244c5d8997 offset=0]
+         @0x00007f244c5d8578: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+Dependency of type evol_method
+  method  = *{method} {0x00007f23ba400638} 'micro' '([I[F)V' in 'is_finite'
+Dependency of type evol_method
+  method  = *{method} {0x00007f23be1f2d58} 'isFinite' '(F)Z' in 'java/lang/Float'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable (size = 2 entries, 20 bytes):
+{
+   < 0x00007f244c5d862d, 0x00007f244c5d8900 > < 0x00007f244c5d8631, 0x00007f244c5d8934 > 
+}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00000007ff061a40 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff061a40}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00007f23be1c3bd0 {type array int}
+#2: 0x00007f23be1c3390 {type array float}
+#3: 0x00007f23ba400638 {method} {0x00007f23ba400638} 'micro' '([I[F)V' in 'is_finite'
+#4: 0x00007f23be1f2d58 {method} {0x00007f23be1f2d58} 'isFinite' '(F)Z' in 'java/lang/Float'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+============================= C2-compiled nmethod ==============================
+#r018 rsi:rsi   : parm 0: int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact *
+#r016 rdx:rdx   : parm 1: float[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact *
+# -- Old rsp -- Framesize: 64 --
+#r623 rsp+60: in_preserve
+#r622 rsp+56: return address
+#r621 rsp+52: in_preserve
+#r620 rsp+48: saved fp register
+#r619 rsp+44: pad2, stack alignment
+#r618 rsp+40: pad2, stack alignment
+#r617 rsp+36: Fixed slot 1
+#r616 rsp+32: Fixed slot 0
+#r631 rsp+28: spill
+#r630 rsp+24: spill
+#r629 rsp+20: spill
+#r628 rsp+16: spill
+#r627 rsp+12: spill
+#r626 rsp+ 8: spill
+#r625 rsp+ 4: spill
+#r624 rsp+ 0: spill
+#
+----------------------- MetaData before Compile_id = 35 ------------------------
+{method}
+ - this oop:          0x00007f23ba400638
+ - method holder:     'is_finite'
+ - constants:         0x00007f23ba400080 constant pool [117]/operands[12] {0x00007f23ba400080} for 'is_finite' cache=0x00007f23ba400b58
+ - access:            0x9  public static 
+ - flags:             0x6080  queued_for_compilation has_loops_flag has_loops_flag_init 
+ - name:              'micro'
+ - signature:         '([I[F)V'
+ - max stack:         5
+ - max locals:        3
+ - size of params:    2
+ - method size:       14
+ - vtable index:      -2
+ - i2i entry:         0x00007f244c485b60
+ - adapters:          AHE@0x00007f2458330a80: 0xbb i2c: 0x00007f244c4ec980 c2i: 0x00007f244c4eca60 c2iUV: 0x00007f244c4eca3f c2iNCI: 0x00007f244c4eca9a
+ - compiled entry     0x00007f244c4eca60
+ - code size:         34
+ - code start:        0x00007f23ba400608
+ - code end (excl):   0x00007f23ba40062a
+ - method data:       0x00007f23ba4020e8
+ - checked ex length: 0
+ - linenumber start:  0x00007f23ba40062a
+ - localvar length:   0
+
+------------------------ OptoAssembly for Compile_id = 35 -----------------------
+#
+#  void ( int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact *, float[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact * )
+#
+000     N1: #	out( B1 ) <- in( B15 B14 B12 B13 )  Freq: 1
+
+000     B1: #	out( B15 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (248 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #48	# Create frame
+
+01a     movl    R10, [RSI + #12 (8-bit)]	# range
+01e     NullCheck RSI
+
+01e     B2: #	out( B12 B3 ) <- in( B1 )  Freq: 0.999999
+        nop 	# 2 bytes pad for loops and calls
+020     testl   R10, R10	# unsigned
+023     jbe,u   B12  P=0.000976 C=20500.000000
+
+029     B3: #	out( B14 B4 ) <- in( B2 )  Freq: 0.999023
+029     movl    R11, [RDX + #12 (8-bit)]	# range
+02d     NullCheck RDX
+
+02d     B4: #	out( B14 B5 ) <- in( B3 )  Freq: 0.999022
+02d     testl   R11, R11	# unsigned
+030     jbe,u   B14  P=0.000001 C=-1.000000
+
+036     B5: #	out( B14 B6 ) <- in( B4 )  Freq: 0.999021
+036     leal    R8, [R10 + #-1]
+        nop 	# 6 bytes pad for loops and calls
+040     cmpl    R8, R11	# unsigned
+043     jae,u   B14  P=0.000001 C=-1.000000
+
+049     B6: #	out( B14 B7 ) <- in( B5 )  Freq: 0.99902
+049     cmpl    R8, R10	# unsigned
+04c     jae,u   B14  P=0.000001 C=-1.000000
+
+052     B7: #	out( B8 ) <- in( B6 )  Freq: 0.999019
+052     movl    R11, #1000	# int
+058     # MachConstantBaseNode (empty encoding)
+058     movss   XMM0, [constant table base + #0]	# load from constant table: float=#340282346638528859811704183484516925440.000000
+060     xorl    RCX, RCX	# int
+062     # TLS is in R15
+062     xorl    R8, R8	# int
+
+065     B8: #	out( B9 ) <- in( B7 B11 ) Loop( B8-B11 ) Freq: 671.679
+065     movl    RBX, R10	# spill
+068     subl    RBX, R8	# int
+06b     cmpl    R10, R8
+06e     cmovll RBX, RCX	# signed, int
+071     cmpl    RBX, #1000	# unsigned
+077     cmovla RBX, R11	# unsigned, int
+07b     addl    RBX, R8	# int
+        nop 	# 2 bytes pad for loops and calls
+
+080     B9: #	out( B13 B10 ) <- in( B8 B10 ) Loop( B9-B10 inner  strip mined) Freq: 688119
+080     movss   XMM1, [RDX + #16 + R8 << #2]	# float
+087     vandps  XMM2, XMM1, [0x7fffffff]	# abs float by sign masking
+08f     ucomiss XMM0, XMM2
+093     jb,us  B13  P=0.000000 C=6785.000000
+
+095     B10: #	out( B9 B11 ) <- in( B9 )  Freq: 688119
+095     movl    [RSI + #16 + R8 << #2], #9	# int
+09e     incl    R8	# int
+0a1     cmpl    R8, RBX
+0a4     jl,s   B9	# loop end  P=0.999024 C=20480.000000
+
+0a6     B11: #	out( B8 B12 ) <- in( B10 )  Freq: 671.335
+0a6     movq    R9, [R15 + #48 (8-bit)]	# ptr
+0aa     testl   rax, [R9]	# Safepoint: poll for GC        # is_finite::micro @ bci:30 (line 8) L[0]=RSI L[1]=RDX L[2]=R8
+        # OopMap {rdx=Oop rsi=Oop off=170/0xaa}
+0ad     cmpl    R8, R10
+0b0     jl,s   B8  P=0.999024 C=20480.000000
+
+0b2     B12: #	out( N1 ) <- in( B11 B2 )  Freq: 0.655935
+0b2     addq    rsp, 48	# Destroy frame
+	popq    rbp
+	cmpq    rsp, poll_offset[r15_thread] 
+	ja      #safepoint_stub	# Safepoint: poll for GC
+
+0c1     ret
+
+0c2     B13: #	out( N1 ) <- in( B9 )  Freq: 0.344059
+0c2     ucomiss XMM0, XMM2
+	movl    RBP, #-1
+	jp,s    done
+	jb,s    done
+	setne   RBP
+	movzbl  RBP, RBP
+done:
+0df     negl    RBP	# int
+0e1     movq    [rsp + #8], RDX	# spill
+0e6     movq    [rsp + #24], RSI	# spill
+0eb     movl    [rsp + #20], R8	# spill
+0f0     movl    RSI, #-179	# int
+        nop 	# 2 bytes pad for loops and calls
+0f7     call,static  wrapper for: uncommon_trap(reason='unstable_if' action='reinterpret' debug_id='0')
+        # java.lang.Float::isFinite @ bci:7 (line 650) L[0]=_ STK[0]=RBP
+        # is_finite::micro @ bci:13 (line 9) L[0]=rsp + #24 L[1]=rsp + #8 L[2]=rsp + #20 STK[0]=rsp + #24 STK[1]=rsp + #20
+        # OopMap {[8]=Oop [24]=Oop off=252/0xfc}
+104     stop	# ShouldNotReachHere
+
+118     B14: #	out( N1 ) <- in( B6 B3 B4 B5 )  Freq: 4.03589e-06
+118     movq    RBP, RSI	# spill
+11b     movq    [rsp + #0], RDX	# spill
+11f     movl    [rsp + #8], R10	# spill
+124     movl    RSI, #-138	# int
+        nop 	# 2 bytes pad for loops and calls
+12b     call,static  wrapper for: uncommon_trap(reason='predicate' action='maybe_recompile' debug_id='0')
+        # is_finite::micro @ bci:5 (line 8) L[0]=RBP L[1]=rsp + #0 L[2]=#0 STK[0]=#0 STK[1]=rsp + #8
+        # OopMap {rbp=Oop [0]=Oop off=304/0x130}
+138     stop	# ShouldNotReachHere
+
+14c     B15: #	out( N1 ) <- in( B1 )  Freq: 1.01328e-06
+14c     movl    RSI, #-10	# int
+        nop 	# 2 bytes pad for loops and calls
+153     call,static  wrapper for: uncommon_trap(reason='null_check' action='maybe_recompile' debug_id='0')
+        # is_finite::micro @ bci:4 (line 8) L[0]=_ L[1]=_ L[2]=_ STK[0]=_ STK[1]=#null
+        # OopMap {off=344/0x158}
+160     stop	# ShouldNotReachHere
+
+--------------------------------------------------------------------------------
+----------------------------------- Assembly -----------------------------------
+
+Compiled method (c2) 222   35             is_finite::micro (34 bytes)
+ total in heap  [0x00007f244c5da408,0x00007f244c5da728] = 800
+ relocation     [0x00007f244c5da4f0,0x00007f244c5da528] = 56
+ constants      [0x00007f244c5da540,0x00007f244c5da560] = 32
+ main code      [0x00007f244c5da560,0x00007f244c5da6f8] = 408
+ stub code      [0x00007f244c5da6f8,0x00007f244c5da710] = 24
+ oops           [0x00007f244c5da710,0x00007f244c5da718] = 8
+ metadata       [0x00007f244c5da718,0x00007f244c5da728] = 16
+ immutable data [0x00007f23a0101760,0x00007f23a0101990] = 560
+ dependencies   [0x00007f23a0101760,0x00007f23a0101768] = 8
+ nul chk table  [0x00007f23a0101768,0x00007f23a0101780] = 24
+ scopes pcs     [0x00007f23a0101780,0x00007f23a01018f0] = 368
+ scopes data    [0x00007f23a01018f0,0x00007f23a0101990] = 160
+
+[Disassembly]
+--------------------------------------------------------------------------------
+
+[Constant Pool]
+             Address          hex4                    hex8      
+  0x00007f244c5da540:   0x7f7fffff      0xf4f4f4f47f7fffff      
+  0x00007f244c5da544:   0xf4f4f4f4                              
+  0x00007f244c5da548:   0xf4f4f4f4      0xf4f4f4f4f4f4f4f4      
+  0x00007f244c5da54c:   0xf4f4f4f4                              
+  0x00007f244c5da550:   0xf4f4f4f4      0xf4f4f4f4f4f4f4f4      
+  0x00007f244c5da554:   0xf4f4f4f4                              
+  0x00007f244c5da558:   0xf4f4f4f4      0xf4f4f4f4f4f4f4f4      
+  0x00007f244c5da55c:   0xf4f4f4f4                              
+
+--------------------------------------------------------------------------------
+
+[Verified Entry Point]
+  # {method} {0x00007f23ba400638} 'micro' '([I[F)V' in 'is_finite'
+  # parm0:    rsi:rsi   = '[I'
+  # parm1:    rdx:rdx   = '[F'
+  #           [sp+0x40]  (sp of caller)
+ ;; N1: #	out( B1 ) <- in( B15 B14 B12 B13 )  Freq: 1
+ ;; B1: #	out( B15 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+  0x00007f244c5da560:   mov    %eax,-0x18000(%rsp)          ;   {no_reloc}
+  0x00007f244c5da567:   push   %rbp
+  0x00007f244c5da568:   sub    $0x30,%rsp
+  0x00007f244c5da56c:   cmpl   $0x0,0x20(%r15)
+  0x00007f244c5da574:   jne    0x00007f244c5da6ea           ;*synchronization entry
+                                                            ; - is_finite::micro@-1 (line 8)
+  0x00007f244c5da57a:   mov    0xc(%rsi),%r10d              ; implicit exception: dispatches to 0x00007f244c5da6ac
+                                                            ;*arraylength {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@4 (line 8)
+ ;; B2: #	out( B12 B3 ) <- in( B1 )  Freq: 0.999999
+  0x00007f244c5da57e:   nop
+  0x00007f244c5da57f:   nop
+  0x00007f244c5da580:   test   %r10d,%r10d
+  0x00007f244c5da583:   jbe    0x00007f244c5da612           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@5 (line 8)
+ ;; B3: #	out( B14 B4 ) <- in( B2 )  Freq: 0.999023
+  0x00007f244c5da589:   mov    0xc(%rdx),%r11d              ; implicit exception: dispatches to 0x00007f244c5da678
+                                                            ;*faload {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@12 (line 9)
+ ;; B4: #	out( B14 B5 ) <- in( B3 )  Freq: 0.999022
+  0x00007f244c5da58d:   test   %r11d,%r11d
+  0x00007f244c5da590:   jbe    0x00007f244c5da678
+ ;; B5: #	out( B14 B6 ) <- in( B4 )  Freq: 0.999021
+  0x00007f244c5da596:   lea    -0x1(%r10),%r8d
+  0x00007f244c5da59a:   nop
+  0x00007f244c5da59b:   nop
+  0x00007f244c5da59c:   nop
+  0x00007f244c5da59d:   nop
+  0x00007f244c5da59e:   nop
+  0x00007f244c5da59f:   nop
+  0x00007f244c5da5a0:   cmp    %r11d,%r8d
+  0x00007f244c5da5a3:   jae    0x00007f244c5da678
+ ;; B6: #	out( B14 B7 ) <- in( B5 )  Freq: 0.99902
+  0x00007f244c5da5a9:   cmp    %r10d,%r8d
+  0x00007f244c5da5ac:   jae    0x00007f244c5da678
+ ;; B7: #	out( B8 ) <- in( B6 )  Freq: 0.999019
+  0x00007f244c5da5b2:   mov    $0x3e8,%r11d
+  0x00007f244c5da5b8:   vmovss -0x80(%rip),%xmm0        # 0x00007f244c5da540
+                                                            ;   {section_word}
+  0x00007f244c5da5c0:   xor    %ecx,%ecx                    ;*goto {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@30 (line 8)
+  0x00007f244c5da5c2:   xor    %r8d,%r8d
+ ;; B8: #	out( B9 ) <- in( B7 B11 ) Loop( B8-B11 ) Freq: 671.679
+  0x00007f244c5da5c5:   mov    %r10d,%ebx
+  0x00007f244c5da5c8:   sub    %r8d,%ebx
+  0x00007f244c5da5cb:   cmp    %r8d,%r10d
+  0x00007f244c5da5ce:   cmovl  %ecx,%ebx
+  0x00007f244c5da5d1:   cmp    $0x3e8,%ebx
+  0x00007f244c5da5d7:   cmova  %r11d,%ebx
+  0x00007f244c5da5db:   add    %r8d,%ebx
+  0x00007f244c5da5de:   nop
+  0x00007f244c5da5df:   nop                                 ;*aload_0 {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@8 (line 9)
+ ;; B9: #	out( B13 B10 ) <- in( B8 B10 ) Loop( B9-B10 inner  strip mined) Freq: 688119
+  0x00007f244c5da5e0:   vmovss 0x10(%rdx,%r8,4),%xmm1
+  0x00007f244c5da5e7:   vandps -0x1605af(%rip),%xmm1,%xmm2        # Stub::float_sign_mask
+                                                            ;*invokestatic abs {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@1 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+                                                            ;   {external_word}
+  0x00007f244c5da5ef:   vucomiss %xmm2,%xmm0
+  0x00007f244c5da5f3:   jb     0x00007f244c5da622           ;*ifgt {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+ ;; B10: #	out( B9 B11 ) <- in( B9 )  Freq: 688119
+  0x00007f244c5da5f5:   movl   $0x9,0x10(%rsi,%r8,4)        ;*iastore {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@26 (line 9)
+  0x00007f244c5da5fe:   inc    %r8d                         ;*iinc {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@27 (line 8)
+  0x00007f244c5da601:   cmp    %ebx,%r8d
+  0x00007f244c5da604:   jl     0x00007f244c5da5e0           ;*goto {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@30 (line 8)
+ ;; B11: #	out( B8 B12 ) <- in( B10 )  Freq: 671.335
+  0x00007f244c5da606:   mov    0x30(%r15),%r9               ; ImmutableOopMap {rdx=Oop rsi=Oop }
+                                                            ;*goto {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) is_finite::micro@30 (line 8)
+  0x00007f244c5da60a:   test   %eax,(%r9)                   ;*goto {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@30 (line 8)
+                                                            ;   {poll}
+  0x00007f244c5da60d:   cmp    %r10d,%r8d
+  0x00007f244c5da610:   jl     0x00007f244c5da5c5           ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@5 (line 8)
+ ;; B12: #	out( N1 ) <- in( B11 B2 )  Freq: 0.655935
+  0x00007f244c5da612:   add    $0x30,%rsp
+  0x00007f244c5da616:   pop    %rbp
+  0x00007f244c5da617:   cmp    0x28(%r15),%rsp              ;   {poll_return}
+  0x00007f244c5da61b:   ja     0x00007f244c5da6d4
+  0x00007f244c5da621:   retq   
+ ;; B13: #	out( N1 ) <- in( B9 )  Freq: 0.344059
+  0x00007f244c5da622:   vucomiss %xmm2,%xmm0
+  0x00007f244c5da626:   mov    $0xffffffff,%ebp
+  0x00007f244c5da62b:   jp     0x00007f244c5da63f
+  0x00007f244c5da631:   jb     0x00007f244c5da63f
+  0x00007f244c5da637:   setne  %bpl
+  0x00007f244c5da63b:   movzbl %bpl,%ebp
+  0x00007f244c5da63f:   neg    %ebp                         ;*fcmpg {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - java.lang.Float::isFinite@6 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+  0x00007f244c5da641:   mov    %rdx,0x8(%rsp)
+  0x00007f244c5da646:   mov    %rsi,0x18(%rsp)
+  0x00007f244c5da64b:   mov    %r8d,0x14(%rsp)
+  0x00007f244c5da650:   mov    $0xffffff4d,%esi
+  0x00007f244c5da655:   nop
+  0x00007f244c5da656:   nop
+  0x00007f244c5da657:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {[8]=Oop [24]=Oop }
+                                                            ;*ifgt {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) java.lang.Float::isFinite@7 (line 650)
+                                                            ; - is_finite::micro@13 (line 9)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5da65c:   nopl   0x1000254(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5da664:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5da66e:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5da672:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5da677:   hlt                                 ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@5 (line 8)
+ ;; B14: #	out( N1 ) <- in( B6 B3 B4 B5 )  Freq: 4.03589e-06
+  0x00007f244c5da678:   mov    %rsi,%rbp
+  0x00007f244c5da67b:   mov    %rdx,(%rsp)
+  0x00007f244c5da67f:   mov    %r10d,0x8(%rsp)
+  0x00007f244c5da684:   mov    $0xffffff76,%esi
+  0x00007f244c5da689:   nop
+  0x00007f244c5da68a:   nop
+  0x00007f244c5da68b:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {rbp=Oop [0]=Oop }
+                                                            ;*if_icmpge {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) is_finite::micro@5 (line 8)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5da690:   nopl   0x2000288(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5da698:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5da6a2:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5da6a6:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5da6ab:   hlt                                 ;*if_icmpge {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@5 (line 8)
+ ;; B15: #	out( N1 ) <- in( B1 )  Freq: 1.01328e-06
+  0x00007f244c5da6ac:   mov    $0xfffffff6,%esi
+  0x00007f244c5da6b1:   nop
+  0x00007f244c5da6b2:   nop
+  0x00007f244c5da6b3:   callq  0x00007f244c58f6e0           ; ImmutableOopMap {}
+                                                            ;*arraylength {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@4 (line 8)
+                                                            ;   {runtime_call UncommonTrapBlob}
+  0x00007f244c5da6b8:   nopl   0x30002b0(%rax,%rax,1)       ;   {post_call_nop}
+  0x00007f244c5da6c0:   movabs $0x7f245e0bd620,%rdi         ;   {external_word}
+  0x00007f244c5da6ca:   and    $0xfffffffffffffff0,%rsp
+  0x00007f244c5da6ce:   callq  0x00007f245d74e2d0           ;   {runtime_call MacroAssembler::debug64(char*, long, long*)}
+  0x00007f244c5da6d3:   hlt                                 ;*arraylength {reexecute=0 rethrow=0 return_oop=0}
+                                                            ; - is_finite::micro@4 (line 8)
+  0x00007f244c5da6d4:   movabs $0x7f244c5da617,%r10         ;   {internal_word}
+  0x00007f244c5da6de:   mov    %r10,0x490(%r15)
+  0x00007f244c5da6e5:   jmpq   0x00007f244c599360           ;   {runtime_call SafepointBlob}
+  0x00007f244c5da6ea:   callq  Stub::nmethod_entry_barrier  ;   {runtime_call StubRoutines (final stubs)}
+  0x00007f244c5da6ef:   jmpq   0x00007f244c5da57a
+  0x00007f244c5da6f4:   hlt    
+  0x00007f244c5da6f5:   hlt    
+  0x00007f244c5da6f6:   hlt    
+  0x00007f244c5da6f7:   hlt    
+[Exception Handler]
+  0x00007f244c5da6f8:   jmpq   0x00007f244c599860           ;   {no_reloc}
+[Deopt Handler Code]
+  0x00007f244c5da6fd:   callq  0x00007f244c5da702
+  0x00007f244c5da702:   subq   $0x5,(%rsp)
+  0x00007f244c5da707:   jmpq   0x00007f244c59a7a0           ;   {runtime_call DeoptimizationBlob}
+  0x00007f244c5da70c:   hlt    
+  0x00007f244c5da70d:   hlt    
+  0x00007f244c5da70e:   hlt    
+  0x00007f244c5da70f:   hlt    
+--------------------------------------------------------------------------------
+[/Disassembly]
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Oops:
+  0x00007f244c5da710:   0x00000007ff061a40 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff061a40}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Metadata:
+  0x00007f244c5da718:   0x00007f23ba400638 {method} {0x00007f23ba400638} 'micro' '([I[F)V' in 'is_finite'
+  0x00007f244c5da720:   0x00007f23be1f2d58 {method} {0x00007f23be1f2d58} 'isFinite' '(F)Z' in 'java/lang/Float'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+pc-bytecode offsets:
+PcDesc(pc=0x00007f244c5da55f offset=ffffffff bits=0):
+PcDesc(pc=0x00007f244c5da57a offset=1a bits=0):
+   is_finite::micro@-1 (line 8)
+PcDesc(pc=0x00007f244c5da57e offset=1e bits=0):
+   is_finite::micro@4 (line 8)
+PcDesc(pc=0x00007f244c5da589 offset=29 bits=0):
+   is_finite::micro@5 (line 8)
+PcDesc(pc=0x00007f244c5da58d offset=2d bits=0):
+   is_finite::micro@12 (line 9)
+PcDesc(pc=0x00007f244c5da5c2 offset=62 bits=0):
+   is_finite::micro@30 (line 8)
+PcDesc(pc=0x00007f244c5da5e0 offset=80 bits=0):
+   is_finite::micro@8 (line 9)
+PcDesc(pc=0x00007f244c5da5ef offset=8f bits=0):
+   java.lang.Float::isFinite@1 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5da5f5 offset=95 bits=0):
+   java.lang.Float::isFinite@7 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5da5fe offset=9e bits=0):
+   is_finite::micro@26 (line 9)
+PcDesc(pc=0x00007f244c5da601 offset=a1 bits=0):
+   is_finite::micro@27 (line 8)
+PcDesc(pc=0x00007f244c5da606 offset=a6 bits=0):
+   is_finite::micro@30 (line 8)
+PcDesc(pc=0x00007f244c5da60a offset=aa bits=1):
+   is_finite::micro@30 (line 8)  reexecute=true
+   Locals
+    - l0: reg rsi [12],oop
+    - l1: reg rdx [4],oop
+    - l2: reg r8 [16],int
+PcDesc(pc=0x00007f244c5da60d offset=ad bits=0):
+   is_finite::micro@30 (line 8)
+PcDesc(pc=0x00007f244c5da612 offset=b2 bits=0):
+   is_finite::micro@5 (line 8)
+PcDesc(pc=0x00007f244c5da641 offset=e1 bits=0):
+   java.lang.Float::isFinite@6 (line 650)
+   is_finite::micro@13 (line 9)
+PcDesc(pc=0x00007f244c5da65c offset=fc bits=1):
+   java.lang.Float::isFinite@7 (line 650)  reexecute=true
+   Locals
+    - l0: empty
+   Expression stack
+    - @0: reg rbp [10],int
+   is_finite::micro@13 (line 9)
+   Locals
+    - l0: stack[24],oop
+    - l1: stack[8],oop
+    - l2: stack[20]
+   Expression stack
+    - @0: stack[24],oop
+    - @1: stack[20]
+PcDesc(pc=0x00007f244c5da678 offset=118 bits=0):
+   is_finite::micro@5 (line 8)
+PcDesc(pc=0x00007f244c5da690 offset=130 bits=1):
+   is_finite::micro@5 (line 8)  reexecute=true
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0],oop
+    - l2: 0
+   Expression stack
+    - @0: 0
+    - @1: stack[8]
+PcDesc(pc=0x00007f244c5da6ac offset=14c bits=0):
+   is_finite::micro@5 (line 8)
+PcDesc(pc=0x00007f244c5da6b8 offset=158 bits=0):
+   is_finite::micro@4 (line 8)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: empty
+    - @1: nullptr
+PcDesc(pc=0x00007f244c5da6d4 offset=174 bits=0):
+   is_finite::micro@4 (line 8)
+PcDesc(pc=0x00007f244c5da731 offset=1d1 bits=0):
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+oop maps:ImmutableOopMapSet contains 4 OopMaps
+
+ImmutableOopMap {rdx=Oop rsi=Oop } pc offsets: 170 
+ImmutableOopMap {[8]=Oop [24]=Oop } pc offsets: 252 
+ImmutableOopMap {rbp=Oop [0]=Oop } pc offsets: 304 
+ImmutableOopMap {} pc offsets: 344 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+scopes:
+ScopeDesc(pc=0x00007f244c5da57a offset=1a):
+   is_finite::micro@-1 (line 8)
+ScopeDesc(pc=0x00007f244c5da57e offset=1e):
+   is_finite::micro@4 (line 8)
+ScopeDesc(pc=0x00007f244c5da589 offset=29):
+   is_finite::micro@5 (line 8)
+ScopeDesc(pc=0x00007f244c5da58d offset=2d):
+   is_finite::micro@12 (line 9)
+ScopeDesc(pc=0x00007f244c5da5c2 offset=62):
+   is_finite::micro@30 (line 8)
+ScopeDesc(pc=0x00007f244c5da5e0 offset=80):
+   is_finite::micro@8 (line 9)
+ScopeDesc(pc=0x00007f244c5da5ef offset=8f):
+   java.lang.Float::isFinite@1 (line 650)
+ScopeDesc(pc=0x00007f244c5da5ef offset=8f):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5da5f5 offset=95):
+   java.lang.Float::isFinite@7 (line 650)
+ScopeDesc(pc=0x00007f244c5da5f5 offset=95):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5da5fe offset=9e):
+   is_finite::micro@26 (line 9)
+ScopeDesc(pc=0x00007f244c5da601 offset=a1):
+   is_finite::micro@27 (line 8)
+ScopeDesc(pc=0x00007f244c5da606 offset=a6):
+   is_finite::micro@30 (line 8)
+ScopeDesc(pc=0x00007f244c5da60a offset=aa):
+   is_finite::micro@30 (line 8)  reexecute=true
+   Locals
+    - l0: reg rsi [12],oop
+    - l1: reg rdx [4],oop
+    - l2: reg r8 [16],int
+ScopeDesc(pc=0x00007f244c5da60d offset=ad):
+   is_finite::micro@30 (line 8)
+ScopeDesc(pc=0x00007f244c5da612 offset=b2):
+   is_finite::micro@5 (line 8)
+ScopeDesc(pc=0x00007f244c5da641 offset=e1):
+   java.lang.Float::isFinite@6 (line 650)
+ScopeDesc(pc=0x00007f244c5da641 offset=e1):
+   is_finite::micro@13 (line 9)
+ScopeDesc(pc=0x00007f244c5da65c offset=fc):
+   java.lang.Float::isFinite@7 (line 650)  reexecute=true
+   Locals
+    - l0: empty
+   Expression stack
+    - @0: reg rbp [10],int
+ScopeDesc(pc=0x00007f244c5da65c offset=fc):
+   is_finite::micro@13 (line 9)
+   Locals
+    - l0: stack[24],oop
+    - l1: stack[8],oop
+    - l2: stack[20]
+   Expression stack
+    - @0: stack[24],oop
+    - @1: stack[20]
+ScopeDesc(pc=0x00007f244c5da678 offset=118):
+   is_finite::micro@5 (line 8)
+ScopeDesc(pc=0x00007f244c5da690 offset=130):
+   is_finite::micro@5 (line 8)  reexecute=true
+   Locals
+    - l0: reg rbp [10],oop
+    - l1: stack[0],oop
+    - l2: 0
+   Expression stack
+    - @0: 0
+    - @1: stack[8]
+ScopeDesc(pc=0x00007f244c5da6ac offset=14c):
+   is_finite::micro@5 (line 8)
+ScopeDesc(pc=0x00007f244c5da6b8 offset=158):
+   is_finite::micro@4 (line 8)
+   Locals
+    - l0: empty
+    - l1: empty
+    - l2: empty
+   Expression stack
+    - @0: empty
+    - @1: nullptr
+ScopeDesc(pc=0x00007f244c5da6d4 offset=174):
+   is_finite::micro@4 (line 8)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+relocations:
+         @0x00007f244c5da4f0: 0020
+relocInfo@0x00007f244c5da4f0 [type=0(none) addr=0x00007f244c5da560 offset=32]
+         @0x00007f244c5da4f2: 4958
+relocInfo@0x00007f244c5da4f2 [type=9(section_word) addr=0x00007f244c5da5b8 offset=88 format=1] | [target=0x00007f244c5da540]
+         @0x00007f244c5da4f4: 781d392f
+relocInfo@0x00007f244c5da4f6 [type=7(external_word) addr=0x00007f244c5da5e7 offset=47 format=1 data=29] | [target=0x00007f244c47a040]
+         @0x00007f244c5da4f8: 5023
+relocInfo@0x00007f244c5da4f8 [type=10(poll) addr=0x00007f244c5da60a offset=35]
+         @0x00007f244c5da4fa: 580d
+relocInfo@0x00007f244c5da4fa [type=11(poll_return) addr=0x00007f244c5da617 offset=13]
+         @0x00007f244c5da4fc: 3140
+relocInfo@0x00007f244c5da4fc [type=6(runtime_call) addr=0x00007f244c5da657 offset=64 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5da4fe: 8005
+relocInfo@0x00007f244c5da4fe [type=16(post_call_nop) addr=0x00007f244c5da65c offset=5]
+         @0x00007f244c5da500: 781e3808
+relocInfo@0x00007f244c5da502 [type=7(external_word) addr=0x00007f244c5da664 offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5da504: 310e
+relocInfo@0x00007f244c5da504 [type=6(runtime_call) addr=0x00007f244c5da672 offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5da506: 3119
+relocInfo@0x00007f244c5da506 [type=6(runtime_call) addr=0x00007f244c5da68b offset=25 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5da508: 8005
+relocInfo@0x00007f244c5da508 [type=16(post_call_nop) addr=0x00007f244c5da690 offset=5]
+         @0x00007f244c5da50a: 781e3808
+relocInfo@0x00007f244c5da50c [type=7(external_word) addr=0x00007f244c5da698 offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5da50e: 310e
+relocInfo@0x00007f244c5da50e [type=6(runtime_call) addr=0x00007f244c5da6a6 offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5da510: 310d
+relocInfo@0x00007f244c5da510 [type=6(runtime_call) addr=0x00007f244c5da6b3 offset=13 format=1] | [destination=0x00007f244c58f6e0]
+         @0x00007f244c5da512: 8005
+relocInfo@0x00007f244c5da512 [type=16(post_call_nop) addr=0x00007f244c5da6b8 offset=5]
+         @0x00007f244c5da514: 781e3808
+relocInfo@0x00007f244c5da516 [type=7(external_word) addr=0x00007f244c5da6c0 offset=8 data=30] | [target=0x00007f245e0bd620]
+         @0x00007f244c5da518: 310e
+relocInfo@0x00007f244c5da518 [type=6(runtime_call) addr=0x00007f244c5da6ce offset=14 format=1] | [destination=0x00007f245d74e2d0]
+         @0x00007f244c5da51a: 78bd4006
+relocInfo@0x00007f244c5da51c [type=8(internal_word) addr=0x00007f244c5da6d4 offset=6 data=189] | [target=0x00007f244c5da617]
+         @0x00007f244c5da51e: 3111
+relocInfo@0x00007f244c5da51e [type=6(runtime_call) addr=0x00007f244c5da6e5 offset=17 format=1] | [destination=0x00007f244c599360]
+         @0x00007f244c5da520: 3105
+relocInfo@0x00007f244c5da520 [type=6(runtime_call) addr=0x00007f244c5da6ea offset=5 format=1] | [destination=0x00007f244c4f6700]
+         @0x00007f244c5da522: 000e
+relocInfo@0x00007f244c5da522 [type=0(none) addr=0x00007f244c5da6f8 offset=14]
+         @0x00007f244c5da524: 3100
+relocInfo@0x00007f244c5da524 [type=6(runtime_call) addr=0x00007f244c5da6f8 offset=0 format=1] | [destination=0x00007f244c599860]
+         @0x00007f244c5da526: 310f
+relocInfo@0x00007f244c5da526 [type=6(runtime_call) addr=0x00007f244c5da707 offset=15 format=1] | [destination=0x00007f244c59a7a0]
+         @0x00007f244c5da528: 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Dependencies:
+Dependency of type evol_method
+  method  = *{method} {0x00007f23ba400638} 'micro' '([I[F)V' in 'is_finite'
+Dependency of type evol_method
+  method  = *{method} {0x00007f23be1f2d58} 'isFinite' '(F)Z' in 'java/lang/Float'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ExceptionHandlerTable (size = 0 bytes)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ImplicitExceptionTable (size = 2 entries, 20 bytes):
+{
+   < 0x00007f244c5da57a, 0x00007f244c5da6ac > < 0x00007f244c5da589, 0x00007f244c5da678 > 
+}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded oops:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00000007ff061a40 a 'jdk/internal/loader/ClassLoaders$AppClassLoader'{0x00000007ff061a40}
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Recorded metadata:
+#0: 0x0000000000000000 nullptr-oop
+#1: 0x00007f23ba400638 {method} {0x00007f23ba400638} 'micro' '([I[F)V' in 'is_finite'
+#2: 0x00007f23be1f2d58 {method} {0x00007f23be1f2d58} 'isFinite' '(F)Z' in 'java/lang/Float'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+[time] 677ms [res][9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
+------------------------------------------------------------------------
+static is_finite::micro([I[F)V
+  interpreter_invocation_count:          20
+  invocation_counter:                    20
+  backedge_counter:                   20480
+  decompile_count:                        0
+  mdo size: 552 bytes
+
+   0 iconst_0
+   1 istore_2
+   2 iload_2
+   3 fast_aload_0
+   4 arraylength
+   5 if_icmpge 33
+  0    bci: 5    BranchData         taken(15) displacement(128)
+                                    not taken(15360)
+   8 fast_aload_0
+   9 iload_2
+  10 aload_1
+  11 iload_2
+  12 faload
+  13 invokestatic 7 <java/lang/Float.isFinite(F)Z> 
+  32   bci: 13   CounterData        count(15360)
+  16 ifeq 24
+  48   bci: 16   BranchData         taken(0) displacement(56)
+                                    not taken(15360)
+  19 bipush 9
+  21 goto 26
+  80   bci: 21   JumpData           taken(15360) displacement(24)
+  24 bipush 8
+  26 iastore
+  27 iinc #2 1
+  30 goto 2
+  104  bci: 30   JumpData           taken(15360) displacement(-104)
+  33 return
+------------------------------------------------------------------------
+Total MDO size: 552 bytes

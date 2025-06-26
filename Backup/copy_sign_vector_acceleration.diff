@@ -1,0 +1,207 @@
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index bee709122ac..574ec4fde2c 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1767,6 +1767,12 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+         return false;
+       }
+       break;
++    case Op_CopySignVD:
++    case Op_CopySignVF:
++      if (UseAVX < 1 || !is_LP64)  {
++        return false;
++      }
++      break;
+     case Op_MaxV:
+     case Op_MinV:
+       if (UseSSE < 4 && is_integral_type(bt)) {
+@@ -6736,29 +6742,29 @@ instruct signumV_reg_evex(vec dst, vec src, vec zero, vec one, kReg ktmp1) %{
+ // ----------------------------------------------------------------------
+ 
+ #ifdef _LP64
+-instruct copySignF_reg(regF dst, regF src, regF xtmp1) %{
++instruct copySignF_reg(regF dst, regF src, regF xtmp) %{
+   predicate(VM_Version::supports_avx512vl());
+   match(Set dst (CopySignF dst src));
+-  effect(TEMP xtmp1);
+-  format %{ "CopySignF $dst, $src\t! using $xtmp1 as TEMP" %}
++  effect(TEMP xtmp);
++  format %{ "CopySignF $dst, $src\t! using $xtmp as TEMP" %}
+   ins_encode %{
+-    __ vpcmpeqd($xtmp1$$XMMRegister, $xtmp1$$XMMRegister, $xtmp1$$XMMRegister, Assembler::AVX_128bit);
+-    __ vpsrld($xtmp1$$XMMRegister, $xtmp1$$XMMRegister, 1, Assembler::AVX_128bit);
+-    __ vpternlogd($dst$$XMMRegister, 0xE4, $src$$XMMRegister, $xtmp1$$XMMRegister, Assembler::AVX_128bit);
++    __ vpcmpeqd($xtmp$$XMMRegister, $xtmp$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
++    __ vpsrld($xtmp$$XMMRegister, $xtmp$$XMMRegister, 1, Assembler::AVX_128bit);
++    __ vpternlogd($dst$$XMMRegister, 0xE4, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct copySignD_imm(regD dst, regD src, regD xtmp1, immD zero) %{
++instruct copySignD_imm(regD dst, regD src, regD xtmp, immD zero) %{
+   predicate(VM_Version::supports_avx512vl());
+   match(Set dst (CopySignD dst (Binary src zero)));
+   ins_cost(100);
+-  effect(TEMP xtmp1);
+-  format %{ "CopySignD  $dst, $src\t! using $xtmp1 as TEMP" %}
++  effect(TEMP xtmp);
++  format %{ "CopySignD  $dst, $src\t! using $xtmp as TEMP" %}
+   ins_encode %{
+-    __ vpcmpeqd($xtmp1$$XMMRegister, $xtmp1$$XMMRegister, $xtmp1$$XMMRegister, Assembler::AVX_128bit);
+-    __ vpsrlq($xtmp1$$XMMRegister, $xtmp1$$XMMRegister, 1, Assembler::AVX_128bit);
+-    __ vpternlogq($dst$$XMMRegister, 0xE4, $src$$XMMRegister, $xtmp1$$XMMRegister, Assembler::AVX_128bit);
++    __ vpcmpeqd($xtmp$$XMMRegister, $xtmp$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
++    __ vpsrlq($xtmp$$XMMRegister, $xtmp$$XMMRegister, 1, Assembler::AVX_128bit);
++    __ vpternlogq($dst$$XMMRegister, 0xE4, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+@@ -6798,6 +6804,47 @@ instruct copySignD_imm_avx(regD dst, regD src, regD xtmp1, regD xtmp2, immD zero
+   ins_pipe( pipe_slow );
+ %}
+ 
++#ifdef _LP64
++instruct copySignV_reg(vec dst, vec src, vec xtmp) %{
++  predicate(VM_Version::supports_avx512vl());
++  match(Set dst (CopySignVF dst src));
++  match(Set dst (CopySignVD dst src));
++  effect(TEMP xtmp);
++  format %{ "CopySignV $dst, $src\t! using $xtmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vpternlogq($xtmp$$XMMRegister, 0xFF, $xtmp$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
++    if (this->ideal_Opcode() == Op_CopySignVF) {
++      __ vpsrld($xtmp$$XMMRegister, $xtmp$$XMMRegister, 1, vlen_enc);
++      __ vpternlogd($dst$$XMMRegister, 0xE4, $src$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
++     } else {
++      assert(this->ideal_Opcode() == Op_CopySignVD, "");
++      __ vpsrlq($xtmp$$XMMRegister, $xtmp$$XMMRegister, 1, vlen_enc);
++      __ vpternlogq($dst$$XMMRegister, 0xE4, $src$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
++     }
++  %}
++  ins_pipe( pipe_slow );
++%}
++#endif // _LP64
++
++instruct copySignV_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2) %{
++  predicate(!VM_Version::supports_avx512vl());
++  match(Set dst (CopySignVF dst src));
++  match(Set dst (CopySignVD dst src));
++  effect(TEMP_DEF dst,TEMP xtmp1, TEMP xtmp2);
++  format %{ "CopySignV $dst, $src\t! using $xtmp1 and $xtmp2 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vpcmpeqd($xtmp1$$XMMRegister, $xtmp1$$XMMRegister, $xtmp1$$XMMRegister, vlen_enc);
++    __ vpsrld($xtmp2$$XMMRegister, $xtmp1$$XMMRegister, 1, vlen_enc);
++    __ vpxor($xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp1$$XMMRegister, vlen_enc);
++    __ vandps($xtmp1$$XMMRegister, $xtmp1$$XMMRegister, $src$$XMMRegister, vlen_enc);
++    __ vandps($xtmp2$$XMMRegister, $xtmp2$$XMMRegister, $dst$$XMMRegister, vlen_enc);
++    __ vpor($dst$$XMMRegister, $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ //----------------------------- CompressBits/ExpandBits ------------------------
+ 
+ instruct compressBitsI_reg(rRegI dst, rRegI src, rRegI mask) %{
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index dfa414ef564..634d978f729 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -4364,7 +4364,7 @@ bool MatchRule::is_vector() const {
+     "FmaVD","FmaVF","PopCountVI","PopCountVL","PopulateIndex","VectorLongToMask",
+     "CountLeadingZerosV", "CountTrailingZerosV", "SignumVF", "SignumVD", "SaturatingAddV", "SaturatingSubV",
+     // Next are vector mask ops.
+-    "MaskAll", "AndVMask", "OrVMask", "XorVMask", "VectorMaskCast",
++    "MaskAll", "AndVMask", "OrVMask", "XorVMask", "VectorMaskCast", "CopySignVF", "CopySignVD",
+     "RoundVF", "RoundVD",
+     // Next are not supported currently.
+     "PackB","PackS","PackI","PackL","PackF","PackD","Pack2L","Pack2D",
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 60ee3e01137..d1bf8f75373 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -336,6 +336,8 @@ macro(SignumD)
+ macro(SignumF)
+ macro(SignumVF)
+ macro(SignumVD)
++macro(CopySignVF)
++macro(CopySignVD)
+ macro(SqrtD)
+ macro(SqrtF)
+ macro(RoundF)
+diff --git a/src/hotspot/share/opto/superwordVTransformBuilder.cpp b/src/hotspot/share/opto/superwordVTransformBuilder.cpp
+index aee6add2a98..46e496c6a07 100644
+--- a/src/hotspot/share/opto/superwordVTransformBuilder.cpp
++++ b/src/hotspot/share/opto/superwordVTransformBuilder.cpp
+@@ -156,6 +156,9 @@ VTransformVectorNode* SuperWordVTransformBuilder::make_vector_vtnode_for_pack(co
+     //   v = MulAddS2I(a, b) = a0 * b0 + a1 + b1
+     assert(p0->req() == 5, "MulAddS2I should have 4 operands");
+     vtn = new (_vtransform.arena()) VTransformElementWiseVectorNode(_vtransform, 3, pack_size);
++  } else if (opc == Op_CopySignD) {
++    assert(p0->req() == 4, "CopySignD should have 3 operands");
++    vtn = new (_vtransform.arena()) VTransformElementWiseVectorNode(_vtransform, 3, pack_size);
+   } else {
+     assert(p0->req() == 3 ||
+            p0->is_CMove() ||
+@@ -164,6 +167,7 @@ VTransformVectorNode* SuperWordVTransformBuilder::make_vector_vtnode_for_pack(co
+            VectorNode::is_scalar_unary_op_with_equal_input_and_output_types(opc) ||
+            opc == Op_FmaD ||
+            opc == Op_FmaF ||
++           opc == Op_CopySignF ||
+            opc == Op_SignumF ||
+            opc == Op_SignumD,
+            "pack type must be in this list");
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 4ef864fe9c4..8a15223d05b 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -266,6 +266,10 @@ int VectorNode::opcode(int sopc, BasicType bt) {
+     return Op_SignumVF;
+   case Op_SignumD:
+     return Op_SignumVD;
++  case Op_CopySignF:
++    return Op_CopySignVF;
++  case Op_CopySignD:
++    return Op_CopySignVD;
+ 
+   default:
+     assert(!VectorNode::is_convert_opcode(sopc),
+@@ -720,6 +724,9 @@ VectorNode* VectorNode::make(int vopc, Node* n1, Node* n2, const TypeVect* vt, b
+   case Op_SqrtVF: return new SqrtVFNode(n1, vt);
+   case Op_SqrtVD: return new SqrtVDNode(n1, vt);
+ 
++  case Op_CopySignVF: return new CopySignVFNode(n1, n2, vt);
++  case Op_CopySignVD: return new CopySignVDNode(n1, n2, vt);
++
+   case Op_RoundVF: return new RoundVFNode(n1, vt);
+   case Op_RoundVD: return new RoundVDNode(n1, vt);
+ 
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 0bd1c71d7e6..cfe618b6f74 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -2015,6 +2015,22 @@ class ReverseBytesVNode : public VectorNode {
+   virtual int Opcode() const;
+ };
+ 
++class CopySignVFNode : public VectorNode {
++public:
++  CopySignVFNode(Node* in1, Node* in2, const TypeVect* vt)
++  : VectorNode(in1, in2, vt) {}
++
++  virtual int Opcode() const;
++};
++
++class CopySignVDNode : public VectorNode {
++public:
++  CopySignVDNode(Node* in1, Node* in2, const TypeVect* vt)
++  : VectorNode(in1, in2, vt) {}
++
++  virtual int Opcode() const;
++};
++
+ class SignumVFNode : public VectorNode {
+ public:
+   SignumVFNode(Node* in1, Node* zero, Node* one, const TypeVect* vt)

@@ -1,0 +1,171 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 8c9bbfc3592..0e440658ed0 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -7515,7 +7515,8 @@ instruct vcastFtoD_reg(vec dst, vec src) %{
+ 
+ 
+ instruct castFtoX_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, rFlagsReg cr) %{
+-  predicate(!VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n->in(1)) < 64 &&
++  predicate(!static_cast<const VectorCastF2XNode*>(n)->is_strict() &&
++            !VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n->in(1)) < 64 &&
+             type2aelembytes(Matcher::vector_element_basic_type(n)) <= 4);
+   match(Set dst (VectorCastF2X src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, KILL cr);
+@@ -7538,7 +7539,8 @@ instruct castFtoX_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec
+ %}
+ 
+ instruct castFtoX_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rFlagsReg cr) %{
+-  predicate((VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n->in(1)) == 64) &&
++  predicate(!static_cast<const VectorCastF2XNode*>(n)->is_strict() &&
++            (VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n->in(1)) == 64) &&
+             is_integral_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (VectorCastF2X src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2, KILL cr);
+@@ -7560,6 +7562,17 @@ instruct castFtoX_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, k
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct castFtoX_reg_strict(vec dst, vec src) %{
++  predicate(static_cast<const VectorCastF2XNode*>(n)->is_strict() && Matcher::vector_element_basic_type(n) == T_INT);
++  match(Set dst (VectorCastF2X src));
++  format %{ "vector_cast_f2x_strict $dst,$src\t!" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vcvtps2dq($dst$$XMMRegister, $src$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct vcastDtoF_reg(vec dst, vec src) %{
+   predicate(Matcher::vector_element_basic_type(n) == T_FLOAT);
+   match(Set dst (VectorCastD2X src));
+@@ -7572,7 +7585,8 @@ instruct vcastDtoF_reg(vec dst, vec src) %{
+ %}
+ 
+ instruct castDtoX_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, vec xtmp5, rFlagsReg cr) %{
+-  predicate(!VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n->in(1)) < 64 &&
++  predicate(!static_cast<const VectorCastD2XNode*>(n)->is_strict() &&
++            !VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n->in(1)) < 64 &&
+             is_integral_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (VectorCastD2X src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP xtmp5, KILL cr);
+@@ -7588,7 +7602,8 @@ instruct castDtoX_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec
+ %}
+ 
+ instruct castDtoX_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rFlagsReg cr) %{
+-  predicate((VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n->in(1)) == 64) &&
++  predicate(!static_cast<const VectorCastD2XNode*>(n)->is_strict() &&
++            (VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n->in(1)) == 64) &&
+             is_integral_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (VectorCastD2X src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2, KILL cr);
+@@ -7604,6 +7619,17 @@ instruct castDtoX_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, k
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct castDtoX_reg_strict(vec dst, vec src) %{
++  predicate(static_cast<const VectorCastD2XNode*>(n)->is_strict() && Matcher::vector_element_basic_type(n) == T_LONG);
++  match(Set dst (VectorCastD2X src));
++  format %{ "vector_cast_f2x $dst,$src\t!" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ evcvtpd2qq($dst$$XMMRegister, $src$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct vucast(vec dst, vec src) %{
+   match(Set dst (VectorUCastB2X src));
+   match(Set dst (VectorUCastS2X src));
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index 5489a13b871..87196cf1016 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -1378,15 +1378,30 @@ VectorStoreMaskNode* VectorStoreMaskNode::make(PhaseGVN& gvn, Node* in, BasicTyp
+   return new VectorStoreMaskNode(in, gvn.intcon(elem_size), vt);
+ }
+ 
+-VectorCastNode* VectorCastNode::make(int vopc, Node* n1, BasicType bt, uint vlen) {
++Node* VectorLoadShuffleNode::Ideal(PhaseGVN* phase, bool can_reshape) {
++   int iopc = in(1)->Opcode();
++   assert(in(1)->bottom_type()->isa_vect(), "");
++   const TypeVect* ivt = in(1)->bottom_type()->is_vect();
++   if (iopc  == Op_VectorCastF2X && 
++       Matcher::match_rule_supported_vector(Op_VectorCastF2X, ivt->length(), ivt->element_basic_type())) {
++      return VectorCastNode::make(Op_VectorCastF2X, in(1)->in(1), T_INT, ivt->length(), true);
++   }
++   if (iopc  == Op_VectorCastD2X && 
++       Matcher::match_rule_supported_vector(Op_VectorCastD2X, ivt->length(), ivt->element_basic_type())) {
++      return VectorCastNode::make(Op_VectorCastD2X, in(1)->in(1), T_LONG, ivt->length(), true);
++   }
++   return nullptr;
++}
++
++VectorCastNode* VectorCastNode::make(int vopc, Node* n1, BasicType bt, uint vlen, bool is_strict) {
+   const TypeVect* vt = TypeVect::make(bt, vlen);
+   switch (vopc) {
+     case Op_VectorCastB2X:  return new VectorCastB2XNode(n1, vt);
+     case Op_VectorCastS2X:  return new VectorCastS2XNode(n1, vt);
+     case Op_VectorCastI2X:  return new VectorCastI2XNode(n1, vt);
+     case Op_VectorCastL2X:  return new VectorCastL2XNode(n1, vt);
+-    case Op_VectorCastF2X:  return new VectorCastF2XNode(n1, vt);
+-    case Op_VectorCastD2X:  return new VectorCastD2XNode(n1, vt);
++    case Op_VectorCastF2X:  return new VectorCastF2XNode(n1, vt, is_strict);
++    case Op_VectorCastD2X:  return new VectorCastD2XNode(n1, vt, is_strict);
+     case Op_VectorUCastB2X: return new VectorUCastB2XNode(n1, vt);
+     case Op_VectorUCastS2X: return new VectorUCastS2XNode(n1, vt);
+     case Op_VectorUCastI2X: return new VectorUCastI2XNode(n1, vt);
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index d35f623555d..fe0ae3e970a 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -1507,6 +1507,7 @@ class VectorLoadShuffleNode : public VectorNode {
+     assert(in->bottom_type()->is_vect()->element_basic_type() == T_BYTE, "must be BYTE");
+   }
+ 
++  Node* Ideal(PhaseGVN* phase, bool can_reshape);
+   int GetOutShuffleSize() const { return type2aelembytes(vect_type()->element_basic_type()); }
+   virtual int Opcode() const;
+ };
+@@ -1568,13 +1569,17 @@ class VectorReinterpretNode : public VectorNode {
+ };
+ 
+ class VectorCastNode : public VectorNode {
++  bool _is_strict;
+  public:
+-  VectorCastNode(Node* in, const TypeVect* vt) : VectorNode(in, vt) {}
++
++  VectorCastNode(Node* in, const TypeVect* vt, bool is_strict = false) : VectorNode(in, vt), _is_strict(is_strict) {}
+   virtual int Opcode() const;
++  virtual bool is_strict() const { return _is_strict; }
+ 
+-  static VectorCastNode* make(int vopc, Node* n1, BasicType bt, uint vlen);
++  static VectorCastNode* make(int vopc, Node* n1, BasicType bt, uint vlen, bool is_strict = false);
+   static int  opcode(int opc, BasicType bt, bool is_signed = true);
+   static bool implemented(int opc, uint vlen, BasicType src_type, BasicType dst_type);
++  virtual       uint  size_of() const { return sizeof(*this); }
+ 
+   virtual Node* Identity(PhaseGVN* phase);
+ };
+@@ -1613,7 +1618,7 @@ class VectorCastL2XNode : public VectorCastNode {
+ 
+ class VectorCastF2XNode : public VectorCastNode {
+  public:
+-  VectorCastF2XNode(Node* in, const TypeVect* vt) : VectorCastNode(in, vt) {
++  VectorCastF2XNode(Node* in, const TypeVect* vt, bool is_strict = false) : VectorCastNode(in, vt, is_strict) {
+     assert(in->bottom_type()->is_vect()->element_basic_type() == T_FLOAT, "must be float");
+   }
+   virtual int Opcode() const;
+@@ -1621,7 +1626,7 @@ class VectorCastF2XNode : public VectorCastNode {
+ 
+ class VectorCastD2XNode : public VectorCastNode {
+  public:
+-  VectorCastD2XNode(Node* in, const TypeVect* vt) : VectorCastNode(in, vt) {
++  VectorCastD2XNode(Node* in, const TypeVect* vt, bool is_strict = false) : VectorCastNode(in, vt, is_strict) {
+     assert(in->bottom_type()->is_vect()->element_basic_type() == T_DOUBLE, "must be double");
+   }
+   virtual int Opcode() const;

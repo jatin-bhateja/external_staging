@@ -1,0 +1,243 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index c497ff165cd..f0f83dc0210 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -593,16 +593,12 @@ bool LibraryCallKit::inline_vector_shuffle_iota() {
+   const TypeInt*     step_val      = gvn().type(argument(5))->isa_int();
+   const TypeInt*     wrap          = gvn().type(argument(6))->isa_int();
+ 
+-  Node* start = argument(4);
+-  Node* step  = argument(5);
+-
+-  if (shuffle_klass == NULL || vlen == NULL || start_val == NULL || step_val == NULL || wrap == NULL) {
+-    return false; // dead code
+-  }
+-  if (!vlen->is_con() || !is_power_of_2(vlen->get_con()) ||
+-      shuffle_klass->const_oop() == NULL || !wrap->is_con()) {
++  if (shuffle_klass == NULL || shuffle_klass->const_oop() == NULL ||
++      vlen == NULL || !vlen->is_con() || start_val == NULL || step_val == NULL ||
++      wrap == NULL || !wrap->is_con()) {
+     return false; // not enough info for intrinsification
+   }
++
+   if (!is_klass_initialized(shuffle_klass)) {
+     if (C->print_intrinsics()) {
+       tty->print_cr("  ** klass argument not initialized");
+@@ -614,22 +610,47 @@ bool LibraryCallKit::inline_vector_shuffle_iota() {
+   int num_elem = vlen->get_con();
+   BasicType elem_bt = T_BYTE;
+ 
+-  if (!arch_supports_vector(VectorNode::replicate_opcode(elem_bt), num_elem, elem_bt, VecMaskNotUsed)) {
++  bool effective_indices_in_range = false;
++  if (start_val->is_con() && step_val->is_con()) {
++    int effective_min_index = start_val->get_con();
++    int effective_max_index = start_val->get_con() + step_val->get_con() * (num_elem - 1);
++    effective_indices_in_range = effective_min_index >= -128 && effective_max_index <= 127;
++  }
++
++  if (!do_wrap && !effective_indices_in_range) {
++    // FIXME: disable instrinsification for unwrapped shuffle iota
++    // if start/step values are non-constant OR if intermediate result
++    // overflows byte value range.
+     return false;
+   }
++
++  bool step_multiply = !step_val->is_con() || !is_power_of_2(step_val->get_con());
++
+   if (!arch_supports_vector(Op_AddVB, num_elem, elem_bt, VecMaskNotUsed)) {
+     return false;
+   }
+   if (!arch_supports_vector(Op_AndV, num_elem, elem_bt, VecMaskNotUsed)) {
+     return false;
+   }
+-  if (!arch_supports_vector(Op_VectorLoadConst, num_elem, elem_bt, VecMaskNotUsed)) {
++  if(step_multiply) {
++    if (!arch_supports_vector(Op_MulVB, num_elem, elem_bt, VecMaskNotUsed)) {
++      return false;
++    }
++  } else {
++    if (!arch_supports_vector(Op_LShiftVB, num_elem, elem_bt, VecMaskNotUsed)) {
++      return false;
++    }
++  }
++  if (!arch_supports_vector(Op_SubVB, num_elem, elem_bt, VecMaskNotUsed)) {
+     return false;
+   }
+-  if (!arch_supports_vector(Op_VectorBlend, num_elem, elem_bt, VecMaskUseLoad)) {
++  if (!arch_supports_vector(Op_VectorMaskCmp, num_elem, elem_bt, VecMaskNotUsed)) {
+     return false;
+   }
+-  if (!arch_supports_vector(Op_VectorMaskCmp, num_elem, elem_bt, VecMaskUseStore)) {
++  if (!arch_supports_vector(Op_VectorLoadConst, num_elem, elem_bt, VecMaskNotUsed)) {
++    return false;
++  }
++  if (!arch_supports_vector(VectorNode::replicate_opcode(elem_bt), num_elem, elem_bt, VecMaskNotUsed)) {
+     return false;
+   }
+ 
+@@ -638,9 +659,12 @@ bool LibraryCallKit::inline_vector_shuffle_iota() {
+ 
+   Node* res =  gvn().transform(new VectorLoadConstNode(gvn().makecon(TypeInt::ZERO), vt));
+ 
+-  if(!step_val->is_con() || !is_power_of_2(step_val->get_con())) {
++  Node* start = argument(4);
++  Node* step  = argument(5);
++
++  if(step_multiply) {
+     Node* bcast_step     = gvn().transform(VectorNode::scalar2vector(step, num_elem, type_bt));
+-    res = gvn().transform(VectorNode::make(Op_MulI, res, bcast_step, num_elem, elem_bt));
++    res = gvn().transform(VectorNode::make(Op_MulVB, res, bcast_step, vt));
+   } else if (step_val->get_con() > 1) {
+     Node* cnt = gvn().makecon(TypeInt::make(log2i_exact(step_val->get_con())));
+     Node* shift_cnt = vector_shift_count(cnt, Op_LShiftI, elem_bt, num_elem);
+@@ -649,24 +673,25 @@ bool LibraryCallKit::inline_vector_shuffle_iota() {
+ 
+   if (!start_val->is_con() || start_val->get_con() != 0) {
+     Node* bcast_start    = gvn().transform(VectorNode::scalar2vector(start, num_elem, type_bt));
+-    res = gvn().transform(VectorNode::make(Op_AddI, res, bcast_start, num_elem, elem_bt));
++    res = gvn().transform(VectorNode::make(Op_AddVB, res, bcast_start, vt));
+   }
+ 
+   Node * mod_val = gvn().makecon(TypeInt::make(num_elem-1));
+   Node * bcast_mod  = gvn().transform(VectorNode::scalar2vector(mod_val, num_elem, type_bt));
++
+   if(do_wrap)  {
+     // Wrap the indices greater than lane count.
+-    res = gvn().transform(VectorNode::make(Op_AndI, res, bcast_mod, num_elem, elem_bt));
++     res = gvn().transform(VectorNode::make(Op_AndV, res, bcast_mod, vt));
+   } else {
+-    ConINode* pred_node = (ConINode*)gvn().makecon(TypeInt::make(BoolTest::ge));
++    ConINode* pred_node = (ConINode*)gvn().makecon(TypeInt::make(BoolTest::gt));
+     Node * lane_cnt  = gvn().makecon(TypeInt::make(num_elem));
+     Node * bcast_lane_cnt = gvn().transform(VectorNode::scalar2vector(lane_cnt, num_elem, type_bt));
+     const TypeVect* vmask_type = TypeVect::makemask(elem_bt, num_elem);
+-    Node* mask = gvn().transform(new VectorMaskCmpNode(BoolTest::ge, bcast_lane_cnt, res, pred_node, vmask_type));
++    Node* mask = gvn().transform(new VectorMaskCmpNode(BoolTest::gt, bcast_lane_cnt, res, pred_node, vmask_type));
+ 
+-    // Make the indices greater than lane count as -ve values. This matches the java side implementation.
+-    res = gvn().transform(VectorNode::make(Op_AndI, res, bcast_mod, num_elem, elem_bt));
+-    Node * biased_val = gvn().transform(VectorNode::make(Op_SubI, res, bcast_lane_cnt, num_elem, elem_bt));
++    // Make the indices greater than lane count as -ve values to match the java side implementation.
++    res = gvn().transform(VectorNode::make(Op_AndV, res, bcast_mod, vt));
++    Node * biased_val = gvn().transform(VectorNode::make(Op_SubVB, res, bcast_lane_cnt, vt));
+     res = gvn().transform(new VectorBlendNode(biased_val, res, mask));
+   }
+ 
+diff --git a/test/hotspot/jtreg/compiler/vectorapi/TestVectorShuffleIota.java b/test/hotspot/jtreg/compiler/vectorapi/TestVectorShuffleIota.java
+index 79829775db4..424775dd053 100644
+--- a/test/hotspot/jtreg/compiler/vectorapi/TestVectorShuffleIota.java
++++ b/test/hotspot/jtreg/compiler/vectorapi/TestVectorShuffleIota.java
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (c) 2021, Huawei Technologies Co., Ltd. All rights reserved.
++ * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -23,7 +24,9 @@
+ 
+ package compiler.vectorapi;
+ 
++import jdk.incubator.vector.ByteVector;
+ import jdk.incubator.vector.IntVector;
++import jdk.incubator.vector.ShortVector;
+ import jdk.incubator.vector.VectorSpecies;
+ import jdk.incubator.vector.VectorShuffle;
+ 
+@@ -36,11 +39,64 @@ import jdk.incubator.vector.VectorShuffle;
+ 
+ public class TestVectorShuffleIota {
+     static final VectorSpecies<Integer> SPECIESi = IntVector.SPECIES_128;
++    static final VectorSpecies<Short> SPECIESs = ShortVector.SPECIES_128;
++    static final VectorSpecies<Byte> SPECIESb = ByteVector.SPECIES_128;
+ 
+-    static final int INVOC_COUNT = 50000;
++    static final int INVOC_COUNT = 5000;
+ 
+     static int[] ai = {87, 65, 78, 71};
+ 
++    interface compute_kernel {
++        long apply(int start, int step, boolean wrap);
++    }
++
++    static void validateTests(compute_kernel agen, compute_kernel egen, int start, int step, boolean wrap) {
++        long actual   = agen.apply(start, step, wrap);
++        long expected = egen.apply(start, step, wrap);
++        if (actual != expected) {
++            throw new AssertionError("Result Mismatch!, actual = " + actual + " expected = " + expected);
++        }
++    }
++
++    static void testShuffleIota (VectorSpecies<?> SPECIES, int start, int step, boolean wrap) {
++        compute_kernel sobj = new compute_kernel()  {
++            public long apply(int start, int step, boolean wrap) {
++                long res = 0;
++                int lanesM1 = SPECIES.length() - 1;
++                if (wrap) {
++                    for (int i = 0; i < 1024; i++) {
++                        start += i;
++                        res += (lanesM1 & (start + step * lanesM1)) * i;
++                    }
++                } else {
++                    for (int i = 0; i < 1024; i++) {
++                        start += i;
++                        int effective_index = start + step * lanesM1;
++                        int wrapped_effective_index = effective_index & lanesM1;
++                        res += (effective_index == wrapped_effective_index ?
++                                 wrapped_effective_index :
++                                 -SPECIES.length() + wrapped_effective_index) * i;
++                    }
++                }
++                return res;
++            }
++        };
++
++        compute_kernel vobj = new compute_kernel()  {
++            public long apply(int start, int step, boolean wrap) {
++                long res = 0;
++                for (int i = 0; i < 1024; i++) {
++                    start += i;
++                    res += SPECIES.iotaShuffle(start, step, wrap)
++                                  .laneSource(SPECIES.length()-1) * i;
++                }
++                return res;
++            }
++        };
++
++        validateTests(vobj, sobj, start, step, wrap);
++    }
++
+     static void testShuffleI() {
+         IntVector iv = (IntVector) VectorShuffle.iota(SPECIESi, 0, 2, false).toVector();
+         iv.intoArray(ai, 0);
+@@ -49,6 +105,27 @@ public class TestVectorShuffleIota {
+     public static void main(String[] args) {
+         for (int i = 0; i < INVOC_COUNT; i++) {
+             testShuffleI();
++
++            testShuffleIota(SPECIESi, 128, 1, true);
++            testShuffleIota(SPECIESi, 128, 1, false);
++            testShuffleIota(SPECIESi, -128, 1, true);
++            testShuffleIota(SPECIESi, -128, 1, false);
++            testShuffleIota(SPECIESi, 1, 1, true);
++            testShuffleIota(SPECIESi, 1, 1, false);
++
++            testShuffleIota(SPECIESs, 128, 1, true);
++            testShuffleIota(SPECIESs, 128, 1, false);
++            testShuffleIota(SPECIESs, -128, 1, true);
++            testShuffleIota(SPECIESs, -128, 1, false);
++            testShuffleIota(SPECIESs, 1, 1, true);
++            testShuffleIota(SPECIESs, 1, 1, false);
++
++            testShuffleIota(SPECIESb, 128, 1, true);
++            testShuffleIota(SPECIESb, 128, 1, false);
++            testShuffleIota(SPECIESb, -128, 1, true);
++            testShuffleIota(SPECIESb, -128, 1, false);
++            testShuffleIota(SPECIESb, 1, 1, true);
++            testShuffleIota(SPECIESb, 1, 1, false);
+         }
+         for (int i = 0; i < ai.length; i++) {
+             System.out.print(ai[i] + ", ");

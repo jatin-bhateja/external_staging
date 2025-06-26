@@ -1,0 +1,691 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/share/c1/c1_GraphBuilder.cpp b/src/hotspot/share/c1/c1_GraphBuilder.cpp
+index aed4eb5c4e6..b6cb00d745d 100644
+--- a/src/hotspot/share/c1/c1_GraphBuilder.cpp
++++ b/src/hotspot/share/c1/c1_GraphBuilder.cpp
+@@ -1818,13 +1818,15 @@ Value GraphBuilder::make_constant(ciConstant field_value, ciField* field) {
+ void GraphBuilder::copy_inline_content(ciInlineKlass* vk, Value src, int src_off, Value dest, int dest_off, ValueStack* state_before, ciField* enclosing_field) {
+   for (int i = 0; i < vk->nof_nonstatic_fields(); i++) {
+     ciField* inner_field = vk->nonstatic_field_at(i);
+-    assert(!inner_field->is_flat(), "the iteration over nested fields is handled by the loop itself");
+     int off = inner_field->offset_in_bytes() - vk->first_field_offset();
+-    LoadField* load = new LoadField(src, src_off + off, inner_field, false, state_before, false);
+-    Value replacement = append(load);
+-    StoreField* store = new StoreField(dest, dest_off + off, inner_field, replacement, false, state_before, false);
+-    store->set_enclosing_field(enclosing_field);
+-    append(store);
++    for (int j = 0, sec_off = 0; j < inner_field->multifield_value(); j++, sec_off += inner_field->size_in_bytes()) {
++      assert(!inner_field->is_flat(), "the iteration over nested fields is handled by the loop itself");
++      LoadField* load = new LoadField(src, src_off + off + sec_off, inner_field, false, state_before, false);
++      Value replacement = append(load);
++      StoreField* store = new StoreField(dest, dest_off + off + sec_off, inner_field, replacement, false, state_before, false);
++      store->set_enclosing_field(enclosing_field);
++      append(store);
++    }
+   }
+ }
+ 
+diff --git a/src/hotspot/share/ci/ciField.cpp b/src/hotspot/share/ci/ciField.cpp
+index f5cc664cdc3..5d86d7feab5 100644
+--- a/src/hotspot/share/ci/ciField.cpp
++++ b/src/hotspot/share/ci/ciField.cpp
+@@ -242,6 +242,8 @@ ciField::ciField(ciField* field, ciInstanceKlass* holder, int offset, bool is_fi
+   assert(!field->is_flat(), "field must not be flat");
+   _is_flat = false;
+   _is_null_free = field->_is_null_free;
++  _is_multifield = field->_is_multifield;
++  _multifield_value = field->_multifield_value;
+   _original_holder = (field->_original_holder != nullptr) ? field->_original_holder : field->_holder;
+ }
+ 
+@@ -294,6 +296,8 @@ void ciField::initialize_from(fieldDescriptor* fd) {
+   _holder = CURRENT_ENV->get_instance_klass(field_holder);
+   _is_flat = fd->is_flat();
+   _is_null_free = fd->is_null_free_inline_type();
++  _is_multifield = fd->is_multifield();
++  _multifield_value = fd->multifield_value();
+   _original_holder = nullptr;
+ 
+   // Check to see if the field is constant.
+diff --git a/src/hotspot/share/ci/ciField.hpp b/src/hotspot/share/ci/ciField.hpp
+index 7928e03ca55..0ceeda8d69c 100644
+--- a/src/hotspot/share/ci/ciField.hpp
++++ b/src/hotspot/share/ci/ciField.hpp
+@@ -55,6 +55,8 @@ class ciField : public ArenaObj {
+   ciMethod*        _known_to_link_with_put;
+   ciInstanceKlass* _known_to_link_with_get;
+   ciConstant       _constant_value;
++  bool             _is_multifield;
++  jbyte            _multifield_value;
+ 
+   ciType* compute_type();
+   ciType* compute_type_impl();
+@@ -175,6 +177,8 @@ class ciField : public ArenaObj {
+   bool is_transient            () const { return flags().is_transient(); }
+   bool is_flat                 () const { return _is_flat; }
+   bool is_null_free            () const { return _is_null_free; }
++  bool is_multifield           () const { return _is_multifield; }
++  bool multifield_value        () const { return _multifield_value; }
+ 
+   // The field is modified outside of instance initializer methods
+   // (or class/initializer methods if the field is static).
+diff --git a/src/hotspot/share/classfile/classFileParser.cpp b/src/hotspot/share/classfile/classFileParser.cpp
+index dad2b140672..6286746a792 100644
+--- a/src/hotspot/share/classfile/classFileParser.cpp
++++ b/src/hotspot/share/classfile/classFileParser.cpp
+@@ -954,11 +954,13 @@ class AnnotationCollector : public ResourceObj{
+     _jdk_internal_ImplicitlyConstructible,
+     _jdk_internal_LooselyConsistentValue,
+     _jdk_internal_NullRestricted,
++    _jdk_internal_vm_annotation_MultiField,
+     _annotation_LIMIT
+   };
+   const Location _location;
+   int _annotations_present;
+   u2 _contended_group;
++  jbyte _multifield_arg;
+ 
+   AnnotationCollector(Location location)
+     : _location(location), _annotations_present(0), _contended_group(0)
+@@ -989,6 +991,11 @@ class AnnotationCollector : public ResourceObj{
+ 
+   void set_stable(bool stable) { set_annotation(_field_Stable); }
+   bool is_stable() const { return has_annotation(_field_Stable); }
++
++  bool is_multifield() const { return has_annotation(_jdk_internal_vm_annotation_MultiField); }
++  void set_multifield_arg(jbyte arg) { _multifield_arg = arg; }
++  jbyte multifield_arg() const { return _multifield_arg; }
++
+ };
+ 
+ // This class also doubles as a holder for metadata cleanup.
+@@ -1125,6 +1132,9 @@ static void parse_annotations(const ConstantPool* const cp,
+     s_tag_val = 's',    // payload is String
+     s_con_off = 7,    // utf8 payload, such as 'Ljava/lang/String;'
+     s_size = 9,
++    b_tag_val = 'B',
++    b_con_off = 7,
++    b_size = 9,
+     min_size = 6        // smallest possible size (zero members)
+   };
+   // Cannot add min_size to index in case of overflow MAX_INT
+@@ -1171,6 +1181,14 @@ static void parse_annotations(const ConstantPool* const cp,
+         }
+       }
+       coll->set_contended_group(group_index);
++    } else if (AnnotationCollector::_jdk_internal_vm_annotation_MultiField == id) {
++      assert(count == 1, "MultiField annotation must have exactly one argument");
++      assert(member == vmSymbols::value_name(), "Must be");
++      assert(b_tag_val == *(abase + tag_off), "Must be a byte value");
++      int arg_index = Bytes::get_Java_u2((address)abase + b_con_off);
++      int multifield_arg = const_cast<ConstantPool*>(cp)->int_at(arg_index);
++      assert(((jbyte)multifield_arg) == multifield_arg, "Must be withing byte value range");
++      coll->set_multifield_arg(multifield_arg);
+     }
+   }
+ }
+@@ -2052,6 +2070,15 @@ AnnotationCollector::annotation_index(const ClassLoaderData* loader_data,
+       if (_location != _in_field)   break; // only allow for fields
+       return _jdk_internal_NullRestricted;
+     }
++    case VM_SYMBOL_ENUM_NAME(jdk_internal_vm_annotation_MultiField_signature): {
++      if (_location != _in_field) break;  // only allow for fields
++      // Honor privileges, only accessible to classes loaded using boot loader.
++      // e.g. all VectorPayload classes encapsulating multifield annotated
++      // payloads are part of java.base module and automatically granted
++      // privileged accesss to all the jdk internal annotations.
++      if (!privileged)            break;  // honor privileges
++      return _jdk_internal_vm_annotation_MultiField;
++    }
+     default: {
+       break;
+     }
+@@ -2065,6 +2092,12 @@ void ClassFileParser::FieldAnnotationCollector::apply_to(FieldInfo* f) {
+     f->set_contended_group(contended_group());
+   if (is_stable())
+     (f->field_flags_addr())->update_stable(true);
++  if (is_multifield()) {
++    // FIXME: Borrow specialzed support for MaxSpeceis from lworld+vector.
++    assert(multifield_arg() > 0, "Field replication count must be greater than zero");
++    (f->field_flags_addr())->update_multifield(true);
++    f->set_multifield_value(multifield_arg());
++  }
+ }
+ 
+ ClassFileParser::FieldAnnotationCollector::~FieldAnnotationCollector() {
+diff --git a/src/hotspot/share/classfile/fieldLayoutBuilder.cpp b/src/hotspot/share/classfile/fieldLayoutBuilder.cpp
+index 939ff895348..d92bccc1080 100644
+--- a/src/hotspot/share/classfile/fieldLayoutBuilder.cpp
++++ b/src/hotspot/share/classfile/fieldLayoutBuilder.cpp
+@@ -63,7 +63,7 @@ LayoutRawBlock::LayoutRawBlock(int index, Kind kind, int size, int alignment, bo
+  _size(size),
+  _field_index(index),
+  _is_reference(is_reference) {
+-  assert(kind == REGULAR || kind == FLAT || kind == INHERITED,
++  assert(kind == REGULAR || kind == FLAT || kind == INHERITED || kind == MULTIFIELD,
+          "Other kind do not have a field index");
+   assert(size > 0, "Sanity check");
+   assert(alignment > 0, "Sanity check");
+@@ -95,6 +95,18 @@ void FieldGroup::add_primitive_field(int idx, BasicType type) {
+   }
+ }
+ 
++void FieldGroup::add_multifield(int idx, BasicType type, int replication_count) {
++  assert (replication_count > 0, "Field replication count must be greater than zero.");
++  int size = type2aelembytes(type);
++  int effective_size = size * replication_count;
++  LayoutRawBlock* block = new LayoutRawBlock(idx, LayoutRawBlock::MULTIFIELD, effective_size, size /* alignment == size for primitive types */, false);
++  if (effective_size >= oopSize) {
++    add_to_big_primitive_list(block);
++  } else {
++    add_to_small_primitive_list(block);
++  }
++}
++
+ void FieldGroup::add_oop_field(int idx) {
+   int size = type2aelembytes(T_OBJECT);
+   LayoutRawBlock* block = new LayoutRawBlock(idx, LayoutRawBlock::REGULAR, size, size /* alignment == size for oops */, true);
+@@ -184,6 +196,7 @@ LayoutRawBlock* FieldLayout::first_field_block() {
+   while (block != nullptr
+          && block->kind() != LayoutRawBlock::INHERITED
+          && block->kind() != LayoutRawBlock::REGULAR
++         && block->kind() != LayoutRawBlock::MULTIFIELD
+          && block->kind() != LayoutRawBlock::FLAT) {
+     block = block->next_block();
+   }
+@@ -513,23 +526,34 @@ void FieldLayout::print(outputStream* output, bool is_static, const InstanceKlas
+               found = true;
+               break;
+             }
++          }
++          ik = ik->java_super();
+         }
+-        ik = ik->java_super();
++        break;
+       }
+-      break;
+-    }
+-    case LayoutRawBlock::EMPTY:
+-      output->print_cr(" @%d %d/1 %s",
+-                       b->offset(),
+-                       b->size(),
+-                       "EMPTY");
+-      break;
+-    case LayoutRawBlock::PADDING:
+-      output->print_cr(" @%d %d/1 %s",
+-                       b->offset(),
+-                       b->size(),
+-                       "PADDING");
+-      break;
++      case LayoutRawBlock::MULTIFIELD: {
++        FieldInfo* fi = _field_info->adr_at(b->field_index());
++        output->print_cr(" @%d \"%s\" %s %d/%d %s",
++                         b->offset(),
++                         fi->name(_cp)->as_C_string(),
++                         fi->signature(_cp)->as_C_string(),
++                         b->size(),
++                         b->alignment(),
++                         "REGULAR");
++        break;
++      }
++      case LayoutRawBlock::EMPTY:
++        output->print_cr(" @%d %d/1 %s",
++                         b->offset(),
++                         b->size(),
++                         "EMPTY");
++        break;
++      case LayoutRawBlock::PADDING:
++        output->print_cr(" @%d %d/1 %s",
++                         b->offset(),
++                         b->size(),
++                         "PADDING");
++        break;
+     }
+     b = b->next_block();
+   }
+@@ -618,68 +642,73 @@ void FieldLayoutBuilder::regular_field_sorting(TRAPS) {
+         group = _root_group;
+       }
+     }
+-    assert(group != nullptr, "invariant");
++
+     BasicType type = Signature::basic_type(fieldinfo.signature(_constant_pool));
+-    switch(type) {
+-    case T_BYTE:
+-    case T_CHAR:
+-    case T_DOUBLE:
+-    case T_FLOAT:
+-    case T_INT:
+-    case T_LONG:
+-    case T_SHORT:
+-    case T_BOOLEAN:
+-      group->add_primitive_field(idx, type);
+-      break;
+-    case T_OBJECT:
+-    case T_ARRAY:
+-      if (!fieldinfo.field_flags().is_null_free_inline_type()) {
+-        if (group != _static_fields) _nonstatic_oopmap_count++;
+-        group->add_oop_field(idx);
+-      } else {
+-        assert(type != T_ARRAY, "null free ptr to array not supported");
+-        _has_inline_type_fields = true;
+-        if (group == _static_fields) {
+-          // static fields are never flat
++    if (fieldinfo.is_multifield()) {
++      group->add_multifield(idx, type, fieldinfo.multifield_value());
++    } else {
++      assert(group != nullptr, "invariant");
++      switch(type) {
++      case T_BYTE:
++      case T_CHAR:
++      case T_DOUBLE:
++      case T_FLOAT:
++      case T_INT:
++      case T_LONG:
++      case T_SHORT:
++      case T_BOOLEAN:
++        group->add_primitive_field(idx, type);
++        break;
++      case T_OBJECT:
++      case T_ARRAY:
++        if (!fieldinfo.field_flags().is_null_free_inline_type()) {
++          if (group != _static_fields) _nonstatic_oopmap_count++;
+           group->add_oop_field(idx);
+         } else {
+-          // Check below is performed for non-static fields, it should be performed for static fields too but at this stage,
+-          // it is not guaranteed that the klass of the static field has been loaded, so the test for static fields is delayed
+-          // until the linking phase
+-          Klass* klass =  _inline_type_field_klasses->at(idx);
+-          assert(klass != nullptr, "Sanity check");
+-          InlineKlass* vk = InlineKlass::cast(klass);
+-          assert(vk->is_implicitly_constructible(), "must be, should have been checked in post_process_parsed_stream()");
+-          _has_flattening_information = true;
+-          // Flattening decision to be taken here
+-          // This code assumes all verification already have been performed
+-          // (field's type has been loaded and it is an inline klass)
+-          bool too_big_to_flatten = (InlineFieldMaxFlatSize >= 0 &&
+-                                    (vk->size_helper() * HeapWordSize) > InlineFieldMaxFlatSize);
+-          bool too_atomic_to_flatten = vk->must_be_atomic() || AlwaysAtomicAccesses;
+-          bool too_volatile_to_flatten = fieldinfo.access_flags().is_volatile();
+-          if (vk->is_naturally_atomic()) {
+-            too_atomic_to_flatten = false;
+-            //too_volatile_to_flatten = false; //FIXME
+-            // Currently, volatile fields are never flat, this could change in the future
+-          }
+-          if (!(too_big_to_flatten | too_atomic_to_flatten | too_volatile_to_flatten)) {
+-            group->add_flat_field(idx, vk);
+-            _nonstatic_oopmap_count += vk->nonstatic_oop_map_count();
+-            _field_info->adr_at(idx)->field_flags_addr()->update_flat(true);
+-            if (!vk->is_atomic()) {  // flat and non-atomic: take note
+-              _has_nonatomic_values = true;
+-              _atomic_field_count--;  // every other field is atomic but this one
+-            }
+-          } else {
+-            _nonstatic_oopmap_count++;
++          assert(type != T_ARRAY, "null free ptr to array not supported");
++          _has_inline_type_fields = true;
++          if (group == _static_fields) {
++            // static fields are never flat
+             group->add_oop_field(idx);
++          } else {
++            // Check below is performed for non-static fields, it should be performed for static fields too but at this stage,
++            // it is not guaranteed that the klass of the static field has been loaded, so the test for static fields is delayed
++            // until the linking phase
++            Klass* klass =  _inline_type_field_klasses->at(idx);
++            assert(klass != nullptr, "Sanity check");
++            InlineKlass* vk = InlineKlass::cast(klass);
++            assert(vk->is_implicitly_constructible(), "must be, should have been checked in post_process_parsed_stream()");
++            _has_flattening_information = true;
++            // Flattening decision to be taken here
++            // This code assumes all verification already have been performed
++            // (field's type has been loaded and it is an inline klass)
++            bool too_big_to_flatten = (InlineFieldMaxFlatSize >= 0 &&
++                                      (vk->size_helper() * HeapWordSize) > InlineFieldMaxFlatSize);
++            bool too_atomic_to_flatten = vk->must_be_atomic() || AlwaysAtomicAccesses;
++            bool too_volatile_to_flatten = fieldinfo.access_flags().is_volatile();
++            if (vk->is_naturally_atomic()) {
++              too_atomic_to_flatten = false;
++              //too_volatile_to_flatten = false; //FIXME
++              // Currently, volatile fields are never flat, this could change in the future
++            }
++            if (!(too_big_to_flatten | too_atomic_to_flatten | too_volatile_to_flatten)) {
++              group->add_flat_field(idx, vk);
++              _nonstatic_oopmap_count += vk->nonstatic_oop_map_count();
++              _field_info->adr_at(idx)->field_flags_addr()->update_flat(true);
++              if (!vk->is_atomic()) {  // flat and non-atomic: take note
++                _has_nonatomic_values = true;
++                _atomic_field_count--;  // every other field is atomic but this one
++              }
++            } else {
++              _nonstatic_oopmap_count++;
++              group->add_oop_field(idx);
++            }
+           }
+         }
++        break;
++      default:
++        fatal("Something wrong?");
+       }
+-      break;
+-    default:
+-      fatal("Something wrong?");
+     }
+   }
+   _root_group->sort_by_size();
+@@ -716,77 +745,81 @@ void FieldLayoutBuilder::inline_class_field_sorting(TRAPS) {
+       _atomic_field_count++;  // we might decrement this
+       group = _root_group;
+     }
+-    assert(group != nullptr, "invariant");
+     BasicType type = Signature::basic_type(fieldinfo.signature(_constant_pool));
+-    switch(type) {
+-    case T_BYTE:
+-    case T_CHAR:
+-    case T_DOUBLE:
+-    case T_FLOAT:
+-    case T_INT:
+-    case T_LONG:
+-    case T_SHORT:
+-    case T_BOOLEAN:
+-      if (group != _static_fields) {
+-        field_alignment = type2aelembytes(type); // alignment == size for primitive types
+-      }
+-      group->add_primitive_field(fieldinfo.index(), type);
+-      break;
+-    case T_OBJECT:
+-    case T_ARRAY:
+-      if (!fieldinfo.field_flags().is_null_free_inline_type()) {
++    if (fieldinfo.is_multifield()) {
++      group->add_multifield(fieldinfo.index(), type, fieldinfo.multifield_value());
++    } else {
++      assert(group != nullptr, "invariant");
++      switch(type) {
++      case T_BYTE:
++      case T_CHAR:
++      case T_DOUBLE:
++      case T_FLOAT:
++      case T_INT:
++      case T_LONG:
++      case T_SHORT:
++      case T_BOOLEAN:
+         if (group != _static_fields) {
+-          _nonstatic_oopmap_count++;
+-          field_alignment = type2aelembytes(type); // alignment == size for oops
++          field_alignment = type2aelembytes(type); // alignment == size for primitive types
+         }
+-        group->add_oop_field(fieldinfo.index());
+-      } else {
+-        assert(type != T_ARRAY, "null free ptr to array not supported");
+-        _has_inline_type_fields = true;
+-        if (group == _static_fields) {
+-          // static fields are never flat
++        group->add_primitive_field(fieldinfo.index(), type);
++        break;
++      case T_OBJECT:
++      case T_ARRAY:
++        if (!fieldinfo.field_flags().is_null_free_inline_type()) {
++          if (group != _static_fields) {
++            _nonstatic_oopmap_count++;
++            field_alignment = type2aelembytes(type); // alignment == size for oops
++          }
+           group->add_oop_field(fieldinfo.index());
+         } else {
+-          // Check below is performed for non-static fields, it should be performed for static fields too but at this stage,
+-          // it is not guaranteed that the klass of the static field has been loaded, so the test for static fields is delayed
+-          // until the linking phase
+-          Klass* klass =  _inline_type_field_klasses->at(fieldinfo.index());
+-          assert(klass != nullptr, "Sanity check");
+-          InlineKlass* vk = InlineKlass::cast(klass);
+-          assert(vk->is_implicitly_constructible(), "must be, should have been checked in post_process_parsed_stream()");
+-          // Flattening decision to be taken here
+-          // This code assumes all verifications have already been performed
+-          // (field's type has been loaded and it is an inline klass)
+-          bool too_big_to_flatten = (InlineFieldMaxFlatSize >= 0 &&
+-                                    (vk->size_helper() * HeapWordSize) > InlineFieldMaxFlatSize);
+-          bool too_atomic_to_flatten = vk->must_be_atomic() || AlwaysAtomicAccesses;
+-          bool too_volatile_to_flatten = fieldinfo.access_flags().is_volatile();
+-          if (vk->is_naturally_atomic()) {
+-            too_atomic_to_flatten = false;
+-            //too_volatile_to_flatten = false; //FIXME
+-            // Currently, volatile fields are never flat, this could change in the future
+-          }
+-          if (!(too_big_to_flatten | too_atomic_to_flatten | too_volatile_to_flatten)) {
+-            group->add_flat_field(fieldinfo.index(), vk);
+-            _nonstatic_oopmap_count += vk->nonstatic_oop_map_count();
+-            field_alignment = vk->get_alignment();
+-            _field_info->adr_at(fieldinfo.index())->field_flags_addr()->update_flat(true);
+-            if (!vk->is_atomic()) {  // flat and non-atomic: take note
+-              _has_nonatomic_values = true;
+-              _atomic_field_count--;  // every other field is atomic but this one
+-            }
+-          } else {
+-            _nonstatic_oopmap_count++;
+-            field_alignment = type2aelembytes(T_OBJECT);
++          assert(type != T_ARRAY, "null free ptr to array not supported");
++          _has_inline_type_fields = true;
++          if (group == _static_fields) {
++            // static fields are never flat
+             group->add_oop_field(fieldinfo.index());
++          } else {
++            // Check below is performed for non-static fields, it should be performed for static fields too but at this stage,
++            // it is not guaranteed that the klass of the static field has been loaded, so the test for static fields is delayed
++            // until the linking phase
++            Klass* klass =  _inline_type_field_klasses->at(fieldinfo.index());
++            assert(klass != nullptr, "Sanity check");
++            InlineKlass* vk = InlineKlass::cast(klass);
++            assert(vk->is_implicitly_constructible(), "must be, should have been checked in post_process_parsed_stream()");
++            // Flattening decision to be taken here
++            // This code assumes all verifications have already been performed
++            // (field's type has been loaded and it is an inline klass)
++            bool too_big_to_flatten = (InlineFieldMaxFlatSize >= 0 &&
++                                      (vk->size_helper() * HeapWordSize) > InlineFieldMaxFlatSize);
++            bool too_atomic_to_flatten = vk->must_be_atomic() || AlwaysAtomicAccesses;
++            bool too_volatile_to_flatten = fieldinfo.access_flags().is_volatile();
++            if (vk->is_naturally_atomic()) {
++              too_atomic_to_flatten = false;
++              //too_volatile_to_flatten = false; //FIXME
++              // Currently, volatile fields are never flat, this could change in the future
++            }
++            if (!(too_big_to_flatten | too_atomic_to_flatten | too_volatile_to_flatten)) {
++              group->add_flat_field(fieldinfo.index(), vk);
++              _nonstatic_oopmap_count += vk->nonstatic_oop_map_count();
++              field_alignment = vk->get_alignment();
++              _field_info->adr_at(fieldinfo.index())->field_flags_addr()->update_flat(true);
++              if (!vk->is_atomic()) {  // flat and non-atomic: take note
++                _has_nonatomic_values = true;
++                _atomic_field_count--;  // every other field is atomic but this one
++              }
++            } else {
++              _nonstatic_oopmap_count++;
++              field_alignment = type2aelembytes(T_OBJECT);
++              group->add_oop_field(fieldinfo.index());
++            }
+           }
+         }
++        break;
++      default:
++        fatal("Unexpected BasicType");
+       }
+-      break;
+-    default:
+-      fatal("Unexpected BasicType");
++      if (!fieldinfo.access_flags().is_static() && field_alignment > alignment) alignment = field_alignment;
+     }
+-    if (!fieldinfo.access_flags().is_static() && field_alignment > alignment) alignment = field_alignment;
+   }
+   _alignment = alignment;
+   if (!_has_nonstatic_fields) {
+diff --git a/src/hotspot/share/classfile/fieldLayoutBuilder.hpp b/src/hotspot/share/classfile/fieldLayoutBuilder.hpp
+index 349f793ff9d..76fe7c25243 100644
+--- a/src/hotspot/share/classfile/fieldLayoutBuilder.hpp
++++ b/src/hotspot/share/classfile/fieldLayoutBuilder.hpp
+@@ -58,7 +58,8 @@ class LayoutRawBlock : public ResourceObj {
+     PADDING,          // padding (because of alignment constraints or @Contended)
+     REGULAR,          // primitive or oop field (including not flat inline type fields)
+     FLAT,             // flat field
+-    INHERITED         // field(s) inherited from super classes
++    INHERITED,        // field(s) inherited from super classes
++    MULTIFIELD,       // replicated bundle of primitive field
+   };
+ 
+  private:
+@@ -71,6 +72,7 @@ class LayoutRawBlock : public ResourceObj {
+   int _size;
+   int _field_index;
+   bool _is_reference;
++  jbyte _multifield_value;
+ 
+  public:
+   LayoutRawBlock(Kind kind, int size);
+@@ -98,6 +100,7 @@ class LayoutRawBlock : public ResourceObj {
+     return _inline_klass;
+   }
+   void set_inline_klass(InlineKlass* inline_klass) { _inline_klass = inline_klass; }
++  void set_multield_value(jbyte value) { _multifield_value = value; }
+ 
+   bool fit(int size, int alignment);
+ 
+@@ -149,6 +152,7 @@ class FieldGroup : public ResourceObj {
+   int oop_count() const { return _oop_count; }
+ 
+   void add_primitive_field(int idx, BasicType type);
++  void add_multifield(int idx, BasicType type, int replication_count);
+   void add_oop_field(int idx);
+   void add_flat_field(int idx, InlineKlass* vk);
+   void add_block(LayoutRawBlock** list, LayoutRawBlock* block);
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index 6d553875a82..cc6b2e53aee 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -271,6 +271,7 @@ class SerializeClosure;
+   template(jdk_internal_vm_annotation_LooselyConsistentValue_signature,      "Ljdk/internal/vm/annotation/LooselyConsistentValue;") \
+   template(jdk_internal_vm_annotation_NullRestricted_signature,              "Ljdk/internal/vm/annotation/NullRestricted;") \
+   template(jdk_internal_ValueBased_signature,                                "Ljdk/internal/ValueBased;") \
++  template(jdk_internal_vm_annotation_MultiField_signature,                  "Ljdk/internal/vm/annotation/MultiField;") \
+                                                                                                   \
+   /* class symbols needed by intrinsics */                                                        \
+   VM_INTRINSICS_DO(VM_INTRINSIC_IGNORE, template, VM_SYMBOL_IGNORE, VM_SYMBOL_IGNORE, VM_ALIAS_IGNORE) \
+diff --git a/src/hotspot/share/oops/fieldInfo.hpp b/src/hotspot/share/oops/fieldInfo.hpp
+index ccb5e58dff7..532c58b4f91 100644
+--- a/src/hotspot/share/oops/fieldInfo.hpp
++++ b/src/hotspot/share/oops/fieldInfo.hpp
+@@ -79,6 +79,7 @@ class FieldInfo {
+       _ff_generic,      // has a generic signature
+       _ff_stable,       // trust as stable b/c declared as @Stable
+       _ff_contended,    // is contended, may have contention-group
++      _ff_multifield    // carry a multifield annotation.
+     };
+ 
+     // Some but not all of the flag bits signal the presence of an
+@@ -115,6 +116,7 @@ class FieldInfo {
+     bool is_generic() const         { return test_flag(_ff_generic); }
+     bool is_stable() const          { return test_flag(_ff_stable); }
+     bool is_contended() const       { return test_flag(_ff_contended); }
++    bool is_multifield() const      { return test_flag(_ff_multifield); }
+ 
+     void update_initialized(bool z) { update_flag(_ff_initialized, z); }
+     void update_null_free_inline_type(bool z) { update_flag(_ff_null_free_inline_type, z); }
+@@ -123,6 +125,7 @@ class FieldInfo {
+     void update_generic(bool z)     { update_flag(_ff_generic, z); }
+     void update_stable(bool z)      { update_flag(_ff_stable, z); }
+     void update_contended(bool z)   { update_flag(_ff_contended, z); }
++    void update_multifield(bool z)       { update_flag(_ff_multifield, z); }
+   };
+ 
+  private:
+@@ -141,6 +144,7 @@ class FieldInfo {
+   u2 _initializer_index;        // index from ConstantValue attr (or 0)
+   u2 _generic_signature_index;  // index from GenericSignature attr (or 0)
+   u2 _contention_group;         // index from @Contended group item (or 0)
++  s1 _multifield_value;         // replication count of a multifield.
+ 
+  public:
+ 
+@@ -151,7 +155,8 @@ class FieldInfo {
+                 _field_flags(FieldFlags(0)),
+                 _initializer_index(0),
+                 _generic_signature_index(0),
+-                _contention_group(0) { }
++                _contention_group(0),
++                _multifield_value(1) { }
+ 
+   FieldInfo(AccessFlags access_flags, u2 name_index, u2 signature_index, u2 initval_index, FieldInfo::FieldFlags fflags) :
+             _name_index(name_index),
+@@ -161,7 +166,8 @@ class FieldInfo {
+             _field_flags(fflags),
+             _initializer_index(initval_index),
+             _generic_signature_index(0),
+-            _contention_group(0) {
++            _contention_group(0),
++            _multifield_value(1) {
+               if (initval_index != 0) {
+                 _field_flags.update_initialized(true);
+               }
+@@ -183,6 +189,8 @@ class FieldInfo {
+   u2 generic_signature_index() const         { return _generic_signature_index; }
+   void set_generic_signature_index(u2 index) { _generic_signature_index = index; }
+   u2 contention_group() const                { return _contention_group; }
++  s1 multifield_value() const                { return _multifield_value; }
++  void set_multifield_value(s1 value)        { _multifield_value = value; }
+ 
+   bool is_contended() const {
+     return _field_flags.is_contended();
+@@ -198,6 +206,10 @@ class FieldInfo {
+     _contention_group = group;
+   }
+ 
++  bool is_multifield() const {
++    return _field_flags.is_multifield();
++  }
++
+   bool is_offset_set() const {
+     return _offset != 0;
+   }
+diff --git a/src/hotspot/share/oops/fieldInfo.inline.hpp b/src/hotspot/share/oops/fieldInfo.inline.hpp
+index 2e6727f1fb9..c68dddce3b2 100644
+--- a/src/hotspot/share/oops/fieldInfo.inline.hpp
++++ b/src/hotspot/share/oops/fieldInfo.inline.hpp
+@@ -75,6 +75,7 @@ inline void Mapper<CON>::map_field_info(const FieldInfo& fi) {
+   _consumer->accept_uint(fi.offset());
+   _consumer->accept_uint(fi.access_flags().as_int());
+   _consumer->accept_uint(fi.field_flags().as_uint());
++  _consumer->accept_uint(fi.multifield_value());
+   if(fi.field_flags().has_any_optionals()) {
+     if (fi.field_flags().is_initialized()) {
+       _consumer->accept_uint(fi.initializer_index());
+@@ -104,6 +105,7 @@ inline void FieldInfoReader::read_field_info(FieldInfo& fi) {
+   fi._offset = next_uint();
+   fi._access_flags = AccessFlags(next_uint());
+   fi._field_flags = FieldInfo::FieldFlags(next_uint());
++  fi._multifield_value = next_uint();
+   if (fi._field_flags.is_initialized()) {
+     fi._initializer_index = checked_cast<u2>(next_uint());
+   } else {
+@@ -119,6 +121,7 @@ inline void FieldInfoReader::read_field_info(FieldInfo& fi) {
+   } else {
+     fi._contention_group = 0;
+   }
++
+ }
+ 
+ inline FieldInfoReader&  FieldInfoReader::skip_field_info() {
+diff --git a/src/hotspot/share/runtime/fieldDescriptor.hpp b/src/hotspot/share/runtime/fieldDescriptor.hpp
+index 59eeb80cff5..ff44af000f8 100644
+--- a/src/hotspot/share/runtime/fieldDescriptor.hpp
++++ b/src/hotspot/share/runtime/fieldDescriptor.hpp
+@@ -86,8 +86,11 @@ class fieldDescriptor {
+   bool is_stable()                const    { return field_flags().is_stable(); }
+   bool is_volatile()              const    { return access_flags().is_volatile(); }
+   bool is_transient()             const    { return access_flags().is_transient(); }
+-  inline bool is_flat()        const;
+-  inline bool is_null_free_inline_type()    const;
++
++  inline bool is_flat()                  const;
++  inline bool is_null_free_inline_type() const;
++  inline bool is_multifield()     const    { return _fieldinfo.is_multifield(); }
++  inline jbyte multifield_value()  const    { return _fieldinfo.multifield_value(); }
+ 
+   bool is_synthetic()             const    { return access_flags().is_synthetic(); }
+ 

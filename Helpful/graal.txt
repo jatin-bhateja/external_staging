@@ -1,0 +1,20 @@
+ 2021  java -XX:+UnlockDiagnosticVMOptions -XX:+JVMCIPrintProperties --version
+ 2022  java -XX:+UnlockDiagnosticVMOptions -XX:+PrintFlagsFinal -Djvmci.PrintConfig=true --version
+ 2023  java -XX:+UnlockDiagnosticVMOptions -Djvmci.PrintConfig=true --version
+ 2024  java -XX:+UnlockDiagnosticVMOptions -Djvmci.PrintConfig=true --version  | grep VectorSupport
+
+
+ 2098  java --add-modules=jdk.incubator.vector -cp /home/jatinbha/sandboxes/graal/compiler/mxbuild/dists/graal.jar:. -XX:-TieredCompilation -Xbatch -XX:CompileCommand=Print,jit1::micro -XX:+EnableJVMCI -XX:-UseJVMCICompiler jit1
+ 2099  java --add-modules=jdk.incubator.vector -cp /home/jatinbha/sandboxes/graal/compiler/mxbuild/dists/graal.jar:. -XX:-TieredCompilation -Xbatch -XX:CompileCommand=Print,jit1::micro -XX:+EnableJVMCI -XX:+UseJVMCICompiler jit1
+ 2100  history
+
+goto graal/compiler
+mx --java-home <> build
+goto graal/vm
+mx --java-home build --all
+goto graal/compiler
+mx envs
+mx vm -XX:-TieredCompilation -XX:+UnlockExperimentalVMOptions -XX:+UseJVMCICompiler --add-modules=jdk.incubator.vector -cp /home/jatinbha/code/java/avx10/graal test 1024
+
+
+mx vm -XX:-TieredCompilation -XX:+UnlockExperimentalVMOptions -XX:+UseJVMCICompiler -XX:-JVMCIPrintProperties -Djdk.graal.PrintPropertiesAll=false -Djvmci.PrintConfig=true --add-modules=jdk.incubator.vector -cp /home/jatinbha/code/java/avx10/graal test 1024

@@ -1,0 +1,1189 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 875fda3c106..2d62e27812e 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -8461,6 +8461,7 @@ void Assembler::vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector
+ 
+ void Assembler::evaddph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
+@@ -8469,6 +8470,7 @@ void Assembler::evaddph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+ 
+ void Assembler::evaddph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionMark im(this);
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+@@ -8480,6 +8482,7 @@ void Assembler::evaddph(XMMRegister dst, XMMRegister nds, Address src, int vecto
+ 
+ void Assembler::evsubph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
+@@ -8488,6 +8491,7 @@ void Assembler::evsubph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+ 
+ void Assembler::evsubph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionMark im(this);
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+@@ -8499,6 +8503,7 @@ void Assembler::evsubph(XMMRegister dst, XMMRegister nds, Address src, int vecto
+ 
+ void Assembler::evmulph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
+@@ -8507,6 +8512,7 @@ void Assembler::evmulph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+ 
+ void Assembler::evmulph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionMark im(this);
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+@@ -8518,6 +8524,7 @@ void Assembler::evmulph(XMMRegister dst, XMMRegister nds, Address src, int vecto
+ 
+ void Assembler::evminph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
+@@ -8526,6 +8533,7 @@ void Assembler::evminph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+ 
+ void Assembler::evminph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionMark im(this);
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+@@ -8537,6 +8545,7 @@ void Assembler::evminph(XMMRegister dst, XMMRegister nds, Address src, int vecto
+ 
+ void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
+@@ -8545,6 +8554,7 @@ void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+ 
+ void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionMark im(this);
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+@@ -8556,6 +8566,7 @@ void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, Address src, int vecto
+ 
+ void Assembler::evdivph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
+@@ -8564,6 +8575,7 @@ void Assembler::evdivph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+ 
+ void Assembler::evdivph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionMark im(this);
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+@@ -8575,6 +8587,7 @@ void Assembler::evdivph(XMMRegister dst, XMMRegister nds, Address src, int vecto
+ 
+ void Assembler::evsqrtph(XMMRegister dst, XMMRegister src1, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), 0, src1->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
+@@ -8583,6 +8596,7 @@ void Assembler::evsqrtph(XMMRegister dst, XMMRegister src1, int vector_len) {
+ 
+ void Assembler::evsqrtph(XMMRegister dst, Address src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionMark im(this);
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+@@ -8594,6 +8608,7 @@ void Assembler::evsqrtph(XMMRegister dst, Address src, int vector_len) {
+ 
+ void Assembler::evfmadd132ph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP6, &attributes);
+@@ -8602,6 +8617,7 @@ void Assembler::evfmadd132ph(XMMRegister dst, XMMRegister nds, XMMRegister src,
+ 
+ void Assembler::evfmadd132ph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "");
++  assert(vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionMark im(this);
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index c24962ff5da..8c398202da1 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -4339,8 +4339,8 @@ bool MatchRule::is_vector() const {
+     "SubVB","SubVS","SubVI","SubVL", "SubVHF", "SubVF","SubVD",
+     "MulVB","MulVS","MulVI","MulVL", "MulVHF", "MulVF","MulVD",
+     "DivVHF","DivVF","DivVD",
+-    "AbsVB","AbsVS","AbsVI","AbsVL","AbsVF","AbsVD","AbsVHF",
+-    "NegVF","NegVD","NegVHF","NegVI","NegVL",
++    "AbsVB","AbsVS","AbsVI","AbsVL","AbsVF","AbsVD",
++    "NegVF","NegVD","NegVI","NegVL",
+     "SqrtVD","SqrtVF","SqrtVHF",
+     "AndV" ,"XorV" ,"OrV",
+     "MaxV", "MinV", "MinVHF", "MaxVHF", "UMinV", "UMaxV",
+diff --git a/test/hotspot/jtreg/compiler/c2/irTests/MulHFNodeIdealizationTests.java b/test/hotspot/jtreg/compiler/c2/irTests/MulHFNodeIdealizationTests.java
+index d6c085900f3..f7a52f5cbe2 100644
+--- a/test/hotspot/jtreg/compiler/c2/irTests/MulHFNodeIdealizationTests.java
++++ b/test/hotspot/jtreg/compiler/c2/irTests/MulHFNodeIdealizationTests.java
+@@ -54,6 +54,9 @@ public MulHFNodeIdealizationTests() {
+     }
+ 
+     @Test
++    @IR(counts = {IRNode.ADD_HF, "1"},
++        applyIfCPUFeature = {"avx512_fp16", "true"},
++        failOn = {IRNode.MUL_HF})
+     @IR(counts = {IRNode.ADD_HF, "1"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"},
+         failOn = {IRNode.MUL_HF})
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java b/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+similarity index 91%
+rename from test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java
+rename to test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+index 1e7beda2955..38ff549e0df 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java
++++ b/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+  * Copyright (c) 2024, Arm Limited. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+@@ -25,11 +25,11 @@
+ /**
+ * @test
+ * @bug 8308363 8336406
+-* @summary Validate compiler IR for FP16 scalar operations.
++* @summary Validate compiler IR for various Float16 scalar operations.
+ * @modules jdk.incubator.vector
+ * @requires vm.compiler2.enabled
+ * @library /test/lib /
+-* @run driver TestFP16ScalarOps
++* @run driver TestFloat16ScalarOperations
+ */
+ 
+ import compiler.lib.ir_framework.*;
+@@ -37,7 +37,7 @@
+ import jdk.incubator.vector.Float16;
+ import static jdk.incubator.vector.Float16.*;
+ 
+-public class TestFP16ScalarOps {
++public class TestFloat16ScalarOperations {
+     private static final int count = 1024;
+ 
+     private short[] src;
+@@ -48,7 +48,7 @@ public static void main(String args[]) {
+         TestFramework.runWithFlags("--add-modules=jdk.incubator.vector");
+     }
+ 
+-    public TestFP16ScalarOps() {
++    public TestFloat16ScalarOperations() {
+         src = new short[count];
+         dst = new short[count];
+         for (int i = 0; i < count; i++) {
+@@ -148,17 +148,6 @@ public void testMin() {
+         }
+     }
+ 
+-    @Test
+-    @IR(counts = {IRNode.ABS_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
+-        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+-    public void testAbs() {
+-        Float16 res = shortBitsToFloat16((short)0);
+-        for (int i = 0; i < count; i++) {
+-            res = Float16.abs(shortBitsToFloat16(src[i]));
+-            dst[i] = float16ToRawShortBits(res);
+-        }
+-    }
+-
+     @Test
+     @IR(counts = {IRNode.SQRT_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+diff --git a/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java b/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
+index cf25fbb9586..9a485fcef0b 100644
+--- a/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
++++ b/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
+@@ -162,11 +162,6 @@
+         beforeMatchingNameRegex(ABS_F, "AbsF");
+     }
+ 
+-    public static final String ABS_HF = PREFIX + "ABS_HF" + POSTFIX;
+-    static {
+-        beforeMatchingNameRegex(ABS_HF, "AbsHF");
+-    }
+-
+     public static final String ABS_I = PREFIX + "ABS_I" + POSTFIX;
+     static {
+         beforeMatchingNameRegex(ABS_I, "AbsI");
+@@ -209,11 +204,6 @@
+         vectorNode(ABS_VD, "AbsVD", TYPE_DOUBLE);
+     }
+ 
+-    public static final String ABS_VHF = PREFIX + "ABS_VHF" + POSTFIX;
+-    static {
+-        beforeMatchingNameRegex(ABS_VHF, "AbsVHF");
+-    }
+-
+     public static final String ADD = PREFIX + "ADD" + POSTFIX;
+     static {
+         beforeMatchingNameRegex(ADD, "Add(I|L|F|D|P)");
+diff --git a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOperations.java
+similarity index 89%
+rename from test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java
+rename to test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOperations.java
+index 0564b10efd8..a4f51a49d0b 100644
+--- a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java
++++ b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOperations.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
+  * Copyright (c) 2024, Arm Limited. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+@@ -24,13 +24,13 @@
+ 
+ /**
+ * @test
+-* @bug 8308363 8336406
+-* @summary Test vectorization of Float16 binary operations
++* @bug 8342103
++* @summary Auto-vectorization support for various Float16 operations
+ * @requires vm.compiler2.enabled
+ * @modules jdk.incubator.vector
+ * @library /test/lib /
+-* @compile TestFloat16VectorOps.java
+-* @run driver compiler.vectorization.TestFloat16VectorOps
++* @compile TestFloat16VectorOperations.java
++* @run driver compiler.vectorization.TestFloat16VectorOperations
+ */
+ 
+ package compiler.vectorization;
+@@ -39,7 +39,7 @@
+ import static jdk.incubator.vector.Float16.*;
+ import static java.lang.Float.*;
+ 
+-public class TestFloat16VectorOps {
++public class TestFloat16VectorOperations {
+     private short[] input1;
+     private short[] input2;
+     private short[] input3;
+@@ -51,7 +51,7 @@ public static void main(String args[]) {
+         TestFramework.runWithFlags("-XX:-TieredCompilation", "-Xbatch","--add-modules=jdk.incubator.vector");
+     }
+ 
+-    public TestFloat16VectorOps() {
++    public TestFloat16VectorOperations() {
+         input1 = new short[LEN];
+         input2 = new short[LEN];
+         input3 = new short[LEN];
+@@ -196,28 +196,6 @@ public void checkResultMax() {
+         }
+     }
+ 
+-    @Test
+-    @Warmup(10000)
+-    @IR(counts = {IRNode.ABS_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"sve", "true"})
+-    @IR(counts = {IRNode.ABS_VHF, ">= 1"},
+-        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+-    public void vectorAbsFloat16() {
+-        for (int i = 0; i < LEN; ++i) {
+-            output[i] = float16ToRawShortBits(abs(shortBitsToFloat16(input1[i])));
+-        }
+-    }
+-
+-    @Check(test="vectorAbsFloat16")
+-    public void checkResultAbs() {
+-        for (int i = 0; i < LEN; ++i) {
+-            short expected = float16ToRawShortBits(abs(shortBitsToFloat16(input1[i])));
+-            if (output[i] != expected) {
+-                throw new RuntimeException("Invalid result: output[" + i + "] = " + output[i] + " != " + expected);
+-            }
+-        }
+-    }
+-
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.SQRT_VHF, ">= 1"},
+diff --git a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorReinterpretConv.java b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorReinterpretConv.java
+deleted file mode 100644
+index a4e4c1eadb6..00000000000
+--- a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorReinterpretConv.java
++++ /dev/null
+@@ -1,86 +0,0 @@
+-/*
+- * Copyright (c) 2024, Arm Limited. All rights reserved.
+- * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+- *
+- * This code is free software; you can redistribute it and/or modify it
+- * under the terms of the GNU General Public License version 2 only, as
+- * published by the Free Software Foundation.
+- *
+- * This code is distributed in the hope that it will be useful, but WITHOUT
+- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+- * version 2 for more details (a copy is included in the LICENSE file that
+- * accompanied this code).
+- *
+- * You should have received a copy of the GNU General Public License version
+- * 2 along with this work; if not, write to the Free Software Foundation,
+- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+- *
+- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+- * or visit www.oracle.com if you need additional information or have any
+- * questions.
+- */
+-
+-/**
+-* @test
+-* @bug 8330021
+-* @summary Test auto-vectorization for "dst (ConvHF2F (ReinterpretHF2S src))" sequence
+-* @modules jdk.incubator.vector
+-* @requires vm.compiler2.enabled
+-* @library /test/lib /
+-* @run driver compiler.vectorization.TestFloat16VectorReinterpretConv
+-*/
+-
+-package compiler.vectorization;
+-import compiler.lib.ir_framework.*;
+-import java.util.Random;
+-import static jdk.incubator.vector.Float16.*;
+-import static java.lang.Float.*;
+-
+-public class TestFloat16VectorReinterpretConv {
+-    private short[] fin;
+-    private float[] flout;
+-    private static final int LEN = 2048;
+-    private Random rng;
+-
+-    public static void main(String args[]) {
+-        TestFramework.runWithFlags("-XX:-TieredCompilation", "-Xbatch", "--add-modules=jdk.incubator.vector");
+-    }
+-
+-    public TestFloat16VectorReinterpretConv() {
+-        fin  = new short[LEN];
+-        flout = new float[LEN];
+-        rng = new Random(25);
+-        for (int i = 0; i < LEN; i++) {
+-            fin[i] = floatToFloat16(rng.nextFloat());
+-        }
+-    }
+-
+-    // When auto-vectorizing a sequence like - "dst (ConvHF2F (ReinterpretHF2S src))", the compilation
+-    // fails due to an assertion error when testing for the source type in vectorCastNode::opcode() for
+-    // Op_ConvHF2F. The input passed to ConvHF2F is of type T_INT but is supposed to be of type T_SHORT. It is
+-    // because the container type for ReinterpretHF2S is computed as T_INT instead of T_SHORT. Fix for this
+-    // is part of JDK-8330021 and this test makes sure the compilation does not fail and vectorization of both
+-    // ConvHF2F and ReinterpretHF2S takes place.
+-    @Test
+-    @Warmup(10000)
+-    @IR(counts = {IRNode.VECTOR_CAST_HF2F, " >= 1", IRNode.VECTOR_REINTERPRET, " >= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
+-    @IR(counts = {IRNode.VECTOR_CAST_HF2F, " >= 1", IRNode.VECTOR_REINTERPRET, " >= 1"},
+-        applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+-    public void testVect() {
+-        for (int i = 0; i < LEN; i++) {
+-            flout[i] = float16ToFloat(float16ToRawShortBits(add(shortBitsToFloat16(fin[i]), shortBitsToFloat16(fin[i]))));
+-        }
+-    }
+-
+-    @Check(test="testVect")
+-    public void checkResult() {
+-        for (int i = 0; i < LEN; i++) {
+-            float expected = float16ToFloat(fin[i]) + float16ToFloat(fin[i]);
+-            if (flout[i] != expected) {
+-                throw new RuntimeException("Invalid result: flout[" + i + "] = " + flout[i] + " != " + expected);
+-            }
+-        }
+-    }
+-}
+diff --git a/test/jdk/jdk/incubator/vector/ScalarFloat16OperationsTest.java b/test/jdk/jdk/incubator/vector/ScalarFloat16OperationsTest.java
+new file mode 100644
+index 00000000000..bcc794aeffa
+--- /dev/null
++++ b/test/jdk/jdk/incubator/vector/ScalarFloat16OperationsTest.java
+@@ -0,0 +1,347 @@
++/*
++ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/*
++ * @test
++ * @bug 8342103
++ * @summary C2 compiler support for Float16 type and associated operations
++ * @modules jdk.incubator.vector
++ * @library /test/lib
++ * @compile ScalarFloat16OperationsTest.java
++ * @run testng/othervm/timeout=300 -ea -esa -Xbatch -XX:-TieredCompilation -XX:-UseSuperWord ScalarFloat16OperationsTest
++ * @run testng/othervm/timeout=300 -ea -esa -Xbatch -XX:-TieredCompilation -XX:+UseSuperWord ScalarFloat16OperationsTest
++ */
++
++import org.testng.Assert;
++import org.testng.annotations.DataProvider;
++import org.testng.annotations.Test;
++
++import java.util.Random;
++import java.util.stream.IntStream;
++import jdk.incubator.vector.Float16;
++import static jdk.incubator.vector.Float16.*;
++
++public class ScalarFloat16OperationsTest {
++    static final int SIZE = 65504;
++    static Random r = jdk.test.lib.Utils.getRandomInstance();
++    static final int INVOC_COUNT = Integer.getInteger("jdk.incubator.vector.test.loop-iterations", 100);
++
++    @DataProvider
++    public static Object[][] unaryOpProvider() {
++        Float16 [] input = new Float16[SIZE];
++        Float16 [] special_input = {
++            Float16.MAX_VALUE, Float16.MIN_VALUE, Float16.MIN_NORMAL, Float16.POSITIVE_INFINITY,
++            Float16.NEGATIVE_INFINITY, Float16.valueOf(0.0f), Float16.valueOf(-0.0f), Float16.NaN
++        };
++
++        // Input array covers entire Float16 value range
++        IntStream.range(0, input.length).forEach(i -> {input[i] = valueOf(i);});
++
++        return new Object[][] {
++            {input},
++            {special_input}
++        };
++    }
++
++    @DataProvider
++    public static Object[][] binaryOpProvider() {
++        Float16 [] input1 = new Float16[SIZE];
++        Float16 [] input2 = new Float16[SIZE];
++        Float16 [] special_input = {
++            Float16.MAX_VALUE, Float16.MIN_VALUE, Float16.MIN_NORMAL, Float16.POSITIVE_INFINITY,
++            Float16.NEGATIVE_INFINITY, Float16.valueOf(0.0f), Float16.valueOf(-0.0f), Float16.NaN
++        };
++
++        // Input arrays covers entire Float16 value range interspersed with special values.
++        IntStream.range(0, input1.length).forEach(i -> {input1[i] = valueOf(i);});
++        IntStream.range(0, input2.length).forEach(i -> {input2[i] = valueOf(i);});
++
++        for (int i = 0; i < special_input.length; i += 256) {
++            input1[r.nextInt(input1.length)] = special_input[i];
++            input2[r.nextInt(input2.length)] = special_input[i];
++        }
++
++        return new Object[][] {
++            {input1, input2},
++            {special_input, special_input},
++        };
++    }
++
++    @DataProvider
++    public static Object[][] ternaryOpProvider() {
++        Float16 [] input1 = new Float16[SIZE];
++        Float16 [] input2 = new Float16[SIZE];
++        Float16 [] input3 = new Float16[SIZE];
++        Float16 [] special_input = {
++            Float16.MAX_VALUE, Float16.MIN_VALUE, Float16.MIN_NORMAL, Float16.POSITIVE_INFINITY,
++            Float16.NEGATIVE_INFINITY, Float16.valueOf(0.0f), Float16.valueOf(-0.0f), Float16.NaN
++        };
++
++        // Input arrays covers entire Float16 value range interspersed with special values.
++        IntStream.range(0, input1.length).forEach(i -> {input1[i] = valueOf(i);});
++        IntStream.range(0, input2.length).forEach(i -> {input2[i] = valueOf(i);});
++        IntStream.range(0, input3.length).forEach(i -> {input3[i] = valueOf(i);});
++        for (int i = 0; i < special_input.length; i += 256) {
++            input1[r.nextInt(input1.length)] = special_input[i];
++            input2[r.nextInt(input2.length)] = special_input[i];
++            input3[r.nextInt(input3.length)] = special_input[i];
++        }
++
++        return new Object[][] {
++            {input1, input2, input3},
++            {special_input, special_input, special_input},
++        };
++    }
++
++    interface FUnOp1 {
++        Float16 apply(Float16 a);
++    }
++
++    interface FUnOp2 {
++        boolean apply(Float16 a);
++    }
++
++    static void assertArraysEquals(Float16[] r, Float16[] a, FUnOp1 f) {
++        int i = 0;
++        try {
++            for (; i < a.length; i++) {
++                Assert.assertEquals(r[i], f.apply(a[i]));
++            }
++        } catch (AssertionError e) {
++            Assert.assertEquals(r[i], f.apply(a[i]), "at index #" + i + ", input = " + a[i]);
++        }
++    }
++
++    static void assertArraysEquals(boolean[] r, Float16[] a, FUnOp2 f) {
++        int i = 0;
++        try {
++            for (; i < a.length; i++) {
++                Assert.assertEquals(r[i], f.apply(a[i]));
++            }
++        } catch (AssertionError e) {
++            Assert.assertEquals(r[i], f.apply(a[i]), "at index #" + i + ", input = " + a[i]);
++        }
++    }
++
++    interface FBinOp {
++        Float16 apply(Float16 a, Float16 b);
++    }
++
++    static void assertArraysEquals(Float16[] r, Float16[] a, Float16[] b, FBinOp f) {
++        int i = 0;
++        try {
++            for (; i < r.length; i++) {
++                Assert.assertEquals(r[i], f.apply(a[i], b[i]));
++            }
++        } catch (AssertionError e) {
++            Assert.assertEquals(r[i], f.apply(a[i], b[i]), "at index #" + i + ", input1 = " + a[i] + ", input2 = " + b[i]);
++        }
++    }
++
++    interface FTernOp {
++        Float16 apply(Float16 a, Float16 b, Float16 c);
++    }
++
++    static void assertArraysEquals(Float16[] r, Float16[] a, Float16[] b, Float16[] c, FTernOp f) {
++        int i = 0;
++        try {
++            for (; i < r.length; i++) {
++                Assert.assertEquals(r[i], f.apply(a[i], b[i], c[i]));
++            }
++        } catch (AssertionError e) {
++            Assert.assertEquals(r[i], f.apply(a[i], b[i], c[i]), "at index #" + i + ", input1 = " + a[i] + ", input2 = " + b[i] + ", input3 = " + c[i]);
++        }
++    }
++    
++
++    @Test(dataProvider = "unaryOpProvider")
++    public static void absTest(Object input) {
++        Float16 [] farr =  (Float16[])input;
++        Float16 [] res  = new Float16[farr.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = abs(farr[i]); 
++            }
++        }
++        assertArraysEquals(res, farr, (fp16) -> valueOf(Math.abs(fp16.floatValue())));  
++    }
++
++    @Test(dataProvider = "unaryOpProvider")
++    public static void negTest(Object input) {
++        Float16 [] farr =  (Float16[])input;
++        Float16 [] res  = new Float16[farr.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = negate(farr[i]); 
++            }
++        }
++        assertArraysEquals(res, farr, (fp16) -> shortBitsToFloat16((short)(float16ToRawShortBits(fp16) ^ (short)0x0000_8000)));  
++    }
++
++    @Test(dataProvider = "unaryOpProvider")
++    public static void sqrtTest(Object input) {
++        Float16 [] farr =  (Float16[])input;
++        Float16 [] res  = new Float16[farr.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = sqrt(farr[i]);
++            }
++        }
++        assertArraysEquals(res, farr, (fp16) -> valueOf(Math.sqrt(fp16.floatValue())));  
++    }
++
++    @Test(dataProvider = "unaryOpProvider")
++    public static void isInfiniteTest(Object input) {
++        Float16 [] farr =  (Float16[])input;
++        boolean [] res  = new boolean[farr.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = isInfinite(farr[i]);
++            }
++        }
++        assertArraysEquals(res, farr, (fp16) ->  Float.isInfinite(fp16.floatValue()));  
++    }
++
++    @Test(dataProvider = "unaryOpProvider")
++    public static void isFiniteTest(Object input) {
++        Float16 [] farr =  (Float16[])input;
++        boolean [] res  = new boolean[farr.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = isFinite(farr[i]);
++            }
++        }
++        assertArraysEquals(res, farr, (fp16) ->  Float.isFinite(fp16.floatValue()));  
++    }
++
++    @Test(dataProvider = "unaryOpProvider")
++    public static void isNaNTest(Object input) {
++        Float16 [] farr =  (Float16[])input;
++        boolean [] res  = new boolean[farr.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = isNaN(farr[i]);
++            }
++        }
++        assertArraysEquals(res, farr, (fp16) ->  Float.isNaN(fp16.floatValue()));  
++    }
++
++    @Test(dataProvider = "binaryOpProvider")
++    public static void addTest(Object input1, Object input2) {
++        Float16 [] farr1 =  (Float16[])input1;
++        Float16 [] farr2 =  (Float16[])input2;
++
++        Float16 [] res  = new Float16[farr1.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = add(farr1[i], farr2[i]);
++            }
++        }
++        assertArraysEquals(res, farr1, farr2, (fp16_val1, fp16_val2) ->  valueOf(fp16_val1.floatValue() + fp16_val2.floatValue()));  
++    }
++
++    @Test(dataProvider = "binaryOpProvider")
++    public static void subtractTest(Object input1, Object input2) {
++        Float16 [] farr1 =  (Float16[])input1;
++        Float16 [] farr2 =  (Float16[])input2;
++
++        Float16 [] res  = new Float16[farr1.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = subtract(farr1[i], farr2[i]);
++            }
++        }
++        assertArraysEquals(res, farr1, farr2, (fp16_val1, fp16_val2) ->  valueOf(fp16_val1.floatValue() - fp16_val2.floatValue()));  
++    }
++
++    @Test(dataProvider = "binaryOpProvider")
++    public static void multiplyTest(Object input1, Object input2) {
++        Float16 [] farr1 =  (Float16[])input1;
++        Float16 [] farr2 =  (Float16[])input2;
++
++        Float16 [] res  = new Float16[farr1.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = multiply(farr1[i], farr2[i]);
++            }
++        }
++        assertArraysEquals(res, farr1, farr2, (fp16_val1, fp16_val2) ->  valueOf(fp16_val1.floatValue() * fp16_val2.floatValue()));  
++    }
++
++    @Test(dataProvider = "binaryOpProvider")
++    public static void divideTest(Object input1, Object input2) {
++        Float16 [] farr1 =  (Float16[])input1;
++        Float16 [] farr2 =  (Float16[])input2;
++
++        Float16 [] res  = new Float16[farr1.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = divide(farr1[i], farr2[i]);
++            }
++        }
++        assertArraysEquals(res, farr1, farr2, (fp16_val1, fp16_val2) ->  valueOf(fp16_val1.floatValue() / fp16_val2.floatValue()));  
++    }
++
++    @Test(dataProvider = "binaryOpProvider")
++    public static void maxTest(Object input1, Object input2) {
++        Float16 [] farr1 =  (Float16[])input1;
++        Float16 [] farr2 =  (Float16[])input2;
++
++        Float16 [] res  = new Float16[farr1.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = max(farr1[i], farr2[i]);
++            }
++        }
++        assertArraysEquals(res, farr1, farr2,  (fp16_val1, fp16_val2) ->  valueOf(Float.max(fp16_val1.floatValue(), fp16_val2.floatValue())));  
++    }
++
++    @Test(dataProvider = "binaryOpProvider")
++    public static void minTest(Object input1, Object input2) {
++        Float16 [] farr1 =  (Float16[])input1;
++        Float16 [] farr2 =  (Float16[])input2;
++
++        Float16 [] res  = new Float16[farr1.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = min(farr1[i], farr2[i]);
++            }
++        }
++        assertArraysEquals(res, farr1, farr2, (fp16_val1, fp16_val2) ->  valueOf(Float.min(fp16_val1.floatValue(), fp16_val2.floatValue())));  
++    }
++
++    @Test(dataProvider = "ternaryOpProvider")
++    public static void minTest(Object input1, Object input2, Object input3) {
++        Float16 [] farr1 =  (Float16[])input1;
++        Float16 [] farr2 =  (Float16[])input2;
++        Float16 [] farr3 =  (Float16[])input2;
++
++        Float16 [] res  = new Float16[farr1.length];
++        for (int ic = 0; ic < INVOC_COUNT; ic++) { 
++            for (int i = 0; i < res.length; i++) {
++                res[i] = fma(farr1[i], farr2[i], farr3[i]);
++            }
++        }
++        assertArraysEquals(res, farr1, farr2, farr3, (fp16_val1, fp16_val2, fp16_val3) ->  valueOf(Math.fma(fp16_val1.floatValue(), fp16_val2.floatValue(), fp16_val3.floatValue())));  
++    }
++}
+diff --git a/test/jdk/jdk/incubator/vector/float16/Float16ReductionOperations.java b/test/jdk/jdk/incubator/vector/float16/Float16ReductionOperations.java
+deleted file mode 100644
+index 94469d64560..00000000000
+--- a/test/jdk/jdk/incubator/vector/float16/Float16ReductionOperations.java
++++ /dev/null
+@@ -1,139 +0,0 @@
+-/*
+- * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
+- * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+- *
+- * This code is free software; you can redistribute it and/or modify it
+- * under the terms of the GNU General Public License version 2 only, as
+- * published by the Free Software Foundation.
+- *
+- * This code is distributed in the hope that it will be useful, but WITHOUT
+- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+- * version 2 for more details (a copy is included in the LICENSE file that
+- * accompanied this code).
+- *
+- * You should have received a copy of the GNU General Public License version
+- * 2 along with this work; if not, write to the Free Software Foundation,
+- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+- *
+- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+- * or visit www.oracle.com if you need additional information or have any
+- * questions.
+- */
+-
+-/*
+- * @test
+- * @bug 8308363
+- * @summary Test Float16 reduction operations.
+- * @modules jdk.incubator.vector
+- * @compile Float16ReductionOperations.java
+- * @run main/othervm -XX:-TieredCompilation -Xbatch Float16ReductionOperations
+- */
+-
+-import java.util.Random;
+-
+-import jdk.incubator.vector.Float16;
+-import static jdk.incubator.vector.Float16.*;
+-
+-public class Float16ReductionOperations {
+-
+-    public static Random r = new Random(1024);
+-
+-    public static short test_reduction_add_constants() {
+-        Float16 hf0 = shortBitsToFloat16((short)0);
+-        Float16 hf1 = shortBitsToFloat16((short)15360);
+-        Float16 hf2 = shortBitsToFloat16((short)16384);
+-        Float16 hf3 = shortBitsToFloat16((short)16896);
+-        Float16 hf4 = shortBitsToFloat16((short)17408);
+-        return float16ToRawShortBits(add(add(add(add(hf0, hf1), hf2), hf3), hf4));
+-    }
+-
+-    public static short expected_reduction_add_constants() {
+-        Float16 hf0 = shortBitsToFloat16((short)0);
+-        Float16 hf1 = shortBitsToFloat16((short)15360);
+-        Float16 hf2 = shortBitsToFloat16((short)16384);
+-        Float16 hf3 = shortBitsToFloat16((short)16896);
+-        Float16 hf4 = shortBitsToFloat16((short)17408);
+-        return Float.floatToFloat16(Float.float16ToFloat(float16ToRawShortBits(hf0)) +
+-                                    Float.float16ToFloat(float16ToRawShortBits(hf1)) +
+-                                    Float.float16ToFloat(float16ToRawShortBits(hf2)) +
+-                                    Float.float16ToFloat(float16ToRawShortBits(hf3)) +
+-                                    Float.float16ToFloat(float16ToRawShortBits(hf4)));
+-    }
+-
+-    public static boolean compare(short actual, short expected) {
+-        return !((0xFFFF & actual) == (0xFFFF & expected));
+-    }
+-
+-    public static void test_reduction_constants(char oper) {
+-        short actual = 0;
+-        short expected = 0;
+-        switch(oper) {
+-            case '+' ->  {
+-                             actual = test_reduction_add_constants();
+-                             expected = expected_reduction_add_constants();
+-                         }
+-            default  ->  throw new AssertionError("Unsupported Operation.");
+-        }
+-        if (compare(actual,expected)) {
+-            throw new AssertionError("Result mismatch!, expected = " + expected + " actual = " + actual);
+-        }
+-    }
+-
+-    public static short test_reduction_add(short [] arr) {
+-        Float16 res = shortBitsToFloat16((short)0);
+-        for (int i = 0; i < arr.length; i++) {
+-            res = add(res, shortBitsToFloat16(arr[i]));
+-        }
+-        return float16ToRawShortBits(res);
+-    }
+-
+-    public static short expected_reduction_add(short [] arr) {
+-        short res = 0;
+-        for (int i = 0; i < arr.length; i++) {
+-            res = Float.floatToFloat16(Float.float16ToFloat(res) + Float.float16ToFloat(arr[i]));
+-        }
+-        return res;
+-    }
+-
+-    public static void test_reduction(char oper, short [] arr) {
+-        short actual = 0;
+-        short expected = 0;
+-        switch(oper) {
+-            case '+' ->  {
+-                             actual = test_reduction_add(arr);
+-                             expected = expected_reduction_add(arr);
+-                         }
+-            default  ->  throw new AssertionError("Unsupported Operation.");
+-        }
+-        if (compare(actual,expected)) {
+-            throw new AssertionError("Result mismatch!, expected = " + expected + " actual = " + actual);
+-        }
+-    }
+-
+-    public static short [] get_float16_array(int size) {
+-        short [] arr = new short[size];
+-        for (int i = 0; i < arr.length; i++) {
+-            arr[i] = Float.floatToFloat16(r.nextFloat());
+-        }
+-        return arr;
+-    }
+-
+-    public static void main(String [] args) {
+-        int res = 0;
+-        short [] input = get_float16_array(1024);
+-        short [] special_values = {
+-              32256,          // NAN
+-              31744,          // +Inf
+-              (short)-1024,   // -Inf
+-              0,              // +0.0
+-              (short)-32768,  // -0.0
+-        };
+-        for (int i = 0;  i < 1000; i++) {
+-            test_reduction('+', input);
+-            test_reduction('+', special_values);
+-            test_reduction_constants('+');
+-        }
+-        System.out.println("PASS");
+-    }
+-}
+diff --git a/test/jdk/jdk/incubator/vector/float16/Float16ScalarOperations.java b/test/jdk/jdk/incubator/vector/float16/Float16ScalarOperations.java
+deleted file mode 100644
+index 696e66b4203..00000000000
+--- a/test/jdk/jdk/incubator/vector/float16/Float16ScalarOperations.java
++++ /dev/null
+@@ -1,184 +0,0 @@
+-/*
+- * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
+- * Copyright (c) 2024, Arm Limited. All rights reserved.
+- * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+- *
+- * This code is free software; you can redistribute it and/or modify it
+- * under the terms of the GNU General Public License version 2 only, as
+- * published by the Free Software Foundation.
+- *
+- * This code is distributed in the hope that it will be useful, but WITHOUT
+- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+- * version 2 for more details (a copy is included in the LICENSE file that
+- * accompanied this code).
+- *
+- * You should have received a copy of the GNU General Public License version
+- * 2 along with this work; if not, write to the Free Software Foundation,
+- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+- *
+- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+- * or visit www.oracle.com if you need additional information or have any
+- * questions.
+- */
+-
+-/*
+- * @test
+- * @bug 8308363 8336406 8339473
+- * @summary Verify FP16 unary, binary and ternary operations
+- * @modules jdk.incubator.vector
+- * @compile Float16ScalarOperations.java
+- * @run main/othervm -XX:-TieredCompilation -Xbatch Float16ScalarOperations
+- */
+-
+-import java.util.Random;
+-import java.util.stream.IntStream;
+-import jdk.incubator.vector.Float16;
+-import static jdk.incubator.vector.Float16.*;
+-
+-public class Float16ScalarOperations {
+-
+-    public static final int SIZE = 65504;
+-    public static Random r = new Random(SIZE);
+-    public static final Float16 ONE = valueOf(1.0);
+-    public static final Float16 ZERO = valueOf(0.0);
+-    public static final int EXP = 0x7c00; // Mask for Float16 Exponent in a NaN (which is all ones)
+-    public static final int SIGN_BIT = 0x8000; // Mask for sign bit for Float16
+-
+-    public static Float16 actual_value(String oper, Float16... val) {
+-        switch (oper) {
+-            case "abs"        : return abs(val[0]);
+-            case "neg"        : return negate(val[0]);
+-            case "sqrt"       : return sqrt(val[0]);
+-            case "isInfinite" : return isInfinite(val[0]) ? ONE : ZERO;
+-            case "isFinite"   : return isFinite(val[0]) ? ONE : ZERO;
+-            case "isNaN"      : return isNaN(val[0]) ? ONE : ZERO;
+-            case "+"          : return add(val[0], val[1]);
+-            case "-"          : return subtract(val[0], val[1]);
+-            case "*"          : return multiply(val[0], val[1]);
+-            case "/"          : return divide(val[0], val[1]);
+-            case "min"        : return min(val[0], val[1]);
+-            case "max"        : return max(val[0], val[1]);
+-            case "fma"        : return fma(val[0], val[1], val[2]);
+-            default           : throw new AssertionError("Unsupported Operation!");
+-        }
+-    }
+-
+-    public static Float16 expected_value(String oper, Float16... val) {
+-        switch (oper) {
+-            case "abs"        : return valueOf(Math.abs(val[0].floatValue()));
+-            case "neg"        : return shortBitsToFloat16((short)(float16ToRawShortBits(val[0]) ^ (short)0x0000_8000));
+-            case "sqrt"       : return valueOf(Math.sqrt(val[0].floatValue()));
+-            case "isInfinite" : return Float.isInfinite(val[0].floatValue()) ? ONE : ZERO;
+-            case "isFinite"   : return Float.isFinite(val[0].floatValue()) ? ONE : ZERO;
+-            case "isNaN"      : return Float.isNaN(val[0].floatValue()) ? ONE : ZERO;
+-            case "+"          : return valueOf(val[0].floatValue() + val[1].floatValue());
+-            case "-"          : return valueOf(val[0].floatValue() - val[1].floatValue());
+-            case "*"          : return valueOf(val[0].floatValue() * val[1].floatValue());
+-            case "/"          : return valueOf(val[0].floatValue() / val[1].floatValue());
+-            case "min"        : return valueOf(Float.min(val[0].floatValue(), val[1].floatValue()));
+-            case "max"        : return valueOf(Float.max(val[0].floatValue(), val[1].floatValue()));
+-            case "fma"        : return valueOf(Math.fma(val[0].doubleValue(), val[1].doubleValue(), val[2].doubleValue()));
+-            default           : throw new AssertionError("Unsupported Operation!");
+-        }
+-    }
+-
+-    public static void validate(String oper, Float16... input) {
+-        int arity = input.length;
+-
+-        Float16 actual = actual_value(oper, input);
+-        Float16 expected = expected_value(oper, input);
+-
+-        if (!actual.equals(expected)) {
+-            switch (arity) {
+-                case 1:
+-                    throw new AssertionError("Test Failed: " + oper + "(" + float16ToRawShortBits(input[0]) + ") : " + "(actual:" + actual + ") != (" + "expected:" + expected);
+-                case 2:
+-                     throw new AssertionError("Test Failed: " + oper + "(" + float16ToRawShortBits(input[0]) + ", " + float16ToRawShortBits(input[1]) + ") : " + "(actual:" + actual + ") != (" + "expected:" + expected);
+-                case 3:
+-                     throw new AssertionError("Test failed: " + oper + "(" + float16ToRawShortBits(input[0]) + ", " + float16ToRawShortBits(input[1]) + ", " + float16ToRawShortBits(input[2]) + ") : " + "(actual:" + actual + ") != (" + "expected:" + expected);
+-                default:
+-                     throw new AssertionError("Incorrect operation (" + oper + ")  arity = " + arity);
+-             }
+-        }
+-    }
+-
+-    public static void test_unary_operations(Float16 [] inp) {
+-        for (int i = 0; i < inp.length; i++) {
+-            validate("abs", inp[i]);
+-            validate("neg", inp[i]);
+-            validate("sqrt", inp[i]);
+-            validate("isInfinite", inp[i]);
+-            validate("isFinite", inp[i]);
+-            validate("isNaN", inp[i]);
+-        }
+-    }
+-
+-    public static void test_binary_operations(Float16 [] inp1, Float16 inp2[]) {
+-        for (int i = 0; i < inp1.length; i++) {
+-            validate("+", inp1[i], inp2[i]);
+-            validate("-", inp1[i], inp2[i]);
+-            validate("*", inp1[i], inp2[i]);
+-            validate("/", inp1[i], inp2[i]);
+-        }
+-    }
+-
+-    public static void test_ternary_operations(Float16 [] inp1, Float16 inp2[], Float16 inp3[]) {
+-        for (int i = 0; i < inp1.length; i++) {
+-            validate("fma", inp1[i], inp2[i], inp3[i]);
+-        }
+-    }
+-
+-    public static void test_fin_inf_nan() {
+-        Float16 pos_nan, neg_nan;
+-        // Starting from 1 as the significand in a NaN value is always non-zero
+-        for (int i = 1; i < 0x03ff; i++) {
+-            pos_nan = shortBitsToFloat16((short)(EXP | i));
+-            neg_nan = shortBitsToFloat16((short)(float16ToRawShortBits(pos_nan) | SIGN_BIT));
+-
+-            // Test isFinite, isInfinite, isNaN for all positive NaN values
+-            validate("isInfinite", pos_nan);
+-            validate("isFinite", pos_nan);
+-            validate("isNaN", pos_nan);
+-
+-           // Test isFinite, isinfinite, isNaN for all negative NaN values
+-            validate("isInfinite", neg_nan);
+-            validate("isFinite", neg_nan);
+-            validate("isNaN", neg_nan);
+-        }
+-    }
+-
+-    public static void main(String [] args) {
+-        Float16 [] input1 = new Float16[SIZE];
+-        Float16 [] input2 = new Float16[SIZE];
+-        Float16 [] input3 = new Float16[SIZE];
+-
+-        // input1, input2, input3 contain the entire value range for FP16
+-        IntStream.range(0, input1.length).forEach(i -> {input1[i] = valueOf((float)i);});
+-        IntStream.range(0, input2.length).forEach(i -> {input2[i] = valueOf((float)i);});
+-        IntStream.range(0, input2.length).forEach(i -> {input3[i] = valueOf((float)i);});
+-
+-        Float16 [] special_values = {
+-              NaN,                 // NAN
+-              POSITIVE_INFINITY,   // +Inf
+-              NEGATIVE_INFINITY,   // -Inf
+-              valueOf(0.0),        // +0.0
+-              valueOf(-0.0),       // -0.0
+-        };
+-
+-        for (int i = 0;  i < 1000; i++) {
+-            test_unary_operations(input1);
+-            test_binary_operations(input1, input2);
+-            test_ternary_operations(input1, input2, input3);
+-
+-            test_unary_operations(special_values);
+-            test_binary_operations(special_values, input1);
+-            test_ternary_operations(special_values, input1, input2);
+-
+-            // The above functions test isFinite, isInfinite and isNaN for all possible finite FP16 values
+-            // and infinite values. The below method tests these functions for all possible NaN values as well.
+-            test_fin_inf_nan();
+-        }
+-        System.out.println("PASS");
+-    }
+-}
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/Float16OperationsBenchmark.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/Float16OperationsBenchmark.java
+index 17481bbff5d..763c45d3470 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/Float16OperationsBenchmark.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/Float16OperationsBenchmark.java
+@@ -41,6 +41,10 @@
+     short [] vector1;
+     short [] vector2;
+     short [] vector3;
++    boolean [] vectorPredicate;
++
++    static final short f16_one = Float.floatToFloat16(1.0f);
++    static final short f16_two = Float.floatToFloat16(2.0f);
+ 
+     @Setup(Level.Trial)
+     public void BmSetup() {
+@@ -49,6 +53,7 @@ public void BmSetup() {
+         vector1   = new short[vectorDim];
+         vector2   = new short[vectorDim];
+         vector3   = new short[vectorDim];
++        vectorPredicate = new boolean[vectorDim];
+ 
+         IntStream.range(0, vectorDim).forEach(i -> {vector1[i] = Float.floatToFloat16((float)i);});
+         IntStream.range(0, vectorDim).forEach(i -> {vector2[i] = Float.floatToFloat16((float)i);});
+@@ -132,6 +137,53 @@ public boolean isNaNBenchmark() {
+         return res;
+     }
+ 
++    @Benchmark
++    public void isNaNStoreBenchmark() {
++        for (int i = 0; i < vectorDim; i++) {
++            vectorPredicate[i] = Float16.isNaN(shortBitsToFloat16(vector1[i]));
++        }
++    }
++
++
++    @Benchmark
++    public void isNaNCMovBenchmark() {
++        for (int i = 0; i < vectorDim; i++) {
++            vectorRes[i] = Float16.isNaN(shortBitsToFloat16(vector1[i])) ? f16_one : f16_two;
++        }
++    }
++
++
++    @Benchmark
++    public void isInfiniteStoreBenchmark() {
++        for (int i = 0; i < vectorDim; i++) {
++            vectorPredicate[i] = Float16.isInfinite(shortBitsToFloat16(vector1[i]));
++        }
++    }
++
++
++    @Benchmark
++    public void isInfiniteCMovBenchmark() {
++        for (int i = 0; i < vectorDim; i++) {
++            vectorRes[i] = Float16.isInfinite(shortBitsToFloat16(vector1[i])) ? f16_one : f16_two;
++        }
++    }
++
++
++    @Benchmark
++    public void isFiniteStoreBenchmark() {
++        for (int i = 0; i < vectorDim; i++) {
++            vectorPredicate[i] = Float16.isFinite(shortBitsToFloat16(vector1[i]));
++        }
++    }
++
++
++    @Benchmark
++    public void isFiniteCMovBenchmark() {
++        for (int i = 0; i < vectorDim; i++) {
++            vectorRes[i] = Float16.isFinite(shortBitsToFloat16(vector1[i])) ? f16_one : f16_two;
++        }
++    }
++
+     @Benchmark
+     public void maxBenchmark() {
+         for (int i = 0; i < vectorDim; i++) {

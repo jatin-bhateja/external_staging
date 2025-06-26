@@ -1,0 +1,627 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 356688d9b8d..739e216b755 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -7450,6 +7450,17 @@ void Assembler::evaddph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+   emit_int16(0x58, (0xC0 | encode));
+ }
+ 
++void Assembler::evaddph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x58);
++  emit_operand(dst, src, 0);
++}
++
+ void Assembler::evsubph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -7458,6 +7469,17 @@ void Assembler::evsubph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+   emit_int16(0x5C, (0xC0 | encode));
+ }
+ 
++void Assembler::evsubph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x5C);
++  emit_operand(dst, src, 0);
++}
++
+ void Assembler::evmulph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -7466,6 +7488,17 @@ void Assembler::evmulph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+   emit_int16(0x59, (0xC0 | encode));
+ }
+ 
++void Assembler::evmulph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x59);
++  emit_operand(dst, src, 0);
++}
++
+ void Assembler::evminph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -7474,6 +7507,17 @@ void Assembler::evminph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+   emit_int16(0x5D, (0xC0 | encode));
+ }
+ 
++void Assembler::evminph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x5D);
++  emit_operand(dst, src, 0);
++}
++
+ void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -7482,6 +7526,17 @@ void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+   emit_int16(0x5F, (0xC0 | encode));
+ }
+ 
++void Assembler::evmaxph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x5F);
++  emit_operand(dst, src, 0);
++}
++
+ void Assembler::evdivph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
+   InstructionAttr attributes(vector_len, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -7490,6 +7545,55 @@ void Assembler::evdivph(XMMRegister dst, XMMRegister nds, XMMRegister src, int v
+   emit_int16(0x5E, (0xC0 | encode));
+ }
+ 
++void Assembler::evdivph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FVM, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x5E);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evsqrtph(XMMRegister dst, XMMRegister src1, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src1->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x51, (0xC0 | encode));
++}
++
++void Assembler::evsqrtph(XMMRegister dst, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, 0, dst->encoding(), VEX_SIMD_NONE, VEX_OPCODE_MAP5, &attributes);
++  emit_int8(0x51);
++  emit_operand(dst, src, 0);
++}
++
++void Assembler::evfmadd132ph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP6, &attributes);
++  emit_int16(0x98, (0xC0 | encode));
++}
++
++void Assembler::evfmadd132ph(XMMRegister dst, XMMRegister nds, Address src, int vector_len) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionMark im(this);
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  attributes.set_address_attributes(/* tuple_type */ EVEX_FV, /* input_size_in_bits */ EVEX_NObit);
++  vex_prefix(src, nds->encoding(), dst->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP6, &attributes);
++  emit_int8(0x98);
++  emit_operand(dst, src, 0);
++}
++
+ void Assembler::eaddsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
+   assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
+   InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+@@ -7538,6 +7642,22 @@ void Assembler::eminsh(XMMRegister dst, XMMRegister nds, XMMRegister src) {
+   emit_int16(0x5D, (0xC0 | encode));
+ }
+ 
++void Assembler::esqrtsh(XMMRegister dst, XMMRegister src) {
++  assert(VM_Version::supports_avx512_fp16(), "requires AVX512-FP16");
++  InstructionAttr attributes(AVX_128bit, false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_MAP5, &attributes);
++  emit_int16(0x51, (0xC0 | encode));
++}
++
++void Assembler::efmadd132sh(XMMRegister dst, XMMRegister src1, XMMRegister src2) {
++  assert(VM_Version::supports_avx512_fp16(), "");
++  InstructionAttr attributes(AVX_128bit, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_66, VEX_OPCODE_MAP6, &attributes);
++  emit_int16((unsigned char)0x99, (0xC0 | encode));
++}
++
+ void Assembler::psubb(XMMRegister dst, XMMRegister src) {
+   NOT_LP64(assert(VM_Version::supports_sse2(), ""));
+   InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 9dcdfa154fc..b2aad62c191 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -549,6 +549,7 @@ class Assembler : public AbstractAssembler  {
+     VEX_OPCODE_0F_38 = 0x2,
+     VEX_OPCODE_0F_3A = 0x3,
+     VEX_OPCODE_MAP5  = 0x5,
++    VEX_OPCODE_MAP6  = 0x6,
+     VEX_OPCODE_MASK  = 0x1F
+   };
+ 
+@@ -2412,18 +2413,33 @@ class Assembler : public AbstractAssembler  {
+   void vpaddw(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void vpaddd(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void vpaddq(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++
++  // FP16 instructions
+   void eaddsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
+   void esubsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
+   void emulsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
+   void edivsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
+   void emaxsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
+   void eminsh(XMMRegister dst, XMMRegister nds, XMMRegister src);
++  void esqrtsh(XMMRegister dst, XMMRegister src);
++  void efmadd132sh(XMMRegister dst, XMMRegister src1, XMMRegister src2);
++
+   void evaddph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evaddph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void evsubph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evsubph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void evdivph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evdivph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void evmulph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evmulph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void evminph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evminph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
+   void evmaxph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evmaxph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evfmadd132ph(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evfmadd132ph(XMMRegister dst, XMMRegister nds, Address src, int vector_len);
++  void evsqrtph(XMMRegister dst, XMMRegister src1, int vector_len);
++  void evsqrtph(XMMRegister dst, Address src1, int vector_len);
+ 
+   // Leaf level assembler routines for masked operations.
+   void evpaddb(XMMRegister dst, KRegister mask, XMMRegister nds, XMMRegister src, bool merge, int vector_len);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 36cda17b6ca..bbe383e1359 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -6547,3 +6547,15 @@ void C2_MacroAssembler::evfp16ph(int opcode, XMMRegister dst, XMMRegister src1,
+     default: assert(false, "%s", NodeClassNames[opcode]); break;
+   }
+ }
++
++void C2_MacroAssembler::evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc) {
++  switch(opcode) {
++    case Op_AddVHF: evaddph(dst, src1, src2, vlen_enc); break;
++    case Op_SubVHF: evsubph(dst, src1, src2, vlen_enc); break;
++    case Op_MulVHF: evmulph(dst, src1, src2, vlen_enc); break;
++    case Op_DivVHF: evdivph(dst, src1, src2, vlen_enc); break;
++    case Op_MaxVHF: evminph(dst, src1, src2, vlen_enc); break;
++    case Op_MinVHF: evmaxph(dst, src1, src2, vlen_enc); break;
++    default: assert(false, "%s", NodeClassNames[opcode]); break;
++  }
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index b3ef0ebcdda..79635500895 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -505,4 +505,6 @@
+ 
+   void evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc);
+ 
++  void evfp16ph(int opcode, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc);
++
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 9208fec81ac..30c935f9c7c 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1463,14 +1463,18 @@ bool Matcher::match_rule_supported(int opcode) {
+         return false;
+       }
+       break;
++    case Op_AbsHF:
+     case Op_AddHF:
+-    case Op_SubHF:
+-    case Op_MulHF:
+     case Op_DivHF:
++    case Op_FmaHF:
+     case Op_MaxHF:
+     case Op_MinHF:
++    case Op_MulHF:
++    case Op_NegHF:
+     case Op_ReinterpretS2HF:
+     case Op_ReinterpretHF2S:
++    case Op_SubHF:
++    case Op_SqrtHF:
+       if (!VM_Version::supports_avx512_fp16()) {
+         return false;
+       }
+@@ -1739,12 +1743,16 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+   //   * 128bit vroundpd instruction is present only in AVX1
+   int size_in_bits = vlen * type2aelembytes(bt) * BitsPerByte;
+   switch (opcode) {
++    case Op_AbsVHF:
+     case Op_AddVHF:
+-    case Op_SubVHF:
+-    case Op_MulVHF:
+     case Op_DivVHF:
++    case Op_FmaVHF:
+     case Op_MaxVHF:
+     case Op_MinVHF:
++    case Op_MulVHF:
++    case Op_NegVHF:
++    case Op_SubVHF:
++    case Op_SqrtVHF:
+       if (!VM_Version::supports_avx512_fp16()) {
+         return false;
+       }
+@@ -10152,7 +10160,7 @@ instruct DoubleClassCheck_reg_reg_vfpclass(rRegI dst, regD src, kReg ktmp, rFlag
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct reinterpretS2H (regF dst, rRegI src)
++instruct reinterpretS2H(regF dst, rRegI src)
+ %{
+   match(Set dst (ReinterpretS2HF src));
+   format %{ "vmovw $dst, $src" %}
+@@ -10162,7 +10170,7 @@ instruct reinterpretS2H (regF dst, rRegI src)
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct convF2HFAndS2HF (regF dst, regF src)
++instruct convF2HFAndS2HF(regF dst, regF src)
+ %{
+   match(Set dst (ReinterpretS2HF (ConvF2HF src)));
+   format %{ "convF2HFAndS2HF $dst, $src" %}
+@@ -10172,7 +10180,7 @@ instruct convF2HFAndS2HF (regF dst, regF src)
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct reinterpretH2S (rRegI dst, regF src)
++instruct reinterpretH2S(rRegI dst, regF src)
+ %{
+   match(Set dst (ReinterpretHF2S src));
+   format %{ "vmovw $dst, $src" %}
+@@ -10182,14 +10190,51 @@ instruct reinterpretH2S (rRegI dst, regF src)
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct fp16_scalar_ops (regF dst, regF src1, regF src2)
++instruct scalar_abs_fp16(regF dst, regF src, rRegI rtmp, vec xtmp)
++%{
++  match(Set dst (AbsHF src));
++  effect(TEMP rtmp, TEMP xtmp);
++  format %{ "eabssh $dst, $src !\t using $rtmp and $xtmp as TEMP" %}
++  ins_encode %{
++    __ movl($rtmp$$Register, 0x7FFF);
++    __ vmovw($xtmp$$XMMRegister, $rtmp$$Register);
++    __ vpand($dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct scalar_neg_fp16(regF dst, regF src, rRegI rtmp, vec xtmp)
++%{
++  match(Set dst (NegHF src));
++  effect(TEMP rtmp, TEMP xtmp);
++  format %{ "enegsh $dst, $src !\t using $rtmp and $xtmp as TEMP" %}
++  ins_encode %{
++    __ movl($rtmp$$Register, 0x8000);
++    __ vmovw($xtmp$$XMMRegister, $rtmp$$Register);
++    __ vpxor($dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, Assembler::AVX_128bit);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct scalar_sqrt_fp16(regF dst, regF src)
++%{
++  match(Set dst (SqrtHF src));
++  format %{ "esqrtsh $dst, $src" %}
++  ins_encode %{
++    int opcode = this->ideal_Opcode();
++    __ esqrtsh($dst$$XMMRegister, $src$$XMMRegister);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct scalar_binOps_fp16(regF dst, regF src1, regF src2)
+ %{
+   match(Set dst (AddHF src1 src2));
+-  match(Set dst (SubHF src1 src2));
+-  match(Set dst (MulHF src1 src2));
+   match(Set dst (DivHF src1 src2));
+-  match(Set dst (MinHF src1 src2));
+   match(Set dst (MaxHF src1 src2));
++  match(Set dst (MinHF src1 src2));
++  match(Set dst (MulHF src1 src2));
++  match(Set dst (SubHF src1 src2));
+   format %{ "efp16sh $dst, $src1, $src2" %}
+   ins_encode %{
+     int opcode = this->ideal_Opcode();
+@@ -10198,15 +10243,114 @@ instruct fp16_scalar_ops (regF dst, regF src1, regF src2)
+   ins_pipe(pipe_slow);
+ %}
+ 
+-instruct fp16_vector_ops (vec dst, vec src1, vec src2)
++instruct scalar_fma_fp16(regF dst, regF src1, regF src2)
++%{
++  match(Set dst (FmaHF  src2 (Binary dst src1)));
++  effect(DEF dst);
++  format %{ "evfmash $dst, $src1, $src2\t# $dst = $dst * $src1 + $src2 fma packedH" %}
++  ins_cost(150);
++  ins_encode %{
++    __ efmadd132sh($dst$$XMMRegister, $src2$$XMMRegister, $src1$$XMMRegister);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vector_abs_fp16_reg(vec dst, vec src, rRegI rtmp, vec xtmp)
++%{
++  match(Set dst (AbsVHF src));
++  format %{ "evabsph_reg $dst, $src !\t using $rtmp and $xtmp as TEMP" %}
++  effect(TEMP rtmp, TEMP xtmp);
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ movl($rtmp$$Register, 0x7FFF7FFF);
++    __ vpbroadcast(T_FLOAT, $xtmp$$XMMRegister, $rtmp$$Register, vlen_enc);
++    __ vpand($dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_abs_fp16_mem(vec dst, memory src, rRegI rtmp, vec xtmp)
++%{
++  match(Set dst (AbsVHF src));
++  effect(TEMP rtmp, TEMP xtmp);
++  format %{ "evabsph_reg $dst, $src !\t using $rtmp and $xtmp as TEMP" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ movl($rtmp$$Register, 0x7FFF7FFF);
++    __ vpbroadcast(T_FLOAT, $xtmp$$XMMRegister, $rtmp$$Register, vlen_enc);
++    __ vpand($dst$$XMMRegister, $xtmp$$XMMRegister, $src$$Address, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_neg_fp16_reg(vec dst, vec src, rRegI rtmp, vec xtmp)
++%{
++  match(Set dst (NegVHF src));
++  effect(TEMP rtmp, TEMP xtmp);
++  format %{ "evnegph_reg $dst, $src !\t using $rtmp and $xtmp as TEMP" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ movl($rtmp$$Register, 0x80008000);
++    __ vpbroadcast(T_FLOAT, $xtmp$$XMMRegister, $rtmp$$Register, vlen_enc);
++    __ vpxor($dst$$XMMRegister, $src$$XMMRegister, $xtmp$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_neg_fp16_mem(vec dst, memory src, rRegI rtmp, vec xtmp)
++%{
++  match(Set dst (NegVHF src));
++  effect(TEMP rtmp, TEMP xtmp);
++  format %{ "evnegph_reg $dst, $src !\t using $rtmp and $xtmp as TEMP" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ movl($rtmp$$Register, 0x80008000);
++    __ vpbroadcast(T_FLOAT, $xtmp$$XMMRegister, $rtmp$$Register, vlen_enc);
++    __ vpxor($dst$$XMMRegister, $xtmp$$XMMRegister, $src$$Address, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_sqrt_fp16_reg(vec dst, vec src)
++%{
++  match(Set dst (SqrtVHF src));
++  format %{ "evsqrtph_reg $dst, $src" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opcode = this->ideal_Opcode();
++    __ evsqrtph($dst$$XMMRegister, $src$$Address, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_sqrt_fp16_mem(vec dst, memory src)
++%{
++  match(Set dst (SqrtVHF (VectorReinterpret (LoadVector src))));
++  format %{ "evsqrtph_mem $dst, $src" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opcode = this->ideal_Opcode();
++    __ evsqrtph($dst$$XMMRegister, $src$$Address, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct vector_binOps_fp16_reg(vec dst, vec src1, vec src2)
+ %{
+   match(Set dst (AddVHF src1 src2));
+-  match(Set dst (SubVHF src1 src2));
+-  match(Set dst (MulVHF src1 src2));
+   match(Set dst (DivVHF src1 src2));
+   match(Set dst (MaxVHF src1 src2));
+   match(Set dst (MinVHF src1 src2));
+-  format %{ "evfp16ph $dst, $src1, $src2" %}
++  match(Set dst (MulVHF src1 src2));
++  match(Set dst (SubVHF src1 src2));
++  format %{ "evbinopfp16_reg $dst, $src1, $src2" %}
++  ins_cost(450);
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this);
+     int opcode = this->ideal_Opcode();
+@@ -10215,3 +10359,47 @@ instruct fp16_vector_ops (vec dst, vec src1, vec src2)
+   ins_pipe(pipe_slow);
+ %}
+ 
++instruct vector_binOps_fp16_mem(vec dst, vec src1, memory src2)
++%{
++  match(Set dst (AddVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (DivVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (MaxVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (MinVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (MulVHF src1 (VectorReinterpret (LoadVector src2))));
++  match(Set dst (SubVHF src1 (VectorReinterpret (LoadVector src2))));
++  format %{ "evbinopfp16_mem $dst, $src1, $src2" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int opcode = this->ideal_Opcode();
++    __ evfp16ph(opcode, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$Address, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++
++instruct vector_fma_fp16_reg(vec dst, vec src1, vec src2)
++%{
++  match(Set dst (FmaVHF src2 (Binary dst src1)));
++  effect(DEF dst);
++  format %{ "evfmaph_reg $dst, $src1, $src2\t# $dst = $dst * $src1 + $src2 fma packedH" %}
++  ins_cost(450);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ evfmadd132ph($dst$$XMMRegister, $src2$$XMMRegister, $src1$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vector_fmah_fp16_mem(vec dst, memory src1, vec src2)
++%{
++  match(Set dst (FmaVHF src2 (Binary dst (VectorReinterpret (LoadVector src1)))));
++  effect(DEF dst);
++  format %{ "evfmaph_mem $dst, $src1, $src2\t# $dst = $dst * $src1 + $src2 fma packedH" %}
++  ins_cost(150);
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ evfmadd132ph($dst$$XMMRegister, $src2$$XMMRegister, $src1$$Address, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
+diff --git a/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java b/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java
+index b8243b23d61..aa00634afc3 100644
+--- a/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java
++++ b/test/hotspot/jtreg/compiler/intrinsics/float16/TestFP16ScalarOps.java
+@@ -147,6 +147,8 @@ public void testMin() {
+     }
+ 
+     @Test
++    @IR(counts = {IRNode.ABS_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     @IR(counts = {IRNode.ABS_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+     public void testAbs() {
+@@ -158,6 +160,8 @@ public void testAbs() {
+     }
+ 
+     @Test
++    @IR(counts = {IRNode.NEG_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     @IR(counts = {IRNode.NEG_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+     public void testNeg() {
+@@ -169,6 +173,8 @@ public void testNeg() {
+     }
+ 
+     @Test
++    @IR(counts = {IRNode.SQRT_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     @IR(counts = {IRNode.SQRT_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+     public void testSqrt() {
+@@ -180,6 +186,8 @@ public void testSqrt() {
+     }
+ 
+     @Test
++    @IR(counts = {IRNode.FMA_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     @IR(counts = {IRNode.FMA_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+     public void testFma() {
+diff --git a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java
+index b0348e95576..d7c340d6d02 100644
+--- a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java
++++ b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOps.java
+@@ -191,7 +191,7 @@ public void checkResultMax() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.ABS_VHF, ">= 1"},
+-        applyIfCPUFeature = {"sve", "true"})
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
+     @IR(counts = {IRNode.ABS_VHF, ">= 1"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+     public void vectorAbsFloat16() {
+@@ -213,7 +213,7 @@ public void checkResultAbs() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.NEG_VHF, ">= 1"},
+-        applyIfCPUFeature = {"sve", "true"})
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
+     @IR(counts = {IRNode.NEG_VHF, ">= 1"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+     public void vectorNegFloat16() {
+@@ -235,7 +235,7 @@ public void checkResultNeg() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.SQRT_VHF, ">= 1"},
+-        applyIfCPUFeature = {"sve", "true"})
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
+     @IR(counts = {IRNode.SQRT_VHF, ">= 1"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+     public void vectorSqrtFloat16() {
+@@ -257,7 +257,7 @@ public void checkResultSqrt() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.FMA_VHF, ">= 1"},
+-        applyIfCPUFeature = {"sve", "true"})
++        applyIfCPUFeatureOr = {"avx512_fp16", "true", "sve", "true"})
+     @IR(counts = {IRNode.FMA_VHF, ">= 1"},
+         applyIfCPUFeatureAnd = {"fphp", "true", "asimdhp", "true"})
+     public void vectorFmaFloat16() {

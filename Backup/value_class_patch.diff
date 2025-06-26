@@ -1,0 +1,546 @@
+diff --git a/src/hotspot/share/ci/ciType.cpp b/src/hotspot/share/ci/ciType.cpp
+index ffc83ebddc5..4d158a3ede7 100644
+--- a/src/hotspot/share/ci/ciType.cpp
++++ b/src/hotspot/share/ci/ciType.cpp
+@@ -46,7 +46,7 @@ ciType::ciType(BasicType basic_type, int bundle_size) : ciMetadata() {
+ }
+ 
+ ciType::ciType(Klass* k) : ciMetadata(k) {
+-  _basic_type = k->is_array_klass() ? T_ARRAY : (k->is_inline_klass() ? T_PRIMITIVE_OBJECT : T_OBJECT);
++  _basic_type = k->is_array_klass() ? T_ARRAY : (k->is_inline_klass() && k->access_flags().is_primitive_class() ? T_PRIMITIVE_OBJECT : T_OBJECT);
+   _bundle_size = 1;
+ }
+ 
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index dfa8819dab9..77d2aae0552 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -320,40 +320,40 @@ class SerializeClosure;
+   template(jdk_internal_ValueBased_signature,                                "Ljdk/internal/ValueBased;") \
+                                                                                                   \
+   /* VectorAPI support */                                                                         \
+-  template(vector_VectorPayloadMF8Z_signature,        "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF8Z;")   \
+-  template(vector_VectorPayloadMF16Z_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z;")  \
+-  template(vector_VectorPayloadMF32Z_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF32Z;")  \
+-  template(vector_VectorPayloadMF64Z_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF64Z;")  \
+-  template(vector_VectorPayloadMF128Z_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF128Z;") \
+-  template(vector_VectorPayloadMF256Z_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF256Z;") \
+-  template(vector_VectorPayloadMF512Z_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF512Z;") \
+-  template(vector_VectorPayloadMF8B_signature,        "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF8B;")   \
+-  template(vector_VectorPayloadMF16B_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF16B;")  \
+-  template(vector_VectorPayloadMF32B_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF32B;")  \
+-  template(vector_VectorPayloadMF64B_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF64B;")  \
+-  template(vector_VectorPayloadMF128B_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF128B;") \
+-  template(vector_VectorPayloadMF256B_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF256B;") \
+-  template(vector_VectorPayloadMF512B_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF512B;") \
+-  template(vector_VectorPayloadMF64S_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF64S;")  \
+-  template(vector_VectorPayloadMF128S_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF128S;") \
+-  template(vector_VectorPayloadMF256S_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF256S;") \
+-  template(vector_VectorPayloadMF512S_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF512S;") \
+-  template(vector_VectorPayloadMF64I_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF64I;")  \
+-  template(vector_VectorPayloadMF128I_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF128I;") \
+-  template(vector_VectorPayloadMF256I_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF256I;") \
+-  template(vector_VectorPayloadMF512I_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF512I;") \
+-  template(vector_VectorPayloadMF64L_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF64L;")  \
+-  template(vector_VectorPayloadMF128L_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF128L;") \
+-  template(vector_VectorPayloadMF256L_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF256L;") \
+-  template(vector_VectorPayloadMF512L_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF512L;") \
+-  template(vector_VectorPayloadMF64F_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF64F;")  \
+-  template(vector_VectorPayloadMF128F_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF128F;") \
+-  template(vector_VectorPayloadMF256F_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF256F;") \
+-  template(vector_VectorPayloadMF512F_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF512F;") \
+-  template(vector_VectorPayloadMF64D_signature,       "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF64D;")  \
+-  template(vector_VectorPayloadMF128D_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF128D;") \
+-  template(vector_VectorPayloadMF256D_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF256D;") \
+-  template(vector_VectorPayloadMF512D_signature,      "Qjdk/internal/vm/vector/VectorSupport$VectorPayloadMF512D;") \
++  template(vector_VectorPayloadMF8Z_signature,        "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF8Z;")   \
++  template(vector_VectorPayloadMF16Z_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z;")  \
++  template(vector_VectorPayloadMF32Z_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF32Z;")  \
++  template(vector_VectorPayloadMF64Z_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF64Z;")  \
++  template(vector_VectorPayloadMF128Z_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF128Z;") \
++  template(vector_VectorPayloadMF256Z_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF256Z;") \
++  template(vector_VectorPayloadMF512Z_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF512Z;") \
++  template(vector_VectorPayloadMF8B_signature,        "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF8B;")   \
++  template(vector_VectorPayloadMF16B_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF16B;")  \
++  template(vector_VectorPayloadMF32B_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF32B;")  \
++  template(vector_VectorPayloadMF64B_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF64B;")  \
++  template(vector_VectorPayloadMF128B_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF128B;") \
++  template(vector_VectorPayloadMF256B_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF256B;") \
++  template(vector_VectorPayloadMF512B_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF512B;") \
++  template(vector_VectorPayloadMF64S_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF64S;")  \
++  template(vector_VectorPayloadMF128S_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF128S;") \
++  template(vector_VectorPayloadMF256S_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF256S;") \
++  template(vector_VectorPayloadMF512S_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF512S;") \
++  template(vector_VectorPayloadMF64I_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF64I;")  \
++  template(vector_VectorPayloadMF128I_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF128I;") \
++  template(vector_VectorPayloadMF256I_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF256I;") \
++  template(vector_VectorPayloadMF512I_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF512I;") \
++  template(vector_VectorPayloadMF64L_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF64L;")  \
++  template(vector_VectorPayloadMF128L_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF128L;") \
++  template(vector_VectorPayloadMF256L_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF256L;") \
++  template(vector_VectorPayloadMF512L_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF512L;") \
++  template(vector_VectorPayloadMF64F_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF64F;")  \
++  template(vector_VectorPayloadMF128F_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF128F;") \
++  template(vector_VectorPayloadMF256F_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF256F;") \
++  template(vector_VectorPayloadMF512F_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF512F;") \
++  template(vector_VectorPayloadMF64D_signature,       "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF64D;")  \
++  template(vector_VectorPayloadMF128D_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF128D;") \
++  template(vector_VectorPayloadMF256D_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF256D;") \
++  template(vector_VectorPayloadMF512D_signature,      "Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF512D;") \
+                                                                                                   \
+   /* class symbols needed by intrinsics */                                                        \
+   VM_INTRINSICS_DO(VM_INTRINSIC_IGNORE, template, VM_SYMBOL_IGNORE, VM_SYMBOL_IGNORE, VM_ALIAS_IGNORE) \
+diff --git a/src/hotspot/share/opto/vector.cpp b/src/hotspot/share/opto/vector.cpp
+index d6bac02c2f3..21c0ac8f18a 100644
+--- a/src/hotspot/share/opto/vector.cpp
++++ b/src/hotspot/share/opto/vector.cpp
+@@ -332,8 +332,8 @@ Node* PhaseVector::expand_vbox_alloc_node(VectorBoxAllocateNode* vbox_alloc,
+   }
+   payload_value = gvn.transform(payload_value)->as_InlineType();
+ 
+-  // Re-generate an InlineTypeNode to represent the vector object. New a buffer
+-  // and save its field value to the buffer.
++  // Re-generate an InlineTypeNode to represent the vector object. Allocate a buffer
++  // and initialize it with field values.
+   InlineTypeNode* vector = InlineTypeNode::make_uninitialized(gvn, vk, false);
+   vector->set_field_value(0, payload_value);
+   vector = gvn.transform(vector)->as_InlineType();
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index 92b88a96cea..a02ed61b578 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -382,7 +382,7 @@ public class VectorSupport {
+         }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxB extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxB extends VectorPayloadMF {
+         @MultiField(value = -1)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxB.class);
+@@ -391,7 +391,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxS extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxS extends VectorPayloadMF {
+         @MultiField(value = -1)
+         short mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxS.class);
+@@ -400,7 +400,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxI extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxI extends VectorPayloadMF {
+         @MultiField(value = -1)
+         int mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxI.class);
+@@ -409,7 +409,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxL extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxL extends VectorPayloadMF {
+         @MultiField(value = -1)
+         long mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxL.class);
+@@ -418,7 +418,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxF extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxF extends VectorPayloadMF {
+         @MultiField(value = -1)
+         float mfield = 0.0f;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxF.class);
+@@ -427,7 +427,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxD extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxD extends VectorPayloadMF {
+         @MultiField(value = -1)
+         double mfield = 0.0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxD.class);
+@@ -436,7 +436,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF8Z extends VectorPayloadMF {
++    public value static class VectorPayloadMF8Z extends VectorPayloadMF {
+         @MultiField(value = 1)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF8Z.class);
+@@ -445,7 +445,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF16Z extends VectorPayloadMF {
++    public value static class VectorPayloadMF16Z extends VectorPayloadMF {
+         @MultiField(value = 2)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF16Z.class);
+@@ -454,7 +454,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF32Z extends VectorPayloadMF {
++    public value static class VectorPayloadMF32Z extends VectorPayloadMF {
+         @MultiField(value = 4)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF32Z.class);
+@@ -463,7 +463,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF64Z extends VectorPayloadMF {
++    public value static class VectorPayloadMF64Z extends VectorPayloadMF {
+         @MultiField(value = 8)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF64Z.class);
+@@ -472,7 +472,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF128Z extends VectorPayloadMF {
++    public value static class VectorPayloadMF128Z extends VectorPayloadMF {
+         @MultiField(value = 16)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF128Z.class);
+@@ -481,7 +481,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF256Z extends VectorPayloadMF {
++    public value static class VectorPayloadMF256Z extends VectorPayloadMF {
+         @MultiField(value = 32)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF256Z.class);
+@@ -490,7 +490,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF512Z extends VectorPayloadMF {
++    public value static class VectorPayloadMF512Z extends VectorPayloadMF {
+         @MultiField(value = 64)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF512Z.class);
+@@ -499,7 +499,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxBZ extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxBZ extends VectorPayloadMF {
+         @MultiField(value = -1)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxBZ.class);
+@@ -508,7 +508,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxSZ extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxSZ extends VectorPayloadMF {
+         @MultiField(value = -1)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxSZ.class);
+@@ -517,7 +517,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxIZ extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxIZ extends VectorPayloadMF {
+         @MultiField(value = -1)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxIZ.class);
+@@ -526,7 +526,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxLZ extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxLZ extends VectorPayloadMF {
+         @MultiField(value = -1)
+         boolean mfield = false;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxLZ.class);
+@@ -535,7 +535,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF8B extends VectorPayloadMF {
++    public value static class VectorPayloadMF8B extends VectorPayloadMF {
+         @MultiField(value = 1)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF8B.class);
+@@ -544,7 +544,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF16B extends VectorPayloadMF {
++    public value static class VectorPayloadMF16B extends VectorPayloadMF {
+         @MultiField(value = 2)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF16B.class);
+@@ -553,7 +553,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF32B extends VectorPayloadMF {
++    public value static class VectorPayloadMF32B extends VectorPayloadMF {
+         @MultiField(value = 4)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF32B.class);
+@@ -562,7 +562,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF64B extends VectorPayloadMF {
++    public value static class VectorPayloadMF64B extends VectorPayloadMF {
+         @MultiField(value = 8)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF64B.class);
+@@ -571,7 +571,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF128B extends VectorPayloadMF {
++    public value static class VectorPayloadMF128B extends VectorPayloadMF {
+         @MultiField(value = 16)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF128B.class);
+@@ -580,7 +580,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF256B extends VectorPayloadMF {
++    public value static class VectorPayloadMF256B extends VectorPayloadMF {
+         @MultiField(value = 32)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF256B.class);
+@@ -589,7 +589,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF512B extends VectorPayloadMF {
++    public value static class VectorPayloadMF512B extends VectorPayloadMF {
+         @MultiField(value = 64)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF512B.class);
+@@ -598,7 +598,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxBB extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxBB extends VectorPayloadMF {
+         @MultiField(value = -1)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxBB.class);
+@@ -607,7 +607,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxSB extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxSB extends VectorPayloadMF {
+         @MultiField(value = -1)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxSB.class);
+@@ -616,7 +616,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxIB extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxIB extends VectorPayloadMF {
+         @MultiField(value = -1)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxIB.class);
+@@ -625,7 +625,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMFMaxLB extends VectorPayloadMF {
++    public value static class VectorPayloadMFMaxLB extends VectorPayloadMF {
+         @MultiField(value = -1)
+         byte mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMFMaxLB.class);
+@@ -634,7 +634,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF64S extends VectorPayloadMF {
++    public value static class VectorPayloadMF64S extends VectorPayloadMF {
+         @MultiField(value = 4)
+         short mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF64S.class);
+@@ -643,7 +643,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF128S extends VectorPayloadMF {
++    public value static class VectorPayloadMF128S extends VectorPayloadMF {
+         @MultiField(value = 8)
+         short mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF128S.class);
+@@ -652,7 +652,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF256S extends VectorPayloadMF {
++    public value static class VectorPayloadMF256S extends VectorPayloadMF {
+         @MultiField(value = 16)
+         short mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF256S.class);
+@@ -661,7 +661,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF512S extends VectorPayloadMF {
++    public value static class VectorPayloadMF512S extends VectorPayloadMF {
+         @MultiField(value = 32)
+         short mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF512S.class);
+@@ -670,7 +670,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF64I extends VectorPayloadMF {
++    public value static class VectorPayloadMF64I extends VectorPayloadMF {
+         @MultiField(value = 2)
+         int mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF64I.class);
+@@ -679,7 +679,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF128I extends VectorPayloadMF {
++    public value static class VectorPayloadMF128I extends VectorPayloadMF {
+         @MultiField(value = 4)
+         int mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF128I.class);
+@@ -688,7 +688,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF256I extends VectorPayloadMF {
++    public value static class VectorPayloadMF256I extends VectorPayloadMF {
+         @MultiField(value = 8)
+         int mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF256I.class);
+@@ -697,7 +697,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF512I extends VectorPayloadMF {
++    public value static class VectorPayloadMF512I extends VectorPayloadMF {
+         @MultiField(value = 16)
+         int mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF512I.class);
+@@ -706,7 +706,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF64L extends VectorPayloadMF {
++    public value static class VectorPayloadMF64L extends VectorPayloadMF {
+         @MultiField(value = 1)
+         final long mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF64L.class);
+@@ -715,7 +715,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF128L extends VectorPayloadMF {
++    public value static class VectorPayloadMF128L extends VectorPayloadMF {
+         @MultiField(value = 2)
+         final long mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF128L.class);
+@@ -724,7 +724,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF256L extends VectorPayloadMF {
++    public value static class VectorPayloadMF256L extends VectorPayloadMF {
+         @MultiField(value = 4)
+         final long mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF256L.class);
+@@ -733,7 +733,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF512L extends VectorPayloadMF {
++    public value static class VectorPayloadMF512L extends VectorPayloadMF {
+         @MultiField(value = 8)
+         final long mfield = 0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF512L.class);
+@@ -742,7 +742,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF64F extends VectorPayloadMF {
++    public value static class VectorPayloadMF64F extends VectorPayloadMF {
+         @MultiField(value = 2)
+         float mfield = 0.0f;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF64F.class);
+@@ -751,7 +751,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF128F extends VectorPayloadMF {
++    public value static class VectorPayloadMF128F extends VectorPayloadMF {
+         @MultiField(value = 4)
+         float mfield = 0.0f;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF128F.class);
+@@ -760,7 +760,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF256F extends VectorPayloadMF {
++    public value static class VectorPayloadMF256F extends VectorPayloadMF {
+         @MultiField(value = 8)
+         float mfield = 0.0f;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF256F.class);
+@@ -769,7 +769,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF512F extends VectorPayloadMF {
++    public value static class VectorPayloadMF512F extends VectorPayloadMF {
+         @MultiField(value = 16)
+         float mfield = 0.0f;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF512F.class);
+@@ -778,7 +778,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF64D extends VectorPayloadMF {
++    public value static class VectorPayloadMF64D extends VectorPayloadMF {
+         @MultiField(value = 1)
+         double mfield = 0.0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF64D.class);
+@@ -787,7 +787,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF128D extends VectorPayloadMF {
++    public value static class VectorPayloadMF128D extends VectorPayloadMF {
+         @MultiField(value = 2)
+         double mfield = 0.0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF128D.class);
+@@ -796,7 +796,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF256D extends VectorPayloadMF {
++    public value static class VectorPayloadMF256D extends VectorPayloadMF {
+         @MultiField(value = 4)
+         double mfield = 0.0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF256D.class);
+@@ -805,7 +805,7 @@ public class VectorSupport {
+         public long multiFieldOffset() { return MFOFFSET; }
+     }
+ 
+-    public primitive static class VectorPayloadMF512D extends VectorPayloadMF {
++    public value static class VectorPayloadMF512D extends VectorPayloadMF {
+         @MultiField(value = 8)
+         double mfield = 0.0;
+         static final long MFOFFSET = multiFieldOffset(VectorPayloadMF512D.class);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+old mode 100644
+new mode 100755

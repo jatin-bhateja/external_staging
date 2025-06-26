@@ -1,0 +1,233 @@
+diff --git a/src/hotspot/share/opto/inlinetypenode.cpp b/src/hotspot/share/opto/inlinetypenode.cpp
+index f5f94cdcd8a..8e7b39a4de4 100644
+--- a/src/hotspot/share/opto/inlinetypenode.cpp
++++ b/src/hotspot/share/opto/inlinetypenode.cpp
+@@ -212,6 +212,15 @@ Node* InlineTypeNode::field_value_by_offset(int offset, bool recursive) const {
+   return value;
+ }
+ 
++void InlineTypeNode::add_field_value(uint index, Node* value) {
++  if (index < field_count()) {
++    set_req(Values + index, value);
++  } else {
++    add_req(value);
++    assert(in(Values + index) == value, "");
++  }
++}
++
+ void InlineTypeNode::set_field_value(uint index, Node* value) {
+   assert(index < field_count(), "index out of bounds");
+   set_req(Values + index, value);
+@@ -378,9 +387,11 @@ const TypePtr* InlineTypeNode::field_adr_type(Node* base, int offset, ciInstance
+ void InlineTypeNode::load(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass* holder, int holder_offset, DecoratorSet decorators) {
+   // Initialize the inline type by loading its field values from
+   // memory and adding the values as input edges to the node.
+-  for (uint i = 0; i < field_count(); ++i) {
+-    int offset = holder_offset + field_offset(i);
++  int synthetic_field_count = 0;
++  uint field_cnt = field_count();
++  for (uint i = 0; i < field_cnt; ++i) {
+     Node* value = NULL;
++    int offset = holder_offset + field_offset(i);
+     ciType* ft = field_type(i);
+     bool null_free = field_is_null_free(i);
+     if (null_free && ft->as_inline_klass()->is_empty()) {
+@@ -410,29 +421,45 @@ void InlineTypeNode::load(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass*
+         }
+       } else {
+         // Load field value from memory
+-        const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
+-        Node* adr = kit->basic_plus_adr(base, ptr, offset);
+-        BasicType bt = type2field[ft->basic_type()];
+-        assert(is_java_primitive(bt) || adr->bottom_type()->is_ptr_to_narrowoop() == UseCompressedOops, "inconsistent");
+-        const Type* val_type = Type::get_const_type(ft);
+-        if (is_array) {
+-          decorators |= IS_ARRAY;
+-        }
+         if (ft->bundle_size() > 1) {
+           int vec_len = ft->bundle_size();
+-          BasicType elem_bt = ft->basic_type();
+-          bool bundle_size_supported = Matcher::vector_size_supported(elem_bt, vec_len);
+-
+-          // Set the vector length to maximal supported vector length
+-          // to allow graceful compilation exit at a later stage.
+-          vec_len = bundle_size_supported ? vec_len : Matcher::max_vector_size(elem_bt);
+-
+-          value = kit->gvn().transform(LoadVectorNode::make(0, kit->control(), kit->memory(adr), adr, adr_type, vec_len, elem_bt));
+-
+-          if (!bundle_size_supported) {
+-            kit->env()->record_method_not_compilable("Mutifield bundle size not supported for target", false);
++          BasicType bt = type2field[ft->basic_type()];
++          const Type* val_type = Type::get_const_type(ft);
++
++          bool bundle_size_supported = Matcher::match_rule_supported_vector(Op_LoadVector, vec_len, bt);
++          if (bundle_size_supported) {
++            const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
++            Node* adr = kit->basic_plus_adr(base, ptr, offset);
++            assert(is_java_primitive(bt) || adr->bottom_type()->is_ptr_to_narrowoop() == UseCompressedOops, "inconsistent");
++            value = kit->gvn().transform(LoadVectorNode::make(0, kit->control(), kit->memory(adr), adr, adr_type, vec_len, bt));
++          } else {
++            int j = 0;
++            int rem_fields_input_space = field_cnt - (i + 1);
++            const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
++            for (;j < vec_len; j++) {
++              Node* adr = kit->basic_plus_adr(base, ptr, offset);
++              assert(is_java_primitive(bt) || adr->bottom_type()->is_ptr_to_narrowoop() == UseCompressedOops, "inconsistent");
++              value = kit->access_load_at(base, adr, adr_type, val_type, bt, decorators);
++              add_field_value(j + synthetic_field_count, value);
++              offset += type2aelembytes(bt);
++            }
++            synthetic_field_count += ft->bundle_size();
++            // Grow input edge array to accommodate subsequent fields.
++            while(rem_fields_input_space) {
++              add_field_value(j++, NULL);
++              rem_fields_input_space--;
++            }
++            continue;
+           }
+         } else {
++          const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
++          Node* adr = kit->basic_plus_adr(base, ptr, offset);
++          BasicType bt = type2field[ft->basic_type()];
++          assert(is_java_primitive(bt) || adr->bottom_type()->is_ptr_to_narrowoop() == UseCompressedOops, "inconsistent");
++          const Type* val_type = Type::get_const_type(ft);
++          if (is_array) {
++            decorators |= IS_ARRAY;
++          }
+           value = kit->access_load_at(base, adr, adr_type, val_type, bt, decorators);
+         }
+       }
+@@ -441,7 +468,7 @@ void InlineTypeNode::load(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass*
+         value = InlineTypeNode::make_from_oop(kit, value, ft->as_inline_klass(), null_free);
+       }
+     }
+-    set_field_value(i, value);
++    set_field_value(i + synthetic_field_count, value);
+   }
+ }
+ 
+@@ -460,28 +487,27 @@ void InlineTypeNode::store_flattened(GraphKit* kit, Node* base, Node* ptr, ciIns
+ 
+ void InlineTypeNode::store(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass* holder, int holder_offset, DecoratorSet decorators) const {
+   // Write field values to memory
++  int field_idx = 0;
++  int synthetic_field_count = 0;
+   for (uint i = 0; i < field_count(); ++i) {
+-    int offset = holder_offset + field_offset(i);
+     Node* value = field_value(i);
+     ciType* ft = field_type(i);
++    if (synthetic_field_count > 0) {
++      synthetic_field_count--;
++    } else {
++      field_idx = field_idx + 1;
++    }
++    int offset = holder_offset + field_offset(i);
+     if (field_is_flattened(i)) {
+       if (kit->gvn().type(value)->isa_vect()) {
+-        const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
+-        Node* adr = kit->basic_plus_adr(base, ptr, offset);
+         int vec_len = kit->gvn().type(value)->is_vect()->length();
+         BasicType elem_bt = kit->gvn().type(value)->is_vect()->element_basic_type();
+-        bool bundle_size_supported = Matcher::vector_size_supported(elem_bt, vec_len);
+-
+-        // Set the vector length to  maximal supported vector length to allow
+-        // graceful compilation exit at a later stage.
+-        vec_len = bundle_size_supported ? vec_len : Matcher::max_vector_size(elem_bt);
++        assert(Matcher::match_rule_supported_vector(Op_StoreVector, vec_len, elem_bt), "");
+ 
++        const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
++        Node* adr = kit->basic_plus_adr(base, ptr, offset);
+         Node* store = kit->gvn().transform(StoreVectorNode::make(0, kit->control(), kit->memory(adr), adr, adr_type, value, vec_len));
+         kit->set_memory(store, adr_type);
+-
+-        if (!bundle_size_supported) {
+-          kit->env()->record_method_not_compilable("Mutifield bundle size not supported for target", false);
+-        }
+       } else {
+         if (!value->is_InlineType()) {
+           // Recursively store the flattened inline type field
+@@ -490,16 +516,6 @@ void InlineTypeNode::store(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass
+         value->as_InlineType()->store_flattened(kit, base, ptr, holder, offset, decorators);
+       }
+     } else {
+-      // Store field value to memory
+-      const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
+-      Node* adr = kit->basic_plus_adr(base, ptr, offset);
+-      BasicType bt = type2field[ft->basic_type()];
+-      assert(is_java_primitive(bt) || adr->bottom_type()->is_ptr_to_narrowoop() == UseCompressedOops, "inconsistent");
+-      const Type* val_type = Type::get_const_type(ft);
+-      const TypeAryPtr* ary_type = kit->gvn().type(base)->isa_aryptr();
+-      if (ary_type != NULL) {
+-        decorators |= IS_ARRAY;
+-      }
+       if (ft->bundle_size() > 1) {
+         int vec_len = ft->bundle_size();
+         BasicType elem_bt = ft->basic_type();
+@@ -508,22 +524,41 @@ void InlineTypeNode::store(GraphKit* kit, Node* base, Node* ptr, ciInstanceKlass
+           Matcher::match_rule_supported_vector(Op_StoreVector, vec_len, elem_bt) &&
+           Matcher::match_rule_supported_vector(VectorNode::replicate_opcode(elem_bt), vec_len, elem_bt);
+ 
+-        // Set the vector length to  maximal supported vector length
+-        // to allow graceful compilation exit at a later stage.
+-        vec_len = bundle_size_supported ? vec_len : Matcher::max_vector_size(elem_bt);
+-
+-        // Handling for non-flattened case, with default InlineFieldMaxFlatSize of 128
+-        // all the concrete vectors should be fully flattened.
+-        value = value->bottom_type()->isa_vect() ? value : kit->gvn().transform(VectorNode::scalar2vector(value, vec_len, val_type, false));
+-        assert(value->bottom_type()->isa_vect() && value->bottom_type()->is_vect()->length() == (uint)ft->bundle_size(), "");
+-
+-        Node* store = kit->gvn().transform(StoreVectorNode::make(0, kit->control(), kit->memory(adr), adr, adr_type, value, vec_len));
+-        kit->set_memory(store, adr_type);
++        BasicType bt = type2field[ft->basic_type()];
++        const Type* val_type = Type::get_const_type(ft);
++        const TypeAryPtr* ary_type = kit->gvn().type(base)->isa_aryptr();
++        if (ary_type != NULL) {
++          decorators |= IS_ARRAY;
++        }
+ 
+-        if (!bundle_size_supported) {
+-          kit->env()->record_method_not_compilable("Mutifield bundle size not supported for target", false);
++        if (bundle_size_supported) {
++          const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
++          Node* adr = kit->basic_plus_adr(base, ptr, offset);
++          value = value->bottom_type()->isa_vect() ? value : kit->gvn().transform(VectorNode::scalar2vector(value, vec_len, val_type, false));
++          assert(value->bottom_type()->isa_vect() && value->bottom_type()->is_vect()->length() == (uint)ft->bundle_size(), "");
++          Node* store = kit->gvn().transform(StoreVectorNode::make(0, kit->control(), kit->memory(adr), adr, adr_type, value, vec_len));
++          kit->set_memory(store, adr_type);
++        } else {
++          // Store synthetic fields value to memory
++          const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
++          for (int j = 0; j < vec_len; j++) {
++            Node* adr = kit->basic_plus_adr(base, ptr, offset);
++            assert(is_java_primitive(bt) || adr->bottom_type()->is_ptr_to_narrowoop() == UseCompressedOops, "inconsistent");
++            kit->access_store_at(base, adr, adr_type, value, val_type, bt, decorators);
++            offset += type2aelembytes(bt);
++          }
+         }
+       } else {
++        // Store field value to memory
++        const TypePtr* adr_type = field_adr_type(base, offset, holder, decorators, kit->gvn());
++        Node* adr = kit->basic_plus_adr(base, ptr, offset);
++        BasicType bt = type2field[ft->basic_type()];
++        assert(is_java_primitive(bt) || adr->bottom_type()->is_ptr_to_narrowoop() == UseCompressedOops, "inconsistent");
++        const Type* val_type = Type::get_const_type(ft);
++        const TypeAryPtr* ary_type = kit->gvn().type(base)->isa_aryptr();
++        if (ary_type != NULL) {
++          decorators |= IS_ARRAY;
++        }
+         kit->access_store_at(base, adr, adr_type, value, val_type, bt, decorators);
+       }
+     }
+diff --git a/src/hotspot/share/opto/inlinetypenode.hpp b/src/hotspot/share/opto/inlinetypenode.hpp
+index 812095dc9fe..29313281973 100644
+--- a/src/hotspot/share/opto/inlinetypenode.hpp
++++ b/src/hotspot/share/opto/inlinetypenode.hpp
+@@ -110,6 +110,8 @@ public:
+ 
+   Node*         field_value_by_offset(int offset, bool recursive = false) const;
+   void          set_field_value(uint index, Node* value);
++  void          add_field_value(uint index, Node* value);
++
+   void          set_field_value_by_offset(int offset, Node* value);
+   int           field_offset(uint index) const;
+   bool          is_multifield(uint index) const;

@@ -1,0 +1,685 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 43e08269504..f39ad7cfafa 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -2840,6 +2840,13 @@ void Assembler::kxorbl(KRegister dst, KRegister src1, KRegister src2) {
+   emit_int16(0x47, (0xC0 | encode));
+ }
+ 
++void Assembler::kxnorwl(KRegister dst, KRegister src1, KRegister src2) {
++  assert(VM_Version::supports_evex(), "");
++  InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
++  int encode = vex_prefix_and_encode(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x46, (0xC0 | encode));
++}
++
+ void Assembler::kxorwl(KRegister dst, KRegister src1, KRegister src2) {
+   assert(VM_Version::supports_evex(), "");
+   InstructionAttr attributes(AVX_256bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index abd6aaf9b1e..c3f0f8e1fc5 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1523,6 +1523,8 @@ class Assembler : public AbstractAssembler  {
+   void kordl(KRegister dst, KRegister src1, KRegister src2);
+   void korql(KRegister dst, KRegister src1, KRegister src2);
+ 
++  void kxnorwl(KRegister dst, KRegister src1, KRegister src2);
++
+   void kxorbl(KRegister dst, KRegister src1, KRegister src2);
+   void kxorwl(KRegister dst, KRegister src1, KRegister src2);
+   void kxordl(KRegister dst, KRegister src1, KRegister src2);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 2154601f2f2..acf74fda220 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -1523,6 +1523,67 @@ void C2_MacroAssembler::vinsert(BasicType typ, XMMRegister dst, XMMRegister src,
+   }
+ }
+ 
++void C2_MacroAssembler::vpgather8b(BasicType elem_bt, XMMRegister dst, Register rtmp, Register base, Register idx_base, int vlen_enc) {
++  vpxor(dst, dst, dst, vlen_enc);
++  if (elem_bt == T_SHORT) {
++    for (int i = 0; i < 4; i++) {
++      movl(rtmp, Address(idx_base, i*4));
++      pinsrw(dst, Address(base, rtmp, Address::times_2), i);
++    }
++  } else {
++    assert(elem_bt == T_BYTE, "");
++    for (int i = 0; i < 8; i++) {
++      movl(rtmp, Address(idx_base, i*4));
++      pinsrb(dst, Address(base, rtmp), i);
++    }
++  }
++}
++
++void C2_MacroAssembler::vpgather8b_with_offset(BasicType elem_bt, XMMRegister dst, Register rtmp, Register base,
++                                               Register idx_base, Register offset, int vlen_enc) {
++  vpxor(dst, dst, dst, vlen_enc);
++  if (elem_bt == T_SHORT) {
++    for (int i = 0; i < 4; i++) {
++      movl(rtmp, Address(idx_base, i*4));
++      addl(rtmp, offset);
++      pinsrw(dst, Address(base, rtmp, Address::times_2), i);
++    }
++  } else {
++    assert(elem_bt == T_BYTE, "");
++    for (int i = 0; i < 8; i++) {
++      movl(rtmp, Address(idx_base, i*4));
++      addl(rtmp, offset);
++      pinsrb(dst, Address(base, rtmp), i);
++    }
++  }
++}
++
++void C2_MacroAssembler::vgather_subword(BasicType elem_ty, XMMRegister dst,  Register base, Register idx_base,
++                                        Register offset, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3,
++                                        Register rtmp, Register length, int vector_len, int vlen_enc) {
++  assert(is_subword_type(elem_ty), "");
++  Label GATHER8_LOOP;
++  movl(length, vector_len);
++  vpxor(xtmp1, xtmp1, xtmp1, vlen_enc);
++  vpxor(dst, dst, dst, vlen_enc);
++  vallones(xtmp2, vlen_enc);
++  vpsubd(xtmp2, xtmp1, xtmp2 ,vlen_enc);
++  vpslld(xtmp2, xtmp2, 1, vlen_enc);
++  load_iota_indices(xtmp1, vector_len * type2aelembytes(elem_ty), T_INT);
++  bind(GATHER8_LOOP);
++    if (offset == noreg) {
++      vpgather8b(elem_ty, xtmp3, rtmp, base, idx_base, vlen_enc);
++    } else {
++      vpgather8b_with_offset(elem_ty, xtmp3, rtmp, base, idx_base, offset, vlen_enc);
++    }
++    vpermd(xtmp3, xtmp1, xtmp3, vlen_enc == Assembler::AVX_512bit ? vlen_enc : Assembler::AVX_256bit);
++    vpsubd(xtmp1, xtmp1, xtmp2, vlen_enc);
++    vpor(dst, dst, xtmp3, vlen_enc);
++    addq(idx_base,  32 >> (type2aelembytes(elem_ty) - 1));
++    subl(length, 8 >> (type2aelembytes(elem_ty) - 1));
++    jcc(Assembler::notEqual, GATHER8_LOOP);
++}
++
+ void C2_MacroAssembler::vgather(BasicType typ, XMMRegister dst, Register base, XMMRegister idx, XMMRegister mask, int vector_len) {
+   switch(typ) {
+     case T_INT:
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index e9e1412957b..c4b825f3a05 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -492,4 +492,11 @@
+   void vector_rearrange_int_float(BasicType bt, XMMRegister dst, XMMRegister shuffle,
+                                   XMMRegister src, int vlen_enc);
+ 
++  void vgather_subword(BasicType elem_bt, XMMRegister dst,  Register base, Register idx_base, Register offset, XMMRegister xtmp1,
++                       XMMRegister xtmp2, XMMRegister xtmp3, Register rtmp, Register length, int vector_len, int vlen_enc);
++
++  void vpgather8b(BasicType elem_bt, XMMRegister dst, Register rtmp, Register base, Register idx_base, int vlen_enc);
++
++  void vpgather8b_with_offset(BasicType elem_bt, XMMRegister dst, Register rtmp, Register base, Register idx_base, Register offset, int vlen_enc);
++
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/matcher_x86.hpp b/src/hotspot/cpu/x86/matcher_x86.hpp
+index bc249c0f33a..de66a0b213f 100644
+--- a/src/hotspot/cpu/x86/matcher_x86.hpp
++++ b/src/hotspot/cpu/x86/matcher_x86.hpp
+@@ -214,6 +214,8 @@
+         return 7;
+       case Op_MulVL:
+         return VM_Version::supports_avx512vldq() ? 0 : 6;
++      case Op_LoadVectorGather:
++        return is_subword_type(ety) ? 50 : 0;
+       case Op_VectorCastF2X: // fall through
+       case Op_VectorCastD2X:
+         return is_floating_point_type(ety) ? 0 : (is_subword_type(ety) ? 35 : 30);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 56d3634fa12..621137d9aa2 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1925,7 +1925,7 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+       }
+       // fallthrough
+     case Op_LoadVectorGather:
+-      if (size_in_bits == 64 ) {
++      if (!is_subword_type(bt) && size_in_bits == 64 ) {
+         return false;
+       }
+       break;
+@@ -4051,44 +4051,34 @@ instruct storeV(memory mem, vec src) %{
+ // Gather INT, LONG, FLOAT, DOUBLE
+ 
+ instruct gather(legVec dst, memory mem, legVec idx, rRegP tmp, legVec mask) %{
+-  predicate(!VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n) <= 32);
++  predicate(!VM_Version::supports_avx512vl() &&
++            !is_subword_type(Matcher::vector_element_basic_type(n)) &&
++            Matcher::vector_length_in_bytes(n) <= 32);
+   match(Set dst (LoadVectorGather mem idx));
+   effect(TEMP dst, TEMP tmp, TEMP mask);
+   format %{ "load_vector_gather $dst, $mem, $idx\t! using $tmp and $mask as TEMP" %}
+   ins_encode %{
+-    assert(UseAVX >= 2, "sanity");
+-
+     int vlen_enc = vector_length_encoding(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+-
+-    assert(Matcher::vector_length_in_bytes(this) >= 16, "sanity");
+     assert(!is_subword_type(elem_bt), "sanity"); // T_INT, T_LONG, T_FLOAT, T_DOUBLE
+-
+-    if (vlen_enc == Assembler::AVX_128bit) {
+-      __ movdqu($mask$$XMMRegister, ExternalAddress(vector_all_bits_set()), noreg);
+-    } else {
+-      __ vmovdqu($mask$$XMMRegister, ExternalAddress(vector_all_bits_set()), noreg);
+-    }
++    __ vpcmpeqd($mask$$XMMRegister, $mask$$XMMRegister, $mask$$XMMRegister, vlen_enc);
+     __ lea($tmp$$Register, $mem$$Address);
+     __ vgather(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx$$XMMRegister, $mask$$XMMRegister, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
++
+ instruct evgather(vec dst, memory mem, vec idx, rRegP tmp, kReg ktmp) %{
+-  predicate(VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n) == 64);
++  predicate((VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n) == 64) &&
++            !is_subword_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (LoadVectorGather mem idx));
+   effect(TEMP dst, TEMP tmp, TEMP ktmp);
+   format %{ "load_vector_gather $dst, $mem, $idx\t! using $tmp and ktmp as TEMP" %}
+   ins_encode %{
+-    assert(UseAVX > 2, "sanity");
+-
+     int vlen_enc = vector_length_encoding(this);
+     BasicType elem_bt = Matcher::vector_element_basic_type(this);
+-
+-    assert(!is_subword_type(elem_bt), "sanity"); // T_INT, T_LONG, T_FLOAT, T_DOUBLE
+-
+-    __ kmovwl($ktmp$$KRegister, ExternalAddress(vector_all_bits_set()), noreg);
++    __ kxnorwl($ktmp$$KRegister, $ktmp$$KRegister, $ktmp$$KRegister);
+     __ lea($tmp$$Register, $mem$$Address);
+     __ evgather(elem_bt, $dst$$XMMRegister, $ktmp$$KRegister, $tmp$$Register, $idx$$XMMRegister, vlen_enc);
+   %}
+@@ -4113,6 +4103,74 @@ instruct evgather_masked(vec dst, memory mem, vec idx, kReg mask, kReg ktmp, rRe
+   %}
+   ins_pipe( pipe_slow );
+ %}
++
++instruct vgather_subwordLE8B(vec dst, memory mem, rRegP idx, immI_0 offset, rRegP tmp, rRegI rtmp) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
++  match(Set dst (LoadVectorGather mem (Binary idx offset)));
++  effect(TEMP tmp, TEMP rtmp);
++  format %{ "load_byte_vector_gatherLE8 $dst, $mem, $idx\t! using $tmp and $rtmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType elem_bt = Matcher::vector_element_basic_type(this);
++    __ lea($tmp$$Register, $mem$$Address);
++    __ vpgather8b(elem_bt, $dst$$XMMRegister, $rtmp$$Register, $tmp$$Register, $idx$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vgather_subwordGT8B(vec dst, memory mem, rRegP idx, immI_0 offset, rRegP tmp, rRegP idx_base_temp,
++                             vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI length) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
++  match(Set dst (LoadVectorGather mem (Binary idx offset)));
++  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP length);
++  format %{ "load_byte_vector_gatherGT8 $dst, $mem, $idx\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp and $length as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int vector_len = Matcher::vector_length(this);
++    BasicType elem_bt = Matcher::vector_element_basic_type(this);
++    __ lea($tmp$$Register, $mem$$Address);
++    __ movptr($idx_base_temp$$Register, $idx$$Register);
++    __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, noreg, $xtmp1$$XMMRegister,
++                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $rtmp$$Register, $length$$Register, vector_len, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++instruct vgather_subwordLE8B_off(vec dst, memory mem, rRegP idx, rRegI offset, rRegP tmp, rRegI rtmp) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) <= 8);
++  match(Set dst (LoadVectorGather mem (Binary idx offset)));
++  ins_cost(200);
++  effect(TEMP tmp, TEMP rtmp);
++  format %{ "load_byte_vector_gatherLE8 $dst, $mem, $idx, $offset\t! using $tmp and $rtmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType elem_bt = Matcher::vector_element_basic_type(this);
++    __ lea($tmp$$Register, $mem$$Address);
++    __ vpgather8b_with_offset(elem_bt, $dst$$XMMRegister, $rtmp$$Register, $tmp$$Register, $idx$$Register, $offset$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
++
++instruct vgather_subwordGT8B_off(vec dst, memory mem, rRegP idx, rRegI offset, rRegP tmp, rRegP idx_base_temp,
++                                 vec xtmp1, vec xtmp2, vec xtmp3, rRegI rtmp, rRegI length) %{
++  predicate(is_subword_type(Matcher::vector_element_basic_type(n)) && Matcher::vector_length_in_bytes(n) > 8);
++  match(Set dst (LoadVectorGather mem (Binary idx offset)));
++  ins_cost(200);
++  effect(TEMP_DEF dst, TEMP tmp, TEMP idx_base_temp, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP rtmp, TEMP length);
++  format %{ "load_byte_vector_gatherGT8 $dst, $mem, $idx, $offset\t! using $tmp, $idx_base_temp, $xtmp1, $xtmp2, $xtmp3, $rtmp and $length as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int vector_len = Matcher::vector_length(this);
++    BasicType elem_bt = Matcher::vector_element_basic_type(this);
++    __ lea($tmp$$Register, $mem$$Address);
++    __ movptr($idx_base_temp$$Register, $idx$$Register);
++    __ vgather_subword(elem_bt, $dst$$XMMRegister, $tmp$$Register, $idx_base_temp$$Register, $offset$$Register, $xtmp1$$XMMRegister,
++                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $rtmp$$Register, $length$$Register, vector_len, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ // ====================Scatter=======================================
+ 
+ // Scatter INT, LONG, FLOAT, DOUBLE
+diff --git a/src/hotspot/share/opto/loopTransform.cpp b/src/hotspot/share/opto/loopTransform.cpp
+index d299e159537..6c94f04591d 100644
+--- a/src/hotspot/share/opto/loopTransform.cpp
++++ b/src/hotspot/share/opto/loopTransform.cpp
+@@ -1005,6 +1005,7 @@ bool IdealLoopTree::policy_unroll(PhaseIdealLoop *phase) {
+       } break;
+       case Op_CountTrailingZerosV:
+       case Op_CountLeadingZerosV:
++      case Op_LoadVectorGather:
+       case Op_ReverseV:
+       case Op_RoundVF:
+       case Op_RoundVD:
+diff --git a/src/hotspot/share/opto/matcher.cpp b/src/hotspot/share/opto/matcher.cpp
+index 37c9ec6ed13..ea7c786446e 100644
+--- a/src/hotspot/share/opto/matcher.cpp
++++ b/src/hotspot/share/opto/matcher.cpp
+@@ -2475,6 +2475,10 @@ void Matcher::find_shared_post_visit(Node* n, uint opcode) {
+       n->del_req(3);
+       break;
+     }
++    case Op_LoadVectorGather:
++      if (!is_subword_type(n->bottom_type()->is_vect()->element_basic_type())) {
++        break;
++      } // fall-through
+     case Op_LoadVectorGatherMasked:
+     case Op_StoreVectorScatter: {
+       Node* pair = new BinaryNode(n->in(MemNode::ValueIn), n->in(MemNode::ValueIn+1));
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 9bed3401303..4e8324d0afe 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -1504,7 +1504,7 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+   }
+ 
+   // Check that the vector holding indices is supported by architecture
+-  if (!arch_supports_vector(Op_LoadVector, num_elem, T_INT, VecMaskNotUsed)) {
++  if (!is_subword_type(elem_bt) && !arch_supports_vector(Op_LoadVector, num_elem, T_INT, VecMaskNotUsed)) {
+       if (C->print_intrinsics()) {
+         tty->print_cr("  ** not supported: arity=%d op=%s/loadindex vlen=%d etype=int is_masked_op=%d",
+                       is_scatter, is_scatter ? "scatter" : "gather",
+@@ -1546,12 +1546,15 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+     return false;
+   }
+ 
++  Node* index_vect = nullptr;
+   const TypeInstPtr* vbox_idx_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_idx_klass);
+-  Node* index_vect = unbox_vector(argument(8), vbox_idx_type, T_INT, num_elem);
+-  if (index_vect == nullptr) {
+-    set_map(old_map);
+-    set_sp(old_sp);
+-    return false;
++  if (!is_subword_type(elem_bt)) {
++    index_vect = unbox_vector(argument(8), vbox_idx_type, T_INT, num_elem);
++    if (index_vect == nullptr) {
++      set_map(old_map);
++      set_sp(old_sp);
++      return false;
++    }
+   }
+ 
+   Node* mask = nullptr;
+@@ -1592,6 +1595,9 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+     Node* vload = nullptr;
+     if (mask != nullptr) {
+       vload = gvn().transform(new LoadVectorGatherMaskedNode(control(), memory(addr), addr, addr_type, vector_type, index_vect, mask));
++    } else if (is_subword_type(elem_bt)) {
++      Node* index_arr_base = array_element_address(argument(12), argument(13), T_INT);
++      vload = gvn().transform(new LoadVectorGatherNode(control(), memory(addr), addr, addr_type, vector_type, index_arr_base, argument(11)));
+     } else {
+       vload = gvn().transform(new LoadVectorGatherNode(control(), memory(addr), addr, addr_type, vector_type, index_vect));
+     }
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index fbe9b939991..8da9b0ef336 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -879,16 +879,24 @@ class LoadVectorNode : public LoadNode {
+ // Load Vector from memory via index map
+ class LoadVectorGatherNode : public LoadVectorNode {
+  public:
+-  LoadVectorGatherNode(Node* c, Node* mem, Node* adr, const TypePtr* at, const TypeVect* vt, Node* indices)
++  LoadVectorGatherNode(Node* c, Node* mem, Node* adr, const TypePtr* at, const TypeVect* vt, Node* indices, Node* offset = nullptr)
+     : LoadVectorNode(c, mem, adr, at, vt) {
+     init_class_id(Class_LoadVectorGather);
+-    assert(indices->bottom_type()->is_vect(), "indices must be in vector");
+     add_req(indices);
+-    assert(req() == MemNode::ValueIn + 1, "match_edge expects that last input is in MemNode::ValueIn");
++    assert(req() == MemNode::ValueIn + 1, "match_edge expects that index input is in MemNode::ValueIn");
++    if (offset) {
++      assert(is_subword_type(vect_type()->element_basic_type()), "");
++      add_req(offset);
++    }
+   }
+ 
+   virtual int Opcode() const;
+-  virtual uint match_edge(uint idx) const { return idx == MemNode::Address || idx == MemNode::ValueIn; }
++  virtual uint match_edge(uint idx) const {
++     return idx == MemNode::Address ||
++            idx == MemNode::ValueIn ||
++            ((is_subword_type(vect_type()->element_basic_type())) &&
++              idx == MemNode::ValueIn + 1);
++  }
+ };
+ 
+ //------------------------------StoreVectorNode--------------------------------
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index 3c9217fc985..c057d9bded8 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -3049,7 +3049,36 @@ ByteVector fromArray(VectorSpecies<Byte> species,
+                                    byte[] a, int offset,
+                                    int[] indexMap, int mapOffset) {
+         ByteSpecies vsp = (ByteSpecies) species;
+-        return vsp.vOp(n -> a[offset + indexMap[mapOffset + n]]);
++        IntVector.IntSpecies isp = IntVector.species(vsp.indexShape());
++        Objects.requireNonNull(a);
++        Objects.requireNonNull(indexMap);
++        Class<? extends ByteVector> vectorType = vsp.vectorType();
++
++        int loopIncr = 0;
++        VectorSpecies<Integer> lsp = null;
++
++        // Constant folding should sweep out following conditonal logic.
++        if (isp.length() > IntVector.SPECIES_PREFERRED.length()) {
++            lsp = IntVector.SPECIES_PREFERRED;
++        } else {
++            lsp = isp;
++        }
++
++        // Check indices are within array bounds.
++        for (int i = 0; i < vsp.length(); i += lsp.length()) {
++            IntVector vix = IntVector
++                .fromArray(lsp, indexMap, mapOffset + i)
++                .add(offset);
++            vix = VectorIntrinsics.checkIndex(vix, a.length);
++        }
++
++        return VectorSupport.loadWithMap(
++            vectorType, null, byte.class, vsp.laneCount(),
++            lsp.vectorType(),
++            a, ARRAY_BASE, null, null,
++            a, offset, indexMap, mapOffset, vsp,
++            (c, idx, iMap, idy, s, vm) ->
++            s.vOp(n -> c[idx + iMap[idy+n]]));
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index 39dc04cedb7..dbfab41d6cc 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -2841,6 +2841,7 @@ DoubleVector fromArray(VectorSpecies<Double> species,
+      *         for any lane {@code N} in the vector
+      * @see DoubleVector#toIntArray()
+      */
++
+     @ForceInline
+     public static
+     DoubleVector fromArray(VectorSpecies<Double> species,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index 2095da4328c..363b16c5e7f 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -2865,6 +2865,7 @@ FloatVector fromArray(VectorSpecies<Float> species,
+      *         for any lane {@code N} in the vector
+      * @see FloatVector#toIntArray()
+      */
++
+     @ForceInline
+     public static
+     FloatVector fromArray(VectorSpecies<Float> species,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index 66f6bed91fd..6ef08f1e162 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -3021,6 +3021,7 @@ IntVector fromArray(VectorSpecies<Integer> species,
+      *         for any lane {@code N} in the vector
+      * @see IntVector#toIntArray()
+      */
++
+     @ForceInline
+     public static
+     IntVector fromArray(VectorSpecies<Integer> species,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index 672f3ddc3f7..5a9e2bddf88 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -2882,6 +2882,7 @@ LongVector fromArray(VectorSpecies<Long> species,
+      *         for any lane {@code N} in the vector
+      * @see LongVector#toIntArray()
+      */
++
+     @ForceInline
+     public static
+     LongVector fromArray(VectorSpecies<Long> species,
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index ed74ce21653..4a5155721e8 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -3050,7 +3050,36 @@ ShortVector fromArray(VectorSpecies<Short> species,
+                                    short[] a, int offset,
+                                    int[] indexMap, int mapOffset) {
+         ShortSpecies vsp = (ShortSpecies) species;
+-        return vsp.vOp(n -> a[offset + indexMap[mapOffset + n]]);
++        IntVector.IntSpecies isp = IntVector.species(vsp.indexShape());
++        Objects.requireNonNull(a);
++        Objects.requireNonNull(indexMap);
++        Class<? extends ShortVector> vectorType = vsp.vectorType();
++
++        int loopIncr = 0;
++        VectorSpecies<Integer> lsp = null;
++
++        // Constant folding should sweep out following conditonal logic.
++        if (isp.length() > IntVector.SPECIES_PREFERRED.length()) {
++            lsp = IntVector.SPECIES_PREFERRED;
++        } else {
++            lsp = isp;
++        }
++
++        // Check indices are within array bounds.
++        for (int i = 0; i < vsp.length(); i += lsp.length()) {
++            IntVector vix = IntVector
++                .fromArray(lsp, indexMap, mapOffset + i)
++                .add(offset);
++            vix = VectorIntrinsics.checkIndex(vix, a.length);
++        }
++
++        return VectorSupport.loadWithMap(
++            vectorType, null, short.class, vsp.laneCount(),
++            lsp.vectorType(),
++            a, ARRAY_BASE, null, null,
++            a, offset, indexMap, mapOffset, vsp,
++            (c, idx, iMap, idy, s, vm) ->
++            s.vOp(n -> c[idx + iMap[idy+n]]));
+     }
+ 
+     /**
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index ae4e136406b..5760dc2687c 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -3622,9 +3622,39 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+                                    $type$[] a, int offset,
+                                    int[] indexMap, int mapOffset) {
+         $Type$Species vsp = ($Type$Species) species;
+-        return vsp.vOp(n -> a[offset + indexMap[mapOffset + n]]);
++        IntVector.IntSpecies isp = IntVector.species(vsp.indexShape());
++        Objects.requireNonNull(a);
++        Objects.requireNonNull(indexMap);
++        Class<? extends $abstractvectortype$> vectorType = vsp.vectorType();
++
++        int loopIncr = 0;
++        VectorSpecies<Integer> lsp = null;
++
++        // Constant folding should sweep out following conditonal logic.
++        if (isp.length() > IntVector.SPECIES_PREFERRED.length()) {
++            lsp = IntVector.SPECIES_PREFERRED;
++        } else {
++            lsp = isp;
++        }
++
++        // Check indices are within array bounds.
++        for (int i = 0; i < vsp.length(); i += lsp.length()) {
++            IntVector vix = IntVector
++                .fromArray(lsp, indexMap, mapOffset + i)
++                .add(offset);
++            vix = VectorIntrinsics.checkIndex(vix, a.length);
++        }
++
++        return VectorSupport.loadWithMap(
++            vectorType, null, $type$.class, vsp.laneCount(),
++            lsp.vectorType(),
++            a, ARRAY_BASE, null, null,
++            a, offset, indexMap, mapOffset, vsp,
++            (c, idx, iMap, idy, s, vm) ->
++            s.vOp(n -> c[idx + iMap[idy+n]]));
+     }
+ #else[byteOrShort]
++
+     @ForceInline
+     public static
+     $abstractvectortype$ fromArray(VectorSpecies<$Boxtype$> species,
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/GatherOperationsBenchmark.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/GatherOperationsBenchmark.java
+new file mode 100644
+index 00000000000..9d98781f11c
+--- /dev/null
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/GatherOperationsBenchmark.java
+@@ -0,0 +1,125 @@
++/*
++ *  Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
++ *  DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ *  This code is free software; you can redistribute it and/or modify it
++ *  under the terms of the GNU General Public License version 2 only, as
++ *  published by the Free Software Foundation.
++ *
++ *  This code is distributed in the hope that it will be useful, but WITHOUT
++ *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ *  version 2 for more details (a copy is included in the LICENSE file that
++ *  accompanied this code).
++ *
++ *  You should have received a copy of the GNU General Public License version
++ *  2 along with this work; if not, write to the Free Software Foundation,
++ *  Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ *  Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ *  or visit www.oracle.com if you need additional information or have any
++ *  questions.
++ *
++ */
++
++package org.openjdk.bench.jdk.incubator.vector;
++
++import jdk.incubator.vector.*;
++import java.util.Random;
++import java.util.stream.IntStream;
++import java.util.concurrent.TimeUnit;
++import org.openjdk.jmh.annotations.*;
++
++@OutputTimeUnit(TimeUnit.MILLISECONDS)
++@State(Scope.Thread)
++@Fork(jvmArgsPrepend = {"--add-modules=jdk.incubator.vector"})
++public class GatherOperationsBenchmark {
++    byte  [] barr;
++    byte  [] bres;
++    short [] sarr;
++    short [] sres;
++    int   [] index;
++    int SIZE = 4096;
++
++    static final VectorSpecies<Short> S64 = ShortVector.SPECIES_64;
++    static final VectorSpecies<Short> S128 = ShortVector.SPECIES_128;
++    static final VectorSpecies<Short> S256 = ShortVector.SPECIES_256;
++    static final VectorSpecies<Short> S512 = ShortVector.SPECIES_512;
++    static final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
++    static final VectorSpecies<Byte> B128 = ByteVector.SPECIES_128;
++    static final VectorSpecies<Byte> B256 = ByteVector.SPECIES_256;
++    static final VectorSpecies<Byte> B512 = ByteVector.SPECIES_512;
++
++    @Setup(Level.Trial)
++    public void BmSetup() {
++        Random r = new Random(1245);
++        index = new int[SIZE];
++        barr = new byte[SIZE];
++        bres = new byte[SIZE];
++        sarr = new short[SIZE];
++        sres = new short[SIZE];
++        for (int i = 0; i < SIZE; i++) {
++           barr[i] = (byte)i;
++           sarr[i] = (short)i;
++           index[i] = r.nextInt(SIZE);
++        }
++    }
++
++    @Benchmark
++    public void microShortGather64() {
++        for (int i = 0; i < SIZE; i += S64.length()) {
++            ShortVector.fromArray(S64, sarr, 0, index, i)
++                       .intoArray(sres, i);
++        }
++    }
++    @Benchmark
++    public void microShortGather128() {
++        for (int i = 0; i < SIZE; i += S128.length()) {
++            ShortVector.fromArray(S128, sarr, 0, index, i)
++                       .intoArray(sres, i);
++        }
++    }
++    @Benchmark
++    public void microShortGather256() {
++        for (int i = 0; i < SIZE; i += S256.length()) {
++            ShortVector.fromArray(S256, sarr, 0, index, i)
++                       .intoArray(sres, i);
++        }
++    }
++    @Benchmark
++    public void microShortGather512() {
++        for (int i = 0; i < SIZE; i += S512.length()) {
++            ShortVector.fromArray(S512, sarr, 0, index, i)
++                       .intoArray(sres, i);
++        }
++    }
++
++    @Benchmark
++    public void microByteGather64() {
++        for (int i = 0; i < SIZE; i += B64.length()) {
++            ByteVector.fromArray(B64, barr, 0, index, i)
++                       .intoArray(bres, i);
++        }
++    }
++    @Benchmark
++    public void microByteGather128() {
++        for (int i = 0; i < SIZE; i += B128.length()) {
++            ByteVector.fromArray(B128, barr, 0, index, i)
++                       .intoArray(bres, i);
++        }
++    }
++    @Benchmark
++    public void microByteGather256() {
++        for (int i = 0; i < SIZE; i += B256.length()) {
++            ByteVector.fromArray(B256, barr, 0, index, i)
++                       .intoArray(bres, i);
++        }
++    }
++    @Benchmark
++    public void microByteGather512() {
++        for (int i = 0; i < SIZE; i += B512.length()) {
++            ByteVector.fromArray(B512, barr, 0, index, i)
++                       .intoArray(bres, i);
++        }
++    }
++}

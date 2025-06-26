@@ -1,0 +1,518 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 981a26dedeb..be09965ae4c 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -2118,6 +2118,13 @@ void Assembler::vcvttps2dq(XMMRegister dst, XMMRegister src, int vector_len) {
+   emit_int16(0x5B, (0xC0 | encode));
+ }
+ 
++void Assembler::vcvttpd2dq(XMMRegister dst, XMMRegister src, int vector_len) {
++  assert(vector_len <= AVX_256bit ? VM_Version::supports_avx() : VM_Version::supports_evex(), "");
++  InstructionAttr attributes(vector_len, /* rex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
++  emit_int16((unsigned char)0xE6, (0xC0 | encode));
++}
++
+ void Assembler::vcvtps2dq(XMMRegister dst, XMMRegister src, int vector_len) {
+   assert(vector_len <= AVX_256bit ? VM_Version::supports_avx() : VM_Version::supports_evex(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -2126,7 +2133,7 @@ void Assembler::vcvtps2dq(XMMRegister dst, XMMRegister src, int vector_len) {
+ }
+ 
+ void Assembler::evcvttps2qq(XMMRegister dst, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 2 && VM_Version::supports_avx512dq(), "");
++  assert(VM_Version::supports_avx512dq(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
+@@ -2134,7 +2141,7 @@ void Assembler::evcvttps2qq(XMMRegister dst, XMMRegister src, int vector_len) {
+ }
+ 
+ void Assembler::evcvtpd2qq(XMMRegister dst, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 2 && VM_Version::supports_avx512dq(), "");
++  assert(VM_Version::supports_avx512dq(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
+@@ -2142,7 +2149,7 @@ void Assembler::evcvtpd2qq(XMMRegister dst, XMMRegister src, int vector_len) {
+ }
+ 
+ void Assembler::evcvtqq2ps(XMMRegister dst, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 2 && VM_Version::supports_avx512dq(), "");
++  assert(VM_Version::supports_avx512dq(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F, &attributes);
+@@ -2150,7 +2157,7 @@ void Assembler::evcvtqq2ps(XMMRegister dst, XMMRegister src, int vector_len) {
+ }
+ 
+ void Assembler::evcvttpd2qq(XMMRegister dst, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 2 && VM_Version::supports_avx512dq(), "");
++  assert(VM_Version::supports_avx512dq(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F, &attributes);
+@@ -2158,7 +2165,7 @@ void Assembler::evcvttpd2qq(XMMRegister dst, XMMRegister src, int vector_len) {
+ }
+ 
+ void Assembler::evcvtqq2pd(XMMRegister dst, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 2 && VM_Version::supports_avx512dq(), "");
++  assert(VM_Version::supports_avx512dq(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F, &attributes);
+@@ -2166,7 +2173,7 @@ void Assembler::evcvtqq2pd(XMMRegister dst, XMMRegister src, int vector_len) {
+ }
+ 
+ void Assembler::evpmovwb(XMMRegister dst, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 2  && VM_Version::supports_avx512bw(), "");
++  assert(VM_Version::supports_avx512bw(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(src->encoding(), 0, dst->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 901a6330494..8b078c62859 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1197,6 +1197,9 @@ private:
+   void evcvtpd2qq(XMMRegister dst, XMMRegister src, int vector_len);
+   void evcvttpd2qq(XMMRegister dst, XMMRegister src, int vector_len);
+ 
++  // Convert vector double to int
++  void vcvttpd2dq(XMMRegister dst, XMMRegister src, int vector_len);
++
+   // Evex casts with truncation
+   void evpmovwb(XMMRegister dst, XMMRegister src, int vector_len);
+   void evpmovdw(XMMRegister dst, XMMRegister src, int vector_len);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 8284cd071c2..04b3ec40b09 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -4400,6 +4400,27 @@ void C2_MacroAssembler::vector_cast_float_to_long_special_cases_evex(
+   bind(done);
+ }
+ 
++void C2_MacroAssembler::vector_narrow_cast_double_special_cases_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                                                     XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2,
++                                                                     Register scratch, AddressLiteral float_sign_flip,
++                                                                     int vec_enc) {
++  Label done;
++  evmovdquq(xtmp1, k0, float_sign_flip, false, vec_enc, scratch);
++  Assembler::evpcmpeqd(ktmp1, k0, xtmp1, dst, vec_enc);
++  kortestwl(ktmp1, ktmp1);
++  jccb(Assembler::equal, done);
++
++  vpxor(xtmp2, xtmp2, xtmp2, vec_enc);
++  evcmppd(ktmp2, k0, src, src, Assembler::UNORD_Q, vec_enc);
++  evmovdqul(dst, ktmp2, xtmp2, true, vec_enc);
++
++  kxorwl(ktmp1, ktmp1, ktmp2);
++  evcmppd(ktmp1, ktmp1, src, xtmp2, Assembler::NLT_UQ, vec_enc);
++  vpternlogq(xtmp2, 0x11, xtmp1, xtmp1, vec_enc);
++  evmovdqul(dst, ktmp1, xtmp2, true, vec_enc);
++  bind(done);
++}
++
+ /*
+  * Following routine handles special floating point values(NaN/Inf/-Inf/Max/Min) for casting operation.
+  * If src is NaN, the result is 0.
+@@ -4429,6 +4450,67 @@ void C2_MacroAssembler::vector_cast_double_special_cases_evex(XMMRegister dst, X
+   bind(done);
+ }
+ 
++void C2_MacroAssembler::vector_narrow_cast_double_special_cases_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                                                    XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5, Register scratch,
++                                                                    AddressLiteral float_sign_flip, int vec_enc) {
++  Label done;
++  // Compare the destination lanes with float_sign_flip
++  // value to get mask for all special values.
++  vmovdqu(xtmp1, float_sign_flip, scratch, vec_enc);
++  vpcmpeqd(xtmp2, dst, xtmp1, Assembler::AVX_128bit);
++  vptest(xtmp2, xtmp2, vec_enc);
++  jccb(Assembler::equal, done);
++
++  // Flip float_sign_flip to get max integer value.
++  vpcmpeqd(xtmp4, xtmp4, xtmp4, Assembler::AVX_128bit);
++  vpxor(xtmp1, xtmp1, xtmp4, vec_enc);
++
++  vpxor(xtmp4, xtmp4, xtmp4, vec_enc);
++  vcmppd(xtmp3, src, src, Assembler::UNORD_Q, vec_enc);
++  // Narrow down the mask for quadword lane to integer lane.
++  vpackssdw(xtmp3, xtmp3, xtmp4, vec_enc);
++  if (vec_enc == Assembler::AVX_256bit) {
++    vpermq(xtmp3, xtmp3, 0xD8, vec_enc);
++  }
++  vblendvps(dst, dst, xtmp4, xtmp3, vec_enc);
++
++  // Recompute the mask for remaining special value.
++  vpxor(xtmp2, xtmp2, xtmp3, vec_enc);
++  // Extract mask corresponding to non-negative source lanes.
++  vcmppd(xtmp5, src, xtmp4, Assembler::NLT_UQ, vec_enc);
++  // Narrow down the mask for quadword lane to integer lane.
++  vpackssdw(xtmp5, xtmp5, xtmp4, vec_enc);
++  if (vec_enc == Assembler::AVX_256bit) {
++    vpermq(xtmp5, xtmp5, 0xD8, vec_enc);
++  }
++  vpand(xtmp3, xtmp5, xtmp2, vec_enc);
++
++  vblendvps(dst, dst, xtmp1, xtmp3, vec_enc);
++  bind(done);
++}
++
++// Handling for downcasting from double to integer or sub-word types on AVX2.
++void C2_MacroAssembler::vector_castD2X_avx(BasicType to_elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                           XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5,
++                                           Register scratch, int vec_enc) {
++  int to_elem_sz = type2aelembytes(to_elem_bt);
++  assert(to_elem_sz < 8, "");
++  vcvttpd2dq(dst, src, vec_enc);
++  vector_narrow_cast_double_special_cases_avx(dst, src, xtmp1, xtmp2, xtmp3, xtmp4, xtmp5, scratch,
++                                              ExternalAddress(StubRoutines::x86::vector_float_sign_flip()), vec_enc);
++  vpxor(xtmp4, xtmp4, xtmp4, vec_enc);
++  if (to_elem_sz < 4) {
++    vector_narrow_cast_int_to_subword(to_elem_bt, dst, xtmp4, scratch, vec_enc);
++  }
++}
++
++void C2_MacroAssembler::vector_castD2I_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                            KRegister ktmp1, KRegister ktmp2, AddressLiteral double_sign_flip,
++                                            Register scratch, int vec_enc) {
++  vcvttpd2dq(dst, src, vec_enc);
++  vector_narrow_cast_double_special_cases_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, scratch, double_sign_flip, vec_enc);
++}
++
+ /*
+  * Algorithm for vector D2L and F2I conversions:-
+  * a) Perform vector D2L/F2I cast.
+@@ -4446,18 +4528,63 @@ void C2_MacroAssembler::vector_castD2L_evex(XMMRegister dst, XMMRegister src, XM
+   vector_cast_double_special_cases_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, scratch, double_sign_flip, vec_enc);
+ }
+ 
+-void C2_MacroAssembler::vector_castF2I_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++void C2_MacroAssembler::vector_narrow_cast_int_to_subword(BasicType to_elem_bt, XMMRegister dst, XMMRegister zero,
++                                                          Register scratch, int vec_enc) {
++  switch(to_elem_bt) {
++    case T_SHORT:
++      vpand(dst, dst, ExternalAddress(StubRoutines::x86::vector_int_to_short_mask()), vec_enc, scratch);
++      vpackusdw(dst, dst, zero, vec_enc);
++      if(vec_enc == Assembler::AVX_256bit) {
++        vpermq(dst, dst, 0xD8, vec_enc);
++      }
++      break;
++    case  T_BYTE:
++      vpand(dst, dst, ExternalAddress(StubRoutines::x86::vector_int_to_byte_mask()), vec_enc, scratch);
++      vpackusdw(dst, dst, zero, vec_enc);
++      if(vec_enc == Assembler::AVX_256bit) {
++        vpermq(dst, dst, 0xD8, vec_enc);
++      }
++      vpackuswb(dst, dst, zero, vec_enc);
++      break;
++    default:
++      fatal("Unsupported type %s", type2name(to_elem_bt));
++      break;
++  }
++}
++
++void C2_MacroAssembler::vector_castF2X_avx(BasicType to_elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
+                                            XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
+                                            AddressLiteral float_sign_flip, Register scratch, int vec_enc) {
++  int to_elem_sz = type2aelembytes(to_elem_bt);
++  assert(to_elem_sz <= 4, "");
+   vcvttps2dq(dst, src, vec_enc);
+   vector_cast_float_special_cases_avx(dst, src, xtmp1, xtmp2, xtmp3, xtmp4, scratch, float_sign_flip, vec_enc);
++  vpxor(xtmp2, xtmp2, xtmp2, vec_enc);
++  if (to_elem_sz < 4) {
++    vector_narrow_cast_int_to_subword(to_elem_bt, dst, xtmp2, scratch, vec_enc);
++  }
+ }
+ 
+-void C2_MacroAssembler::vector_castF2I_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+-                                            KRegister ktmp1, KRegister ktmp2, AddressLiteral float_sign_flip,
++void C2_MacroAssembler::vector_castF2X_evex(BasicType to_elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                            XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2, AddressLiteral float_sign_flip,
+                                             Register scratch, int vec_enc) {
++  int to_elem_sz = type2aelembytes(to_elem_bt);
++  assert(to_elem_sz <= 4, "");
+   vcvttps2dq(dst, src, vec_enc);
+   vector_cast_float_special_cases_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, scratch, float_sign_flip, vec_enc);
++  switch(to_elem_bt) {
++    case T_INT:
++      break;
++    case T_SHORT:
++      evpmovdw(dst, dst, vec_enc);
++      break;
++    case T_BYTE:
++      evpmovdb(dst, dst, vec_enc);
++      break;
++    default:
++      fatal("Unsupported type %s", type2name(to_elem_bt));
++      break;
++  }
+ }
+ 
+ void C2_MacroAssembler::vector_castF2L_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+@@ -4467,12 +4594,14 @@ void C2_MacroAssembler::vector_castF2L_evex(XMMRegister dst, XMMRegister src, XM
+   vector_cast_float_to_long_special_cases_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, scratch, double_sign_flip, vec_enc);
+ }
+ 
+-void C2_MacroAssembler::vector_castD2X_evex(BasicType to_elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
+-                                            XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2,
+-                                            AddressLiteral double_sign_flip, Register scratch, int vec_enc) {
+-  vector_castD2L_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, double_sign_flip, scratch, vec_enc);
+-  if (to_elem_bt != T_LONG) {
++void C2_MacroAssembler::vector_castD2X_evex(BasicType to_elem_bt, XMMRegister dst, XMMRegister src,
++                                            XMMRegister xtmp1, XMMRegister xtmp2, KRegister ktmp1,
++                                            KRegister ktmp2, Register scratch, int vec_enc) {
++  if (VM_Version::supports_avx512dq()) {
++    vector_castD2L_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, ExternalAddress(StubRoutines::x86::vector_double_sign_flip()), scratch, vec_enc);
+     switch(to_elem_bt) {
++      case T_LONG:
++        break;
+       case T_INT:
+         evpmovsqd(dst, dst, vec_enc);
+         break;
+@@ -4484,7 +4613,25 @@ void C2_MacroAssembler::vector_castD2X_evex(BasicType to_elem_bt, XMMRegister ds
+         evpmovsqd(dst, dst, vec_enc);
+         evpmovdb(dst, dst, vec_enc);
+         break;
+-      default: assert(false, "%s", type2name(to_elem_bt));
++      default:
++        fatal("Unsupported type %s", type2name(to_elem_bt));
++        break;
++    }
++  } else {
++    assert(type2aelembytes(to_elem_bt) <= 4, "");
++    vector_castD2I_evex(dst, src, xtmp1, xtmp2, ktmp1, ktmp2, ExternalAddress(StubRoutines::x86::vector_float_sign_flip()), scratch, vec_enc);
++    switch(to_elem_bt) {
++      case T_INT:
++        break;
++      case T_SHORT:
++        evpmovdw(dst, dst, vec_enc);
++        break;
++      case T_BYTE:
++        evpmovdb(dst, dst, vec_enc);
++        break;
++      default:
++        fatal("Unsupported type %s", type2name(to_elem_bt));
++        break;
+     }
+   }
+ }
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 21b294a7ff7..12d0c05ecad 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -308,12 +308,12 @@ public:
+   void masked_op(int ideal_opc, int mask_len, KRegister dst,
+                  KRegister src1, KRegister src2);
+ 
+-  void vector_castF2I_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++  void vector_castF2X_avx(BasicType to_elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
+                           XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4,
+                           AddressLiteral float_sign_flip, Register scratch, int vec_enc);
+ 
+-  void vector_castF2I_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+-                           KRegister ktmp1, KRegister ktmp2, AddressLiteral float_sign_flip,
++  void vector_castF2X_evex(BasicType to_elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                           XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2, AddressLiteral float_sign_flip,
+                            Register scratch, int vec_enc);
+ 
+   void vector_castF2L_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+@@ -325,12 +325,31 @@ public:
+                            Register scratch, int vec_enc);
+ 
+   void vector_castD2X_evex(BasicType to_elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
+-                           XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2, AddressLiteral double_sign_flip,
++                           XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2, Register scratch, int vec_enc);
++
++  void vector_castD2I_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                           KRegister ktmp1, KRegister ktmp2, AddressLiteral double_sign_flip,
+                            Register scratch, int vec_enc);
+ 
++  void vector_castD2X_avx(BasicType to_elem_bt, XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                          XMMRegister xtmp2, XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5,
++                          Register scratch, int vec_enc);
++
++  void vector_narrow_cast_int_to_subword(BasicType to_elem_bt, XMMRegister dst, XMMRegister zero,
++                                         Register scratch, int vec_enc);
++
+   void vector_unsigned_cast(XMMRegister dst, XMMRegister src, int vlen_enc,
+                             BasicType from_elem_bt, BasicType to_elem_bt);
+ 
++  void vector_narrow_cast_double_special_cases_avx(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                                   XMMRegister xtmp3, XMMRegister xtmp4, XMMRegister xtmp5, Register scratch,
++                                                   AddressLiteral float_sign_flip, int vec_enc);
++
++  void vector_narrow_cast_double_special_cases_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1,
++                                                    XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2,
++                                                    Register scratch, AddressLiteral float_sign_flip,
++                                                    int vec_enc);
++
+   void vector_cast_double_special_cases_evex(XMMRegister dst, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
+                                              KRegister ktmp1, KRegister ktmp2, Register scratch, AddressLiteral double_sign_flip,
+                                              int vec_enc);
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 31b5347a06d..244c05063e9 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1884,15 +1884,13 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+       }
+       break;
+     case Op_VectorCastD2X:
+-      // Conversion to integral type is only supported on AVX-512 platforms with avx512dq.
+-      // Need avx512vl for size_in_bits < 512
+-      if (is_integral_type(bt)) {
+-        if (!VM_Version::supports_avx512dq()) {
+-          return false;
+-        }
+-        if (size_in_bits < 512 && !VM_Version::supports_avx512vl()) {
+-          return false;
+-        }
++      if (is_integral_type(bt) && UseAVX < 2) {
++        return false;
++      }
++    case Op_VectorCastF2X:
++      // Conversion to long type is only supported on AVX-512 platforms with avx512dq.
++      if (bt == T_LONG && !VM_Version::supports_avx512dq()) {
++        return false;
+       }
+       break;
+     case Op_RoundVD:
+@@ -1900,23 +1898,6 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+         return false;
+       }
+       break;
+-    case Op_VectorCastF2X:
+-      // F2I is supported on all AVX and above platforms
+-      // For conversion to other integral types need AVX512:
+-      //     Conversion to long in addition needs avx512dq
+-      //     Need avx512vl for size_in_bits < 512
+-      if (is_integral_type(bt) && (bt != T_INT)) {
+-        if (UseAVX <= 2) {
+-          return false;
+-        }
+-        if ((bt == T_LONG) && !VM_Version::supports_avx512dq()) {
+-          return false;
+-        }
+-        if (size_in_bits < 512 && !VM_Version::supports_avx512vl()) {
+-          return false;
+-        }
+-      }
+-      break;
+     case Op_MulReductionVI:
+       if (bt == T_BYTE && size_in_bits == 512 && !VM_Version::supports_avx512bw()) {
+         return false;
+@@ -7350,45 +7331,25 @@ instruct vcastFtoD_reg(vec dst, vec src) %{
+ %}
+ 
+ 
+-instruct castFtoI_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, rRegP scratch, rFlagsReg cr) %{
+-  // F2I conversion for < 64 byte vector using AVX instructions
+-  // AVX512 platforms that dont support avx512vl also use AVX instructions to support F2I
+-  predicate(!VM_Version::supports_avx512vl() &&
+-            Matcher::vector_length_in_bytes(n) < 64 &&
+-            Matcher::vector_element_basic_type(n) == T_INT);
++instruct castFtoX_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, rRegP scratch, rFlagsReg cr) %{
++  predicate(!VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n->in(1)) < 64 &&
++            type2aelembytes(Matcher::vector_element_basic_type(n)) <= 4);
+   match(Set dst (VectorCastF2X src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP scratch, KILL cr);
+-  format %{ "vector_cast_f2i $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3, $xtmp4 and $scratch as TEMP" %}
++  format %{ "vector_cast_f2x $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3, $xtmp4 and $scratch as TEMP" %}
+   ins_encode %{
+-    int vlen_enc = vector_length_encoding(this);
+-    __ vector_castF2I_avx($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
++    int vlen_enc = vector_length_encoding(this, $src);
++    BasicType to_elem_bt = Matcher::vector_element_basic_type(this);
++    __ vector_castF2X_avx(to_elem_bt, $dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
+                           $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $xtmp4$$XMMRegister,
+                           ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}
+ 
+-instruct castFtoI_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rRegP scratch, rFlagsReg cr) %{
+-  predicate((VM_Version::supports_avx512vl() ||
+-             Matcher::vector_length_in_bytes(n) == 64) &&
+-             Matcher::vector_element_basic_type(n) == T_INT);
+-  match(Set dst (VectorCastF2X src));
+-  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2, TEMP scratch, KILL cr);
+-  format %{ "vector_cast_f2i $dst,$src\t! using $xtmp1, $xtmp2, $ktmp1, $ktmp2 and $scratch as TEMP" %}
+-  ins_encode %{
+-    int vlen_enc = vector_length_encoding(this);
+-    __ vector_castF2I_evex($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
+-                           $xtmp2$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister,
+-                           ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc);
+-  %}
+-  ins_pipe( pipe_slow );
+-%}
+-
+ instruct castFtoX_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rRegP scratch, rFlagsReg cr) %{
+-  // F2X conversion for integral non T_INT target using AVX512 instructions
+-  // Platforms that dont support avx512vl can only support 64 byte vectors
+-  predicate(is_integral_type(Matcher::vector_element_basic_type(n)) &&
+-            Matcher::vector_element_basic_type(n) != T_INT);
++  predicate((VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n->in(1)) == 64) &&
++            is_integral_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (VectorCastF2X src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2, TEMP scratch, KILL cr);
+   format %{ "vector_cast_f2x $dst,$src\t! using $xtmp1, $xtmp2, $ktmp1, $ktmp2 and $scratch as TEMP" %}
+@@ -7401,15 +7362,9 @@ instruct castFtoX_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, k
+                              ExternalAddress(vector_double_signflip()), $scratch$$Register, vlen_enc);
+     } else {
+       int vlen_enc = vector_length_encoding(this, $src);
+-      __ vector_castF2I_evex($dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
++      __ vector_castF2X_evex(to_elem_bt, $dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
+                              $xtmp2$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister,
+                              ExternalAddress(vector_float_signflip()), $scratch$$Register, vlen_enc);
+-      if (to_elem_bt == T_SHORT) {
+-        __ evpmovdw($dst$$XMMRegister, $dst$$XMMRegister, vlen_enc);
+-      } else {
+-        assert(to_elem_bt == T_BYTE, "required");
+-        __ evpmovdb($dst$$XMMRegister, $dst$$XMMRegister, vlen_enc);
+-      }
+     }
+   %}
+   ins_pipe( pipe_slow );
+@@ -7426,17 +7381,34 @@ instruct vcastDtoF_reg(vec dst, vec src) %{
+   ins_pipe( pipe_slow );
+ %}
+ 
++instruct castDtoX_reg_avx(vec dst, vec src, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4, vec xtmp5, rRegP scratch, rFlagsReg cr) %{
++  predicate(!VM_Version::supports_avx512vl() && Matcher::vector_length_in_bytes(n->in(1)) < 64 &&
++            is_integral_type(Matcher::vector_element_basic_type(n)));
++  match(Set dst (VectorCastD2X src));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4, TEMP xtmp5, TEMP scratch, KILL cr);
++  format %{ "vector_cast_d2x $dst,$src\t! using $xtmp1, $xtmp2, $xtmp3, $xtmp4, $xtmp5 and $scratch as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this, $src);
++    BasicType to_elem_bt = Matcher::vector_element_basic_type(this);
++    __ vector_castD2X_avx(to_elem_bt, $dst$$XMMRegister, $src$$XMMRegister,
++                          $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp3$$XMMRegister,
++                          $xtmp4$$XMMRegister, $xtmp5$$XMMRegister, $scratch$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct castDtoX_reg_evex(vec dst, vec src, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2, rRegP scratch, rFlagsReg cr) %{
+-  predicate(is_integral_type(Matcher::vector_element_basic_type(n)));
++  predicate((VM_Version::supports_avx512vl() || Matcher::vector_length_in_bytes(n->in(1)) == 64) &&
++            is_integral_type(Matcher::vector_element_basic_type(n)));
+   match(Set dst (VectorCastD2X src));
+   effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2, TEMP scratch, KILL cr);
+   format %{ "vector_cast_d2x $dst,$src\t! using $xtmp1, $xtmp2, $ktmp1, $ktmp2 and $scratch as TEMP" %}
+   ins_encode %{
+     int vlen_enc = vector_length_encoding(this, $src);
+     BasicType to_elem_bt = Matcher::vector_element_basic_type(this);
+-    __ vector_castD2X_evex(to_elem_bt, $dst$$XMMRegister, $src$$XMMRegister, $xtmp1$$XMMRegister,
+-                           $xtmp2$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister,
+-                           ExternalAddress(vector_double_signflip()), $scratch$$Register, vlen_enc);
++    __ vector_castD2X_evex(to_elem_bt, $dst$$XMMRegister, $src$$XMMRegister,
++                           $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $ktmp1$$KRegister,
++                           $ktmp2$$KRegister, $scratch$$Register, vlen_enc);
+   %}
+   ins_pipe( pipe_slow );
+ %}

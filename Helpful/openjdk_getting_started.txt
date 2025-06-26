@@ -1,0 +1,370 @@
+sudo ./configure --prefix=/home/jatinbha/sandboxes/jdk/build --with-debug-level=slowdebug --with-native-debug-symbols=external --with-boot-jdk=/home/jatinbha/softwares/jdk-24 --disable-warnings-as-errors --with-jtreg=/home/jatinbha/sandboxes/jtreg/build/images/jtreg/ --with-gtest=/home/jatinbha/softwares/googletest-1.14.0
+
+make test-tier1 CONF=linux-x86_64-server-fastdebug JTREG="JOBS=8;TIMEOUT_FACTOR=4;JAVA_OPTIONS=-XX:UseAVX=3" | tee tier1.txt
+
+WSL : sudo ./configure --prefix=$PWD/build --with-debug-level=slowdebug --with-native-debug-symbols=external --with-boot-jdk=/home/intel/softwares/jdk-13 --disable-warnings-as-errors --build=x86_64-linux-gnu-linux
+
+
+With-Jtreg:
+DPROMPT>export JT_HOME=/home/intel/sandboxes/jdk-jtreg/jtreg/build/images/jtreg/DPROMPT>sudo ./configure --prefix=$PWD/build --with-debug-level=slowdebug --with-jtreg=$JT_HOME --with-native-debug-symbols=external --with-boot-jdk=/home/intel/softwares/jdk-13 --disable-warnings-as-errors
+
+ jtreg -a -agentvm -timeoutFactor:4 -va -jdk:build/linux-x64/images/jdk
+  -vmoptions:"-ea -esa -Xcomp -XX:-TieredCompilation"
+  -dir:open/test/jdk jdk/incubator/vector/VectorHash.java
+
+4.  Use the `-show` option. For example,
+    * `jtreg -show:System.out` _test-name_
+
+    $ jtreg -showGroups test/langtools
+    $ jtreg -showGroups test/langtools:tier2
+
+### How do I see what tests will be executed, without actually executing them?
+
+Use the `-listtests` option.
+
+    $ jtreg -listtests test/langtools/jdk/javadoc/doclet
+
+
+jtreg -J-Djavatest.maxOutputSize=1000000000 -testjdk:/home/jatinbha/sandboxes/dev/build/linux-x86_64-server-slowdebug/jdk/ -va  Short64VectorTests.java
+
+
+AARCH64: HotSpot-Build
+ sudo apt-get install libc6-arm64-cross
+ sudo apt-get install gcc-aarch64-linux-gnu
+ sudo apt-get install g++-aarch64-linux-gnu
+
+WINDOWS:
+
+C:\Users\jatinbha\sandboxes\jdk-release-arraycopy\test\hotspot\jtreg>sde.exe -clx -- java.exe -jar C:\Users\jatinbha\sandboxes\jtreg\lib\jtreg.jar compiler\arraycopy\TestArrayCopyDisjoint.java
+Picked up _JAVA_OPTIONS: -Djava.net.preferIPv4Stack=true
+
+C:\Users\jatinbha\sandboxes\jdk-release-arraycopy\test\hotspot\jtreg>for /f %I in (files.txt) DO sde.exe -clx -- java.exe -jar C:\Users\jatinbha\sandboxes\jtreg\lib\jtreg.jar %I
+
+sudo ./configure --prefix=$PWD/build --with-debug-level=slowdebug --with-native-debug-symbols=external --with-boot-jdk=/home/intel/softwares/jdk-13 --disable-warnings-as-errors --host=aarch64-linux-gnu --enable-headless-only --with-x=No --with-freetype=bundled --with-jvm-features=-zgc
+sudo make CONF=linux-aarch64-server-slowdebug hotspot
+
+SPARC64: Hotspot Buil
+ sudo apt-get install libc6-sparc-sparc64-cross
+ sudo apt-get install gcc-sparc64-linux-gnu
+ sudo apt-get install g++-sparc64-linux-gnu
+ sudo ./configure --prefix=$PWD/build --with-debug-level=slowdebug --with-native-debug-symbols=external --with-boot-jdk=/home/intel/softwares/jdk-13 --disable-warnings-as-errors --host=sparc64-linux-gnu --enable-headless-only --with-x=No --with-freetype=bundled --with-jvm-features=-zgc
+ sudo make CONF=linux-sparcv9-server-slowdebug hotspot
+
+
+CLANG
+sudo ./configure --prefix=$PWD/build --with-debug-level=slowdebug --with-native-debug-symbols=external --with-boot-jdk=/home/intel/softwares/jdk-13 --disable-warnings-as-errors --with-toolchain-type=clang --with-tools-dir=$(llvm-config --bindir)
+
+sudo make
+sudo make install
+
+sudo make docs
+
+Missing dependency : pandoc
+
+32 bit builds:
+     gcc (libc 32 and 64 bit):
+       sudo apt-get install gcc-multilib g++-multilib
+     sudo apt-get install libx11-6-32bit
+     sudo dpkg --add-architecture i386
+     sudo apt update
+     sudo apt install libx11-6:i386
+     sudo apt-get install libasound-dev:i386     
+     sudo apt-get install libfreetype-dev:i386     
+     sudo apt-get upgrade libx11-dev libxext-dev:i386 libxrender-dev:i386 libxrandr-dev:i386 libxtst-dev:i386 libxt-dev:i386
+     sudo apt-get install libcups2-dev:i386
+
+     sudo ./configure --prefix=$PWD/build --with-debug-level=release --with-native-debug-symbols=external --with-boot-jdk=/home/jatinbha/softwares/jdk-15 --disable-warnings-as-errors --with-jtreg=/home/jatinbha/sandboxes/jtreg/build/images/jtreg/ --with-target-bits=32 --with-x=false
+
+<CONFIGURE -build> + --with-target-bits=32 
+
+jtreg -testjdk:/home/intel/sandboxes/jdk-vectorapi3/dev/build/linux-x86_64-server-slowdebug/jdk -va -conc:4 -timeout:4 :hotspot_compiler
+
+jtreg -J-Djavatest.maxOutputSize=1000000000 -testjdk:/home/jatinbha/sandboxes/dev/build/linux-x86_64-server-slowdebug/jdk/ -va  Short64VectorTests.java
+
+
+Replay:
+javad -XX:+PauseAtStartup -XX:+ReplayCompiles -XX:ReplayDataFile=./replay_pid2197.log -XX:+ReplayIgnoreInitErrors -cp . 
+java -cp ./osdt_core-19.7.0.0.jar -XX:+ReplayCompiles -XX:+PauseAtStartup -XX:+ReplayIgnoreInitErrors -XX:ReplayDataFile=replay.log
+
+Replay JTREG failure:
+javad -cp /home/jatinbha/sandboxes/jdk2/jdk/test/jdk/java/lang/JTwork/classes/java/lang/CompressExpandTest.d:/home/jatinbha/sandboxes/jdk2/jdk/test/jdk/java/lang:/home/jatinbha/sandboxes/jtreg/build/images/jtreg/lib/testng.jar:/home/jatinbha/sandboxes/jtreg/build/images/jtreg/lib/jcommander.jar:/home/jatinbha/sandboxes/jtreg/build/images/jtreg/lib/guice.jar:/home/jatinbha/sandboxes/jtreg/build/images/jtreg/lib/javatest.jar:/home/jatinbha/sandboxes/jtreg/build/images/jtreg/lib/jtreg.jar  -XX:+ReplayCompiles -XX:+ReplayIgnoreInitErrors -XX:ReplayDataFile=/home/jatinbha/sandboxes/jdk2/jdk/test/jdk/java/lang/JTwork/scratch/replay_pid1859455.log
+
+set CLASSPATH
+CPROMPT>java --add-modules=jdk.incubator.vector -cp $CLASSPATH   -XX:+ReplayCompiles -XX:+ReplayIgnoreInitErrors -XX:ReplayDataFile=/home/jatinbha/sandboxes/lworld+vector/valhalla.new_merge.alt/valhalla/test/jdk/jdk/incubator/vector/replay_pid3617931.log
+
+Retain Outs:
+java -jar $JT_HOME/lib/jtreg.jar -conc:4 -vmoptions:"-XX:UseAVX=3 -XX:ArrayCopyPartialInlineSize=32" -timeout:4 -testjdk:$JAVA_HOME -avm --max-pool-size 1 -retain:all ./vmTestbase/nsk/sysdict/vm/stress/btree/btree001/btree001.java
+
+Output overflow:
+JT Harness has limited the test output to the text
+at the beginning and the end, so that you can see how the
+test began, and how it completed.
+
+If you need to see more of the output from the test,
+set the system property javatest.maxOutputSize to a higher
+value. The current value is 100000
+...
+
+JCOV=
+DPROMPT>javac test.java 
+DPROMPT>java -javaagent:/home/intel/sandboxes/jdk-jcov/jcov/JCOV_BUILD/jcov_3.0/jcov.jar=include=test,native=on,type=branch,abstract=off -cp . test
+Res = 2127327392
+DPROMPT>java -jar /home/intel/sandboxes/jdk-jcov/jcov/JCOV_BUILD/jcov_3.0/jcov.jar RepGen  -format html -output out result.xml
+DPROMPT>chromium-browser out/index.html
+
+
+Escape Analysis and Object init flags:
+javad -XX:UseAVX=3 -XX:InitArrayShortSize=128 -XX:-UseFastStosb -XX:AVX3Threshold=0 -XX:+UseXMMForObjInit -XX:-EliminateAllocations -XX:-DoEscapeAnalysis  -XX:CompileCommand='compileonly,TestClearArrayAcc::init_mem' -XX:CompileCommand='dontinline,TestClearArrayAcc::init_mem_leaf' -XX:CompileCommand='print,TestClearArrayAcc::init_mem'  -cp . TestClearArrayAcc
+
+Golden Baseline:
+----------------
+TEST RESULT: Passed. Execution successful
+--------------------------------------------------
+Test results: passed: 894; failed: 7; error: 34
+Report written to /home/helpful/JTreport/html/report.html
+Results written to /home/helpful/JTwork
+Error: Some tests failed or other problems occurred.
+
+
+ 2/ Create softlinks for libasound.so and libfreetype.so in /usr/lib/i386-linux-gnu
+
+ 3/ Pass with --with-target-bits=32 while configuring build.
+
+
+-XX:CICompilerCount=1 -XX:+PrintCompilation -XX:+UnlockDiagnosticVMOptions -XX:+PrintInlining
+
+or with -XX:+UnlockDiagnosticVMOptions -XX:+LogCompilaiton which writes all details about compilations into file.
+
+I general for short running methods (like these min/max) it is preferable to call test method which call min/max in a loop enough time (>10K times) to trigger its compilation instead of using -Xcomp which has some side effects (compileonly option is tricky - better avoid it). And use -Xbatch to wait compilations to finish when it triggered by invocation count.
+
+You can also lower CompileThreshold value (1000?) since you run with -XX:-TieredCompilation. But better to use
+-XX:CompileThresholdScaling=0.1 which works in all cases.
+
+Patch:
+hg import jdk.patch.txt --no-commit
+
+Vector API:
+CMD:
+javad --add-modules=jdk.incubator.vector  -XX:+LogCompilation -XX:+TraceLoopOpts -XX:CompileOnly='AddTest::workload' -XX:CompileCommand='print,AddTest::workload' -XX:+PrintInlining -cp . AddTest 
+
+Vector API Tests:
+/home/intel/sandboxes/jdk-vectorapi/dev/test/jdk/jdk/incubator/vector
+
++LogCompilation look for 
+<statistics type='intrinsic'>
+
+
+JMH:
+### Configuration
+
+To be able to run JTReg tests, `configure` needs to know where to find the
+JTReg test framework. If it is not picked up automatically by configure, use
+the `--with-jtreg=<path to jtreg home>` option to point to the JTReg framework.
+Note that this option should point to the JTReg home, i.e. the top directory,
+containing `lib/jtreg.jar` etc. (An alternative is to set the `JT_HOME`
+environment variable to point to the JTReg home before running `configure`.)
+
+To be able to run microbenchmarks, `configure` needs to know where to find
+the JMH dependency. Use `--with-jmh=<path to JMH jars>` to point to a directory
+containing the core JMH and transitive dependencies. The recommended dependencies
+can be retrieved by running `sh make/devkit/createJMHBundle.sh`, after which
+`--with-jmh=build/jmh/jars` should work.
+
+1) JAVA_HOME settings
+2) Proxy settings in ~/.m2/settings.xml
+3) javac.target changes to java --version (13)
+
+
+sudo make test  TEST="micro:java.math.FpMinMaxBenchmark.*" MICRO="FORK=1;ITER=1;WARMUP_ITER=2" CONF=linux-x86_64-server-slowdebug
+
+export JDK8_HOME=<>
+make test  TEST="hotspot/jtreg/compiler/codegen/TestCharVect2.java" JTREG="TIMEOUT_FACTOR=4;JOBS=8;JAVA_OPTIONS=-XX:UseAVX=3 -XX:ArrayCopyPartialInlineSize=64"
+make test-tier1 JTREG="TIMEOUT_FACTOR=4;JOBS=8;JAVA_OPTIONS=-XX:UseAVX=3 -XX:ArrayCopyPartialInlineSize=64"  | tee log_AVX3_PI64.txt
+
+Stand Alone:
+numactl --membind=0 --cpunodebind=0 java -jar target/benchmarks.jar -jvmArgs "-XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions" -f 1 -w 30 -wi 1 -i 1  -prof perfasm -prof perf -prof hs_comp -prof comp 'ArrayCopyAligned' | tee bl_ArrayCopyAligned.txt
+
+
+Vector API Benchmark:
+1) Set JAVA_HOME to point vectorapi2.
+2) Make change in pom.xml javac.target to 13
+
+                    <compilerArgs>
+                       <arg>-Xlint:all</arg>
+                       <arg>-Werror</arg>
+                    </compilerArgs>
+
+
+ bool UseVectorApiIntrinsics                   = true                                   {C2 product} {default}       Enables intrinsification of Vector API
+
+Graal build:
+sudo /home/intel/sandboxes/mx/mx/mx --java-home=/home/intel/sandboxes/jdk-release/jdk/build/linux-x86_64-server-release/images/jdk/  build
+  - compileHelper
+  - src/jdk.internal.vm.compiler/src/org/graalvm/compiler/java/GraphBuilderPhase.java
+      - ByteCodeParser
+           - iterateBytecodesForBlock
+           - processBytecode
+
+CR Server:
+scp -r webrev.00/  jbhateja@cr.openjdk.java.net:/oj/home/jbhateja/8227222/
+
+-XX:MaxVectorSize=16 
+
+Runtime Calls:
+javad -XX:+PrintInterpreter -XX:+PrintBytecodeHistogram  -XX:+CountRuntimeCalls -XX:CompileOnly='jit::caller' -cp . jit 
+
+hg update -r <change_set_number>
+
+Debug:
+java -XX:+UnlockDiagnosticVMOptions -XX:+TraceOnStackReplacement  -XX:+PrintTieredEvents -Xbatch -XX:CompileOnly='Test' Test
+
+  char *method_name = m->name_and_sig_as_C_string();
+
+-XX:+TraceInvocationCounterOverflow
+
+  if (PrintNativeNMethods || PrintDebugInfo || PrintRelocations || PrintDependencies) {
+
+TraceCompilerThreads
+
+UseDynamicNumberOfCompilerThreads
+
+JVM_handle_linux_signal
+
+Git Workflow:
+
+$ git fork https://github.com/openjdk/skara skara
+$ git checkout -b bugfix
+$ # make changes
+$ git jcheck --local
+$ git push --set-upstream origin bugfix
+$ git pr create
+
+AOT:
+jaotc --debug --verbose --output test.so  --verbose test 
+javad -cp . -XX:+UnlockExperimentalVMOptions -XX:+UseAOT -XX:+LogCompilation   -XX:+PrintAOT -XX:AOTLibrary=./jit.so  jit
+
+
+_JAVA_OPTIONS
+javad -XX:+PrintAdapterHandlers -XX:+PrintStubCode -XX:CompileCommand='print,test::doSum' -XX:CompileOnly='test::doSum' -XX:+LogCompilation -XX:-Inline -XX:+TraceSpilling -cp . test >& log.txt
+-XX:+CountRuntimeCalls
+
+
+HG:
+[ui]
+username = jbhateja
+verbose = True
+
+[http_proxy]
+host=proxy.jf.intel.com:911
+
+[paths]
+default = http://hg.openjdk.java.net/jdk/jdk
+default-push = ssh://jbhateja@hg.openjdk.java.net/jdk/jdk
+
+jchecked:
+8241040: Support for AVX-512 Ternary Logic Instruction
+Summary: A new pass has been added which folds expression tree involving vector boolean logic operations into a MacroLogic node.
+Reviewed-by: vlivanov, neliasso
+
+hg commit --amend 
+
+Javac extended cmdline:
+javac -J-XX:UseAVX=3 -J-Dtest.file=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/compiler/vectorization/TestMacroLogicVector.java -J-Dtest.src=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/compiler/vectorization -J-Dtest.src.path=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/compiler/vectorization:/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/lib -J-Dtest.classes=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/JTwork/classes/0/compiler/vectorization/TestMacroLogicVector.d -J-Dtest.class.path=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/JTwork/classes/0/compiler/vectorization/TestMacroLogicVector.d:/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/JTwork/classes/0/test/lib -J-Dtest.vm.opts=-XX:UseAVX=3 -J-Dtest.tool.vm.opts=-J-XX:UseAVX=3 -J-Dtest.compiler.opts=  -J-Dtest.java.opts= -J-Dtest.jdk=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/build/linux-x86_64-server-slowdebug/jdk  -J-Dcompile.jdk=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/build/linux-x86_64-server-slowdebug/jdk -J-Dtest.timeout.factor=4.0 -J-Dtest.root=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg -J-Dtest.nativepath=/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/build/linux-x86_64-server-slowdebug/jdk/../images/test/hotspot/jtreg/native -d /home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/JTwork/classes/0/compiler/vectorization/TestMacroLogicVector.d -sourcepath /home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/compiler/vectorization:/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/lib -classpath /home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/compiler/vectorization:/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/JTwork/classes/0/compiler/vectorization/TestMacroLogicVector.d:/home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/JTwork/classes/0/test/lib /home/jatinbha/sandboxes/jdk-arraycopy-unswitch/test/hotspot/jtreg/compiler/vectorization/TestMacroLogicVector.java
+
+
+Flags:
+ -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0
+
+Graal:
+
+Skara tooling : update and build
+ 2182  cd buildSrc/
+ 2183  ls
+ 2184  mv build build.old
+ 2185  cd ..
+ 2186  sh skara.sh 
+ 2187  sh gradlew 
+ 2188  sudo sh gradlew 
+ 2189  git skara update
+ 2190  sudo git skara update
+
+
+VS Code:
+"settings.json"
+-----------------
+    "java.home": "C:\\Users\\jatinbha\\sandboxes\\git-cmp-acc\\build\\windows-x86_64-server-slowdebug\\images\\jdk",
+    "java.configuration.runtimes": [
+       {
+           "path": "C:\\Users\\jatinbha\\sandboxes\\git-cmp-acc\\build\\windows-x86_64-server-slowdebug\\images\\jdk"
+       }
+    ],
+
+
+Graal Test:
+open$ bash test/hotspot/jtreg/compiler/graalunit/downloadLibs.sh /mydir/graalunit_lib/
+open$ bash configure --with-debug-level=fastdebug --with-graalunit-lib=/mydir/graalunit_lib/ --with-jtreg=/mydir/jtreg
+open$ make jdk-image
+open$ make test-image
+open$ make run-test TEST=compiler/graalunit/HotspotTest.java
+
+HS-DIS 32 bit build:
+sudo make BINUTILS=binutils-2.26/ CFLAGS="-m32 -Wno-implicit-fallthrough -fPIC" all
+
+
+
+Patch validation checklist:
+ - Build and tests:
+   64 bit fastdebug (tier1-3) :-
+     * MaxVectorSize=16,32,64 
+     * UseAVX=0,1,2,3 
+ - Build and smoke tests (manual/minimal set) :-
+   32 bit release
+   64 minimal (C1 with interpreter)
+     * sudo ./configure --with-conf-name=linux--hotspot --enable-debug --disable-precompiled-headers --with-jvm-variants=minimal --with-boot-jdk=/home/jatinbha/softwares/jdk-15  --with-default-make-target="hotspot" --with-zlib=system
+   ZERO:
+     * sudo ./configure --with-conf-name=linux--hotspot --enable-debug --disable-precompiled-headers --with-jvm-variants=zero --with-version-build=0 --with-boot-jdk= --with-default-make-target=hotspot --with-boot-jdk=/home/jatinbha/softwares/jdk-15 --with-zlib=system
+
+ - JMH perf analysis with and without patch.
+ - SPECjbb2015 run to ascertain there should be no perf penalty.
+
+
+Gradle Build:
+-        curl -L "${URL}" -o "${FILENAME}"
++        echo "wget ${URL} -O ${FILENAME}"
++        wget "${URL}" -O "${FILENAME}"
+
+
+javac -J-Dtest.modules=java.base/jdk.internal.misc:+open --add-exports java.base/jdk.internal.misc=ALL-UNNAMED UnsafeIntrinsicsTest.java
+
+java -XX:+PauseAtStartup -Dtest.modules=java.base/jdk.internal.misc:+open --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED -XX:ZCollectionInterval=1 -XX:+UseZGC -XX:+ZVerifyViews -XX:CompileCommand=dontinline,*::mergeImpl* -XX:ZCollectionInterval=1 UnsafeIntrinsicsTest
+
+Features: a/src/jdk.internal.vm.ci/share/classes/jdk.vm.ci.amd64/src/jdk/vm/ci/amd64/AMD64.java
+test/lib-test/jdk/test/whitebox/CPUInfoTest.java
+
+TestNG:
+
+sudo /home/jatinbha/sandboxes/lworld+vector2/valhalla/build/linux-x86_64-server-slowdebug/images/jdk//bin/java -XX:-PauseAtStartup --enable-preview -XX:-UseOnStackReplacement --add-modules=jdk.incubator.vector -XX:-TieredCompilation -XX:-TraceDeoptimization -XX:-IncrementalInline -Xbatch -XX:UseAVX=3 org.testng.TestNG -methods Byte128VectorLoadStoreTests.booleanScatter
+
+
+JVMFlagsOrigin set to COMMAND_LINE for explicit command line options, otherwise set to DEFAULT.
+FLAGS_IS_DEFAULT = Checks flags origin and takes appropriate actions.
+
+GTEST:
+======
+1) sudo make test CONF=fast TEST="gtest:AssemblerX86.validate_vm"
+2) sudo make CONF=fast test-hotspot-gtest
+3) sudo make test CONF=fast TEST="gtest:AssemblerX86.validate_vm" GTEST="OPTIONS=--gtest_list_tests"
+4) sudo make CONF=fast test-hotspot-gtest GTEST="OPTIONS=--gtest_list_tests"
+5) sudo make test CONF=fast TEST="gtest:all" GTEST="OPTIONS=--gtest_list_tests"
+
+
+Feature in Tag Specification : quick referecne 
+/**
+* @test
+* @summary Test Float16 vector conversion chain.
+* @requires (vm.cpu.features ~= ".*avx512vl.*" | vm.cpu.features ~= ".*f16c.*") | os.arch == "aarch64"
+*           | (os.arch == "riscv64" & vm.cpu.features ~= ".*zvfh.*")
+* @library /test/lib /
+
+JTREG
+sudo -E /home/jatinbha/softwares/sde-internal-conf-9.51.0-2025-01-30-lin/sde64 -follow_subprocess -dmr -ptr_raise -icount -- /home/jatinbha/sandboxes/apx/build/linux-x86_64-server-fastdebug/images/jdk//bin/java -jar /home/jatinbha/sandboxes/jtreg/build/images/jtreg/lib/jtreg.jar -va -timeout:16 -jdk:$JAVA_HOME -w:/home/jatinbha/sandboxes/apx/build/linux-x86_64-server-fastdebug/test-support/jtreg_test_hotspot_jtreg_compiler_c2 -status:error,fail test/hotspot/jtreg/compiler/c2/

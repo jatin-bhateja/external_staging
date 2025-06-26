@@ -1,0 +1,69 @@
+diff --git a/src/hotspot/share/opto/cfgnode.cpp b/src/hotspot/share/opto/cfgnode.cpp
+index b14c49caac2..ba24e8f8c91 100644
+--- a/src/hotspot/share/opto/cfgnode.cpp
++++ b/src/hotspot/share/opto/cfgnode.cpp
+@@ -2510,7 +2510,17 @@ Node *PhiNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+       Node* phi = worklist.at(next);
+       for (uint i = 1; i < phi->req() && can_optimize; i++) {
+         Node* n = phi->in(i);
+-        if (n == NULL) {
++        // FIXME: Skipping pushing VectorBox across Phi
++        // since they are special type of InlineTypeNode
++        // carrying VBA as oop fields.
++        // We have a seperate handling for pushing VectorBoxes
++        // across PhiNodes in merge_through_phi.
++        // In long run we should eliminate VectorBox which is
++        // just a light weight wrapper of InlineTypeNode.
++        // Only reason to keep VectorBox was to defer buffering
++        // to a later stage and associate VBA which carry
++        // JVM state to reinitialize GraphKit before buffering.
++        if (n == NULL || n->Opcode() == Op_VectorBox) {
+           can_optimize = false;
+           break;
+         }
+diff --git a/src/hotspot/share/opto/inlinetypenode.cpp b/src/hotspot/share/opto/inlinetypenode.cpp
+index 162e851b4c1..29c2642dfa1 100644
+--- a/src/hotspot/share/opto/inlinetypenode.cpp
++++ b/src/hotspot/share/opto/inlinetypenode.cpp
+@@ -36,9 +36,7 @@
+ 
+ int  InlineTypeNode::stack_size_for_field(ciField* field) {
+   return field->is_multifield_base()
+-             ? (InlineTypeNode::is_multifield_scalarized(field)
+-                    ? field->type()->elem_word_count()
+-                    : 1)
++             ? field->type()->elem_word_count()
+              : field->type()->size();
+ }
+ 
+@@ -153,13 +151,13 @@ bool InlineTypeNode::has_phi_inputs(Node* region) {
+ 
+ // Merges 'this' with 'other' by updating the input PhiNodes added by 'clone_with_phis'
+ InlineTypeNode* InlineTypeNode::merge_with(PhaseGVN* gvn, const InlineTypeNode* other, int pnum, bool transform) {
++  assert(this->Opcode() == other->Opcode(), "");
+   // Merge oop inputs
+   PhiNode* phi = get_oop()->as_Phi();
+   phi->set_req(pnum, other->get_oop());
+   if (transform) {
+     set_oop(gvn->transform(phi));
+   }
+-
+   // Merge is_buffered inputs
+   phi = get_is_buffered()->as_Phi();
+   phi->set_req(pnum, other->get_is_buffered());
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 4099a1b851e..b383b7b5016 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -636,6 +636,11 @@ bool LibraryCallKit::inline_vector_shuffle_iota() {
+     return false;
+   }
+ 
++  // TODO[valhalla] Preventing intrinsification for mask/shuffle till they become inline types.
++  if (shuffle_klass) {
++    return false;
++  }
++
+   const Type * type_bt = Type::get_const_basic_type(elem_bt);
+   const TypeVect * vt  = TypeVect::make(type_bt, num_elem);
+ 

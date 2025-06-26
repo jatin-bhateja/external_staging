@@ -1,0 +1,26 @@
+#!/bin/sh
+
+if [ $# -eq 2 ] ; then
+export JAVA_HOME=/home/intel/sandboxes/jdk-release/jdk/jdk/build/linux-x86_64-server-release/jdk
+export JAVA_HOME=/home/intel/sandboxes/jdk-release2/jdk/build/linux-x86_64-server-slowdebug/jdk
+export PATH=$JAVA_HOME/bin:$PATH
+
+echo "Running SPECjvm benchmakr $1.."
+
+if [ $2 -eq 1 ]; then
+   ALIGNOPT="-XX:+AlignJcc "
+else
+   ALIGNOPT="-XX:-AlignJcc "
+fi
+
+if [ $1 != "all" ]; then
+perf stat -e cycles,instructions,uops_retired.retire_slots,idq.dsb_uops,idq.mite_uops,dsb2mite_switches.penalty_cycles,br_inst_retired.all_branches_pebs,br_inst_retired.all_branches numactl --cpunodebind=0 --membind=0  java -Xmx7g -XX:UseAVX=2 -Xms7g -Xmn12g -XX:+UseParallelOldGC -XX:ParallelGCThreads=28 -XX:-StackTraceInThrowable -XX:-UseBiasedLocking -XX:+UseLargePages -XX:+TieredCompilation $ALIGNOPT -jar SPECjvm2008.jar -coe -ict -ikv -wt 30 -it 30 -ctf true $1
+else
+for t in startup.helloworld startup.compiler.compiler startup.compiler.sunflow startup.compress startup.crypto.aes startup.crypto.rsa startup.crypto.signverify startup.mpegaudio startup.scimark.fft startup.scimark.lu startup.scimark.monte_carlo startup.scimark.sor startup.scimark.sparse startup.serial startup.sunflow startup.xml.transform startup.xml.validation compiler.compiler compiler.sunflow compress crypto.aes crypto.rsa crypto.signverify derby mpegaudio scimark.fft.large scimark.lu.large scimark.sor.large scimark.sparse.large scimark.fft.small scimark.lu.small scimark.sor.small scimark.sparse.small scimark.monte_carlo serial sunflow xml.transform xml.validation
+do
+perf stat -e cycles,instructions,uops_retired.retire_slots,idq.dsb_uops,idq.mite_uops,dsb2mite_switches.penalty_cycles,br_inst_retired.all_branches_pebs,br_inst_retired.all_branches numactl --cpunodebind=0 --membind=0  java -Xmx7g -XX:UseAVX=2 -Xms7g -Xmn12g -XX:+UseParallelOldGC -XX:ParallelGCThreads=28 -XX:-StackTraceInThrowable -XX:-UseBiasedLocking -XX:+UseLargePages -XX:+TieredCompilation $ALIGNOPT -jar SPECjvm2008.jar -coe -ict -ikv -wt 30 -it 30 -ctf true $t
+done
+fi
+
+fi
+

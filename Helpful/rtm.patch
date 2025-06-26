@@ -1,0 +1,2354 @@
+changeset:   23491:f690330b10b9
+user:        kvn
+date:        Thu Mar 20 17:49:27 2014 -0700
+summary:     8031320: Use Intel RTM instructions for locks
+
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/assembler_x86.cpp
+--- a/hotspot/src/cpu/x86/vm/assembler_x86.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/assembler_x86.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -2343,6 +2343,11 @@
+   emit_int8(imm8);
+ }
+ 
++void Assembler::pause() {
++  emit_int8((unsigned char)0xF3);
++  emit_int8((unsigned char)0x90);
++}
++
+ void Assembler::pcmpestri(XMMRegister dst, Address src, int imm8) {
+   assert(VM_Version::supports_sse4_2(), "");
+   InstructionMark im(this);
+@@ -2667,6 +2672,11 @@
+   }
+ }
+ 
++void Assembler::rdtsc() {
++  emit_int8((unsigned char)0x0F);
++  emit_int8((unsigned char)0x31);
++}
++
+ // copies data from [esi] to [edi] using rcx pointer sized words
+ // generic
+ void Assembler::rep_mov() {
+@@ -2976,6 +2986,11 @@
+   emit_simd_arith_nonds(0x2E, dst, src, VEX_SIMD_NONE);
+ }
+ 
++void Assembler::xabort(int8_t imm8) {
++  emit_int8((unsigned char)0xC6);
++  emit_int8((unsigned char)0xF8);
++  emit_int8((unsigned char)(imm8 & 0xFF));
++}
+ 
+ void Assembler::xaddl(Address dst, Register src) {
+   InstructionMark im(this);
+@@ -2985,6 +3000,24 @@
+   emit_operand(src, dst);
+ }
+ 
++void Assembler::xbegin(Label& abort, relocInfo::relocType rtype) {
++  InstructionMark im(this);
++  relocate(rtype);
++  if (abort.is_bound()) {
++    address entry = target(abort);
++    assert(entry != NULL, "abort entry NULL");
++    intptr_t offset = entry - pc();
++    emit_int8((unsigned char)0xC7);
++    emit_int8((unsigned char)0xF8);
++    emit_int32(offset - 6); // 2 opcode + 4 address
++  } else {
++    abort.add_patch_at(code(), locator());
++    emit_int8((unsigned char)0xC7);
++    emit_int8((unsigned char)0xF8);
++    emit_int32(0);
++  }
++}
++
+ void Assembler::xchgl(Register dst, Address src) { // xchg
+   InstructionMark im(this);
+   prefix(src, dst);
+@@ -2998,6 +3031,12 @@
+   emit_int8((unsigned char)(0xC0 | encode));
+ }
+ 
++void Assembler::xend() {
++  emit_int8((unsigned char)0x0F);
++  emit_int8((unsigned char)0x01);
++  emit_int8((unsigned char)0xD5);
++}
++
+ void Assembler::xgetbv() {
+   emit_int8(0x0F);
+   emit_int8(0x01);
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/assembler_x86.hpp
+--- a/hotspot/src/cpu/x86/vm/assembler_x86.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/assembler_x86.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -1451,6 +1451,8 @@
+   // Pemutation of 64bit words
+   void vpermq(XMMRegister dst, XMMRegister src, int imm8, bool vector256);
+ 
++  void pause();
++
+   // SSE4.2 string instructions
+   void pcmpestri(XMMRegister xmm1, XMMRegister xmm2, int imm8);
+   void pcmpestri(XMMRegister xmm1, Address src, int imm8);
+@@ -1535,6 +1537,8 @@
+ 
+   void rclq(Register dst, int imm8);
+ 
++  void rdtsc();
++
+   void ret(int imm16);
+ 
+   void sahf();
+@@ -1632,16 +1636,22 @@
+   void ucomiss(XMMRegister dst, Address src);
+   void ucomiss(XMMRegister dst, XMMRegister src);
+ 
++  void xabort(int8_t imm8);
++
+   void xaddl(Address dst, Register src);
+ 
+   void xaddq(Address dst, Register src);
+ 
++  void xbegin(Label& abort, relocInfo::relocType rtype = relocInfo::none);
++
+   void xchgl(Register reg, Address adr);
+   void xchgl(Register dst, Register src);
+ 
+   void xchgq(Register reg, Address adr);
+   void xchgq(Register dst, Register src);
+ 
++  void xend();
++
+   // Get Value of Extended Control Register
+   void xgetbv();
+ 
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/globals_x86.hpp
+--- a/hotspot/src/cpu/x86/vm/globals_x86.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/globals_x86.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -129,6 +129,42 @@
+   product(bool, UseFastStosb, false,                                        \
+           "Use fast-string operation for zeroing: rep stosb")               \
+                                                                             \
++  /* Use Restricted Transactional Memory for lock eliding */                \
++  product(bool, UseRTMLocking, false,                                       \
++          "Enable RTM lock eliding for inflated locks in compiled code")    \
++                                                                            \
++  experimental(bool, UseRTMForStackLocks, false,                            \
++          "Enable RTM lock eliding for stack locks in compiled code")       \
++                                                                            \
++  product(bool, UseRTMDeopt, false,                                         \
++          "Perform deopt and recompilation based on RTM abort ratio")       \
++                                                                            \
++  product(uintx, RTMRetryCount, 5,                                          \
++          "Number of RTM retries on lock abort or busy")                    \
++                                                                            \
++  experimental(intx, RTMSpinLoopCount, 100,                                 \
++          "Spin count for lock to become free before RTM retry")            \
++                                                                            \
++  experimental(intx, RTMAbortThreshold, 1000,                               \
++          "Calculate abort ratio after this number of aborts")              \
++                                                                            \
++  experimental(intx, RTMLockingThreshold, 10000,                            \
++          "Lock count at which to do RTM lock eliding without "             \
++          "abort ratio calculation")                                        \
++                                                                            \
++  experimental(intx, RTMAbortRatio, 50,                                     \
++          "Lock abort ratio at which to stop use RTM lock eliding")         \
++                                                                            \
++  experimental(intx, RTMTotalCountIncrRate, 64,                             \
++          "Increment total RTM attempted lock count once every n times")    \
++                                                                            \
++  experimental(intx, RTMLockingCalculationDelay, 0,                         \
++          "Number of milliseconds to wait before start calculating aborts " \
++          "for RTM locking")                                                \
++                                                                            \
++  experimental(bool, UseRTMXendForLockBusy, false,                          \
++          "Use RTM Xend instead of Xabort when lock busy")                  \
++                                                                            \
+   /* assembler */                                                           \
+   product(bool, Use486InstrsOnly, false,                                    \
+           "Use 80486 Compliant instruction subset")                         \
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/macroAssembler_x86.cpp
+--- a/hotspot/src/cpu/x86/vm/macroAssembler_x86.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/macroAssembler_x86.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -301,7 +301,9 @@
+   mov_literal32(dst, (int32_t)obj, metadata_Relocation::spec_for_immediate());
+ }
+ 
+-void MacroAssembler::movptr(Register dst, AddressLiteral src) {
++void MacroAssembler::movptr(Register dst, AddressLiteral src, Register scratch) {
++  // scratch register is not used,
++  // it is defined to match parameters of 64-bit version of this method.
+   if (src.is_lval()) {
+     mov_literal32(dst, (intptr_t)src.target(), src.rspec());
+   } else {
+@@ -613,6 +615,15 @@
+   /* else */      { subq(dst, value)       ; return; }
+ }
+ 
++void MacroAssembler::incrementq(AddressLiteral dst) {
++  if (reachable(dst)) {
++    incrementq(as_Address(dst));
++  } else {
++    lea(rscratch1, dst);
++    incrementq(Address(rscratch1, 0));
++  }
++}
++
+ void MacroAssembler::incrementq(Register reg, int value) {
+   if (value == min_jint) { addq(reg, value); return; }
+   if (value <  0) { decrementq(reg, -value); return; }
+@@ -681,15 +692,15 @@
+   movq(dst, rscratch1);
+ }
+ 
+-void MacroAssembler::movptr(Register dst, AddressLiteral src) {
++void MacroAssembler::movptr(Register dst, AddressLiteral src, Register scratch) {
+   if (src.is_lval()) {
+     mov_literal64(dst, (intptr_t)src.target(), src.rspec());
+   } else {
+     if (reachable(src)) {
+       movq(dst, as_Address(src));
+     } else {
+-      lea(rscratch1, src);
+-      movq(dst, Address(rscratch1,0));
++      lea(scratch, src);
++      movq(dst, Address(scratch, 0));
+     }
+   }
+ }
+@@ -988,20 +999,37 @@
+   LP64_ONLY(andq(dst, imm32)) NOT_LP64(andl(dst, imm32));
+ }
+ 
+-void MacroAssembler::atomic_incl(AddressLiteral counter_addr) {
+-  pushf();
++void MacroAssembler::atomic_incl(Address counter_addr) {
++  if (os::is_MP())
++    lock();
++  incrementl(counter_addr);
++}
++
++void MacroAssembler::atomic_incl(AddressLiteral counter_addr, Register scr) {
+   if (reachable(counter_addr)) {
+-    if (os::is_MP())
+-      lock();
+-    incrementl(as_Address(counter_addr));
++    atomic_incl(as_Address(counter_addr));
+   } else {
+-    lea(rscratch1, counter_addr);
+-    if (os::is_MP())
+-      lock();
+-    incrementl(Address(rscratch1, 0));
+-  }
+-  popf();
+-}
++    lea(scr, counter_addr);
++    atomic_incl(Address(scr, 0));
++  }
++}
++
++#ifdef _LP64
++void MacroAssembler::atomic_incq(Address counter_addr) {
++  if (os::is_MP())
++    lock();
++  incrementq(counter_addr);
++}
++
++void MacroAssembler::atomic_incq(AddressLiteral counter_addr, Register scr) {
++  if (reachable(counter_addr)) {
++    atomic_incq(as_Address(counter_addr));
++  } else {
++    lea(scr, counter_addr);
++    atomic_incq(Address(scr, 0));
++  }
++}
++#endif
+ 
+ // Writes to stack successive pages until offset reached to check for
+ // stack overflow + shadow pages.  This clobbers tmp.
+@@ -1274,6 +1302,325 @@
+ }
+ 
+ #ifdef COMPILER2
++
++#if INCLUDE_RTM_OPT
++
++// Update rtm_counters based on abort status
++// input: abort_status
++//        rtm_counters (RTMLockingCounters*)
++// flags are killed
++void MacroAssembler::rtm_counters_update(Register abort_status, Register rtm_counters) {
++
++  atomic_incptr(Address(rtm_counters, RTMLockingCounters::abort_count_offset()));
++  if (PrintPreciseRTMLockingStatistics) {
++    for (int i = 0; i < RTMLockingCounters::ABORT_STATUS_LIMIT; i++) {
++      Label check_abort;
++      testl(abort_status, (1<<i));
++      jccb(Assembler::equal, check_abort);
++      atomic_incptr(Address(rtm_counters, RTMLockingCounters::abortX_count_offset() + (i * sizeof(uintx))));
++      bind(check_abort);
++    }
++  }
++}
++
++// Branch if (random & (count-1) != 0), count is 2^n
++// tmp, scr and flags are killed
++void MacroAssembler::branch_on_random_using_rdtsc(Register tmp, Register scr, int count, Label& brLabel) {
++  assert(tmp == rax, "");
++  assert(scr == rdx, "");
++  rdtsc(); // modifies EDX:EAX
++  andptr(tmp, count-1);
++  jccb(Assembler::notZero, brLabel);
++}
++
++// Perform abort ratio calculation, set no_rtm bit if high ratio
++// input:  rtm_counters_Reg (RTMLockingCounters* address)
++// tmpReg, rtm_counters_Reg and flags are killed
++void MacroAssembler::rtm_abort_ratio_calculation(Register tmpReg,
++                                                 Register rtm_counters_Reg,
++                                                 RTMLockingCounters* rtm_counters,
++                                                 Metadata* method_data) {
++  Label L_done, L_check_always_rtm1, L_check_always_rtm2;
++
++  if (RTMLockingCalculationDelay > 0) {
++    // Delay calculation
++    movptr(tmpReg, ExternalAddress((address) RTMLockingCounters::rtm_calculation_flag_addr()), tmpReg);
++    testptr(tmpReg, tmpReg);
++    jccb(Assembler::equal, L_done);
++  }
++  // Abort ratio calculation only if abort_count > RTMAbortThreshold
++  //   Aborted transactions = abort_count * 100
++  //   All transactions = total_count *  RTMTotalCountIncrRate
++  //   Set no_rtm bit if (Aborted transactions >= All transactions * RTMAbortRatio)
++
++  movptr(tmpReg, Address(rtm_counters_Reg, RTMLockingCounters::abort_count_offset()));
++  cmpptr(tmpReg, RTMAbortThreshold);
++  jccb(Assembler::below, L_check_always_rtm2);
++  imulptr(tmpReg, tmpReg, 100);
++
++  Register scrReg = rtm_counters_Reg;
++  movptr(scrReg, Address(rtm_counters_Reg, RTMLockingCounters::total_count_offset()));
++  imulptr(scrReg, scrReg, RTMTotalCountIncrRate);
++  imulptr(scrReg, scrReg, RTMAbortRatio);
++  cmpptr(tmpReg, scrReg);
++  jccb(Assembler::below, L_check_always_rtm1);
++  if (method_data != NULL) {
++    // set rtm_state to "no rtm" in MDO
++    mov_metadata(tmpReg, method_data);
++    if (os::is_MP()) {
++      lock();
++    }
++    orl(Address(tmpReg, MethodData::rtm_state_offset_in_bytes()), NoRTM);
++  }
++  jmpb(L_done);
++  bind(L_check_always_rtm1);
++  // Reload RTMLockingCounters* address
++  lea(rtm_counters_Reg, ExternalAddress((address)rtm_counters));
++  bind(L_check_always_rtm2);
++  movptr(tmpReg, Address(rtm_counters_Reg, RTMLockingCounters::total_count_offset()));
++  cmpptr(tmpReg, RTMLockingThreshold / RTMTotalCountIncrRate);
++  jccb(Assembler::below, L_done);
++  if (method_data != NULL) {
++    // set rtm_state to "always rtm" in MDO
++    mov_metadata(tmpReg, method_data);
++    if (os::is_MP()) {
++      lock();
++    }
++    orl(Address(tmpReg, MethodData::rtm_state_offset_in_bytes()), UseRTM);
++  }
++  bind(L_done);
++}
++
++// Update counters and perform abort ratio calculation
++// input:  abort_status_Reg
++// rtm_counters_Reg, flags are killed
++void MacroAssembler::rtm_profiling(Register abort_status_Reg,
++                                   Register rtm_counters_Reg,
++                                   RTMLockingCounters* rtm_counters,
++                                   Metadata* method_data,
++                                   bool profile_rtm) {
++
++  assert(rtm_counters != NULL, "should not be NULL when profiling RTM");
++  // update rtm counters based on rax value at abort
++  // reads abort_status_Reg, updates flags
++  lea(rtm_counters_Reg, ExternalAddress((address)rtm_counters));
++  rtm_counters_update(abort_status_Reg, rtm_counters_Reg);
++  if (profile_rtm) {
++    // Save abort status because abort_status_Reg is used by following code.
++    if (RTMRetryCount > 0) {
++      push(abort_status_Reg);
++    }
++    assert(rtm_counters != NULL, "should not be NULL when profiling RTM");
++    rtm_abort_ratio_calculation(abort_status_Reg, rtm_counters_Reg, rtm_counters, method_data);
++    // restore abort status
++    if (RTMRetryCount > 0) {
++      pop(abort_status_Reg);
++    }
++  }
++}
++
++// Retry on abort if abort's status is 0x6: can retry (0x2) | memory conflict (0x4)
++// inputs: retry_count_Reg
++//       : abort_status_Reg
++// output: retry_count_Reg decremented by 1
++// flags are killed
++void MacroAssembler::rtm_retry_lock_on_abort(Register retry_count_Reg, Register abort_status_Reg, Label& retryLabel) {
++  Label doneRetry;
++  assert(abort_status_Reg == rax, "");
++  // The abort reason bits are in eax (see all states in rtmLocking.hpp)
++  // 0x6 = conflict on which we can retry (0x2) | memory conflict (0x4)
++  // if reason is in 0x6 and retry count != 0 then retry
++  andptr(abort_status_Reg, 0x6);
++  jccb(Assembler::zero, doneRetry);
++  testl(retry_count_Reg, retry_count_Reg);
++  jccb(Assembler::zero, doneRetry);
++  pause();
++  decrementl(retry_count_Reg);
++  jmp(retryLabel);
++  bind(doneRetry);
++}
++
++// Spin and retry if lock is busy,
++// inputs: box_Reg (monitor address)
++//       : retry_count_Reg
++// output: retry_count_Reg decremented by 1
++//       : clear z flag if retry count exceeded
++// tmp_Reg, scr_Reg, flags are killed
++void MacroAssembler::rtm_retry_lock_on_busy(Register retry_count_Reg, Register box_Reg,
++                                            Register tmp_Reg, Register scr_Reg, Label& retryLabel) {
++  Label SpinLoop, SpinExit, doneRetry;
++  // Clean monitor_value bit to get valid pointer
++  int owner_offset = ObjectMonitor::owner_offset_in_bytes() - markOopDesc::monitor_value;
++
++  testl(retry_count_Reg, retry_count_Reg);
++  jccb(Assembler::zero, doneRetry);
++  decrementl(retry_count_Reg);
++  movptr(scr_Reg, RTMSpinLoopCount);
++
++  bind(SpinLoop);
++  pause();
++  decrementl(scr_Reg);
++  jccb(Assembler::lessEqual, SpinExit);
++  movptr(tmp_Reg, Address(box_Reg, owner_offset));
++  testptr(tmp_Reg, tmp_Reg);
++  jccb(Assembler::notZero, SpinLoop);
++
++  bind(SpinExit);
++  jmp(retryLabel);
++  bind(doneRetry);
++  incrementl(retry_count_Reg); // clear z flag
++}
++
++// Use RTM for normal stack locks
++// Input: objReg (object to lock)
++void MacroAssembler::rtm_stack_locking(Register objReg, Register tmpReg, Register scrReg,
++                                       Register retry_on_abort_count_Reg,
++                                       RTMLockingCounters* stack_rtm_counters,
++                                       Metadata* method_data, bool profile_rtm,
++                                       Label& DONE_LABEL, Label& IsInflated) {
++  assert(UseRTMForStackLocks, "why call this otherwise?");
++  assert(!UseBiasedLocking, "Biased locking is not supported with RTM locking");
++  assert(tmpReg == rax, "");
++  assert(scrReg == rdx, "");
++  Label L_rtm_retry, L_decrement_retry, L_on_abort;
++
++  if (RTMRetryCount > 0) {
++    movl(retry_on_abort_count_Reg, RTMRetryCount); // Retry on abort
++    bind(L_rtm_retry);
++  }
++  if (!UseRTMXendForLockBusy) {
++    movptr(tmpReg, Address(objReg, 0));
++    testptr(tmpReg, markOopDesc::monitor_value);  // inflated vs stack-locked|neutral|biased
++    jcc(Assembler::notZero, IsInflated);
++  }
++  if (PrintPreciseRTMLockingStatistics || profile_rtm) {
++    Label L_noincrement;
++    if (RTMTotalCountIncrRate > 1) {
++      // tmpReg, scrReg and flags are killed
++      branch_on_random_using_rdtsc(tmpReg, scrReg, (int)RTMTotalCountIncrRate, L_noincrement);
++    }
++    assert(stack_rtm_counters != NULL, "should not be NULL when profiling RTM");
++    atomic_incptr(ExternalAddress((address)stack_rtm_counters->total_count_addr()), scrReg);
++    bind(L_noincrement);
++  }
++  xbegin(L_on_abort);
++  movptr(tmpReg, Address(objReg, 0));       // fetch markword
++  andptr(tmpReg, markOopDesc::biased_lock_mask_in_place); // look at 3 lock bits
++  cmpptr(tmpReg, markOopDesc::unlocked_value);            // bits = 001 unlocked
++  jcc(Assembler::equal, DONE_LABEL);        // all done if unlocked
++
++  Register abort_status_Reg = tmpReg; // status of abort is stored in RAX
++  if (UseRTMXendForLockBusy) {
++    xend();
++    movptr(tmpReg, Address(objReg, 0));
++    testptr(tmpReg, markOopDesc::monitor_value);  // inflated vs stack-locked|neutral|biased
++    jcc(Assembler::notZero, IsInflated);
++    movptr(abort_status_Reg, 0x1);                // Set the abort status to 1 (as xabort does)
++    jmp(L_decrement_retry);
++  }
++  else {
++    xabort(0);
++  }
++  bind(L_on_abort);
++  if (PrintPreciseRTMLockingStatistics || profile_rtm) {
++    rtm_profiling(abort_status_Reg, scrReg, stack_rtm_counters, method_data, profile_rtm);
++  }
++  bind(L_decrement_retry);
++  if (RTMRetryCount > 0) {
++    // retry on lock abort if abort status is 'can retry' (0x2) or 'memory conflict' (0x4)
++    rtm_retry_lock_on_abort(retry_on_abort_count_Reg, abort_status_Reg, L_rtm_retry);
++  }
++}
++
++// Use RTM for inflating locks
++// inputs: objReg (object to lock)
++//         boxReg (on-stack box address (displaced header location) - KILLED)
++//         tmpReg (ObjectMonitor address + 2(monitor_value))
++void MacroAssembler::rtm_inflated_locking(Register objReg, Register boxReg, Register tmpReg,
++                                          Register scrReg, Register retry_on_busy_count_Reg,
++                                          Register retry_on_abort_count_Reg,
++                                          RTMLockingCounters* rtm_counters,
++                                          Metadata* method_data, bool profile_rtm,
++                                          Label& DONE_LABEL) {
++  assert(UseRTMLocking, "why call this otherwise?");
++  assert(tmpReg == rax, "");
++  assert(scrReg == rdx, "");
++  Label L_rtm_retry, L_decrement_retry, L_on_abort;
++  // Clean monitor_value bit to get valid pointer
++  int owner_offset = ObjectMonitor::owner_offset_in_bytes() - markOopDesc::monitor_value;
++
++  // Without cast to int32_t a movptr will destroy r10 which is typically obj
++  movptr(Address(boxReg, 0), (int32_t)intptr_t(markOopDesc::unused_mark()));
++  movptr(boxReg, tmpReg); // Save ObjectMonitor address
++
++  if (RTMRetryCount > 0) {
++    movl(retry_on_busy_count_Reg, RTMRetryCount);  // Retry on lock busy
++    movl(retry_on_abort_count_Reg, RTMRetryCount); // Retry on abort
++    bind(L_rtm_retry);
++  }
++  if (PrintPreciseRTMLockingStatistics || profile_rtm) {
++    Label L_noincrement;
++    if (RTMTotalCountIncrRate > 1) {
++      // tmpReg, scrReg and flags are killed
++      branch_on_random_using_rdtsc(tmpReg, scrReg, (int)RTMTotalCountIncrRate, L_noincrement);
++    }
++    assert(rtm_counters != NULL, "should not be NULL when profiling RTM");
++    atomic_incptr(ExternalAddress((address)rtm_counters->total_count_addr()), scrReg);
++    bind(L_noincrement);
++  }
++  xbegin(L_on_abort);
++  movptr(tmpReg, Address(objReg, 0));
++  movptr(tmpReg, Address(tmpReg, owner_offset));
++  testptr(tmpReg, tmpReg);
++  jcc(Assembler::zero, DONE_LABEL);
++  if (UseRTMXendForLockBusy) {
++    xend();
++    jmp(L_decrement_retry);
++  }
++  else {
++    xabort(0);
++  }
++  bind(L_on_abort);
++  Register abort_status_Reg = tmpReg; // status of abort is stored in RAX
++  if (PrintPreciseRTMLockingStatistics || profile_rtm) {
++    rtm_profiling(abort_status_Reg, scrReg, rtm_counters, method_data, profile_rtm);
++  }
++  if (RTMRetryCount > 0) {
++    // retry on lock abort if abort status is 'can retry' (0x2) or 'memory conflict' (0x4)
++    rtm_retry_lock_on_abort(retry_on_abort_count_Reg, abort_status_Reg, L_rtm_retry);
++  }
++
++  movptr(tmpReg, Address(boxReg, owner_offset)) ;
++  testptr(tmpReg, tmpReg) ;
++  jccb(Assembler::notZero, L_decrement_retry) ;
++
++  // Appears unlocked - try to swing _owner from null to non-null.
++  // Invariant: tmpReg == 0.  tmpReg is EAX which is the implicit cmpxchg comparand.
++#ifdef _LP64
++  Register threadReg = r15_thread;
++#else
++  get_thread(scrReg);
++  Register threadReg = scrReg;
++#endif
++  if (os::is_MP()) {
++    lock();
++  }
++  cmpxchgptr(threadReg, Address(boxReg, owner_offset)); // Updates tmpReg
++
++  if (RTMRetryCount > 0) {
++    // success done else retry
++    jccb(Assembler::equal, DONE_LABEL) ;
++    bind(L_decrement_retry);
++    // Spin and retry if lock is busy.
++    rtm_retry_lock_on_busy(retry_on_busy_count_Reg, boxReg, tmpReg, scrReg, L_rtm_retry);
++  }
++  else {
++    bind(L_decrement_retry);
++  }
++}
++
++#endif //  INCLUDE_RTM_OPT
++
+ // Fast_Lock and Fast_Unlock used by C2
+ 
+ // Because the transitions from emitted code to the runtime
+@@ -1350,17 +1697,26 @@
+ // box: on-stack box address (displaced header location) - KILLED
+ // rax,: tmp -- KILLED
+ // scr: tmp -- KILLED
+-void MacroAssembler::fast_lock(Register objReg, Register boxReg, Register tmpReg, Register scrReg, BiasedLockingCounters* counters) {
++void MacroAssembler::fast_lock(Register objReg, Register boxReg, Register tmpReg,
++                               Register scrReg, Register cx1Reg, Register cx2Reg,
++                               BiasedLockingCounters* counters,
++                               RTMLockingCounters* rtm_counters,
++                               RTMLockingCounters* stack_rtm_counters,
++                               Metadata* method_data,
++                               bool use_rtm, bool profile_rtm) {
+   // Ensure the register assignents are disjoint
+-  guarantee (objReg != boxReg, "");
+-  guarantee (objReg != tmpReg, "");
+-  guarantee (objReg != scrReg, "");
+-  guarantee (boxReg != tmpReg, "");
+-  guarantee (boxReg != scrReg, "");
+-  guarantee (tmpReg == rax, "");
++  assert(tmpReg == rax, "");
++
++  if (use_rtm) {
++    assert_different_registers(objReg, boxReg, tmpReg, scrReg, cx1Reg, cx2Reg);
++  } else {
++    assert(cx1Reg == noreg, "");
++    assert(cx2Reg == noreg, "");
++    assert_different_registers(objReg, boxReg, tmpReg, scrReg);
++  }
+ 
+   if (counters != NULL) {
+-    atomic_incl(ExternalAddress((address)counters->total_entry_count_addr()));
++    atomic_incl(ExternalAddress((address)counters->total_entry_count_addr()), scrReg);
+   }
+   if (EmitSync & 1) {
+       // set box->dhw = unused_mark (3)
+@@ -1419,12 +1775,20 @@
+       biased_locking_enter(boxReg, objReg, tmpReg, scrReg, true, DONE_LABEL, NULL, counters);
+     }
+ 
++#if INCLUDE_RTM_OPT
++    if (UseRTMForStackLocks && use_rtm) {
++      rtm_stack_locking(objReg, tmpReg, scrReg, cx2Reg,
++                        stack_rtm_counters, method_data, profile_rtm,
++                        DONE_LABEL, IsInflated);
++    }
++#endif // INCLUDE_RTM_OPT
++
+     movptr(tmpReg, Address(objReg, 0));          // [FETCH]
+-    testl (tmpReg, markOopDesc::monitor_value);  // inflated vs stack-locked|neutral|biased
+-    jccb  (Assembler::notZero, IsInflated);
++    testptr(tmpReg, markOopDesc::monitor_value); // inflated vs stack-locked|neutral|biased
++    jccb(Assembler::notZero, IsInflated);
+ 
+     // Attempt stack-locking ...
+-    orptr (tmpReg, 0x1);
++    orptr (tmpReg, markOopDesc::unlocked_value);
+     movptr(Address(boxReg, 0), tmpReg);          // Anticipate successful CAS
+     if (os::is_MP()) {
+       lock();
+@@ -1434,19 +1798,32 @@
+       cond_inc32(Assembler::equal,
+                  ExternalAddress((address)counters->fast_path_entry_count_addr()));
+     }
+-    jccb(Assembler::equal, DONE_LABEL);
+-
+-    // Recursive locking
++    jcc(Assembler::equal, DONE_LABEL);           // Success
++
++    // Recursive locking.
++    // The object is stack-locked: markword contains stack pointer to BasicLock.
++    // Locked by current thread if difference with current SP is less than one page.
+     subptr(tmpReg, rsp);
++    // Next instruction set ZFlag == 1 (Success) if difference is less then one page.
+     andptr(tmpReg, (int32_t) (NOT_LP64(0xFFFFF003) LP64_ONLY(7 - os::vm_page_size())) );
+     movptr(Address(boxReg, 0), tmpReg);
+     if (counters != NULL) {
+       cond_inc32(Assembler::equal,
+                  ExternalAddress((address)counters->fast_path_entry_count_addr()));
+     }
+-    jmpb(DONE_LABEL);
++    jmp(DONE_LABEL);
+ 
+     bind(IsInflated);
++    // The object is inflated. tmpReg contains pointer to ObjectMonitor* + 2(monitor_value)
++
++#if INCLUDE_RTM_OPT
++    // Use the same RTM locking code in 32- and 64-bit VM.
++    if (use_rtm) {
++      rtm_inflated_locking(objReg, boxReg, tmpReg, scrReg, cx1Reg, cx2Reg,
++                           rtm_counters, method_data, profile_rtm, DONE_LABEL);
++    } else {
++#endif // INCLUDE_RTM_OPT
++
+ #ifndef _LP64
+     // The object is inflated.
+     //
+@@ -1576,7 +1953,7 @@
+     // Without cast to int32_t a movptr will destroy r10 which is typically obj
+     movptr(Address(boxReg, 0), (int32_t)intptr_t(markOopDesc::unused_mark()));
+ 
+-    mov    (boxReg, tmpReg);
++    movptr (boxReg, tmpReg);
+     movptr (tmpReg, Address(boxReg, ObjectMonitor::owner_offset_in_bytes()-2));
+     testptr(tmpReg, tmpReg);
+     jccb   (Assembler::notZero, DONE_LABEL);
+@@ -1587,9 +1964,11 @@
+     }
+     cmpxchgptr(r15_thread, Address(boxReg, ObjectMonitor::owner_offset_in_bytes()-2));
+     // Intentional fall-through into DONE_LABEL ...
+-
++#endif // _LP64
++
++#if INCLUDE_RTM_OPT
++    } // use_rtm()
+ #endif
+-
+     // DONE_LABEL is a hot target - we'd really like to place it at the
+     // start of cache line by padding with NOPs.
+     // See the AMD and Intel software optimization manuals for the
+@@ -1631,11 +2010,9 @@
+ // should not be unlocked by "normal" java-level locking and vice-versa.  The specification
+ // doesn't specify what will occur if a program engages in such mixed-mode locking, however.
+ 
+-void MacroAssembler::fast_unlock(Register objReg, Register boxReg, Register tmpReg) {
+-  guarantee (objReg != boxReg, "");
+-  guarantee (objReg != tmpReg, "");
+-  guarantee (boxReg != tmpReg, "");
+-  guarantee (boxReg == rax, "");
++void MacroAssembler::fast_unlock(Register objReg, Register boxReg, Register tmpReg, bool use_rtm) {
++  assert(boxReg == rax, "");
++  assert_different_registers(objReg, boxReg, tmpReg);
+ 
+   if (EmitSync & 4) {
+     // Disable - inhibit all inlining.  Force control through the slow-path
+@@ -1667,14 +2044,41 @@
+        biased_locking_exit(objReg, tmpReg, DONE_LABEL);
+     }
+ 
++#if INCLUDE_RTM_OPT
++    if (UseRTMForStackLocks && use_rtm) {
++      assert(!UseBiasedLocking, "Biased locking is not supported with RTM locking");
++      Label L_regular_unlock;
++      movptr(tmpReg, Address(objReg, 0));           // fetch markword
++      andptr(tmpReg, markOopDesc::biased_lock_mask_in_place); // look at 3 lock bits
++      cmpptr(tmpReg, markOopDesc::unlocked_value);            // bits = 001 unlocked
++      jccb(Assembler::notEqual, L_regular_unlock);  // if !HLE RegularLock
++      xend();                                       // otherwise end...
++      jmp(DONE_LABEL);                              // ... and we're done
++      bind(L_regular_unlock);
++    }
++#endif
++
+     cmpptr(Address(boxReg, 0), (int32_t)NULL_WORD); // Examine the displaced header
++    jcc   (Assembler::zero, DONE_LABEL);            // 0 indicates recursive stack-lock
+     movptr(tmpReg, Address(objReg, 0));             // Examine the object's markword
+-    jccb  (Assembler::zero, DONE_LABEL);            // 0 indicates recursive stack-lock
+-
+-    testptr(tmpReg, 0x02);                          // Inflated?
++    testptr(tmpReg, markOopDesc::monitor_value);    // Inflated?
+     jccb  (Assembler::zero, Stacked);
+ 
+     // It's inflated.
++#if INCLUDE_RTM_OPT
++    if (use_rtm) {
++      Label L_regular_inflated_unlock;
++      // Clean monitor_value bit to get valid pointer
++      int owner_offset = ObjectMonitor::owner_offset_in_bytes() - markOopDesc::monitor_value;
++      movptr(boxReg, Address(tmpReg, owner_offset));
++      testptr(boxReg, boxReg);
++      jccb(Assembler::notZero, L_regular_inflated_unlock);
++      xend();
++      jmpb(DONE_LABEL);
++      bind(L_regular_inflated_unlock);
++    }
++#endif
++
+     // Despite our balanced locking property we still check that m->_owner == Self
+     // as java routines or native JNI code called by this thread might
+     // have released the lock.
+@@ -2448,7 +2852,9 @@
+   Condition negated_cond = negate_condition(cond);
+   Label L;
+   jcc(negated_cond, L);
++  pushf(); // Preserve flags
+   atomic_incl(counter_addr);
++  popf();
+   bind(L);
+ }
+ 
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/macroAssembler_x86.hpp
+--- a/hotspot/src/cpu/x86/vm/macroAssembler_x86.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/macroAssembler_x86.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -27,6 +27,7 @@
+ 
+ #include "asm/assembler.hpp"
+ #include "utilities/macros.hpp"
++#include "runtime/rtmLocking.hpp"
+ 
+ 
+ // MacroAssembler extends Assembler by frequently used macros.
+@@ -111,7 +112,8 @@
+         op == 0xE9 /* jmp */ ||
+         op == 0xEB /* short jmp */ ||
+         (op & 0xF0) == 0x70 /* short jcc */ ||
+-        op == 0x0F && (branch[1] & 0xF0) == 0x80 /* jcc */,
++        op == 0x0F && (branch[1] & 0xF0) == 0x80 /* jcc */ ||
++        op == 0xC7 && branch[1] == 0xF8 /* xbegin */,
+         "Invalid opcode at patch point");
+ 
+     if (op == 0xEB || (op & 0xF0) == 0x70) {
+@@ -121,7 +123,7 @@
+       guarantee(this->is8bit(imm8), "Short forward jump exceeds 8-bit offset");
+       *disp = imm8;
+     } else {
+-      int* disp = (int*) &branch[(op == 0x0F)? 2: 1];
++      int* disp = (int*) &branch[(op == 0x0F || op == 0xC7)? 2: 1];
+       int imm32 = target - (address) &disp[1];
+       *disp = imm32;
+     }
+@@ -161,7 +163,6 @@
+   void incrementq(Register reg, int value = 1);
+   void incrementq(Address dst, int value = 1);
+ 
+-
+   // Support optimal SSE move instructions.
+   void movflt(XMMRegister dst, XMMRegister src) {
+     if (UseXmmRegToRegMoveAll) { movaps(dst, src); return; }
+@@ -187,6 +188,8 @@
+   void incrementl(AddressLiteral dst);
+   void incrementl(ArrayAddress dst);
+ 
++  void incrementq(AddressLiteral dst);
++
+   // Alignment
+   void align(int modulus);
+ 
+@@ -654,8 +657,36 @@
+ #ifdef COMPILER2
+   // Code used by cmpFastLock and cmpFastUnlock mach instructions in .ad file.
+   // See full desription in macroAssembler_x86.cpp.
+-  void fast_lock(Register obj, Register box, Register tmp, Register scr, BiasedLockingCounters* counters);
+-  void fast_unlock(Register obj, Register box, Register tmp);
++  void fast_lock(Register obj, Register box, Register tmp,
++                 Register scr, Register cx1, Register cx2,
++                 BiasedLockingCounters* counters,
++                 RTMLockingCounters* rtm_counters,
++                 RTMLockingCounters* stack_rtm_counters,
++                 Metadata* method_data,
++                 bool use_rtm, bool profile_rtm);
++  void fast_unlock(Register obj, Register box, Register tmp, bool use_rtm);
++#if INCLUDE_RTM_OPT
++  void rtm_counters_update(Register abort_status, Register rtm_counters);
++  void branch_on_random_using_rdtsc(Register tmp, Register scr, int count, Label& brLabel);
++  void rtm_abort_ratio_calculation(Register tmp, Register rtm_counters_reg,
++                                   RTMLockingCounters* rtm_counters,
++                                   Metadata* method_data);
++  void rtm_profiling(Register abort_status_Reg, Register rtm_counters_Reg,
++                     RTMLockingCounters* rtm_counters, Metadata* method_data, bool profile_rtm);
++  void rtm_retry_lock_on_abort(Register retry_count, Register abort_status, Label& retryLabel);
++  void rtm_retry_lock_on_busy(Register retry_count, Register box, Register tmp, Register scr, Label& retryLabel);
++  void rtm_stack_locking(Register obj, Register tmp, Register scr,
++                         Register retry_on_abort_count,
++                         RTMLockingCounters* stack_rtm_counters,
++                         Metadata* method_data, bool profile_rtm,
++                         Label& DONE_LABEL, Label& IsInflated);
++  void rtm_inflated_locking(Register obj, Register box, Register tmp,
++                            Register scr, Register retry_on_busy_count,
++                            Register retry_on_abort_count,
++                            RTMLockingCounters* rtm_counters,
++                            Metadata* method_data, bool profile_rtm,
++                            Label& DONE_LABEL);
++#endif
+ #endif
+ 
+   Condition negate_condition(Condition cond);
+@@ -721,6 +752,7 @@
+ 
+ 
+   void imulptr(Register dst, Register src) { LP64_ONLY(imulq(dst, src)) NOT_LP64(imull(dst, src)); }
++  void imulptr(Register dst, Register src, int imm32) { LP64_ONLY(imulq(dst, src, imm32)) NOT_LP64(imull(dst, src, imm32)); }
+ 
+ 
+   void negptr(Register dst) { LP64_ONLY(negq(dst)) NOT_LP64(negl(dst)); }
+@@ -762,7 +794,14 @@
+   // Conditionally (atomically, on MPs) increments passed counter address, preserving condition codes.
+   void cond_inc32(Condition cond, AddressLiteral counter_addr);
+   // Unconditional atomic increment.
+-  void atomic_incl(AddressLiteral counter_addr);
++  void atomic_incl(Address counter_addr);
++  void atomic_incl(AddressLiteral counter_addr, Register scr = rscratch1);
++#ifdef _LP64
++  void atomic_incq(Address counter_addr);
++  void atomic_incq(AddressLiteral counter_addr, Register scr = rscratch1);
++#endif
++  void atomic_incptr(AddressLiteral counter_addr, Register scr = rscratch1) { LP64_ONLY(atomic_incq(counter_addr, scr)) NOT_LP64(atomic_incl(counter_addr, scr)) ; }
++  void atomic_incptr(Address counter_addr) { LP64_ONLY(atomic_incq(counter_addr)) NOT_LP64(atomic_incl(counter_addr)) ; }
+ 
+   void lea(Register dst, AddressLiteral adr);
+   void lea(Address dst, AddressLiteral adr);
+@@ -1074,7 +1113,11 @@
+ 
+   void movptr(Register dst, Address src);
+ 
+-  void movptr(Register dst, AddressLiteral src);
++#ifdef _LP64
++  void movptr(Register dst, AddressLiteral src, Register scratch=rscratch1);
++#else
++  void movptr(Register dst, AddressLiteral src, Register scratch=noreg); // Scratch reg is ignored in 32-bit
++#endif
+ 
+   void movptr(Register dst, intptr_t src);
+   void movptr(Register dst, Register src);
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/rtmLocking.cpp
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/hotspot/src/cpu/x86/vm/rtmLocking.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ *
++ */
++
++#include "precompiled.hpp"
++#include "runtime/task.hpp"
++#include "runtime/rtmLocking.hpp"
++
++// One-shot PeriodicTask subclass for enabling RTM locking
++uintx RTMLockingCounters::_calculation_flag = 0;
++
++class RTMLockingCalculationTask : public PeriodicTask {
++ public:
++  RTMLockingCalculationTask(size_t interval_time) : PeriodicTask(interval_time){  }
++
++  virtual void task() {
++    RTMLockingCounters::_calculation_flag = 1;
++    // Reclaim our storage and disenroll ourself
++    delete this;
++  }
++};
++
++void RTMLockingCounters::init() {
++  if (UseRTMLocking && RTMLockingCalculationDelay > 0) {
++    RTMLockingCalculationTask* task = new RTMLockingCalculationTask(RTMLockingCalculationDelay);
++    task->enroll();
++  } else {
++    _calculation_flag = 1;
++  }
++}
++
++//------------------------------print_on-------------------------------
++void RTMLockingCounters::print_on(outputStream* st) {
++  tty->print_cr("# rtm locks total (estimated): " UINTX_FORMAT, _total_count * RTMTotalCountIncrRate);
++  tty->print_cr("# rtm lock aborts  : " UINTX_FORMAT, _abort_count);
++  for (int i = 0; i < ABORT_STATUS_LIMIT; i++) {
++    tty->print_cr("# rtm lock aborts %d: " UINTX_FORMAT, i, _abortX_count[i]);
++  }
++}
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/sharedRuntime_x86_32.cpp
+--- a/hotspot/src/cpu/x86/vm/sharedRuntime_x86_32.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/sharedRuntime_x86_32.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -1817,6 +1817,13 @@
+   // Frame is now completed as far as size and linkage.
+   int frame_complete = ((intptr_t)__ pc()) - start;
+ 
++  if (UseRTMLocking) {
++    // Abort RTM transaction before calling JNI
++    // because critical section will be large and will be
++    // aborted anyway. Also nmethod could be deoptimized.
++    __ xabort(0);
++  }
++
+   // Calculate the difference between rsp and rbp,. We need to know it
+   // after the native call because on windows Java Natives will pop
+   // the arguments and it is painful to do rsp relative addressing
+@@ -3170,6 +3177,12 @@
+   };
+ 
+   address start = __ pc();
++
++  if (UseRTMLocking) {
++    // Abort RTM transaction before possible nmethod deoptimization.
++    __ xabort(0);
++  }
++
+   // Push self-frame.
+   __ subptr(rsp, return_off*wordSize);     // Epilog!
+ 
+@@ -3355,6 +3368,14 @@
+   address call_pc = NULL;
+   bool cause_return = (poll_type == POLL_AT_RETURN);
+   bool save_vectors = (poll_type == POLL_AT_VECTOR_LOOP);
++
++  if (UseRTMLocking) {
++    // Abort RTM transaction before calling runtime
++    // because critical section will be large and will be
++    // aborted anyway. Also nmethod could be deoptimized.
++    __ xabort(0);
++  }
++
+   // If cause_return is true we are at a poll_return and there is
+   // the return address on the stack to the caller on the nmethod
+   // that is safepoint. We can leave this return on the stack and
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/sharedRuntime_x86_64.cpp
+--- a/hotspot/src/cpu/x86/vm/sharedRuntime_x86_64.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/sharedRuntime_x86_64.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -2012,6 +2012,13 @@
+   // Frame is now completed as far as size and linkage.
+   int frame_complete = ((intptr_t)__ pc()) - start;
+ 
++    if (UseRTMLocking) {
++      // Abort RTM transaction before calling JNI
++      // because critical section will be large and will be
++      // aborted anyway. Also nmethod could be deoptimized.
++      __ xabort(0);
++    }
++
+ #ifdef ASSERT
+     {
+       Label L;
+@@ -3612,6 +3619,11 @@
+ 
+   address start = __ pc();
+ 
++  if (UseRTMLocking) {
++    // Abort RTM transaction before possible nmethod deoptimization.
++    __ xabort(0);
++  }
++
+   // Push self-frame.  We get here with a return address on the
+   // stack, so rsp is 8-byte aligned until we allocate our frame.
+   __ subptr(rsp, SimpleRuntimeFrame::return_off << LogBytesPerInt); // Epilog!
+@@ -3792,6 +3804,13 @@
+   bool cause_return = (poll_type == POLL_AT_RETURN);
+   bool save_vectors = (poll_type == POLL_AT_VECTOR_LOOP);
+ 
++  if (UseRTMLocking) {
++    // Abort RTM transaction before calling runtime
++    // because critical section will be large and will be
++    // aborted anyway. Also nmethod could be deoptimized.
++    __ xabort(0);
++  }
++
+   // Make room for return address (or push it again)
+   if (!cause_return) {
+     __ push(rbx);
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/vm_version_x86.cpp
+--- a/hotspot/src/cpu/x86/vm/vm_version_x86.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/vm_version_x86.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -475,7 +475,7 @@
+   }
+ 
+   char buf[256];
+-  jio_snprintf(buf, sizeof(buf), "(%u cores per cpu, %u threads per core) family %d model %d stepping %d%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
++  jio_snprintf(buf, sizeof(buf), "(%u cores per cpu, %u threads per core) family %d model %d stepping %d%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+                cores_per_cpu(), threads_per_core(),
+                cpu_family(), _model, _stepping,
+                (supports_cmov() ? ", cmov" : ""),
+@@ -492,8 +492,9 @@
+                (supports_avx()    ? ", avx" : ""),
+                (supports_avx2()   ? ", avx2" : ""),
+                (supports_aes()    ? ", aes" : ""),
+-               (supports_clmul()    ? ", clmul" : ""),
++               (supports_clmul()  ? ", clmul" : ""),
+                (supports_erms()   ? ", erms" : ""),
++               (supports_rtm()    ? ", rtm" : ""),
+                (supports_mmx_ext() ? ", mmxext" : ""),
+                (supports_3dnow_prefetch() ? ", 3dnowpref" : ""),
+                (supports_lzcnt()   ? ", lzcnt": ""),
+@@ -534,7 +535,7 @@
+     }
+   } else if (UseAES) {
+     if (!FLAG_IS_DEFAULT(UseAES))
+-      warning("AES instructions not available on this CPU");
++      warning("AES instructions are not available on this CPU");
+     FLAG_SET_DEFAULT(UseAES, false);
+   }
+ 
+@@ -567,10 +568,57 @@
+     }
+   } else if (UseAESIntrinsics) {
+     if (!FLAG_IS_DEFAULT(UseAESIntrinsics))
+-      warning("AES intrinsics not available on this CPU");
++      warning("AES intrinsics are not available on this CPU");
+     FLAG_SET_DEFAULT(UseAESIntrinsics, false);
+   }
+ 
++  // Adjust RTM (Restricted Transactional Memory) flags
++  if (!supports_rtm() && UseRTMLocking) {
++    // Can't continue because UseRTMLocking affects UseBiasedLocking flag
++    // setting during arguments processing. See use_biased_locking().
++    // VM_Version_init() is executed after UseBiasedLocking is used
++    // in Thread::allocate().
++    vm_exit_during_initialization("RTM instructions are not available on this CPU");
++  }
++
++#if INCLUDE_RTM_OPT
++  if (UseRTMLocking) {
++    if (!FLAG_IS_CMDLINE(UseRTMLocking)) {
++      // RTM locking should be used only for applications with
++      // high lock contention. For now we do not use it by default.
++      vm_exit_during_initialization("UseRTMLocking flag should be only set on command line");
++    }
++    if (!is_power_of_2(RTMTotalCountIncrRate)) {
++      warning("RTMTotalCountIncrRate must be a power of 2, resetting it to 64");
++      FLAG_SET_DEFAULT(RTMTotalCountIncrRate, 64);
++    }
++    if (RTMAbortRatio < 0 || RTMAbortRatio > 100) {
++      warning("RTMAbortRatio must be in the range 0 to 100, resetting it to 50");
++      FLAG_SET_DEFAULT(RTMAbortRatio, 50);
++    }
++  } else { // !UseRTMLocking
++    if (UseRTMForStackLocks) {
++      if (!FLAG_IS_DEFAULT(UseRTMForStackLocks)) {
++        warning("UseRTMForStackLocks flag should be off when UseRTMLocking flag is off");
++      }
++      FLAG_SET_DEFAULT(UseRTMForStackLocks, false);
++    }
++    if (UseRTMDeopt) {
++      FLAG_SET_DEFAULT(UseRTMDeopt, false);
++    }
++    if (PrintPreciseRTMLockingStatistics) {
++      FLAG_SET_DEFAULT(PrintPreciseRTMLockingStatistics, false);
++    }
++  }
++#else
++  if (UseRTMLocking) {
++    // Only C2 does RTM locking optimization.
++    // Can't continue because UseRTMLocking affects UseBiasedLocking flag
++    // setting during arguments processing. See use_biased_locking().
++    vm_exit_during_initialization("RTM locking optimization is not supported in this VM");
++  }
++#endif
++
+ #ifdef COMPILER2
+   if (UseFPUForSpilling) {
+     if (UseSSE < 2) {
+@@ -913,6 +961,27 @@
+ #endif // !PRODUCT
+ }
+ 
++bool VM_Version::use_biased_locking() {
++#if INCLUDE_RTM_OPT
++  // RTM locking is most useful when there is high lock contention and
++  // low data contention.  With high lock contention the lock is usually
++  // inflated and biased locking is not suitable for that case.
++  // RTM locking code requires that biased locking is off.
++  // Note: we can't switch off UseBiasedLocking in get_processor_features()
++  // because it is used by Thread::allocate() which is called before
++  // VM_Version::initialize().
++  if (UseRTMLocking && UseBiasedLocking) {
++    if (FLAG_IS_DEFAULT(UseBiasedLocking)) {
++      FLAG_SET_DEFAULT(UseBiasedLocking, false);
++    } else {
++      warning("Biased locking is not supported with RTM locking; ignoring UseBiasedLocking flag." );
++      UseBiasedLocking = false;
++    }
++  }
++#endif
++  return UseBiasedLocking;
++}
++
+ void VM_Version::initialize() {
+   ResourceMark rm;
+   // Making this stub must be FIRST use of assembler
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/vm_version_x86.hpp
+--- a/hotspot/src/cpu/x86/vm/vm_version_x86.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/vm_version_x86.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -207,7 +207,9 @@
+                         : 2,
+                    bmi2 : 1,
+                    erms : 1,
+-                        : 22;
++                        : 1,
++                   rtm  : 1,
++                        : 20;
+     } bits;
+   };
+ 
+@@ -257,7 +259,8 @@
+     CPU_ERMS   = (1 << 20), // enhanced 'rep movsb/stosb' instructions
+     CPU_CLMUL  = (1 << 21), // carryless multiply for CRC
+     CPU_BMI1   = (1 << 22),
+-    CPU_BMI2   = (1 << 23)
++    CPU_BMI2   = (1 << 23),
++    CPU_RTM    = (1 << 24)  // Restricted Transactional Memory instructions
+   } cpuFeatureFlags;
+ 
+   enum {
+@@ -444,6 +447,8 @@
+       result |= CPU_ERMS;
+     if (_cpuid_info.std_cpuid1_ecx.bits.clmul != 0)
+       result |= CPU_CLMUL;
++    if (_cpuid_info.sef_cpuid7_ebx.bits.rtm != 0)
++      result |= CPU_RTM;
+ 
+     // AMD features.
+     if (is_amd()) {
+@@ -514,6 +519,9 @@
+   // Initialization
+   static void initialize();
+ 
++  // Override Abstract_VM_Version implementation
++  static bool use_biased_locking();
++
+   // Asserts
+   static void assert_is_initialized() {
+     assert(_cpuid_info.std_cpuid1_eax.bits.family != 0, "VM_Version not initialized");
+@@ -606,6 +614,7 @@
+   static bool supports_aes()      { return (_cpuFeatures & CPU_AES) != 0; }
+   static bool supports_erms()     { return (_cpuFeatures & CPU_ERMS) != 0; }
+   static bool supports_clmul()    { return (_cpuFeatures & CPU_CLMUL) != 0; }
++  static bool supports_rtm()      { return (_cpuFeatures & CPU_RTM) != 0; }
+   static bool supports_bmi1()     { return (_cpuFeatures & CPU_BMI1) != 0; }
+   static bool supports_bmi2()     { return (_cpuFeatures & CPU_BMI2) != 0; }
+   // Intel features
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/x86_32.ad
+--- a/hotspot/src/cpu/x86/vm/x86_32.ad	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/x86_32.ad	Thu Mar 20 17:49:27 2014 -0700
+@@ -12925,13 +12925,31 @@
+ 
+ // inlined locking and unlocking
+ 
++instruct cmpFastLockRTM(eFlagsReg cr, eRegP object, eBXRegP box, eAXRegI tmp, eDXRegI scr, rRegI cx1, rRegI cx2) %{
++  predicate(Compile::current()->use_rtm());
++  match(Set cr (FastLock object box));
++  effect(TEMP tmp, TEMP scr, TEMP cx1, TEMP cx2, USE_KILL box);
++  ins_cost(300);
++  format %{ "FASTLOCK $object,$box\t! kills $box,$tmp,$scr,$cx1,$cx2" %}
++  ins_encode %{
++    __ fast_lock($object$$Register, $box$$Register, $tmp$$Register,
++                 $scr$$Register, $cx1$$Register, $cx2$$Register,
++                 _counters, _rtm_counters, _stack_rtm_counters,
++                 ((Method*)(ra_->C->method()->constant_encoding()))->method_data(),
++                 true, ra_->C->profile_rtm());
++  %}
++  ins_pipe(pipe_slow);
++%}
++
+ instruct cmpFastLock(eFlagsReg cr, eRegP object, eBXRegP box, eAXRegI tmp, eRegP scr) %{
++  predicate(!Compile::current()->use_rtm());
+   match(Set cr (FastLock object box));
+   effect(TEMP tmp, TEMP scr, USE_KILL box);
+   ins_cost(300);
+   format %{ "FASTLOCK $object,$box\t! kills $box,$tmp,$scr" %}
+   ins_encode %{
+-    __ fast_lock($object$$Register, $box$$Register, $tmp$$Register, $scr$$Register, _counters);
++    __ fast_lock($object$$Register, $box$$Register, $tmp$$Register,
++                 $scr$$Register, noreg, noreg, _counters, NULL, NULL, NULL, false, false);
+   %}
+   ins_pipe(pipe_slow);
+ %}
+@@ -12942,7 +12960,7 @@
+   ins_cost(300);
+   format %{ "FASTUNLOCK $object,$box\t! kills $box,$tmp" %}
+   ins_encode %{
+-    __ fast_unlock($object$$Register, $box$$Register, $tmp$$Register);
++    __ fast_unlock($object$$Register, $box$$Register, $tmp$$Register, ra_->C->use_rtm());
+   %}
+   ins_pipe(pipe_slow);
+ %}
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/cpu/x86/vm/x86_64.ad
+--- a/hotspot/src/cpu/x86/vm/x86_64.ad	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/cpu/x86/vm/x86_64.ad	Thu Mar 20 17:49:27 2014 -0700
+@@ -11387,13 +11387,31 @@
+ // ============================================================================
+ // inlined locking and unlocking
+ 
++instruct cmpFastLockRTM(rFlagsReg cr, rRegP object, rbx_RegP box, rax_RegI tmp, rdx_RegI scr, rRegI cx1, rRegI cx2) %{
++  predicate(Compile::current()->use_rtm());
++  match(Set cr (FastLock object box));
++  effect(TEMP tmp, TEMP scr, TEMP cx1, TEMP cx2, USE_KILL box);
++  ins_cost(300);
++  format %{ "fastlock $object,$box\t! kills $box,$tmp,$scr,$cx1,$cx2" %}
++  ins_encode %{
++    __ fast_lock($object$$Register, $box$$Register, $tmp$$Register,
++                 $scr$$Register, $cx1$$Register, $cx2$$Register,
++                 _counters, _rtm_counters, _stack_rtm_counters,
++                 ((Method*)(ra_->C->method()->constant_encoding()))->method_data(),
++                 true, ra_->C->profile_rtm());
++  %}
++  ins_pipe(pipe_slow);
++%}
++
+ instruct cmpFastLock(rFlagsReg cr, rRegP object, rbx_RegP box, rax_RegI tmp, rRegP scr) %{
++  predicate(!Compile::current()->use_rtm());
+   match(Set cr (FastLock object box));
+   effect(TEMP tmp, TEMP scr, USE_KILL box);
+   ins_cost(300);
+   format %{ "fastlock $object,$box\t! kills $box,$tmp,$scr" %}
+   ins_encode %{
+-    __ fast_lock($object$$Register, $box$$Register, $tmp$$Register, $scr$$Register, _counters);
++    __ fast_lock($object$$Register, $box$$Register, $tmp$$Register,
++                 $scr$$Register, noreg, noreg, _counters, NULL, NULL, NULL, false, false);
+   %}
+   ins_pipe(pipe_slow);
+ %}
+@@ -11404,7 +11422,7 @@
+   ins_cost(300);
+   format %{ "fastunlock $object,$box\t! kills $box,$tmp" %}
+   ins_encode %{
+-    __ fast_unlock($object$$Register, $box$$Register, $tmp$$Register);
++    __ fast_unlock($object$$Register, $box$$Register, $tmp$$Register, ra_->C->use_rtm());
+   %}
+   ins_pipe(pipe_slow);
+ %}
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/adlc/output_c.cpp
+--- a/hotspot/src/share/vm/adlc/output_c.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/adlc/output_c.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -1582,6 +1582,8 @@
+ 
+       if( node->is_ideal_fastlock() && new_inst->is_ideal_fastlock() ) {
+         fprintf(fp, "  ((MachFastLockNode*)n%d)->_counters = _counters;\n",cnt);
++        fprintf(fp, "  ((MachFastLockNode*)n%d)->_rtm_counters = _rtm_counters;\n",cnt);
++        fprintf(fp, "  ((MachFastLockNode*)n%d)->_stack_rtm_counters = _stack_rtm_counters;\n",cnt);
+       }
+ 
+       // Fill in the bottom_type where requested
+@@ -3963,6 +3965,8 @@
+   }
+   if( inst->is_ideal_fastlock() ) {
+     fprintf(fp_cpp, "%s node->_counters = _leaf->as_FastLock()->counters();\n", indent);
++    fprintf(fp_cpp, "%s node->_rtm_counters = _leaf->as_FastLock()->rtm_counters();\n", indent);
++    fprintf(fp_cpp, "%s node->_stack_rtm_counters = _leaf->as_FastLock()->stack_rtm_counters();\n", indent);
+   }
+ 
+ }
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/ci/ciEnv.cpp
+--- a/hotspot/src/share/vm/ci/ciEnv.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/ci/ciEnv.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -961,7 +961,8 @@
+                             AbstractCompiler* compiler,
+                             int comp_level,
+                             bool has_unsafe_access,
+-                            bool has_wide_vectors) {
++                            bool has_wide_vectors,
++                            RTMState  rtm_state) {
+   VM_ENTRY_MARK;
+   nmethod* nm = NULL;
+   {
+@@ -1002,6 +1003,15 @@
+ 
+     methodHandle method(THREAD, target->get_Method());
+ 
++#if INCLUDE_RTM_OPT
++    if (!failing() && (rtm_state != NoRTM) &&
++        (method()->method_data() != NULL) &&
++        (method()->method_data()->rtm_state() != rtm_state)) {
++      // Preemptive decompile if rtm state was changed.
++      record_failure("RTM state change invalidated rtm code");
++    }
++#endif
++
+     if (failing()) {
+       // While not a true deoptimization, it is a preemptive decompile.
+       MethodData* mdo = method()->method_data();
+@@ -1028,7 +1038,9 @@
+                                frame_words, oop_map_set,
+                                handler_table, inc_table,
+                                compiler, comp_level);
+-
++#if INCLUDE_RTM_OPT
++    nm->set_rtm_state(rtm_state);
++#endif
+     // Free codeBlobs
+     code_buffer->free_blob();
+ 
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/ci/ciEnv.hpp
+--- a/hotspot/src/share/vm/ci/ciEnv.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/ci/ciEnv.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -365,7 +365,8 @@
+                        AbstractCompiler*         compiler,
+                        int                       comp_level,
+                        bool                      has_unsafe_access,
+-                       bool                      has_wide_vectors);
++                       bool                      has_wide_vectors,
++                       RTMState                  rtm_state = NoRTM);
+ 
+ 
+   // Access to certain well known ciObjects.
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/ci/ciMethodData.hpp
+--- a/hotspot/src/share/vm/ci/ciMethodData.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/ci/ciMethodData.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -478,6 +478,18 @@
+ 
+   int invocation_count() { return _invocation_counter; }
+   int backedge_count()   { return _backedge_counter;   }
++
++#if INCLUDE_RTM_OPT
++  // return cached value
++  int rtm_state() {
++    if (is_empty()) {
++      return NoRTM;
++    } else {
++      return get_MethodData()->rtm_state();
++    }
++  }
++#endif
++
+   // Transfer information about the method to MethodData*.
+   // would_profile means we would like to profile this method,
+   // meaning it's not trivial.
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/code/nmethod.cpp
+--- a/hotspot/src/share/vm/code/nmethod.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/code/nmethod.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -460,7 +460,9 @@
+   _scavenge_root_link      = NULL;
+   _scavenge_root_state     = 0;
+   _compiler                = NULL;
+-
++#if INCLUDE_RTM_OPT
++  _rtm_state               = NoRTM;
++#endif
+ #ifdef HAVE_DTRACE_H
+   _trap_offset             = 0;
+ #endif // def HAVE_DTRACE_H
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/code/nmethod.hpp
+--- a/hotspot/src/share/vm/code/nmethod.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/code/nmethod.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -193,6 +193,12 @@
+ 
+   jbyte _scavenge_root_state;
+ 
++#if INCLUDE_RTM_OPT
++  // RTM state at compile time. Used during deoptimization to decide
++  // whether to restart collecting RTM locking abort statistic again.
++  RTMState _rtm_state;
++#endif
++
+   // Nmethod Flushing lock. If non-zero, then the nmethod is not removed
+   // and is not made into a zombie. However, once the nmethod is made into
+   // a zombie, it will be locked one final time if CompiledMethodUnload
+@@ -414,6 +420,12 @@
+   bool  is_zombie() const                         { return _state == zombie; }
+   bool  is_unloaded() const                       { return _state == unloaded;   }
+ 
++#if INCLUDE_RTM_OPT
++  // rtm state accessing and manipulating
++  RTMState  rtm_state() const                     { return _rtm_state; }
++  void set_rtm_state(RTMState state)              { _rtm_state = state; }
++#endif
++
+   // Make the nmethod non entrant. The nmethod will continue to be
+   // alive.  It is used when an uncommon trap happens.  Returns true
+   // if this thread changed the state of the nmethod or false if
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/oops/method.cpp
+--- a/hotspot/src/share/vm/oops/method.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/oops/method.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -273,7 +273,7 @@
+ }
+ 
+ address Method::bcp_from(int bci) const {
+-  assert((is_native() && bci == 0)  || (!is_native() && 0 <= bci && bci < code_size()), "illegal bci");
++  assert((is_native() && bci == 0)  || (!is_native() && 0 <= bci && bci < code_size()), err_msg("illegal bci: %d", bci));
+   address bcp = code_base() + bci;
+   assert(is_native() && bcp == code_base() || contains(bcp), "bcp doesn't belong to this method");
+   return bcp;
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/oops/methodData.cpp
+--- a/hotspot/src/share/vm/oops/methodData.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/oops/methodData.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -24,6 +24,7 @@
+ 
+ #include "precompiled.hpp"
+ #include "classfile/systemDictionary.hpp"
++#include "compiler/compilerOracle.hpp"
+ #include "interpreter/bytecode.hpp"
+ #include "interpreter/bytecodeStream.hpp"
+ #include "interpreter/linkResolver.hpp"
+@@ -1153,6 +1154,21 @@
+   _highest_osr_comp_level = 0;
+   _would_profile = true;
+ 
++#if INCLUDE_RTM_OPT
++  _rtm_state = NoRTM; // No RTM lock eliding by default
++  if (UseRTMLocking &&
++      !CompilerOracle::has_option_string(_method, "NoRTMLockEliding")) {
++    if (CompilerOracle::has_option_string(_method, "UseRTMLockEliding") || !UseRTMDeopt) {
++      // Generate RTM lock eliding code without abort ratio calculation code.
++      _rtm_state = UseRTM;
++    } else if (UseRTMDeopt) {
++      // Generate RTM lock eliding code and include abort ratio calculation
++      // code if UseRTMDeopt is on.
++      _rtm_state = ProfileRTM;
++    }
++  }
++#endif
++
+   // Initialize flags and trap history.
+   _nof_decompiles = 0;
+   _nof_overflow_recompiles = 0;
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/oops/methodData.hpp
+--- a/hotspot/src/share/vm/oops/methodData.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/oops/methodData.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -2052,7 +2052,7 @@
+ 
+   // Whole-method sticky bits and flags
+   enum {
+-    _trap_hist_limit    = 18,   // decoupled from Deoptimization::Reason_LIMIT
++    _trap_hist_limit    = 19,   // decoupled from Deoptimization::Reason_LIMIT
+     _trap_hist_mask     = max_jubyte,
+     _extra_data_count   = 4     // extra DataLayout headers, for trap history
+   }; // Public flag values
+@@ -2083,6 +2083,12 @@
+   // Counter values at the time profiling started.
+   int               _invocation_counter_start;
+   int               _backedge_counter_start;
++
++#if INCLUDE_RTM_OPT
++  // State of RTM code generation during compilation of the method
++  int               _rtm_state;
++#endif
++
+   // Number of loops and blocks is computed when compiling the first
+   // time with C1. It is used to determine if method is trivial.
+   short             _num_loops;
+@@ -2246,6 +2252,22 @@
+   InvocationCounter* invocation_counter()     { return &_invocation_counter; }
+   InvocationCounter* backedge_counter()       { return &_backedge_counter;   }
+ 
++#if INCLUDE_RTM_OPT
++  int rtm_state() const {
++    return _rtm_state;
++  }
++  void set_rtm_state(RTMState rstate) {
++    _rtm_state = (int)rstate;
++  }
++  void atomic_set_rtm_state(RTMState rstate) {
++    Atomic::store((int)rstate, &_rtm_state);
++  }
++
++  static int rtm_state_offset_in_bytes() {
++    return offset_of(MethodData, _rtm_state);
++  }
++#endif
++
+   void set_would_profile(bool p)              { _would_profile = p;    }
+   bool would_profile() const                  { return _would_profile; }
+ 
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/c2_globals.hpp
+--- a/hotspot/src/share/vm/opto/c2_globals.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/c2_globals.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -446,6 +446,9 @@
+   diagnostic(bool, PrintPreciseBiasedLockingStatistics, false,              \
+           "Print per-lock-site statistics of biased locking in JVM")        \
+                                                                             \
++  diagnostic(bool, PrintPreciseRTMLockingStatistics, false,                 \
++          "Print per-lock-site statistics of rtm locking in JVM")           \
++                                                                            \
+   notproduct(bool, PrintEliminateLocks, false,                              \
+           "Print out when locks are eliminated")                            \
+                                                                             \
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/classes.hpp
+--- a/hotspot/src/share/vm/opto/classes.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/classes.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -198,6 +198,7 @@
+ macro(NeverBranch)
+ macro(Opaque1)
+ macro(Opaque2)
++macro(Opaque3)
+ macro(OrI)
+ macro(OrL)
+ macro(OverflowAddI)
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/compile.cpp
+--- a/hotspot/src/share/vm/opto/compile.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/compile.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -694,9 +694,10 @@
+   set_print_inlining(PrintInlining || method()->has_option("PrintInlining") NOT_PRODUCT( || PrintOptoInlining));
+   set_print_intrinsics(PrintIntrinsics || method()->has_option("PrintIntrinsics"));
+ 
+-  if (ProfileTraps) {
++  if (ProfileTraps RTM_OPT_ONLY( || UseRTMLocking )) {
+     // Make sure the method being compiled gets its own MDO,
+     // so we can at least track the decompile_count().
++    // Need MDO to record RTM code generation state.
+     method()->ensure_method_data();
+   }
+ 
+@@ -907,7 +908,8 @@
+                            compiler,
+                            env()->comp_level(),
+                            has_unsafe_access(),
+-                           SharedRuntime::is_wide_vector(max_vector_size())
++                           SharedRuntime::is_wide_vector(max_vector_size()),
++                           rtm_state()
+                            );
+ 
+     if (log() != NULL) // Print code cache state into compiler log
+@@ -1073,7 +1075,23 @@
+   set_do_scheduling(OptoScheduling);
+   set_do_count_invocations(false);
+   set_do_method_data_update(false);
+-
++  set_rtm_state(NoRTM); // No RTM lock eliding by default
++#if INCLUDE_RTM_OPT
++  if (UseRTMLocking && has_method() && (method()->method_data_or_null() != NULL)) {
++    int rtm_state = method()->method_data()->rtm_state();
++    if (method_has_option("NoRTMLockEliding") || ((rtm_state & NoRTM) != 0)) {
++      // Don't generate RTM lock eliding code.
++      set_rtm_state(NoRTM);
++    } else if (method_has_option("UseRTMLockEliding") || ((rtm_state & UseRTM) != 0) || !UseRTMDeopt) {
++      // Generate RTM lock eliding code without abort ratio calculation code.
++      set_rtm_state(UseRTM);
++    } else if (UseRTMDeopt) {
++      // Generate RTM lock eliding code and include abort ratio calculation
++      // code if UseRTMDeopt is on.
++      set_rtm_state(ProfileRTM);
++    }
++  }
++#endif
+   if (debug_info()->recording_non_safepoints()) {
+     set_node_note_array(new(comp_arena()) GrowableArray<Node_Notes*>
+                         (comp_arena(), 8, 0, NULL));
+@@ -2581,6 +2599,7 @@
+     break;
+   case Op_Opaque1:              // Remove Opaque Nodes before matching
+   case Op_Opaque2:              // Remove Opaque Nodes before matching
++  case Op_Opaque3:
+     n->subsume_by(n->in(1), this);
+     break;
+   case Op_CallStaticJava:
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/compile.hpp
+--- a/hotspot/src/share/vm/opto/compile.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/compile.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -319,9 +319,9 @@
+   bool                  _trace_opto_output;
+   bool                  _parsed_irreducible_loop; // True if ciTypeFlow detected irreducible loops during parsing
+ #endif
+-
+   // JSR 292
+   bool                  _has_method_handle_invokes; // True if this method has MethodHandle invokes.
++  RTMState              _rtm_state;             // State of Restricted Transactional Memory usage
+ 
+   // Compilation environment.
+   Arena                 _comp_arena;            // Arena with lifetime equivalent to Compile
+@@ -591,6 +591,10 @@
+   void          set_print_inlining(bool z)       { _print_inlining = z; }
+   bool              print_intrinsics() const     { return _print_intrinsics; }
+   void          set_print_intrinsics(bool z)     { _print_intrinsics = z; }
++  RTMState          rtm_state()  const           { return _rtm_state; }
++  void          set_rtm_state(RTMState s)        { _rtm_state = s; }
++  bool              use_rtm() const              { return (_rtm_state & NoRTM) == 0; }
++  bool          profile_rtm() const              { return _rtm_state == ProfileRTM; }
+   // check the CompilerOracle for special behaviours for this compile
+   bool          method_has_option(const char * option) {
+     return method() != NULL && method()->has_option(option);
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/connode.hpp
+--- a/hotspot/src/share/vm/opto/connode.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/connode.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -642,6 +642,19 @@
+   virtual const Type *bottom_type() const { return TypeInt::INT; }
+ };
+ 
++//------------------------------Opaque3Node------------------------------------
++// A node to prevent unwanted optimizations. Will be optimized only during
++// macro nodes expansion.
++class Opaque3Node : public Opaque2Node {
++  int _opt; // what optimization it was used for
++public:
++  enum { RTM_OPT };
++  Opaque3Node(Compile* C, Node *n, int opt) : Opaque2Node(C, n), _opt(opt) {}
++  virtual int Opcode() const;
++  bool rtm_opt() const { return (_opt == RTM_OPT); }
++};
++
++
+ //----------------------PartialSubtypeCheckNode--------------------------------
+ // The 2nd slow-half of a subtype check.  Scan the subklass's 2ndary superklass
+ // array for an instance of the superklass.  Set a hidden internal cache on a
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/graphKit.cpp
+--- a/hotspot/src/share/vm/opto/graphKit.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/graphKit.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -3151,10 +3151,14 @@
+   Node* mem = reset_memory();
+ 
+   FastLockNode * flock = _gvn.transform(new (C) FastLockNode(0, obj, box) )->as_FastLock();
+-  if (PrintPreciseBiasedLockingStatistics) {
++  if (UseBiasedLocking && PrintPreciseBiasedLockingStatistics) {
+     // Create the counters for this fast lock.
+     flock->create_lock_counter(sync_jvms()); // sync_jvms used to get current bci
+   }
++
++  // Create the rtm counters for this fast lock if needed.
++  flock->create_rtm_lock_counter(sync_jvms()); // sync_jvms used to get current bci
++
+   // Add monitor to debug info for the slow path.  If we block inside the
+   // slow path and de-opt, we need the monitor hanging around
+   map()->push_monitor( flock );
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/locknode.cpp
+--- a/hotspot/src/share/vm/opto/locknode.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/locknode.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -136,6 +136,8 @@
+ //-----------------------------hash--------------------------------------------
+ uint FastLockNode::hash() const { return NO_HASH; }
+ 
++uint FastLockNode::size_of() const { return sizeof(*this); }
++
+ //------------------------------cmp--------------------------------------------
+ uint FastLockNode::cmp( const Node &n ) const {
+   return (&n == this);                // Always fail except on self
+@@ -159,6 +161,22 @@
+   _counters = blnc->counters();
+ }
+ 
++void FastLockNode::create_rtm_lock_counter(JVMState* state) {
++#if INCLUDE_RTM_OPT
++  Compile* C = Compile::current();
++  if (C->profile_rtm() || (PrintPreciseRTMLockingStatistics && C->use_rtm())) {
++    RTMLockingNamedCounter* rlnc = (RTMLockingNamedCounter*)
++           OptoRuntime::new_named_counter(state, NamedCounter::RTMLockingCounter);
++    _rtm_counters = rlnc->counters();
++    if (UseRTMForStackLocks) {
++      rlnc = (RTMLockingNamedCounter*)
++           OptoRuntime::new_named_counter(state, NamedCounter::RTMLockingCounter);
++      _stack_rtm_counters = rlnc->counters();
++    }
++  }
++#endif
++}
++
+ //=============================================================================
+ //------------------------------do_monitor_enter-------------------------------
+ void Parse::do_monitor_enter() {
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/locknode.hpp
+--- a/hotspot/src/share/vm/opto/locknode.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/locknode.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -92,13 +92,17 @@
+ //------------------------------FastLockNode-----------------------------------
+ class FastLockNode: public CmpNode {
+ private:
+-  BiasedLockingCounters* _counters;
++  BiasedLockingCounters*        _counters;
++  RTMLockingCounters*       _rtm_counters; // RTM lock counters for inflated locks
++  RTMLockingCounters* _stack_rtm_counters; // RTM lock counters for stack locks
+ 
+ public:
+   FastLockNode(Node *ctrl, Node *oop, Node *box) : CmpNode(oop,box) {
+     init_req(0,ctrl);
+     init_class_id(Class_FastLock);
+     _counters = NULL;
++    _rtm_counters = NULL;
++    _stack_rtm_counters = NULL;
+   }
+   Node* obj_node() const { return in(1); }
+   Node* box_node() const { return in(2); }
+@@ -107,13 +111,17 @@
+   // FastLock and FastUnlockNode do not hash, we need one for each correspoding
+   // LockNode/UnLockNode to avoid creating Phi's.
+   virtual uint hash() const ;                  // { return NO_HASH; }
++  virtual uint size_of() const;
+   virtual uint cmp( const Node &n ) const ;    // Always fail, except on self
+   virtual int Opcode() const;
+   virtual const Type *Value( PhaseTransform *phase ) const { return TypeInt::CC; }
+   const Type *sub(const Type *t1, const Type *t2) const { return TypeInt::CC;}
+ 
+   void create_lock_counter(JVMState* s);
+-  BiasedLockingCounters* counters() const { return _counters; }
++  void create_rtm_lock_counter(JVMState* state);
++  BiasedLockingCounters*        counters() const { return _counters; }
++  RTMLockingCounters*       rtm_counters() const { return _rtm_counters; }
++  RTMLockingCounters* stack_rtm_counters() const { return _stack_rtm_counters; }
+ };
+ 
+ 
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/loopTransform.cpp
+--- a/hotspot/src/share/vm/opto/loopTransform.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/loopTransform.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -617,6 +617,15 @@
+       case Op_AryEq: {
+         return false;
+       }
++#if INCLUDE_RTM_OPT
++      case Op_FastLock:
++      case Op_FastUnlock: {
++        // Don't unroll RTM locking code because it is large.
++        if (UseRTMLocking) {
++          return false;
++        }
++      }
++#endif
+     } // switch
+   }
+ 
+@@ -722,6 +731,15 @@
+         // String intrinsics are large and have loops.
+         return false;
+       }
++#if INCLUDE_RTM_OPT
++      case Op_FastLock:
++      case Op_FastUnlock: {
++        // Don't unroll RTM locking code because it is large.
++        if (UseRTMLocking) {
++          return false;
++        }
++      }
++#endif
+     } // switch
+   }
+ 
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/machnode.hpp
+--- a/hotspot/src/share/vm/opto/machnode.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/machnode.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -53,6 +53,7 @@
+ class Matcher;
+ class PhaseRegAlloc;
+ class RegMask;
++class RTMLockingCounters;
+ class State;
+ 
+ //---------------------------MachOper------------------------------------------
+@@ -714,8 +715,9 @@
+ class MachFastLockNode : public MachNode {
+   virtual uint size_of() const { return sizeof(*this); } // Size is bigger
+ public:
+-  BiasedLockingCounters* _counters;
+-
++  BiasedLockingCounters*        _counters;
++  RTMLockingCounters*       _rtm_counters; // RTM lock counters for inflated locks
++  RTMLockingCounters* _stack_rtm_counters; // RTM lock counters for stack locks
+   MachFastLockNode() : MachNode() {}
+ };
+ 
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/macro.cpp
+--- a/hotspot/src/share/vm/opto/macro.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/macro.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -2439,6 +2439,7 @@
+     }
+   }
+   // Next, attempt to eliminate allocations
++  _has_locks = false;
+   progress = true;
+   while (progress) {
+     progress = false;
+@@ -2457,11 +2458,13 @@
+       case Node::Class_Lock:
+       case Node::Class_Unlock:
+         assert(!n->as_AbstractLock()->is_eliminated(), "sanity");
++        _has_locks = true;
+         break;
+       default:
+         assert(n->Opcode() == Op_LoopLimit ||
+                n->Opcode() == Op_Opaque1   ||
+-               n->Opcode() == Op_Opaque2, "unknown node type in macro list");
++               n->Opcode() == Op_Opaque2   ||
++               n->Opcode() == Op_Opaque3, "unknown node type in macro list");
+       }
+       assert(success == (C->macro_count() < old_macro_count), "elimination reduces macro count");
+       progress = progress || success;
+@@ -2502,6 +2505,30 @@
+       } else if (n->Opcode() == Op_Opaque1 || n->Opcode() == Op_Opaque2) {
+         _igvn.replace_node(n, n->in(1));
+         success = true;
++#if INCLUDE_RTM_OPT
++      } else if ((n->Opcode() == Op_Opaque3) && ((Opaque3Node*)n)->rtm_opt()) {
++        assert(C->profile_rtm(), "should be used only in rtm deoptimization code");
++        assert((n->outcnt() == 1) && n->unique_out()->is_Cmp(), "");
++        Node* cmp = n->unique_out();
++#ifdef ASSERT
++        // Validate graph.
++        assert((cmp->outcnt() == 1) && cmp->unique_out()->is_Bool(), "");
++        BoolNode* bol = cmp->unique_out()->as_Bool();
++        assert((bol->outcnt() == 1) && bol->unique_out()->is_If() &&
++               (bol->_test._test == BoolTest::ne), "");
++        IfNode* ifn = bol->unique_out()->as_If();
++        assert((ifn->outcnt() == 2) &&
++               ifn->proj_out(1)->is_uncommon_trap_proj(Deoptimization::Reason_rtm_state_change), "");
++#endif
++        Node* repl = n->in(1);
++        if (!_has_locks) {
++          // Remove RTM state check if there are no locks in the code.
++          // Replace input to compare the same value.
++          repl = (cmp->in(1) == n) ? cmp->in(2) : cmp->in(1);
++        }
++        _igvn.replace_node(n, repl);
++        success = true;
++#endif
+       }
+       assert(success == (C->macro_count() < old_macro_count), "elimination reduces macro count");
+       progress = progress || success;
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/macro.hpp
+--- a/hotspot/src/share/vm/opto/macro.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/macro.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -76,6 +76,8 @@
+   ProjNode *_memproj_catchall;
+   ProjNode *_resproj;
+ 
++  // Additional data collected during macro expansion
++  bool _has_locks;
+ 
+   void expand_allocate(AllocateNode *alloc);
+   void expand_allocate_array(AllocateArrayNode *alloc);
+@@ -118,7 +120,7 @@
+                             Node* length);
+ 
+ public:
+-  PhaseMacroExpand(PhaseIterGVN &igvn) : Phase(Macro_Expand), _igvn(igvn) {
++  PhaseMacroExpand(PhaseIterGVN &igvn) : Phase(Macro_Expand), _igvn(igvn), _has_locks(false) {
+     _igvn.set_delay_transform(true);
+   }
+   void eliminate_macro_nodes();
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/parse.hpp
+--- a/hotspot/src/share/vm/opto/parse.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/parse.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -486,6 +486,8 @@
+   // Helper function to compute array addressing
+   Node* array_addressing(BasicType type, int vals, const Type* *result2=NULL);
+ 
++  void rtm_deopt();
++
+   // Pass current map to exits
+   void return_current(Node* value);
+ 
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/parse1.cpp
+--- a/hotspot/src/share/vm/opto/parse1.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/parse1.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -567,6 +567,10 @@
+     set_map(entry_map);
+     do_method_entry();
+   }
++  if (depth() == 1) {
++    // Add check to deoptimize the nmethod if RTM state was changed
++    rtm_deopt();
++  }
+ 
+   // Check for bailouts during method entry.
+   if (failing()) {
+@@ -2006,6 +2010,42 @@
+   set_control( _gvn.transform(result_rgn) );
+ }
+ 
++// Add check to deoptimize if RTM state is not ProfileRTM
++void Parse::rtm_deopt() {
++#if INCLUDE_RTM_OPT
++  if (C->profile_rtm()) {
++    assert(C->method() != NULL, "only for normal compilations");
++    assert(!C->method()->method_data()->is_empty(), "MDO is needed to record RTM state");
++    assert(depth() == 1, "generate check only for main compiled method");
++
++    // Set starting bci for uncommon trap.
++    set_parse_bci(is_osr_parse() ? osr_bci() : 0);
++
++    // Load the rtm_state from the MethodData.
++    const TypePtr* adr_type = TypeMetadataPtr::make(C->method()->method_data());
++    Node* mdo = makecon(adr_type);
++    int offset = MethodData::rtm_state_offset_in_bytes();
++    Node* adr_node = basic_plus_adr(mdo, mdo, offset);
++    Node* rtm_state = make_load(control(), adr_node, TypeInt::INT, T_INT, adr_type, MemNode::unordered);
++
++    // Separate Load from Cmp by Opaque.
++    // In expand_macro_nodes() it will be replaced either
++    // with this load when there are locks in the code
++    // or with ProfileRTM (cmp->in(2)) otherwise so that
++    // the check will fold.
++    Node* profile_state = makecon(TypeInt::make(ProfileRTM));
++    Node* opq   = _gvn.transform( new (C) Opaque3Node(C, rtm_state, Opaque3Node::RTM_OPT) );
++    Node* chk   = _gvn.transform( new (C) CmpINode(opq, profile_state) );
++    Node* tst   = _gvn.transform( new (C) BoolNode(chk, BoolTest::eq) );
++    // Branch to failure if state was changed
++    { BuildCutout unless(this, tst, PROB_ALWAYS);
++      uncommon_trap(Deoptimization::Reason_rtm_state_change,
++                    Deoptimization::Action_make_not_entrant);
++    }
++  }
++#endif
++}
++
+ //------------------------------return_current---------------------------------
+ // Append current _map to _exit_return
+ void Parse::return_current(Node* value) {
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/runtime.cpp
+--- a/hotspot/src/share/vm/opto/runtime.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/runtime.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -1310,6 +1310,14 @@
+         tty->print_cr("%s", c->name());
+         blc->print_on(tty);
+       }
++#if INCLUDE_RTM_OPT
++    } else if (c->tag() == NamedCounter::RTMLockingCounter) {
++      RTMLockingCounters* rlc = ((RTMLockingNamedCounter*)c)->counters();
++      if (rlc->nonzero()) {
++        tty->print_cr("%s", c->name());
++        rlc->print_on(tty);
++      }
++#endif
+     }
+     c = c->next();
+   }
+@@ -1349,6 +1357,8 @@
+   NamedCounter* c;
+   if (tag == NamedCounter::BiasedLockingCounter) {
+     c = new BiasedLockingNamedCounter(strdup(st.as_string()));
++  } else if (tag == NamedCounter::RTMLockingCounter) {
++    c = new RTMLockingNamedCounter(strdup(st.as_string()));
+   } else {
+     c = new NamedCounter(strdup(st.as_string()), tag);
+   }
+@@ -1357,6 +1367,7 @@
+   // add counters so this is safe.
+   NamedCounter* head;
+   do {
++    c->set_next(NULL);
+     head = _named_counters;
+     c->set_next(head);
+   } while (Atomic::cmpxchg_ptr(c, &_named_counters, head) != head);
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/runtime.hpp
+--- a/hotspot/src/share/vm/opto/runtime.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/runtime.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -29,6 +29,7 @@
+ #include "opto/machnode.hpp"
+ #include "opto/type.hpp"
+ #include "runtime/biasedLocking.hpp"
++#include "runtime/rtmLocking.hpp"
+ #include "runtime/deoptimization.hpp"
+ #include "runtime/vframe.hpp"
+ 
+@@ -61,7 +62,8 @@
+     NoTag,
+     LockCounter,
+     EliminatedLockCounter,
+-    BiasedLockingCounter
++    BiasedLockingCounter,
++    RTMLockingCounter
+   };
+ 
+ private:
+@@ -85,7 +87,7 @@
+ 
+   NamedCounter* next() const    { return _next; }
+   void set_next(NamedCounter* next) {
+-    assert(_next == NULL, "already set");
++    assert(_next == NULL || next == NULL, "already set");
+     _next = next;
+   }
+ 
+@@ -102,6 +104,18 @@
+   BiasedLockingCounters* counters() { return &_counters; }
+ };
+ 
++
++class RTMLockingNamedCounter : public NamedCounter {
++ private:
++ RTMLockingCounters _counters;
++
++ public:
++  RTMLockingNamedCounter(const char *n) :
++    NamedCounter(n, RTMLockingCounter), _counters() {}
++
++  RTMLockingCounters* counters() { return &_counters; }
++};
++
+ typedef const TypeFunc*(*TypeFunc_generator)();
+ 
+ class OptoRuntime : public AllStatic {
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/opto/type.cpp
+--- a/hotspot/src/share/vm/opto/type.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/opto/type.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -4380,7 +4380,7 @@
+       // else fall through:
+     case TopPTR:
+     case AnyNull: {
+-      return make(ptr, NULL, offset);
++      return make(ptr, _metadata, offset);
+     }
+     case BotPTR:
+     case NotNull:
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/runtime/arguments.cpp
+--- a/hotspot/src/share/vm/runtime/arguments.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/runtime/arguments.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -3782,9 +3782,6 @@
+ #endif // CC_INTERP
+ 
+ #ifdef COMPILER2
+-  if (!UseBiasedLocking || EmitSync != 0) {
+-    UseOptoBiasInlining = false;
+-  }
+   if (!EliminateLocks) {
+     EliminateNestedLocks = false;
+   }
+@@ -3845,6 +3842,11 @@
+       UseBiasedLocking = false;
+     }
+   }
++#ifdef COMPILER2
++  if (!UseBiasedLocking || EmitSync != 0) {
++    UseOptoBiasInlining = false;
++  }
++#endif
+ 
+   return JNI_OK;
+ }
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/runtime/deoptimization.cpp
+--- a/hotspot/src/share/vm/runtime/deoptimization.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/runtime/deoptimization.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -1288,7 +1288,8 @@
+     gather_statistics(reason, action, trap_bc);
+ 
+     // Ensure that we can record deopt. history:
+-    bool create_if_missing = ProfileTraps;
++    // Need MDO to record RTM code generation state.
++    bool create_if_missing = ProfileTraps RTM_OPT_ONLY( || UseRTMLocking );
+ 
+     MethodData* trap_mdo =
+       get_method_data(thread, trap_method, create_if_missing);
+@@ -1569,6 +1570,17 @@
+         if (tstate1 != tstate0)
+           pdata->set_trap_state(tstate1);
+       }
++
++#if INCLUDE_RTM_OPT
++      // Restart collecting RTM locking abort statistic if the method
++      // is recompiled for a reason other than RTM state change.
++      // Assume that in new recompiled code the statistic could be different,
++      // for example, due to different inlining.
++      if ((reason != Reason_rtm_state_change) && (trap_mdo != NULL) &&
++          UseRTMDeopt && (nm->rtm_state() != ProfileRTM)) {
++        trap_mdo->atomic_set_rtm_state(ProfileRTM);
++      }
++#endif
+     }
+ 
+     if (inc_recompile_count) {
+@@ -1826,7 +1838,8 @@
+   "age",
+   "predicate",
+   "loop_limit_check",
+-  "speculate_class_check"
++  "speculate_class_check",
++  "rtm_state_change"
+ };
+ const char* Deoptimization::_trap_action_name[Action_LIMIT] = {
+   // Note:  Keep this in sync. with enum DeoptAction.
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/runtime/deoptimization.hpp
+--- a/hotspot/src/share/vm/runtime/deoptimization.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/runtime/deoptimization.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -60,6 +60,7 @@
+     Reason_predicate,             // compiler generated predicate failed
+     Reason_loop_limit_check,      // compiler generated loop limits check failed
+     Reason_speculate_class_check, // saw unexpected object class from type speculation
++    Reason_rtm_state_change,      // rtm state change detected
+     Reason_LIMIT,
+     // Note:  Keep this enum in sync. with _trap_reason_name.
+     Reason_RECORDED_LIMIT = Reason_bimorphic  // some are not recorded per bc
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/runtime/java.cpp
+--- a/hotspot/src/share/vm/runtime/java.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/runtime/java.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -265,7 +265,7 @@
+     os::print_statistics();
+   }
+ 
+-  if (PrintLockStatistics || PrintPreciseBiasedLockingStatistics) {
++  if (PrintLockStatistics || PrintPreciseBiasedLockingStatistics || PrintPreciseRTMLockingStatistics) {
+     OptoRuntime::print_named_counters();
+   }
+ 
+@@ -387,7 +387,7 @@
+   }
+ 
+ #ifdef COMPILER2
+-  if (PrintPreciseBiasedLockingStatistics) {
++  if (PrintPreciseBiasedLockingStatistics || PrintPreciseRTMLockingStatistics) {
+     OptoRuntime::print_named_counters();
+   }
+ #endif
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/runtime/rtmLocking.hpp
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/hotspot/src/share/vm/runtime/rtmLocking.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -0,0 +1,113 @@
++/*
++ * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ *
++ */
++
++#ifndef SHARE_VM_RUNTIME_RTMLOCKING_HPP
++#define SHARE_VM_RUNTIME_RTMLOCKING_HPP
++
++// Generate RTM (Restricted Transactional Memory) locking code for all inflated
++// locks when "UseRTMLocking" option is on with normal locking mechanism as fall back
++// handler.
++//
++// On abort/lock busy the lock will be retried a fixed number of times under RTM
++// as specified by "RTMRetryCount" option. The locks which abort too often
++// can be auto tuned or manually tuned.
++//
++// Auto-tuning can be done on an option like UseRTMDeopt and it will need abort
++// ratio calculation for each lock. The abort ratio will be calculated after
++// "RTMAbortThreshold" number of aborts is reached. The formulas are:
++//
++//     Aborted transactions = abort_count * 100
++//     All transactions = total_count *  RTMTotalCountIncrRate
++//
++//     Aborted transactions >= All transactions * RTMAbortRatio
++//
++// If "UseRTMDeopt" is on and the aborts ratio reaches "RTMAbortRatio"
++// the method containing the lock will be deoptimized and recompiled with
++// all locks as normal locks. If the abort ratio continues to remain low after
++// "RTMLockingThreshold" locks are attempted, then the method will be deoptimized
++// and recompiled with all locks as RTM locks without abort ratio calculation code.
++// The abort ratio calculation can be delayed by specifying flag
++// -XX:RTMLockingCalculationDelay in millisecond.
++//
++// For manual tuning the abort statistics for each lock needs to be provided
++// to the user on some JVM option like "PrintPreciseRTMLockingStatistics".
++// Based on the abort statistics users can create a .hotspot_compiler file
++// or use -XX:CompileCommand=option,class::method,NoRTMLockEliding
++// to specify for which methods to disable RTM locking.
++//
++// When UseRTMForStackLocks option is enabled along with UseRTMLocking option,
++// the RTM locking code is generated for stack locks too.
++// The retries, auto-tuning support and rtm locking statistics are all
++// supported for stack locks just like inflated locks.
++
++// RTM locking counters
++class RTMLockingCounters VALUE_OBJ_CLASS_SPEC {
++ private:
++  uintx _total_count; // Total RTM locks count
++  uintx _abort_count; // Total aborts count
++
++ public:
++  enum { ABORT_STATUS_LIMIT = 6 };
++  // Counters per RTM Abort Status. Incremented with +PrintPreciseRTMLockingStatistics
++  // RTM uses the EAX register to communicate abort status to software.
++  // Following an RTM abort the EAX register has the following definition.
++  //
++  //   EAX register bit position   Meaning
++  //     0     Set if abort caused by XABORT instruction.
++  //     1     If set, the transaction may succeed on a retry. This bit is always clear if bit 0 is set.
++  //     2     Set if another logical processor conflicted with a memory address that was part of the transaction that aborted.
++  //     3     Set if an internal buffer overflowed.
++  //     4     Set if a debug breakpoint was hit.
++  //     5     Set if an abort occurred during execution of a nested transaction.
++ private:
++  uintx _abortX_count[ABORT_STATUS_LIMIT];
++
++ public:
++  static uintx _calculation_flag;
++  static uintx* rtm_calculation_flag_addr() { return &_calculation_flag; }
++
++  static void init();
++
++  RTMLockingCounters() : _total_count(0), _abort_count(0) {
++    for (int i = 0; i < ABORT_STATUS_LIMIT; i++) {
++      _abortX_count[i] = 0;
++    }
++  }
++
++  uintx* total_count_addr()               { return &_total_count; }
++  uintx* abort_count_addr()               { return &_abort_count; }
++  uintx* abortX_count_addr()              { return &_abortX_count[0]; }
++
++  static int total_count_offset()         { return (int)offset_of(RTMLockingCounters, _total_count); }
++  static int abort_count_offset()         { return (int)offset_of(RTMLockingCounters, _abort_count); }
++  static int abortX_count_offset()        { return (int)offset_of(RTMLockingCounters, _abortX_count[0]); }
++
++
++  bool nonzero() {  return (_abort_count + _total_count) > 0; }
++
++  void print_on(outputStream* st);
++  void print() { print_on(tty); }
++};
++
++#endif // SHARE_VM_RUNTIME_RTMLOCKING_HPP
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/runtime/task.cpp
+--- a/hotspot/src/share/vm/runtime/task.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/runtime/task.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -105,7 +105,6 @@
+   _counter(0), _interval((int) interval_time) {
+   // Sanity check the interval time
+   assert(_interval >= PeriodicTask::min_interval &&
+-         _interval <= PeriodicTask::max_interval &&
+          _interval %  PeriodicTask::interval_gran == 0,
+               "improper PeriodicTask interval time");
+ }
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/runtime/thread.cpp
+--- a/hotspot/src/share/vm/runtime/thread.cpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/runtime/thread.cpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -107,6 +107,9 @@
+ #include "opto/c2compiler.hpp"
+ #include "opto/idealGraphPrinter.hpp"
+ #endif
++#if INCLUDE_RTM_OPT
++#include "runtime/rtmLocking.hpp"
++#endif
+ 
+ #ifdef DTRACE_ENABLED
+ 
+@@ -3622,6 +3625,10 @@
+ 
+   BiasedLocking::init();
+ 
++#if INCLUDE_RTM_OPT
++  RTMLockingCounters::init();
++#endif
++
+   if (JDK_Version::current().post_vm_init_hook_enabled()) {
+     call_postVMInitHook(THREAD);
+     // The Java side of PostVMInitHook.run must deal with all
+diff -r 54fc219734a0 -r f690330b10b9 hotspot/src/share/vm/utilities/globalDefinitions.hpp
+--- a/hotspot/src/share/vm/utilities/globalDefinitions.hpp	Wed Mar 19 11:37:58 2014 -0700
++++ b/hotspot/src/share/vm/utilities/globalDefinitions.hpp	Thu Mar 20 17:49:27 2014 -0700
+@@ -373,6 +373,21 @@
+ 
+ // Machine dependent stuff
+ 
++#if defined(X86) && defined(COMPILER2) && !defined(JAVASE_EMBEDDED)
++// Include Restricted Transactional Memory lock eliding optimization
++#define INCLUDE_RTM_OPT 1
++#define RTM_OPT_ONLY(code) code
++#else
++#define INCLUDE_RTM_OPT 0
++#define RTM_OPT_ONLY(code)
++#endif
++// States of Restricted Transactional Memory usage.
++enum RTMState {
++  NoRTM      = 0x2, // Don't use RTM
++  UseRTM     = 0x1, // Use RTM
++  ProfileRTM = 0x0  // Use RTM with abort ratio calculation
++};
++
+ #ifdef TARGET_ARCH_x86
+ # include "globalDefinitions_x86.hpp"
+ #endif
+

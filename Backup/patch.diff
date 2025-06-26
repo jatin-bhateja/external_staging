@@ -1,0 +1,172 @@
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index ab101edb1ec..7389052e116 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -1528,28 +1528,8 @@ void C2_MacroAssembler::vgather8b_masked(BasicType elem_bt, XMMRegister dst, Reg
+                                           Register mask, Register midx, Register rtmp, int vlen_enc) {
+   vpxor(dst, dst, dst, vlen_enc);
+   if (elem_bt == T_SHORT) {
+-    Label case0, case1, case2, case3;
+-    Label* larr[] = { &case0, &case1, &case2, &case3 };
+-    for (int i = 0; i < 4; i++) {
+-      bt(mask, midx);
+-      jccb(Assembler::carryClear, *larr[i]);
+-      movl(rtmp, Address(idx_base, i*4));
+-      pinsrw(dst, Address(base, rtmp, Address::times_2), i);
+-      bind(*larr[i]);
+-      incq(midx);
+-    }
+   } else {
+     assert(elem_bt == T_BYTE, "");
+-    Label case0, case1, case2, case3, case4, case5, case6, case7;
+-    Label* larr[] = { &case0, &case1, &case2, &case3, &case4, &case5, &case6, &case7 };
+-    for (int i = 0; i < 8; i++) {
+-      bt(mask, midx);
+-      jccb(Assembler::carryClear, *larr[i]);
+-      movl(rtmp, Address(idx_base, i*4));
+-      pinsrb(dst, Address(base, rtmp), i);
+-      bind(*larr[i]);
+-      incq(midx);
+-    }
+   }
+ }
+ 
+@@ -1557,47 +1537,67 @@ void C2_MacroAssembler::vgather8b_masked_offset(BasicType elem_bt, XMMRegister d
+                                                  Register offset, Register mask, Register midx, Register rtmp, int vlen_enc) {
+   vpxor(dst, dst, dst, vlen_enc);
+   if (elem_bt == T_SHORT) {
+-    Label case0, case1, case2, case3;
+-    Label* larr[] = { &case0, &case1, &case2, &case3 };
+-    for (int i = 0; i < 4; i++) {
+-      bt(mask, midx);
+-      jccb(Assembler::carryClear, *larr[i]);
+-      movl(rtmp, Address(idx_base, i*4));
+-      addl(rtmp, offset);
+-      pinsrw(dst, Address(base, rtmp, Address::times_2), i);
+-      bind(*larr[i]);
+-      incq(midx);
+-    }
+   } else {
+     assert(elem_bt == T_BYTE, "");
+-    Label case0, case1, case2, case3, case4, case5, case6, case7;
+-    Label* larr[] = { &case0, &case1, &case2, &case3, &case4, &case5, &case6, &case7 };
+-    for (int i = 0; i < 8; i++) {
+-      bt(mask, midx);
+-      jccb(Assembler::carryClear, *larr[i]);
+-      movl(rtmp, Address(idx_base, i*4));
+-      addl(rtmp, offset);
+-      pinsrb(dst, Address(base, rtmp), i);
+-      bind(*larr[i]);
+-      incq(midx);
+-    }
+   }
+ }
+ #endif // _LP64
+ 
+-void C2_MacroAssembler::vgather8b(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base, Register rtmp, int vlen_enc) {
++void C2_MacroAssembler::vpackI2X(BasicType elem_bt, XMMRegister dst, XMMRegister mask, XMMRegister xtmp, int vlen_enc) {
++  if (vlen_enc == Assembler::AVX_512bit) {
++    if (elem_bt == T_SHORT) {
++      evpmovdw(dst, dst, vlen_enc);
++    } else if (elem_bt == T_BYTE) {
++      evpmovdb(dst, dst, vlen_enc);
++    }
++  } else {
++    vpsrld(mask, mask, elem_bt == T_BYTE ? 24 : 16, vlen_enc);
++    vpandd(dst, dst, mask, vlen_enc);
++    if (vlen_enc == Assembler::AVX_256bit) {
++      vextractf128_high(xtmp, dst);
++    }
++    vpackusdw(dst, dst, xtmp, vlen_enc);
++    if (elem_bt == T_BYTE) {
++      vpackuswb(dst, dst, dst, vlen_enc);
++    }
++  }
++}
++
++void C2_MacroAssembler::vgather8b(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
++                                  int idx_off, XMMRegister idx_vec, XMMRegister mask, int vlen_enc) {
+   vpxor(dst, dst, dst, vlen_enc);
++  vallones(mask, vlen_enc);
+   if (elem_bt == T_SHORT) {
+-    for (int i = 0; i < 4; i++) {
+-      movl(rtmp, Address(idx_base, i*4));
+-      pinsrw(dst, Address(base, rtmp, Address::times_2), i);
+-    }
++    vpmovdqu(idx_vec, Address(idx_base, idx_off), vlen_enc);
++    // Normalize the indices to multiple of 2.
++    vpslld(idx_tmp, mask, 1, vlen_enc);
++    vpandd(idx_tmp, idx_vec, idx_tmp, vlen_enc);
++    // Load double words from normalized indices.
++    vpgatherdd(dst, Address(base, idx_tmp, ScaleFactor::times_4), mask, vlen_enc);
++    // Compute bit level offset of actual short value with in each double word lane.
++    vpsrld(idx_tmp, mask, 31, vlen_enc);
++    vpandd(idx_tmp, idx_vec, idx_tmp, vlen_enc);
++    vpslld(idx_tmp, idx_tmp, 4, vlen_enc);
++    // Move the short value at respective bit offset to lower 16 bits of each double word lane.
++    vpsrlvd(dst, dst, idx_tmp, vlen_enc);
++    // Pack double word vector into short vector.
++    vpackI2X(T_SHORT, dst, mask, xtmp, vlen_enc);
+   } else {
+     assert(elem_bt == T_BYTE, "");
+-    for (int i = 0; i < 8; i++) {
+-      movl(rtmp, Address(idx_base, i*4));
+-      pinsrb(dst, Address(base, rtmp), i);
+-    }
++    vpmovdqu(idx_vec, Address(idx_base, idx_off), vlen_enc);
++    // Normalize the indices to multiple of 4.
++    vpslld(idx_tmp, mask, 2, vlen_enc);
++    vpandd(idx_tmp, idx_vec, idx_tmp, vlen_enc);
++    // Load double words from normalized indices.
++    vpgatherdd(dst, Address(base, idx_tmp, ScaleFactor::times_4), mask, vlen_enc);
++    // Compute bit level offset of actual byte value with in each double word lane.
++    vpsrld(idx_tmp, mask, 30, vlen_enc);
++    vpandd(idx_tmp, idx_vec, idx_tmp, vlen_enc);
++    vpslld(idx_tmp, idx_tmp, 3, vlen_enc);
++    // Move the byte value at respective bit offset to lower 8 bits of each double word lane.
++    vpsrlvd(dst, dst, idx_tmp, vlen_enc);
++    // Pack double word vector into byte vector.
++    vpackI2X(T_BYTE, dst, mask, xtmp, vlen_enc);
+   }
+ }
+ 
+@@ -1605,18 +1605,8 @@ void C2_MacroAssembler::vgather8b_offset(BasicType elem_bt, XMMRegister dst, Reg
+                                           Register offset, Register rtmp, int vlen_enc) {
+   vpxor(dst, dst, dst, vlen_enc);
+   if (elem_bt == T_SHORT) {
+-    for (int i = 0; i < 4; i++) {
+-      movl(rtmp, Address(idx_base, i*4));
+-      addl(rtmp, offset);
+-      pinsrw(dst, Address(base, rtmp, Address::times_2), i);
+-    }
+   } else {
+     assert(elem_bt == T_BYTE, "");
+-    for (int i = 0; i < 8; i++) {
+-      movl(rtmp, Address(idx_base, i*4));
+-      addl(rtmp, offset);
+-      pinsrb(dst, Address(base, rtmp), i);
+-    }
+   }
+ }
+ 
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.hpp b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+index f875089ac67..ff67939a92c 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+@@ -1178,6 +1178,16 @@ class MacroAssembler: public Assembler {
+   void vmovdqu(XMMRegister dst, AddressLiteral src,                 Register rscratch = noreg);
+   void vmovdqu(XMMRegister dst, AddressLiteral src, int vector_len, Register rscratch = noreg);
+ 
++  void vpmovdqu(XMMRegister dst,  Address src, int vector_len) {
++    if (vector_len == Assembler::AVX_512bit) {
++       evmovdquq(dst, src, Assembler::AVX_512bit);
++    } else if (vector_len == Assembler::AVX_256bit) {
++       vmovdqu(dst, src);
++    } else {
++       movdqu(dst, src);
++    }
++  }
++
+   // AVX512 Unaligned
+   void evmovdqu(BasicType type, KRegister kmask, Address     dst, XMMRegister src, bool merge, int vector_len);
+   void evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, Address     src, bool merge, int vector_len);

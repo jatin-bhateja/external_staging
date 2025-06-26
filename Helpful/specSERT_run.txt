@@ -1,0 +1,76 @@
+
+
+A) Configurations:
+  i) wget http://spec.org/sert2/client-configurations-2.0.xml
+ ii) In config-all.xml select clientconfig Intel_Win_HS18_1 
+iii) Update JVM options in ./client-configurations-2.0.xml against HS18_I configuration : 
+
+ParallelOldGC-> ParallelGC
+ iv) Enable specific workload/worklet tags in config-all.xml
+
+B) Runs:
+ i) run PTdemon runtemp.sh runpower.sh
+ i) Run Director/Controller:
+export CLASSPATH="lib/sert.jar:lib/chauffeur.jar:lib/chauffeurCommon.jar:lib/ptdaemonClientApi.jar:lib/mtrandom.jar:lib/xsrandom.jar:lib/reporter.jar:lib/jcommon.jar:lib/jfreechart.jar:lib/saxon9he.jar:lib/xmlsec.jar:lib/commons-codec.jar:lib/slf4j-api.jar:lib/slf4j-jdk14.jar:lib/javax.activation.jar:lib/javax.activation-api.jar:lib/jaxb-api.jar:lib/jaxb-runtime.jar:lib/istack-commons-runtime.jar"
+
+[root@ICX-RH8-103 SERT-2.0.4]# java -cp $CLASSPATH -Djava.awt.headless=true -Xms64m -Xmx2048m -Djava.util.logging.config.file=logging.properties org.spec.chauffeur.Launcher org.spec.chauffeur.director.Director -hosts localhost config-all.xml
+  
+ ii) Run Sert Host over SUT:
+  edit envoirnment variable JAVA=<TEST_JDK>
+  sudo serthost.sh [SEP]
+
+C) Perf runs: launch edp.sh SEP/EDP <WORKLET=CPU_COMPRESS>
+ i) Add appropriate javaagent path in serthost.sh for SEP collection.
+
+E) CPROMPT>#cp /home/jatinbha/softwares/groovy-4.0.2/lib/groovy-4.0.2.jar lib/groovy.jar 
+   CPROMPT>#cp /home/jatinbha/softwares/groovy-4.0.2/lib/groovy-jsr223-4.0.2.jar lib/groovy-jsr223.jar
+
+
+Latest Steps 6/6/2025 :-
+========================
+
+1) Download JDK-8
+2) setup JAVA_HOME to point to JDK-8 distribution for installation.
+3) Copy SERT-2.0.4_setup.jar  
+    - java -jar SERT-2.0.4_setup.jar
+4) cd SERT-2.0.4
+5) wget http://spec.org/sert2/client-configurations-2.0.xml
+6) Edit  config-all.xml 
+                        <client-configuration id="clientConfig" ref="Intel_Win_HS18_1"/>
+7) Enable / Diable worklets settings in config-all.xml
+8) Modify JVM Flags setting in clientConfig-configurations-2.0.xml
+   e.g.
+        <option-set id="H19">
+                <parameter>-XX:+UseParallelGC</parameter>
+                <parameter>-XX:+AggressiveOpts</parameter>
+                <parameter>-XX:ParallelGCThreads=1</parameter>
+        </option-set>
+9) cd PTDeamon
+10) run ./runtemp.sh & ; ./runpower.sh &
+11) cd ..
+12) edit hostsetting in director.sh
+
+    ## A comma-separated list of hosts that will be included in the run.
+    ## Examples:
+    ##   For a single-host run where the hostname is "mysystem":
+    ##     HOSTS=mysystem
+    ##   For a multi-host run with hosts named host1, host2, and host3:
+    ##     HOSTS=host1,host2,host3
+    if [ "$2" = "" ]; then
+            HOSTS=localhost
+    else
+            HOSTS=$2
+    fi
+   
+13) sudo -E ./serthost.sh
+14) sudo -E ./director.sh
+15) collect EMON / SEP data
+
+With latest JDK there is a version compatibility issue with precompiled groovy jars.
+
+To overcome this manually copy following groovy jars 
+https://groovy.jfrog.io/artifactory/dist-release-local/groovy-zips/apache-groovy-binary-5.0.0-beta-1.zip
+   CPROMPT>#cp /home/jatinbha/softwares/groovy-5.0.0-beta-1/lib/groovy-5.0.0-beta-1.jar lib/groovy.jar
+   CPROMPT>#cp /home/jatinbha/softwares/groovy-5.0.0-beta-1/lib/groovy-jsr223-5.0.0-beta-1.jar lib/groovy-jsr223.jar
+
+This version of groovy is compatible with JDK-25

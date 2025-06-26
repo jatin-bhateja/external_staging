@@ -1,0 +1,251 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/aarch64/aarch64.ad b/src/hotspot/cpu/aarch64/aarch64.ad
+index 64a8e28ee7..f7f5e162a1 100644
+--- a/src/hotspot/cpu/aarch64/aarch64.ad
++++ b/src/hotspot/cpu/aarch64/aarch64.ad
+@@ -2279,15 +2279,6 @@ const uint Matcher::vector_ideal_reg(int len) {
+   return 0;
+ }
+ 
+-const uint Matcher::vector_shift_count_ideal_reg(int size) {
+-  switch(size) {
+-    case  8: return Op_VecD;
+-    case 16: return Op_VecX;
+-  }
+-  ShouldNotReachHere();
+-  return 0;
+-}
+-
+ // AES support not yet implemented
+ const bool Matcher::pass_original_key_for_aes() {
+   return false;
+@@ -2322,7 +2313,7 @@ const bool Matcher::need_masked_shift_count = false;
+ // No support for generic vector operands.
+ const bool Matcher::supports_generic_vector_operands  = false;
+ 
+-MachOper* Matcher::specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
++MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
+   ShouldNotReachHere(); // generic vector operands not supported
+   return NULL;
+ }
+diff --git a/src/hotspot/cpu/arm/arm.ad b/src/hotspot/cpu/arm/arm.ad
+index ea538980fc..9ee4e9443f 100644
+--- a/src/hotspot/cpu/arm/arm.ad
++++ b/src/hotspot/cpu/arm/arm.ad
+@@ -1132,10 +1132,6 @@ const uint Matcher::vector_ideal_reg(int size) {
+   return 0;
+ }
+ 
+-const uint Matcher::vector_shift_count_ideal_reg(int size) {
+-  return vector_ideal_reg(size);
+-}
+-
+ // Limits on vector size (number of elements) loaded into vector.
+ const int Matcher::max_vector_size(const BasicType bt) {
+   assert(is_java_primitive(bt), "only primitive type vectors");
+@@ -1222,7 +1218,7 @@ const bool Matcher::convi2l_type_required = true;
+ // No support for generic vector operands.
+ const bool Matcher::supports_generic_vector_operands  = false;
+ 
+-MachOper* Matcher::specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
++MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
+   ShouldNotReachHere(); // generic vector operands not supported
+   return NULL;
+ }
+diff --git a/src/hotspot/cpu/ppc/ppc.ad b/src/hotspot/cpu/ppc/ppc.ad
+index c5e3b9d449..cd9a3e4821 100644
+--- a/src/hotspot/cpu/ppc/ppc.ad
++++ b/src/hotspot/cpu/ppc/ppc.ad
+@@ -2295,11 +2295,6 @@ const uint Matcher::vector_ideal_reg(int size) {
+   }
+ }
+ 
+-const uint Matcher::vector_shift_count_ideal_reg(int size) {
+-  fatal("vector shift is not supported");
+-  return Node::NotAMachineReg;
+-}
+-
+ // Limits on vector size (number of elements) loaded into vector.
+ const int Matcher::max_vector_size(const BasicType bt) {
+   assert(is_java_primitive(bt), "only primitive type vectors");
+@@ -2380,7 +2375,7 @@ const bool Matcher::need_masked_shift_count = true;
+ // No support for generic vector operands.
+ const bool Matcher::supports_generic_vector_operands  = false;
+ 
+-MachOper* Matcher::specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
++MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
+   ShouldNotReachHere(); // generic vector operands not supported
+   return NULL;
+ }
+diff --git a/src/hotspot/cpu/s390/s390.ad b/src/hotspot/cpu/s390/s390.ad
+index 3b6c1eaddf..dd66db8ed8 100644
+--- a/src/hotspot/cpu/s390/s390.ad
++++ b/src/hotspot/cpu/s390/s390.ad
+@@ -1573,11 +1573,6 @@ const int Matcher::min_vector_size(const BasicType bt) {
+   return max_vector_size(bt); // Same as max.
+ }
+ 
+-const uint Matcher::vector_shift_count_ideal_reg(int size) {
+-  fatal("vector shift is not supported");
+-  return Node::NotAMachineReg;
+-}
+-
+ // z/Architecture does support misaligned store/load at minimal extra cost.
+ const bool Matcher::misaligned_vectors_ok() {
+   return true;
+@@ -1632,7 +1627,7 @@ const bool Matcher::need_masked_shift_count = false;
+ // No support for generic vector operands.
+ const bool Matcher::supports_generic_vector_operands  = false;
+ 
+-MachOper* Matcher::specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
++MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
+   ShouldNotReachHere(); // generic vector operands not supported
+   return NULL;
+ }
+diff --git a/src/hotspot/cpu/sparc/sparc.ad b/src/hotspot/cpu/sparc/sparc.ad
+index ab7bff02c8..7fdfb1423a 100644
+--- a/src/hotspot/cpu/sparc/sparc.ad
++++ b/src/hotspot/cpu/sparc/sparc.ad
+@@ -1749,11 +1749,6 @@ const uint Matcher::vector_ideal_reg(int size) {
+   return Op_RegD;
+ }
+ 
+-const uint Matcher::vector_shift_count_ideal_reg(int size) {
+-  fatal("vector shift is not supported");
+-  return Node::NotAMachineReg;
+-}
+-
+ // Limits on vector size (number of elements) loaded into vector.
+ const int Matcher::max_vector_size(const BasicType bt) {
+   assert(is_java_primitive(bt), "only primitive type vectors");
+@@ -1817,7 +1812,7 @@ const bool Matcher::need_masked_shift_count = false;
+ // No support for generic vector operands.
+ const bool Matcher::supports_generic_vector_operands  = false;
+ 
+-MachOper* Matcher::specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
++MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
+   ShouldNotReachHere(); // generic vector operands not supported
+   return NULL;
+ }
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 9bb023faf7..182e71f1b8 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1828,7 +1828,7 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+ // x86 supports generic vector operands: vec and legVec.
+ const bool Matcher::supports_generic_vector_operands = true;
+ 
+-MachOper* Matcher::specialize_generic_vector_operand(MachOper* generic_opnd, uint ideal_reg, bool is_temp) {
++MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* generic_opnd, uint ideal_reg, bool is_temp) {
+   assert(Matcher::is_generic_vector(generic_opnd), "not generic");
+   bool legacy = (generic_opnd->opcode() == LEGVEC);
+   if (!VM_Version::supports_avx512vlbwdq() && // KNL
+@@ -1972,11 +1972,6 @@ const uint Matcher::vector_ideal_reg(int size) {
+   return 0;
+ }
+ 
+-// Only lowest bits of xmm reg are used for vector shift count.
+-const uint Matcher::vector_shift_count_ideal_reg(int size) {
+-  return Op_VecS;
+-}
+-
+ // x86 supports misaligned vectors store/load.
+ const bool Matcher::misaligned_vectors_ok() {
+   return true;
+diff --git a/src/hotspot/share/opto/matcher.cpp b/src/hotspot/share/opto/matcher.cpp
+index bd806c6215..99787b3a2d 100644
+--- a/src/hotspot/share/opto/matcher.cpp
++++ b/src/hotspot/share/opto/matcher.cpp
+@@ -2588,27 +2588,6 @@ void Matcher::do_postselect_cleanup() {
+ // Generic machine operands elision.
+ //----------------------------------------------------------------------
+ 
+-// Convert (leg)Vec to (leg)Vec[SDXYZ].
+-MachOper* Matcher::specialize_vector_operand_helper(MachNode* m, uint opnd_idx, const Type* t) {
+-  MachOper* original_opnd = m->_opnds[opnd_idx];
+-  uint ideal_reg = t->ideal_reg();
+-  // Handle special cases.
+-  if (t->isa_vect()) {
+-    // LShiftCntV/RShiftCntV report wide vector type, but Matcher::vector_shift_count_ideal_reg() as ideal register (see vectornode.hpp).
+-    // Look for shift count use sites as well (at vector shift nodes).
+-    int opc = m->ideal_Opcode();
+-    if ((VectorNode::is_shift_count(opc)  && opnd_idx == 0) || // DEF operand of LShiftCntV/RShiftCntV
+-        (VectorNode::is_vector_shift(opc) && opnd_idx == 2)) { // shift operand of a vector shift node
+-      ideal_reg = Matcher::vector_shift_count_ideal_reg(t->is_vect()->length_in_bytes());
+-    }
+-  } else {
+-    // Chain instructions which convert scalar to vector (e.g., vshiftcntimm on x86) don't have vector type.
+-    int size_in_bytes = 4 * type2size[t->basic_type()];
+-    ideal_reg = Matcher::vector_ideal_reg(size_in_bytes);
+-  }
+-  return Matcher::specialize_generic_vector_operand(original_opnd, ideal_reg, false);
+-}
+-
+ // Compute concrete vector operand for a generic TEMP vector mach node based on its user info.
+ void Matcher::specialize_temp_node(MachTempNode* tmp, MachNode* use, uint idx) {
+   assert(use->in(idx) == tmp, "not a user");
+@@ -2618,7 +2597,7 @@ void Matcher::specialize_temp_node(MachTempNode* tmp, MachNode* use, uint idx) {
+     tmp->_opnds[0] = use->_opnds[0]->clone();
+   } else {
+     uint ideal_vreg = vector_ideal_reg(C->max_vector_size());
+-    tmp->_opnds[0] = specialize_generic_vector_operand(tmp->_opnds[0], ideal_vreg, true);
++    tmp->_opnds[0] = Matcher::pd_specialize_generic_vector_operand(tmp->_opnds[0], ideal_vreg, true /*is_temp*/);
+   }
+ }
+ 
+@@ -2639,7 +2618,9 @@ MachOper* Matcher::specialize_vector_operand(MachNode* m, uint opnd_idx) {
+       }
+     }
+   }
+-  return specialize_vector_operand_helper(m, opnd_idx, def->bottom_type());
++  assert(def->bottom_type()->isa_vect(), "not a vector");
++  uint ideal_vreg = def->bottom_type()->ideal_reg();
++  return Matcher::pd_specialize_generic_vector_operand(m->_opnds[opnd_idx], ideal_vreg, false /*is_temp*/);
+ }
+ 
+ void Matcher::specialize_mach_node(MachNode* m) {
+diff --git a/src/hotspot/share/opto/matcher.hpp b/src/hotspot/share/opto/matcher.hpp
+index b7287759fd..ae11f0e16d 100644
+--- a/src/hotspot/share/opto/matcher.hpp
++++ b/src/hotspot/share/opto/matcher.hpp
+@@ -335,7 +335,6 @@ public:
+ 
+   // Vector ideal reg
+   static const uint vector_ideal_reg(int len);
+-  static const uint vector_shift_count_ideal_reg(int len);
+ 
+   // Does the CPU supports vector variable shift instructions?
+   static bool supports_vector_variable_shifts(void);
+@@ -528,9 +527,8 @@ public:
+   void specialize_mach_node(MachNode* m);
+   void specialize_temp_node(MachTempNode* tmp, MachNode* use, uint idx);
+   MachOper* specialize_vector_operand(MachNode* m, uint opnd_idx);
+-  MachOper* specialize_vector_operand_helper(MachNode* m, uint opnd_idx, const Type* t);
+ 
+-  static MachOper* specialize_generic_vector_operand(MachOper* generic_opnd, uint ideal_reg, bool is_temp);
++  static MachOper* pd_specialize_generic_vector_operand(MachOper* generic_opnd, uint ideal_reg, bool is_temp);
+ 
+   static bool is_generic_reg2reg_move(MachNode* m);
+   static bool is_generic_vector(MachOper* opnd);
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index 3974c91ffc..b22ca38fe7 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -581,7 +581,6 @@ class LShiftCntVNode : public VectorNode {
+  public:
+   LShiftCntVNode(Node* cnt, const TypeVect* vt) : VectorNode(cnt,vt) {}
+   virtual int Opcode() const;
+-  virtual uint ideal_reg() const { return Matcher::vector_shift_count_ideal_reg(vect_type()->length_in_bytes()); }
+ };
+ 
+ //------------------------------RShiftCntVNode---------------------------------
+@@ -590,7 +589,6 @@ class RShiftCntVNode : public VectorNode {
+  public:
+   RShiftCntVNode(Node* cnt, const TypeVect* vt) : VectorNode(cnt,vt) {}
+   virtual int Opcode() const;
+-  virtual uint ideal_reg() const { return Matcher::vector_shift_count_ideal_reg(vect_type()->length_in_bytes()); }
+ };
+ 
+ 

@@ -1,0 +1,3156 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 1a08ff7654a..2eece3d3c21 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -2644,6 +2644,71 @@ void Assembler::ktestd(KRegister src1, KRegister src2) {
+   emit_int16((unsigned char)0x99, (0xC0 | encode));
+ }
+ 
++void Assembler::evpmovm2q(XMMRegister dst, KRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512vldq(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x38, (0xC0 | encode));
++}
++
++void Assembler::evpmovm2d(XMMRegister dst, KRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512vldq(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x38, (0xC0 | encode));
++}
++
++void Assembler::evpmovm2w(XMMRegister dst, KRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512vlbw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x28, (0xC0 | encode));
++}
++
++void Assembler::evpmovm2b(XMMRegister dst, KRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512vlbw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x28, (0xC0 | encode));
++}
++
++void Assembler::evpmovq2m(KRegister dst, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512vldq(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x39, (0xC0 | encode));
++}
++
++void Assembler::evpmovd2m(KRegister dst, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512vldq(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x39, (0xC0 | encode));
++}
++
++void Assembler::evpmovw2m(KRegister dst, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512vlbw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x29, (0xC0 | encode));
++}
++
++void Assembler::evpmovb2m(KRegister dst, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512vlbw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x29, (0xC0 | encode));
++}
++
++
+ void Assembler::movb(Address dst, int imm8) {
+   InstructionMark im(this);
+    prefix(dst);
+@@ -4124,24 +4189,6 @@ void Assembler::evpcmpeqq(KRegister kdst, XMMRegister nds, Address src, int vect
+   emit_operand(as_Register(dst_enc), src);
+ }
+ 
+-void Assembler::evpmovd2m(KRegister kdst, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 2  && VM_Version::supports_avx512dq(), "");
+-  assert(vector_len == AVX_512bit || VM_Version::supports_avx512vl(), "");
+-  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+-  attributes.set_is_evex_instruction();
+-  int encode = vex_prefix_and_encode(kdst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
+-  emit_int16(0x39, (0xC0 | encode));
+-}
+-
+-void Assembler::evpmovq2m(KRegister kdst, XMMRegister src, int vector_len) {
+-  assert(UseAVX > 2  && VM_Version::supports_avx512dq(), "");
+-  assert(vector_len == AVX_512bit || VM_Version::supports_avx512vl(), "");
+-  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+-  attributes.set_is_evex_instruction();
+-  int encode = vex_prefix_and_encode(kdst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
+-  emit_int16(0x39, (0xC0 | encode));
+-}
+-
+ void Assembler::pcmpgtq(XMMRegister dst, XMMRegister src) {
+   assert(VM_Version::supports_sse4_1(), "");
+   InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ false);
+@@ -9513,14 +9560,6 @@ void Assembler::shrxq(Register dst, Register src1, Register src2) {
+   emit_int16((unsigned char)0xF7, (0xC0 | encode));
+ }
+ 
+-void Assembler::evpmovb2m(KRegister dst, XMMRegister src, int vector_len) {
+-  assert(VM_Version::supports_avx512vlbw(), "");
+-  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+-  attributes.set_is_evex_instruction();
+-  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F3, VEX_OPCODE_0F_38, &attributes);
+-  emit_int16(0x29, (0xC0 | encode));
+-}
+-
+ #ifndef _LP64
+ 
+ void Assembler::incl(Register dst) {
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 62021543e9d..92e94329c64 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -2154,8 +2154,6 @@ private:
+   void bzhiq(Register dst, Register src1, Register src2);
+ 
+   //====================VECTOR ARITHMETIC=====================================
+-  void evpmovd2m(KRegister kdst, XMMRegister src, int vector_len);
+-  void evpmovq2m(KRegister kdst, XMMRegister src, int vector_len);
+ 
+   // Add Packed Floating-Point Values
+   void addpd(XMMRegister dst, XMMRegister src);
+@@ -2529,6 +2527,14 @@ private:
+                int comparison, bool is_signed, int vector_len);
+ 
+   void evpmovb2m(KRegister dst, XMMRegister src, int vector_len);
++  void evpmovw2m(KRegister dst, XMMRegister src, int vector_len);
++  void evpmovd2m(KRegister dst, XMMRegister src, int vector_len);
++  void evpmovq2m(KRegister dst, XMMRegister src, int vector_len);
++  void evpmovm2b(XMMRegister dst, KRegister src, int vector_len);
++  void evpmovm2w(XMMRegister dst, KRegister src, int vector_len);
++  void evpmovm2d(XMMRegister dst, KRegister src, int vector_len);
++  void evpmovm2q(XMMRegister dst, KRegister src, int vector_len);
++
+ 
+   // Vector blends
+   void blendvps(XMMRegister dst, XMMRegister src);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index e1c9f022150..6cd1e90c23e 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -3929,6 +3929,54 @@ void C2_MacroAssembler::vector_mask_operation(int opc, Register dst, XMMRegister
+ }
+ #endif
+ 
++void C2_MacroAssembler::vector_long_to_mask(BasicType bt, XMMRegister dst, KRegister ktmp, Register src, int vec_enc) {
++  switch(bt) {
++    case T_BYTE:
++      kmovql(ktmp, src);
++      evpmovm2b(dst, ktmp, vec_enc);
++      break;
++    case T_SHORT:
++      kmovdl(ktmp, src);
++      evpmovm2w(dst, ktmp, vec_enc);
++      break;
++    case T_INT:
++    case T_FLOAT:
++      kmovwl(ktmp, src);
++      evpmovm2d(dst, ktmp, vec_enc);
++      break;
++    case T_LONG:
++    case T_DOUBLE:
++      kmovbl(ktmp, src);
++      evpmovm2q(dst, ktmp, vec_enc);
++      break;
++    default: assert(false, "Unhandled mask operation");
++  }
++}
++
++void C2_MacroAssembler::vector_mask_to_long(BasicType bt, Register dst, KRegister ktmp, XMMRegister src, int vec_enc) {
++  switch(bt) {
++    case T_BYTE:
++      evpmovb2m(ktmp, src, vec_enc);
++      kmovql(dst, ktmp);
++      break;
++    case T_SHORT:
++      evpmovw2m(ktmp, src, vec_enc);
++      kmovdl(dst, ktmp);
++      break;
++    case T_INT:
++    case T_FLOAT:
++      evpmovd2m(ktmp, src, vec_enc);
++      kmovwl(dst, ktmp);
++      break;
++    case T_LONG:
++    case T_DOUBLE:
++      evpmovq2m(ktmp, src, vec_enc);
++      kmovbl(dst, ktmp);
++      break;
++    default: assert(false, "Unhandled mask operation");
++  }
++}
++
+ void C2_MacroAssembler::rearrange_bytes(XMMRegister dst, XMMRegister shuffle, XMMRegister src, XMMRegister xtmp1,
+                                         XMMRegister xtmp2, XMMRegister xtmp3, Register rtmp, KRegister ktmp,
+                                         int vlen_enc) {
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 01830e5edff..378d2c8bd1d 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -230,6 +230,7 @@ public:
+   void vector_mask_operation(int opc, Register dst, XMMRegister mask, XMMRegister xtmp, XMMRegister xtmp1,
+                              Register tmp, int masklen, int vec_enc);
+ #endif
++
+   void string_indexof_char(Register str1, Register cnt1, Register ch, Register result,
+                            XMMRegister vec1, XMMRegister vec2, XMMRegister vec3, Register tmp);
+ 
+@@ -278,4 +279,8 @@ public:
+   void rearrange_bytes(XMMRegister dst, XMMRegister shuffle, XMMRegister src, XMMRegister xtmp1,
+                        XMMRegister xtmp2, XMMRegister xtmp3, Register rtmp, KRegister ktmp, int vlen_enc);
+ 
++  void vector_long_to_mask(BasicType bt, XMMRegister dst, KRegister ktmp, Register src, int vec_enc);
++  void vector_mask_to_long(BasicType bt, Register dst, KRegister ktmp, XMMRegister src, int vec_enc);
++
++
+ #endif // CPU_X86_C2_MACROASSEMBLER_X86_HPP
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 57e22fe79aa..4b22b87bbf9 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1589,7 +1589,7 @@ const bool Matcher::match_rule_supported(int opcode) {
+     case Op_VectorMaskFirstTrue:
+     case Op_VectorMaskLastTrue:
+     case Op_VectorMaskTrueCount:
+-      if (!is_LP64 || UseAVX < 1) {
++      if (!is_LP64 || UseAVX < 3) {
+          return false;
+       }
+       break;
+@@ -1692,6 +1692,13 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType
+         return false;
+       }
+       break;
++    case Op_VectorLongToMask:
++    case Op_VectorMaskToLong:
++      if ((is_subword_type(bt) && !VM_Version::supports_avx512vlbw()) ||
++           !VM_Version::supports_avx512vldq()) {
++        return false;
++      }
++      break;
+     case Op_ClearArray:
+     case Op_VectorMaskGen:
+     case Op_VectorCmpMasked:
+@@ -8243,6 +8250,32 @@ instruct vmask_truecount_evex(rRegI dst, vec mask, rRegL tmp, kReg ktmp, vec xtm
+   ins_pipe( pipe_slow );
+ %}
+ 
++#ifdef _LP64
++instruct vmask_tolong_evex(rRegL dst, vec mask, kReg ktmp) %{
++  match(Set dst (VectorMaskToLong mask));
++  effect(TEMP ktmp);
++  format %{ "vector_tolong_evex $dst, $mask \t! using $ktmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this, $mask);
++    BasicType bt = vector_element_basic_type(this, $mask);
++    __  vector_mask_to_long(bt, $dst$$Register, $ktmp$$KRegister, $mask$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++#endif
++
++instruct long_to_mask_evex(vec dst, rRegL mask, kReg ktmp) %{
++  match(Set dst (VectorLongToMask mask));
++  effect(TEMP ktmp);
++  format %{ "long_to_mask_evex $dst, $mask\t! using $ktmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType bt = vector_element_basic_type(this);
++    __ vector_long_to_mask(bt, $dst$$XMMRegister, $ktmp$$KRegister, $mask$$Register, vlen_enc);
++  %}
++  ins_pipe( pipe_slow );
++%}
++
+ instruct vmask_first_or_last_true_evex(rRegI dst, vec mask, rRegL tmp, kReg ktmp, vec xtmp, rFlagsReg cr) %{
+   predicate(VM_Version::supports_avx512vlbw());
+   match(Set dst (VectorMaskFirstTrue mask));
+diff --git a/src/hotspot/share/adlc/formssel.cpp b/src/hotspot/share/adlc/formssel.cpp
+index 854b1b310e4..622bba2d762 100644
+--- a/src/hotspot/share/adlc/formssel.cpp
++++ b/src/hotspot/share/adlc/formssel.cpp
+@@ -4206,7 +4206,7 @@ bool MatchRule::is_vector() const {
+     "VectorCastB2X", "VectorCastS2X", "VectorCastI2X",
+     "VectorCastL2X", "VectorCastF2X", "VectorCastD2X",
+     "VectorMaskWrapper", "VectorMaskCmp", "VectorReinterpret","LoadVectorMasked","StoreVectorMasked",
+-    "FmaVD", "FmaVF","PopCountVI",
++    "FmaVD", "FmaVF","PopCountVI","VectorLongToMask",
+     // Next are not supported currently.
+     "PackB","PackS","PackI","PackL","PackF","PackD","Pack2L","Pack2D",
+     "ExtractB","ExtractUB","ExtractC","ExtractS","ExtractI","ExtractL","ExtractF","ExtractD",
+diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
+index 50c1968ba2e..67d9edd67bc 100644
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@ -832,10 +832,16 @@ class methodHandle;
+                                         "Ljava/lang/Object;Ljdk/internal/vm/vector/VectorSupport$TernaryOperation;)Ljava/lang/Object;")        \
+    do_name(vector_ternary_op_name,     "ternaryOp")                                                                                            \
+                                                                                                                                                \
+-  do_intrinsic(_VectorBroadcastCoerced, jdk_internal_vm_vector_VectorSupport, vector_broadcast_coerced_name, vector_broadcast_coerced_sig, F_S)\
+-   do_signature(vector_broadcast_coerced_sig, "(Ljava/lang/Class;Ljava/lang/Class;IJLjdk/internal/vm/vector/VectorSupport$VectorSpecies;"      \
+-                                               "Ljdk/internal/vm/vector/VectorSupport$BroadcastOperation;)Ljava/lang/Object;")                 \
+-   do_name(vector_broadcast_coerced_name, "broadcastCoerced")                                                                                  \
++  do_intrinsic(_VectorFromBitsCoerced, jdk_internal_vm_vector_VectorSupport, vector_frombits_coerced_name, vector_frombits_coerced_sig, F_S)   \
++   do_signature(vector_frombits_coerced_sig, "(Ljava/lang/Class;"                                                                              \
++                                               "Ljava/lang/Class;"                                                                             \
++                                               "I"                                                                                             \
++                                               "J"                                                                                             \
++                                               "I"                                                                                             \
++                                               "Ljdk/internal/vm/vector/VectorSupport$VectorSpecies;"                                          \
++                                               "Ljdk/internal/vm/vector/VectorSupport$FromBitsCoercedOperation;)"                              \
++                                               "Ljdk/internal/vm/vector/VectorSupport$VectorPayload;")                                         \
++   do_name(vector_frombits_coerced_name, "fromBitsCoerced")                                                                                    \
+                                                                                                                                                \
+   do_intrinsic(_VectorShuffleIota, jdk_internal_vm_vector_VectorSupport, vector_shuffle_step_iota_name, vector_shuffle_step_iota_sig, F_S)     \
+    do_signature(vector_shuffle_step_iota_sig, "(Ljava/lang/Class;Ljava/lang/Class;Ljdk/internal/vm/vector/VectorSupport$VectorSpecies;"        \
+@@ -933,7 +939,7 @@ class methodHandle;
+                                                                                                                                                \
+   do_intrinsic(_VectorMaskOp, jdk_internal_vm_vector_VectorSupport, vector_mask_oper_name, vector_mask_oper_sig, F_S)                          \
+     do_signature(vector_mask_oper_sig, "(ILjava/lang/Class;Ljava/lang/Class;ILjava/lang/Object;"                                               \
+-                                        "Ljdk/internal/vm/vector/VectorSupport$VectorMaskOp;)I")                                               \
++                                        "Ljdk/internal/vm/vector/VectorSupport$VectorMaskOp;)J")                                               \
+     do_name(vector_mask_oper_name, "maskReductionCoerced")                                                                                     \
+                                                                                                                                                \
+    /* (2) Bytecode intrinsics                                                                        */                        \
+diff --git a/src/hotspot/share/opto/c2compiler.cpp b/src/hotspot/share/opto/c2compiler.cpp
+index 47368410719..d0e9e0ee5b7 100644
+--- a/src/hotspot/share/opto/c2compiler.cpp
++++ b/src/hotspot/share/opto/c2compiler.cpp
+@@ -678,7 +678,7 @@ bool C2Compiler::is_intrinsic_supported(const methodHandle& method, bool is_virt
+   case vmIntrinsics::_VectorUnaryOp:
+   case vmIntrinsics::_VectorBinaryOp:
+   case vmIntrinsics::_VectorTernaryOp:
+-  case vmIntrinsics::_VectorBroadcastCoerced:
++  case vmIntrinsics::_VectorFromBitsCoerced:
+   case vmIntrinsics::_VectorShuffleIota:
+   case vmIntrinsics::_VectorShuffleToVector:
+   case vmIntrinsics::_VectorLoadOp:
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 614d0b4e112..5d5c66e892b 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -424,6 +424,8 @@ macro(VectorMaskOp)
+ macro(VectorMaskTrueCount)
+ macro(VectorMaskFirstTrue)
+ macro(VectorMaskLastTrue)
++macro(VectorMaskToLong)
++macro(VectorLongToMask)
+ macro(Pack)
+ macro(PackB)
+ macro(PackS)
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index 0e6b3d853ab..01bcca768e3 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -640,8 +640,8 @@ bool LibraryCallKit::try_to_inline(int predicate) {
+     return inline_vector_nary_operation(2);
+   case vmIntrinsics::_VectorTernaryOp:
+     return inline_vector_nary_operation(3);
+-  case vmIntrinsics::_VectorBroadcastCoerced:
+-    return inline_vector_broadcast_coerced();
++  case vmIntrinsics::_VectorFromBitsCoerced:
++    return inline_vector_frombits_coerced();
+   case vmIntrinsics::_VectorShuffleIota:
+     return inline_vector_shuffle_iota();
+   case vmIntrinsics::_VectorMaskOp:
+diff --git a/src/hotspot/share/opto/library_call.hpp b/src/hotspot/share/opto/library_call.hpp
+index 60bde8cb614..62c03752d6c 100644
+--- a/src/hotspot/share/opto/library_call.hpp
++++ b/src/hotspot/share/opto/library_call.hpp
+@@ -316,7 +316,7 @@ class LibraryCallKit : public GraphKit {
+ 
+   // Vector API support
+   bool inline_vector_nary_operation(int n);
+-  bool inline_vector_broadcast_coerced();
++  bool inline_vector_frombits_coerced();
+   bool inline_vector_shuffle_to_vector();
+   bool inline_vector_shuffle_iota();
+   bool inline_vector_mask_operation();
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index c4a99ed8f6d..4476e7430a8 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -477,8 +477,8 @@ bool LibraryCallKit::inline_vector_shuffle_iota() {
+ }
+ 
+ // <E, M>
+-// int maskReductionCoerced(int oper, Class<? extends M> maskClass, Class<?> elemClass,
+-//                          int length, M m, VectorMaskOp<M> defaultImpl)
++// long maskReductionCoerced(int oper, Class<? extends M> maskClass, Class<?> elemClass,
++//                           int length, M m, VectorMaskOp<M> defaultImpl)
+ bool LibraryCallKit::inline_vector_mask_operation() {
+   const TypeInt*     oper       = gvn().type(argument(0))->isa_int();
+   const TypeInstPtr* mask_klass = gvn().type(argument(1))->isa_instptr();
+@@ -522,8 +522,15 @@ bool LibraryCallKit::inline_vector_mask_operation() {
+   ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* mask_box_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+   Node* mask_vec = unbox_vector(mask, mask_box_type, elem_bt, num_elem, true);
+-  Node* store_mask = gvn().transform(VectorStoreMaskNode::make(gvn(), mask_vec, elem_bt, num_elem));
+-  Node* maskoper = gvn().transform(VectorMaskOpNode::make(store_mask, TypeInt::INT, mopc));
++  Node* store_mask = mask_vec;
++  if (mopc != Op_VectorMaskToLong) {
++    store_mask = gvn().transform(VectorStoreMaskNode::make(gvn(), mask_vec, elem_bt, num_elem));
++  }
++  const Type* maskoper_ty = mopc == Op_VectorMaskToLong ? (const Type*)TypeLong::LONG : (const Type*)TypeInt::INT;
++  Node* maskoper = gvn().transform(VectorMaskOpNode::make(store_mask, maskoper_ty, mopc));
++  if (mopc != Op_VectorMaskToLong) {
++    maskoper = ConvI2L(maskoper);
++  }
+   set_result(maskoper);
+ 
+   C->set_max_vector_size(MAX2(C->max_vector_size(), (uint)(num_elem * type2aelembytes(elem_bt))));
+@@ -592,21 +599,28 @@ bool LibraryCallKit::inline_vector_shuffle_to_vector() {
+ }
+ 
+ // <V extends Vector<?,?>>
+-// V broadcastCoerced(Class<?> vectorClass, Class<?> elementType, int vlen,
+-//                    long bits,
+-//                    LongFunction<V> defaultImpl)
+-bool LibraryCallKit::inline_vector_broadcast_coerced() {
++// M fromBitsCoerced(Class<? extends M> vmClass, Class<E> elementType, int length,
++//                    long bits, int mode, S s,
++bool LibraryCallKit::inline_vector_frombits_coerced() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+   const TypeInt*     vlen         = gvn().type(argument(2))->isa_int();
++  const TypeLong*    bits_type    = gvn().type(argument(3))->isa_long();
++  // Mode argument determines the mode of operation it can take following values:-
++  // MODE_BROADCAST for vector Vector.boradcast and VectorMask.maskAll operations.
++  // MODE_BITS_COERCED_LONG_TO_MASK for VectorMask.fromLong operation.
++  const TypeInt*     mode         = gvn().type(argument(5))->isa_int();
+ 
+-  if (vector_klass == nullptr || elem_klass == nullptr || vlen == nullptr ||
+-      vector_klass->const_oop() == nullptr || elem_klass->const_oop() == nullptr || !vlen->is_con()) {
++
++  if (vector_klass == NULL || elem_klass == NULL || vlen == NULL || mode == NULL ||
++      bits_type == NULL || vector_klass->const_oop() == NULL || elem_klass->const_oop() == NULL ||
++      !vlen->is_con() || !mode->is_con()) {
+     if (C->print_intrinsics()) {
+-      tty->print_cr("  ** missing constant: vclass=%s etype=%s vlen=%s",
++      tty->print_cr("  ** missing constant: vclass=%s etype=%s vlen=%s bitwise=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(2)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(5)->Opcode()]);
+     }
+     return false; // not enough info for intrinsification
+   }
+@@ -629,48 +643,57 @@ bool LibraryCallKit::inline_vector_broadcast_coerced() {
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+ 
+-  // TODO When mask usage is supported, VecMaskNotUsed needs to be VecMaskUseLoad.
+-  if (!arch_supports_vector(VectorNode::replicate_opcode(elem_bt), num_elem, elem_bt,
+-                            (is_vector_mask(vbox_klass) ? VecMaskUseStore : VecMaskNotUsed), true /*has_scalar_args*/)) {
++  bool is_mask = is_vector_mask(vbox_klass);
++  int  bcast_mode = mode->get_con();
++  VectorMaskUseType checkFlags = (VectorMaskUseType)(is_mask ? VecMaskUseStore : VecMaskNotUsed);
++  int opc = bcast_mode == VectorSupport::MODE_BITS_COERCED_LONG_TO_MASK ? Op_VectorLongToMask : VectorNode::replicate_opcode(elem_bt);
++
++  if (!arch_supports_vector(opc, num_elem, elem_bt, checkFlags, true /*has_scalar_args*/)) {
+     if (C->print_intrinsics()) {
+-      tty->print_cr("  ** not supported: arity=0 op=broadcast vlen=%d etype=%s ismask=%d",
++      tty->print_cr("  ** not supported: arity=0 op=broadcast vlen=%d etype=%s ismask=%d bcast_mode=%d",
+                     num_elem, type2name(elem_bt),
+-                    is_vector_mask(vbox_klass) ? 1 : 0);
++                    is_mask ? 1 : 0,
++                    bcast_mode);
+     }
+     return false; // not supported
+   }
+ 
+-  Node* bits = argument(3); // long
++  Node* broadcast = NULL;
++  Node* bits = argument(3);
++  Node* elem = bits;
+ 
+-  Node* elem = nullptr;
+-  switch (elem_bt) {
+-    case T_BOOLEAN: // fall-through
+-    case T_BYTE:    // fall-through
+-    case T_SHORT:   // fall-through
+-    case T_CHAR:    // fall-through
+-    case T_INT: {
+-      elem = gvn().transform(new ConvL2INode(bits));
+-      break;
+-    }
+-    case T_DOUBLE: {
+-      elem = gvn().transform(new MoveL2DNode(bits));
+-      break;
+-    }
+-    case T_FLOAT: {
+-      bits = gvn().transform(new ConvL2INode(bits));
+-      elem = gvn().transform(new MoveI2FNode(bits));
+-      break;
+-    }
+-    case T_LONG: {
+-      elem = bits; // no conversion needed
+-      break;
++  if (opc == Op_VectorLongToMask) {
++    const TypeVect* vt = TypeVect::make(elem_bt, num_elem);
++    broadcast = gvn().transform(new VectorLongToMaskNode(elem, vt));
++  } else {
++    switch (elem_bt) {
++      case T_BOOLEAN: // fall-through
++      case T_BYTE:    // fall-through
++      case T_SHORT:   // fall-through
++      case T_CHAR:    // fall-through
++      case T_INT: {
++        elem = gvn().transform(new ConvL2INode(bits));
++        break;
++      }
++      case T_DOUBLE: {
++        elem = gvn().transform(new MoveL2DNode(bits));
++        break;
++      }
++      case T_FLOAT: {
++        bits = gvn().transform(new ConvL2INode(bits));
++        elem = gvn().transform(new MoveI2FNode(bits));
++        break;
++      }
++      case T_LONG: {
++        // no conversion needed
++        break;
++      }
++      default: fatal("%s", type2name(elem_bt));
+     }
+-    default: fatal("%s", type2name(elem_bt));
++    broadcast = VectorNode::scalar2vector(elem, num_elem, Type::get_const_basic_type(elem_bt));
++    broadcast = gvn().transform(broadcast);
+   }
+ 
+-  Node* broadcast = VectorNode::scalar2vector(elem, num_elem, Type::get_const_basic_type(elem_bt));
+-  broadcast = gvn().transform(broadcast);
+-
+   Node* box = box_vector(broadcast, vbox_type, elem_bt, num_elem);
+   set_result(box);
+   C->set_max_vector_size(MAX2(C->max_vector_size(), (uint)(num_elem * type2aelembytes(elem_bt))));
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index b9ef5abd75a..355dfd8e01e 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -1342,6 +1342,8 @@ Node* VectorMaskOpNode::make(Node* mask, const Type* ty, int mopc) {
+       return new VectorMaskLastTrueNode(mask, ty);
+     case Op_VectorMaskFirstTrue:
+       return new VectorMaskFirstTrueNode(mask, ty);
++    case Op_VectorMaskToLong:
++      return new VectorMaskToLongNode(mask, ty);
+     default:
+       assert(false, "Unhandled operation");
+   }
+@@ -1349,6 +1351,14 @@ Node* VectorMaskOpNode::make(Node* mask, const Type* ty, int mopc) {
+ }
+ 
+ 
++Node* VectorMaskToLongNode::Identity(PhaseGVN* phase) {
++  if (in(1)->Opcode() == Op_VectorLongToMask) {
++    return in(1)->in(1);
++  }
++  return this;
++}
++
++
+ #ifndef PRODUCT
+ void VectorBoxAllocateNode::dump_spec(outputStream *st) const {
+   CallStaticJavaNode::dump_spec(st);
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index ccb5fd88bf6..b5ac76e0fb0 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -873,21 +873,22 @@ class VectorMaskGenNode : public TypeNode {
+ };
+ 
+ class VectorMaskOpNode : public TypeNode {
++ private:
++  int _mopc;
++  const TypeVect* _vect_type;
+  public:
+   VectorMaskOpNode(Node* mask, const Type* ty, int mopc):
+-    TypeNode(ty, 2), _mopc(mopc) {
+-    assert(mask->bottom_type()->is_vect()->element_basic_type() == T_BOOLEAN, "");
++    TypeNode(ty, 2), _mopc(mopc), _vect_type(mask->bottom_type()->is_vect()) {
++    assert(Matcher::has_predicated_vectors() || _vect_type->element_basic_type() == T_BOOLEAN, "");
+     init_req(1, mask);
+   }
+ 
++  virtual const TypeVect* vect_type() { return _vect_type; }
+   virtual int Opcode() const;
+   virtual  uint  size_of() const { return sizeof(VectorMaskOpNode); }
+   virtual uint  ideal_reg() const { return Op_RegI; }
+   int get_mask_Opcode() const { return _mopc;}
+   static Node* make(Node* mask, const Type* ty, int mopc);
+-
+-  private:
+-    int _mopc;
+ };
+ 
+ class VectorMaskTrueCountNode : public VectorMaskOpNode {
+@@ -911,6 +912,23 @@ class VectorMaskLastTrueNode : public VectorMaskOpNode {
+   virtual int Opcode() const;
+ };
+ 
++class VectorMaskToLongNode : public VectorMaskOpNode {
++ public:
++  VectorMaskToLongNode(Node* mask, const Type* ty):
++    VectorMaskOpNode(mask, ty, Op_VectorMaskToLong) {}
++  virtual int Opcode() const;
++  virtual Node* Identity(PhaseGVN* phase);
++  virtual uint  ideal_reg() const { return Op_RegL; }
++};
++
++class VectorLongToMaskNode : public VectorNode {
++ public:
++  VectorLongToMaskNode(Node* mask, const TypeVect* ty):
++    VectorNode(mask, ty) {
++  }
++  virtual int Opcode() const;
++};
++
+ //=========================Promote_Scalar_to_Vector============================
+ 
+ //------------------------------ReplicateBNode---------------------------------
+diff --git a/src/hotspot/share/prims/vectorSupport.cpp b/src/hotspot/share/prims/vectorSupport.cpp
+index f749ff11fe4..68628c82bfe 100644
+--- a/src/hotspot/share/prims/vectorSupport.cpp
++++ b/src/hotspot/share/prims/vectorSupport.cpp
+@@ -410,6 +410,18 @@ int VectorSupport::vop2ideal(jint id, BasicType bt) {
+       }
+       break;
+     }
++    case VECTOR_OP_MASK_TOLONG: {
++      switch (bt) {
++        case T_BYTE:  // fall-through
++        case T_SHORT: // fall-through
++        case T_INT:   // fall-through
++        case T_LONG:  // fall-through
++        case T_FLOAT: // fall-through
++        case T_DOUBLE: return Op_VectorMaskToLong;
++        default: fatal("MASK_TOLONG: %s", type2name(bt));
++      }
++      break;
++    }
+     case VECTOR_OP_TAN:
+     case VECTOR_OP_TANH:
+     case VECTOR_OP_SIN:
+diff --git a/src/hotspot/share/prims/vectorSupport.hpp b/src/hotspot/share/prims/vectorSupport.hpp
+index 8fc9e29aaed..b6a1876f7c6 100644
+--- a/src/hotspot/share/prims/vectorSupport.hpp
++++ b/src/hotspot/share/prims/vectorSupport.hpp
+@@ -82,6 +82,8 @@ class VectorSupport : AllStatic {
+     VECTOR_OP_MASK_TRUECOUNT = 19,
+     VECTOR_OP_MASK_FIRSTTRUE = 20,
+     VECTOR_OP_MASK_LASTTRUE  = 21,
++    VECTOR_OP_MASK_TOLONG    = 22,
++
+ 
+     // Vector Math Library
+     VECTOR_OP_TAN   = 101,
+@@ -116,6 +118,11 @@ class VectorSupport : AllStatic {
+     NUM_VEC_SIZES = 4
+   };
+ 
++  enum {
++    MODE_BROADCAST = 0,
++    MODE_BITS_COERCED_LONG_TO_MASK = 1
++  };
++
+   static const char* svmlname[VectorSupport::NUM_SVML_OP];
+ 
+   static int vop2ideal(jint vop, BasicType bt);
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index 936a302331b..94b717aeebd 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -69,6 +69,8 @@ public class VectorSupport {
+     public static final int VECTOR_OP_MASK_TRUECOUNT = 19;
+     public static final int VECTOR_OP_MASK_FIRSTTRUE = 20;
+     public static final int VECTOR_OP_MASK_LASTTRUE  = 21;
++    public static final int VECTOR_OP_MASK_TOLONG    = 22;
++
+ 
+     // Math routines
+     public static final int VECTOR_OP_TAN = 101;
+@@ -109,6 +111,10 @@ public class VectorSupport {
+     public static final int BT_ult = BT_lt | BT_unsigned_compare;
+     public static final int BT_ugt = BT_gt | BT_unsigned_compare;
+ 
++    // Various broadcasting modes.
++    public static final int MODE_BROADCAST = 0;
++    public static final int MODE_BITS_COERCED_LONG_TO_MASK = 1;
++
+     // BasicType codes, for primitives only:
+     public static final int
+         T_FLOAT   = 6,
+@@ -152,18 +158,22 @@ public class VectorSupport {
+     }
+ 
+     /* ============================================================================ */
+-    public interface BroadcastOperation<VM, E, S extends VectorSpecies<E>> {
+-        VM broadcast(long l, S s);
++    public interface FromBitsCoercedOperation<VM extends VectorPayload,
++                                              S extends VectorSpecies<?>> {
++        VM fromBits(long l, S s);
+     }
+ 
+     @IntrinsicCandidate
+     public static
+-    <VM, E, S extends VectorSpecies<E>>
+-    VM broadcastCoerced(Class<? extends VM> vmClass, Class<E> E, int length,
+-                                  long bits, S s,
+-                                  BroadcastOperation<VM, E, S> defaultImpl) {
++    <VM extends VectorPayload,
++     S extends VectorSpecies<E>,
++     E>
++    VM fromBitsCoerced(Class<? extends VM> vmClass, Class<E> eClass,
++                       int length,
++                       long bits, int mode, S s,
++                       FromBitsCoercedOperation<VM, S> defaultImpl) {
+         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+-        return defaultImpl.broadcast(bits, s);
++        return defaultImpl.fromBits(bits, s);
+     }
+ 
+     /* ============================================================================ */
+@@ -485,14 +495,14 @@ public class VectorSupport {
+ 
+     /* ============================================================================ */
+     public interface VectorMaskOp<M> {
+-        int apply(M m);
++        long apply(M m);
+     }
+ 
+     @IntrinsicCandidate
+     public static
+     <E, M>
+-    int maskReductionCoerced(int oper, Class<? extends M> maskClass, Class<?> elemClass, int length, M m,
+-               VectorMaskOp<M> defaultImpl) {
++    long maskReductionCoerced(int oper, Class<? extends M> maskClass, Class<?> elemClass, int length, M m,
++                              VectorMaskOp<M> defaultImpl) {
+        assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+        return defaultImpl.apply(m);
+     }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
+index 81855a4af7d..5072221f7e2 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractMask.java
+@@ -24,6 +24,8 @@
+  */
+ package jdk.incubator.vector;
+ 
++import java.util.Objects;
++
+ import jdk.internal.vm.annotation.ForceInline;
+ 
+ import static jdk.incubator.vector.VectorOperators.*;
+@@ -63,23 +65,13 @@ abstract class AbstractMask<E> extends VectorMask<E> {
+ 
+     @Override
+     public boolean laneIsSet(int i) {
+-        return getBits()[i];
+-    }
+-
+-    @Override
+-    public long toLong() {
+-        // FIXME: This should be an intrinsic.
+-        if (length() > Long.SIZE) {
+-            throw new UnsupportedOperationException("too many lanes for one long");
+-        }
+-        long res = 0;
+-        long set = 1;
+-        boolean[] bits = getBits();
+-        for (int i = 0; i < bits.length; i++) {
+-            res = bits[i] ? res | set : res;
+-            set = set << 1;
++        int length = length();
++        Objects.checkIndex(i, length);
++        if (length <= Long.SIZE) {
++            return ((toLong() >>> i) & 1L) == 1;
++        } else {
++            return getBits()[i];
+         }
+-        return res;
+     }
+ 
+     @Override
+@@ -162,6 +154,17 @@ abstract class AbstractMask<E> extends VectorMask<E> {
+         return -1;
+     }
+ 
++    /*package-private*/
++    static long toLongHelper(boolean[] bits) {
++        long res = 0;
++        long set = 1;
++        for (int i = 0; i < bits.length; i++) {
++            res = bits[i] ? res | set : res;
++            set = set << 1;
++        }
++        return res;
++    }
++
+     @Override
+     @ForceInline
+     public VectorMask<E> indexInRange(int offset, int limit) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+index 0aedddec2f4..107bc06ef94 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte128Vector.java
+@@ -677,22 +677,32 @@ final class Byte128Vector extends ByteVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Byte128Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Byte128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Byte128Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Byte128Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Byte128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Byte128Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Byte128Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Byte128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Byte128Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Byte128Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -716,9 +726,9 @@ final class Byte128Vector extends ByteVector {
+         @ForceInline
+         /*package-private*/
+         static Byte128Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Byte128Mask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Byte128Mask.class, byte.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Byte128Mask  TRUE_MASK = new Byte128Mask(true);
+         private static final Byte128Mask FALSE_MASK = new Byte128Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+index 0cb6ec581fa..cbe70886b77 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte256Vector.java
+@@ -709,22 +709,32 @@ final class Byte256Vector extends ByteVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Byte256Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Byte256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Byte256Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Byte256Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Byte256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Byte256Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Byte256Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Byte256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Byte256Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Byte256Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -748,9 +758,9 @@ final class Byte256Vector extends ByteVector {
+         @ForceInline
+         /*package-private*/
+         static Byte256Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Byte256Mask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Byte256Mask.class, byte.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Byte256Mask  TRUE_MASK = new Byte256Mask(true);
+         private static final Byte256Mask FALSE_MASK = new Byte256Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+index c4577c816e8..5adc352974a 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte512Vector.java
+@@ -773,22 +773,32 @@ final class Byte512Vector extends ByteVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Byte512Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Byte512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Byte512Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Byte512Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Byte512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Byte512Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Byte512Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Byte512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Byte512Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Byte512Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -812,9 +822,9 @@ final class Byte512Vector extends ByteVector {
+         @ForceInline
+         /*package-private*/
+         static Byte512Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Byte512Mask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Byte512Mask.class, byte.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Byte512Mask  TRUE_MASK = new Byte512Mask(true);
+         private static final Byte512Mask FALSE_MASK = new Byte512Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+index 49df959154d..91c5252ea54 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Byte64Vector.java
+@@ -661,22 +661,32 @@ final class Byte64Vector extends ByteVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Byte64Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Byte64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Byte64Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Byte64Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Byte64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Byte64Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Byte64Mask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Byte64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Byte64Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Byte64Mask.class, byte.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -700,9 +710,9 @@ final class Byte64Vector extends ByteVector {
+         @ForceInline
+         /*package-private*/
+         static Byte64Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Byte64Mask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Byte64Mask.class, byte.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Byte64Mask  TRUE_MASK = new Byte64Mask(true);
+         private static final Byte64Mask FALSE_MASK = new Byte64Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+index 696c000a8f0..017d79fb050 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteMaxVector.java
+@@ -647,22 +647,32 @@ final class ByteMaxVector extends ByteVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, ByteMaxMask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((ByteMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, ByteMaxMask.class, byte.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, ByteMaxMask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((ByteMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, ByteMaxMask.class, byte.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, ByteMaxMask.class, byte.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((ByteMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, ByteMaxMask.class, byte.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, ByteMaxMask.class, byte.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -686,9 +696,9 @@ final class ByteMaxVector extends ByteVector {
+         @ForceInline
+         /*package-private*/
+         static ByteMaxMask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(ByteMaxMask.class, byte.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(ByteMaxMask.class, byte.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final ByteMaxMask  TRUE_MASK = new ByteMaxMask(true);
+         private static final ByteMaxMask FALSE_MASK = new ByteMaxMask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+index 0e8f5bd5564..1cf2ddfb741 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ByteVector.java
+@@ -420,8 +420,8 @@ public abstract class ByteVector extends AbstractVector<Byte> {
+     @ForceInline
+     public static ByteVector zero(VectorSpecies<Byte> species) {
+         ByteSpecies vsp = (ByteSpecies) species;
+-        return VectorSupport.broadcastCoerced(vsp.vectorType(), byte.class, species.length(),
+-                                0, vsp,
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), byte.class, species.length(),
++                                0, MODE_BROADCAST, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -3835,9 +3835,9 @@ public abstract class ByteVector extends AbstractVector<Byte> {
+         @ForceInline
+         final ByteVector broadcastBits(long bits) {
+             return (ByteVector)
+-                VectorSupport.broadcastCoerced(
++                VectorSupport.fromBitsCoerced(
+                     vectorType, byte.class, laneCount,
+-                    bits, this,
++                    bits, MODE_BROADCAST, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+index 6ac3f40f80b..b4dcadd2c69 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double128Vector.java
+@@ -645,22 +645,32 @@ final class Double128Vector extends DoubleVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Double128Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Double128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Double128Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Double128Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Double128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Double128Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Double128Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Double128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Double128Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Double128Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -684,9 +694,9 @@ final class Double128Vector extends DoubleVector {
+         @ForceInline
+         /*package-private*/
+         static Double128Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Double128Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Double128Mask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Double128Mask  TRUE_MASK = new Double128Mask(true);
+         private static final Double128Mask FALSE_MASK = new Double128Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+index 194668361aa..51c4668b9a9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double256Vector.java
+@@ -649,22 +649,32 @@ final class Double256Vector extends DoubleVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Double256Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Double256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Double256Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Double256Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Double256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Double256Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Double256Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Double256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Double256Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Double256Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -688,9 +698,9 @@ final class Double256Vector extends DoubleVector {
+         @ForceInline
+         /*package-private*/
+         static Double256Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Double256Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Double256Mask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Double256Mask  TRUE_MASK = new Double256Mask(true);
+         private static final Double256Mask FALSE_MASK = new Double256Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+index 2b090b9cefd..0984ff01332 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double512Vector.java
+@@ -657,22 +657,32 @@ final class Double512Vector extends DoubleVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Double512Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Double512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Double512Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Double512Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Double512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Double512Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Double512Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Double512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Double512Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Double512Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -696,9 +706,9 @@ final class Double512Vector extends DoubleVector {
+         @ForceInline
+         /*package-private*/
+         static Double512Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Double512Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Double512Mask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Double512Mask  TRUE_MASK = new Double512Mask(true);
+         private static final Double512Mask FALSE_MASK = new Double512Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+index 48b6d3e63ea..9cc6b4577f0 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Double64Vector.java
+@@ -643,22 +643,32 @@ final class Double64Vector extends DoubleVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Double64Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Double64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Double64Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Double64Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Double64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Double64Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Double64Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Double64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Double64Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Double64Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -682,9 +692,9 @@ final class Double64Vector extends DoubleVector {
+         @ForceInline
+         /*package-private*/
+         static Double64Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Double64Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Double64Mask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Double64Mask  TRUE_MASK = new Double64Mask(true);
+         private static final Double64Mask FALSE_MASK = new Double64Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+index b12021a123d..89c8221280e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleMaxVector.java
+@@ -642,22 +642,32 @@ final class DoubleMaxVector extends DoubleVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, DoubleMaxMask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((DoubleMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, DoubleMaxMask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, DoubleMaxMask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((DoubleMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, DoubleMaxMask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, DoubleMaxMask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((DoubleMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, DoubleMaxMask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, DoubleMaxMask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -681,9 +691,9 @@ final class DoubleMaxVector extends DoubleVector {
+         @ForceInline
+         /*package-private*/
+         static DoubleMaxMask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(DoubleMaxMask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(DoubleMaxMask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final DoubleMaxMask  TRUE_MASK = new DoubleMaxMask(true);
+         private static final DoubleMaxMask FALSE_MASK = new DoubleMaxMask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+index ac19b64f809..83652efb903 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/DoubleVector.java
+@@ -420,8 +420,8 @@ public abstract class DoubleVector extends AbstractVector<Double> {
+     @ForceInline
+     public static DoubleVector zero(VectorSpecies<Double> species) {
+         DoubleSpecies vsp = (DoubleSpecies) species;
+-        return VectorSupport.broadcastCoerced(vsp.vectorType(), double.class, species.length(),
+-                        toBits(0.0f), vsp,
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), double.class, species.length(),
++                        toBits(0.0f), MODE_BROADCAST, vsp,
+                         ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -3437,9 +3437,9 @@ public abstract class DoubleVector extends AbstractVector<Double> {
+         @ForceInline
+         final DoubleVector broadcastBits(long bits) {
+             return (DoubleVector)
+-                VectorSupport.broadcastCoerced(
++                VectorSupport.fromBitsCoerced(
+                     vectorType, double.class, laneCount,
+-                    bits, this,
++                    bits, MODE_BROADCAST, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+index 29b8052cb16..1cd5ce9386a 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float128Vector.java
+@@ -649,22 +649,32 @@ final class Float128Vector extends FloatVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Float128Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Float128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Float128Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Float128Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Float128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Float128Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Float128Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Float128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Float128Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Float128Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -688,9 +698,9 @@ final class Float128Vector extends FloatVector {
+         @ForceInline
+         /*package-private*/
+         static Float128Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Float128Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Float128Mask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Float128Mask  TRUE_MASK = new Float128Mask(true);
+         private static final Float128Mask FALSE_MASK = new Float128Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+index 9e8bb030c15..ad507feeaf3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float256Vector.java
+@@ -657,22 +657,32 @@ final class Float256Vector extends FloatVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Float256Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Float256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Float256Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Float256Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Float256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Float256Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Float256Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Float256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Float256Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Float256Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -696,9 +706,9 @@ final class Float256Vector extends FloatVector {
+         @ForceInline
+         /*package-private*/
+         static Float256Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Float256Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Float256Mask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Float256Mask  TRUE_MASK = new Float256Mask(true);
+         private static final Float256Mask FALSE_MASK = new Float256Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+index ec85efe1b7e..2812d48233d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float512Vector.java
+@@ -673,22 +673,32 @@ final class Float512Vector extends FloatVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Float512Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Float512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Float512Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Float512Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Float512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Float512Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Float512Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Float512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Float512Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Float512Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -712,9 +722,9 @@ final class Float512Vector extends FloatVector {
+         @ForceInline
+         /*package-private*/
+         static Float512Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Float512Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Float512Mask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Float512Mask  TRUE_MASK = new Float512Mask(true);
+         private static final Float512Mask FALSE_MASK = new Float512Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+index a1e3ba216e9..a1e5ca48428 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float64Vector.java
+@@ -645,22 +645,32 @@ final class Float64Vector extends FloatVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Float64Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Float64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Float64Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Float64Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Float64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Float64Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Float64Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Float64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Float64Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Float64Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -684,9 +694,9 @@ final class Float64Vector extends FloatVector {
+         @ForceInline
+         /*package-private*/
+         static Float64Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Float64Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Float64Mask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Float64Mask  TRUE_MASK = new Float64Mask(true);
+         private static final Float64Mask FALSE_MASK = new Float64Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+index 71d6ac05b69..3cbed393b1d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatMaxVector.java
+@@ -642,22 +642,32 @@ final class FloatMaxVector extends FloatVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, FloatMaxMask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((FloatMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, FloatMaxMask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, FloatMaxMask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((FloatMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, FloatMaxMask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, FloatMaxMask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((FloatMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, FloatMaxMask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, FloatMaxMask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -681,9 +691,9 @@ final class FloatMaxVector extends FloatVector {
+         @ForceInline
+         /*package-private*/
+         static FloatMaxMask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(FloatMaxMask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(FloatMaxMask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final FloatMaxMask  TRUE_MASK = new FloatMaxMask(true);
+         private static final FloatMaxMask FALSE_MASK = new FloatMaxMask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+index 4fdfbb80a20..b0deba43512 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/FloatVector.java
+@@ -420,8 +420,8 @@ public abstract class FloatVector extends AbstractVector<Float> {
+     @ForceInline
+     public static FloatVector zero(VectorSpecies<Float> species) {
+         FloatSpecies vsp = (FloatSpecies) species;
+-        return VectorSupport.broadcastCoerced(vsp.vectorType(), float.class, species.length(),
+-                        toBits(0.0f), vsp,
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), float.class, species.length(),
++                        toBits(0.0f), MODE_BROADCAST, vsp,
+                         ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -3424,9 +3424,9 @@ public abstract class FloatVector extends AbstractVector<Float> {
+         @ForceInline
+         final FloatVector broadcastBits(long bits) {
+             return (FloatVector)
+-                VectorSupport.broadcastCoerced(
++                VectorSupport.fromBitsCoerced(
+                     vectorType, float.class, laneCount,
+-                    bits, this,
++                    bits, MODE_BROADCAST, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+index 3b9461cc55a..54363033010 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int128Vector.java
+@@ -653,22 +653,32 @@ final class Int128Vector extends IntVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Int128Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Int128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Int128Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Int128Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Int128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Int128Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Int128Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Int128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Int128Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Int128Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -692,9 +702,9 @@ final class Int128Vector extends IntVector {
+         @ForceInline
+         /*package-private*/
+         static Int128Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Int128Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Int128Mask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Int128Mask  TRUE_MASK = new Int128Mask(true);
+         private static final Int128Mask FALSE_MASK = new Int128Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+index 7cfad269b9c..e4d5c4d2108 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int256Vector.java
+@@ -661,22 +661,32 @@ final class Int256Vector extends IntVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Int256Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Int256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Int256Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Int256Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Int256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Int256Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Int256Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Int256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Int256Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Int256Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -700,9 +710,9 @@ final class Int256Vector extends IntVector {
+         @ForceInline
+         /*package-private*/
+         static Int256Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Int256Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Int256Mask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Int256Mask  TRUE_MASK = new Int256Mask(true);
+         private static final Int256Mask FALSE_MASK = new Int256Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+index cf519221a0e..3595072b5c5 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int512Vector.java
+@@ -677,22 +677,32 @@ final class Int512Vector extends IntVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Int512Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Int512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Int512Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Int512Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Int512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Int512Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Int512Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Int512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Int512Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Int512Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -716,9 +726,9 @@ final class Int512Vector extends IntVector {
+         @ForceInline
+         /*package-private*/
+         static Int512Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Int512Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Int512Mask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Int512Mask  TRUE_MASK = new Int512Mask(true);
+         private static final Int512Mask FALSE_MASK = new Int512Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+index 2775b168328..c186b263ac8 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Int64Vector.java
+@@ -649,22 +649,32 @@ final class Int64Vector extends IntVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Int64Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Int64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Int64Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Int64Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Int64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Int64Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Int64Mask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Int64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Int64Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Int64Mask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -688,9 +698,9 @@ final class Int64Vector extends IntVector {
+         @ForceInline
+         /*package-private*/
+         static Int64Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Int64Mask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Int64Mask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Int64Mask  TRUE_MASK = new Int64Mask(true);
+         private static final Int64Mask FALSE_MASK = new Int64Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+index 2492e5d23e1..5e66fefb96b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntMaxVector.java
+@@ -647,22 +647,32 @@ final class IntMaxVector extends IntVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, IntMaxMask.class, int.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((IntMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, IntMaxMask.class, int.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, IntMaxMask.class, int.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((IntMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, IntMaxMask.class, int.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, IntMaxMask.class, int.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((IntMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, IntMaxMask.class, int.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, IntMaxMask.class, int.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -686,9 +696,9 @@ final class IntMaxVector extends IntVector {
+         @ForceInline
+         /*package-private*/
+         static IntMaxMask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(IntMaxMask.class, int.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(IntMaxMask.class, int.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final IntMaxMask  TRUE_MASK = new IntMaxMask(true);
+         private static final IntMaxMask FALSE_MASK = new IntMaxMask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+index 7bd0da683cb..b5a8cd28f68 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/IntVector.java
+@@ -420,8 +420,8 @@ public abstract class IntVector extends AbstractVector<Integer> {
+     @ForceInline
+     public static IntVector zero(VectorSpecies<Integer> species) {
+         IntSpecies vsp = (IntSpecies) species;
+-        return VectorSupport.broadcastCoerced(vsp.vectorType(), int.class, species.length(),
+-                                0, vsp,
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), int.class, species.length(),
++                                0, MODE_BROADCAST, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -3533,9 +3533,9 @@ public abstract class IntVector extends AbstractVector<Integer> {
+         @ForceInline
+         final IntVector broadcastBits(long bits) {
+             return (IntVector)
+-                VectorSupport.broadcastCoerced(
++                VectorSupport.fromBitsCoerced(
+                     vectorType, int.class, laneCount,
+-                    bits, this,
++                    bits, MODE_BROADCAST, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+index 76e132522c9..9496e29ae1b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long128Vector.java
+@@ -639,22 +639,32 @@ final class Long128Vector extends LongVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Long128Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Long128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Long128Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Long128Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Long128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Long128Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Long128Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Long128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Long128Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Long128Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -678,9 +688,9 @@ final class Long128Vector extends LongVector {
+         @ForceInline
+         /*package-private*/
+         static Long128Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Long128Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Long128Mask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Long128Mask  TRUE_MASK = new Long128Mask(true);
+         private static final Long128Mask FALSE_MASK = new Long128Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+index a3ba9be431c..42aefa6a556 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long256Vector.java
+@@ -643,22 +643,32 @@ final class Long256Vector extends LongVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Long256Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Long256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Long256Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Long256Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Long256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Long256Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Long256Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Long256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Long256Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Long256Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -682,9 +692,9 @@ final class Long256Vector extends LongVector {
+         @ForceInline
+         /*package-private*/
+         static Long256Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Long256Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Long256Mask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Long256Mask  TRUE_MASK = new Long256Mask(true);
+         private static final Long256Mask FALSE_MASK = new Long256Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+index 5a222ffc539..52ff9d0c59b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long512Vector.java
+@@ -651,22 +651,32 @@ final class Long512Vector extends LongVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Long512Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Long512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Long512Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Long512Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Long512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Long512Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Long512Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Long512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Long512Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Long512Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -690,9 +700,9 @@ final class Long512Vector extends LongVector {
+         @ForceInline
+         /*package-private*/
+         static Long512Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Long512Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Long512Mask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Long512Mask  TRUE_MASK = new Long512Mask(true);
+         private static final Long512Mask FALSE_MASK = new Long512Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+index af3cb85811e..7fad16362cc 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Long64Vector.java
+@@ -637,22 +637,32 @@ final class Long64Vector extends LongVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Long64Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Long64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Long64Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Long64Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Long64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Long64Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Long64Mask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Long64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Long64Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Long64Mask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -676,9 +686,9 @@ final class Long64Vector extends LongVector {
+         @ForceInline
+         /*package-private*/
+         static Long64Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Long64Mask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Long64Mask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Long64Mask  TRUE_MASK = new Long64Mask(true);
+         private static final Long64Mask FALSE_MASK = new Long64Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+index a38386c4984..12f6a851349 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongMaxVector.java
+@@ -637,22 +637,32 @@ final class LongMaxVector extends LongVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, LongMaxMask.class, long.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((LongMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, LongMaxMask.class, long.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, LongMaxMask.class, long.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((LongMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, LongMaxMask.class, long.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, LongMaxMask.class, long.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((LongMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, LongMaxMask.class, long.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, LongMaxMask.class, long.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -676,9 +686,9 @@ final class LongMaxVector extends LongVector {
+         @ForceInline
+         /*package-private*/
+         static LongMaxMask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(LongMaxMask.class, long.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(LongMaxMask.class, long.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final LongMaxMask  TRUE_MASK = new LongMaxMask(true);
+         private static final LongMaxMask FALSE_MASK = new LongMaxMask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+index da6657bc217..b18d2d03a26 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/LongVector.java
+@@ -420,8 +420,8 @@ public abstract class LongVector extends AbstractVector<Long> {
+     @ForceInline
+     public static LongVector zero(VectorSpecies<Long> species) {
+         LongSpecies vsp = (LongSpecies) species;
+-        return VectorSupport.broadcastCoerced(vsp.vectorType(), long.class, species.length(),
+-                                0, vsp,
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), long.class, species.length(),
++                                0, MODE_BROADCAST, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -3436,9 +3436,9 @@ public abstract class LongVector extends AbstractVector<Long> {
+         @ForceInline
+         final LongVector broadcastBits(long bits) {
+             return (LongVector)
+-                VectorSupport.broadcastCoerced(
++                VectorSupport.fromBitsCoerced(
+                     vectorType, long.class, laneCount,
+-                    bits, this,
++                    bits, MODE_BROADCAST, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+index 6292160a52b..037c07f1d9e 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short128Vector.java
+@@ -661,22 +661,32 @@ final class Short128Vector extends ShortVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Short128Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Short128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Short128Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Short128Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Short128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Short128Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Short128Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Short128Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Short128Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Short128Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -700,9 +710,9 @@ final class Short128Vector extends ShortVector {
+         @ForceInline
+         /*package-private*/
+         static Short128Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Short128Mask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Short128Mask.class, short.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Short128Mask  TRUE_MASK = new Short128Mask(true);
+         private static final Short128Mask FALSE_MASK = new Short128Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+index 8cc621259a5..e09784a3e95 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short256Vector.java
+@@ -677,22 +677,32 @@ final class Short256Vector extends ShortVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Short256Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Short256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Short256Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Short256Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Short256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Short256Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Short256Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Short256Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Short256Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Short256Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -716,9 +726,9 @@ final class Short256Vector extends ShortVector {
+         @ForceInline
+         /*package-private*/
+         static Short256Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Short256Mask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Short256Mask.class, short.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Short256Mask  TRUE_MASK = new Short256Mask(true);
+         private static final Short256Mask FALSE_MASK = new Short256Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+index b19019084b4..e878e3ecb64 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short512Vector.java
+@@ -709,22 +709,32 @@ final class Short512Vector extends ShortVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Short512Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Short512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Short512Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Short512Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Short512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Short512Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Short512Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Short512Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Short512Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Short512Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -748,9 +758,9 @@ final class Short512Vector extends ShortVector {
+         @ForceInline
+         /*package-private*/
+         static Short512Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Short512Mask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Short512Mask.class, short.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Short512Mask  TRUE_MASK = new Short512Mask(true);
+         private static final Short512Mask FALSE_MASK = new Short512Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+index 17230435481..966d7b0b8dd 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Short64Vector.java
+@@ -653,22 +653,32 @@ final class Short64Vector extends ShortVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Short64Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((Short64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, Short64Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Short64Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((Short64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, Short64Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Short64Mask.class, short.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((Short64Mask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, Short64Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, Short64Mask.class, short.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -692,9 +702,9 @@ final class Short64Vector extends ShortVector {
+         @ForceInline
+         /*package-private*/
+         static Short64Mask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(Short64Mask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(Short64Mask.class, short.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final Short64Mask  TRUE_MASK = new Short64Mask(true);
+         private static final Short64Mask FALSE_MASK = new Short64Mask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+index 7e5d1e5570f..5b0daf855f7 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortMaxVector.java
+@@ -647,22 +647,32 @@ final class ShortMaxVector extends ShortVector {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, ShortMaxMask.class, short.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper(((ShortMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, ShortMaxMask.class, short.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, ShortMaxMask.class, short.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper(((ShortMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, ShortMaxMask.class, short.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, ShortMaxMask.class, short.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper(((ShortMaxMask)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, ShortMaxMask.class, short.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, ShortMaxMask.class, short.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -686,9 +696,9 @@ final class ShortMaxVector extends ShortVector {
+         @ForceInline
+         /*package-private*/
+         static ShortMaxMask maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced(ShortMaxMask.class, short.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced(ShortMaxMask.class, short.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final ShortMaxMask  TRUE_MASK = new ShortMaxMask(true);
+         private static final ShortMaxMask FALSE_MASK = new ShortMaxMask(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+index 6284208535e..04f421d2a4d 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/ShortVector.java
+@@ -420,8 +420,8 @@ public abstract class ShortVector extends AbstractVector<Short> {
+     @ForceInline
+     public static ShortVector zero(VectorSpecies<Short> species) {
+         ShortSpecies vsp = (ShortSpecies) species;
+-        return VectorSupport.broadcastCoerced(vsp.vectorType(), short.class, species.length(),
+-                                0, vsp,
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), short.class, species.length(),
++                                0, MODE_BROADCAST, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+     }
+ 
+@@ -3830,9 +3830,9 @@ public abstract class ShortVector extends AbstractVector<Short> {
+         @ForceInline
+         final ShortVector broadcastBits(long bits) {
+             return (ShortVector)
+-                VectorSupport.broadcastCoerced(
++                VectorSupport.fromBitsCoerced(
+                     vectorType, short.class, laneCount,
+-                    bits, this,
++                    bits, MODE_BROADCAST, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
+index 127ec94ad82..93dfb4dd5e5 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorMask.java
+@@ -237,26 +237,25 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
+      */
+     @ForceInline
+     public static <E> VectorMask<E> fromLong(VectorSpecies<E> species, long bits) {
+-        AbstractSpecies<E> vspecies = (AbstractSpecies<E>) species;
+-        int laneCount = vspecies.laneCount();
+-        if (laneCount < Long.SIZE) {
+-            int extraSignBits = Long.SIZE - laneCount;
+-            bits <<= extraSignBits;
+-            bits >>= extraSignBits;
+-        }
+-        if (bits == (bits >> 1)) {
+-            // Special case.
+-            assert(bits == 0 || bits == -1);
+-            return vspecies.maskAll(bits != 0);
+-        }
+-        // FIXME: Intrinsify this.
+-        long shifted = bits;
+-        boolean[] a = new boolean[laneCount];
+-        for (int i = 0; i < a.length; i++) {
+-            a[i] = ((shifted & 1) != 0);
+-            shifted >>= 1;  // replicate sign bit
+-        }
+-        return fromValues(vspecies, a);
++        AbstractSpecies<E> vsp = (AbstractSpecies<E>) species;
++        bits = bits & (0xFFFFFFFFFFFFFFFFL >>> (64 - vsp.laneCount()));
++        return VectorSupport.fromBitsCoerced(vsp.maskType(), vsp.elementType(), vsp.laneCount(), bits,
++                                             VectorSupport.MODE_BITS_COERCED_LONG_TO_MASK, vsp,
++                                             (m, s) -> {
++                                                 if (m == (m >> 1)) {
++                                                     // Special case.
++                                                     assert(m == 0 || m == -1);
++                                                     return s.maskAll(m != 0);
++                                                 }
++
++                                                 long shifted = m;
++                                                 boolean[] a = new boolean[s.laneCount()];
++                                                 for (int i = 0; i < a.length; i++) {
++                                                     a[i] = ((shifted & 1) != 0);
++                                                     shifted >>= 1;  // replicate sign bit
++                                                 }
++                                                 return fromValues(s, a);
++                                              });
+     }
+ 
+     /**
+@@ -516,6 +515,8 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
+      * @param i the lane index
+      *
+      * @return true if the lane at index {@code i} is set, otherwise false
++     * @throws IndexOutOfBoundsException if the index is is out of range
++     * ({@code < 0 || >= length()})
+      */
+     public abstract boolean laneIsSet(int i);
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index 355645a2f6e..e188b56f392 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -425,12 +425,12 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     public static $abstractvectortype$ zero(VectorSpecies<$Boxtype$> species) {
+         $Type$Species vsp = ($Type$Species) species;
+ #if[FP]
+-        return VectorSupport.broadcastCoerced(vsp.vectorType(), $type$.class, species.length(),
+-                        toBits(0.0f), vsp,
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), $type$.class, species.length(),
++                        toBits(0.0f), MODE_BROADCAST, vsp,
+                         ((bits_, s_) -> s_.rvOp(i -> bits_)));
+ #else[FP]
+-        return VectorSupport.broadcastCoerced(vsp.vectorType(), $type$.class, species.length(),
+-                                0, vsp,
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), $type$.class, species.length(),
++                                0, MODE_BROADCAST, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+ #end[FP]
+     }
+@@ -4832,9 +4832,9 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         @ForceInline
+         final $abstractvectortype$ broadcastBits(long bits) {
+             return ($abstractvectortype$)
+-                VectorSupport.broadcastCoerced(
++                VectorSupport.fromBitsCoerced(
+                     vectorType, $type$.class, laneCount,
+-                    bits, this,
++                    bits, MODE_BROADCAST, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+index 225d0e5dd77..c48a8b11f8a 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+@@ -920,22 +920,32 @@ final class $vectortype$ extends $abstractvectortype$ {
+         @Override
+         @ForceInline
+         public int trueCount() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, $masktype$.class, $bitstype$.class, VLENGTH, this,
+-                                                      (m) -> trueCountHelper((($masktype$)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TRUECOUNT, $masktype$.class, $bitstype$.class, VLENGTH, this,
++                                                      (m) -> trueCountHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int firstTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, $masktype$.class, $bitstype$.class, VLENGTH, this,
+-                                                      (m) -> firstTrueHelper((($masktype$)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_FIRSTTRUE, $masktype$.class, $bitstype$.class, VLENGTH, this,
++                                                      (m) -> firstTrueHelper(m.getBits()));
+         }
+ 
+         @Override
+         @ForceInline
+         public int lastTrue() {
+-            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, $masktype$.class, $bitstype$.class, VLENGTH, this,
+-                                                      (m) -> lastTrueHelper((($masktype$)m).getBits()));
++            return (int) VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_LASTTRUE, $masktype$.class, $bitstype$.class, VLENGTH, this,
++                                                      (m) -> lastTrueHelper(m.getBits()));
++        }
++
++        @Override
++        @ForceInline
++        public long toLong() {
++            if (length() > Long.SIZE) {
++                throw new UnsupportedOperationException("too many lanes for one long");
++            }
++            return VectorSupport.maskReductionCoerced(VECTOR_OP_MASK_TOLONG, $masktype$.class, $bitstype$.class, VLENGTH, this,
++                                                      (m) -> toLongHelper(m.getBits()));
+         }
+ 
+         // Reductions
+@@ -959,9 +969,9 @@ final class $vectortype$ extends $abstractvectortype$ {
+         @ForceInline
+         /*package-private*/
+         static $masktype$ maskAll(boolean bit) {
+-            return VectorSupport.broadcastCoerced($masktype$.class, $bitstype$.class, VLENGTH,
+-                                                  (bit ? -1 : 0), null,
+-                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
++            return VectorSupport.fromBitsCoerced($masktype$.class, $bitstype$.class, VLENGTH,
++                                                 (bit ? -1 : 0), MODE_BROADCAST, null,
++                                                 (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+         private static final $masktype$  TRUE_MASK = new $masktype$(true);
+         private static final $masktype$ FALSE_MASK = new $masktype$(false);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/gen-src.sh
+old mode 100644
+new mode 100755
+diff --git a/test/jdk/jdk/incubator/vector/Byte128VectorTests.java b/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
+index bbd7d83814a..a0da604b8ae 100644
+--- a/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
+@@ -5335,7 +5335,7 @@ public class Byte128VectorTests extends AbstractVectorTest {
+     static void maskFromToLongByte128VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Byte256VectorTests.java b/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
+index 8a119b4b3c9..cf67b76163e 100644
+--- a/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
+@@ -5335,7 +5335,7 @@ public class Byte256VectorTests extends AbstractVectorTest {
+     static void maskFromToLongByte256VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Byte512VectorTests.java b/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
+index f46c2d608dd..329f6cdc896 100644
+--- a/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
+@@ -5335,7 +5335,7 @@ public class Byte512VectorTests extends AbstractVectorTest {
+     static void maskFromToLongByte512VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Byte64VectorTests.java b/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
+index 9f03f681c6d..73b5277d2ac 100644
+--- a/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
+@@ -5335,7 +5335,7 @@ public class Byte64VectorTests extends AbstractVectorTest {
+     static void maskFromToLongByte64VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Double128VectorTests.java b/test/jdk/jdk/incubator/vector/Double128VectorTests.java
+index 4b71199f547..2c62910ea32 100644
+--- a/test/jdk/jdk/incubator/vector/Double128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double128VectorTests.java
+@@ -4886,7 +4886,7 @@ public class Double128VectorTests extends AbstractVectorTest {
+     static void maskFromToLongDouble128VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Double256VectorTests.java b/test/jdk/jdk/incubator/vector/Double256VectorTests.java
+index d8e2af40820..6e64b037e53 100644
+--- a/test/jdk/jdk/incubator/vector/Double256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double256VectorTests.java
+@@ -4886,7 +4886,7 @@ public class Double256VectorTests extends AbstractVectorTest {
+     static void maskFromToLongDouble256VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Double512VectorTests.java b/test/jdk/jdk/incubator/vector/Double512VectorTests.java
+index ceccafc21a1..672febc03d5 100644
+--- a/test/jdk/jdk/incubator/vector/Double512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double512VectorTests.java
+@@ -4886,7 +4886,7 @@ public class Double512VectorTests extends AbstractVectorTest {
+     static void maskFromToLongDouble512VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Double64VectorTests.java b/test/jdk/jdk/incubator/vector/Double64VectorTests.java
+index e64e45fb7c2..2fd58109090 100644
+--- a/test/jdk/jdk/incubator/vector/Double64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double64VectorTests.java
+@@ -4886,7 +4886,7 @@ public class Double64VectorTests extends AbstractVectorTest {
+     static void maskFromToLongDouble64VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Float128VectorTests.java b/test/jdk/jdk/incubator/vector/Float128VectorTests.java
+index dfec60421cb..df32c611248 100644
+--- a/test/jdk/jdk/incubator/vector/Float128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float128VectorTests.java
+@@ -4864,7 +4864,7 @@ public class Float128VectorTests extends AbstractVectorTest {
+     static void maskFromToLongFloat128VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Float256VectorTests.java b/test/jdk/jdk/incubator/vector/Float256VectorTests.java
+index 75f49d00c39..e029450c721 100644
+--- a/test/jdk/jdk/incubator/vector/Float256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float256VectorTests.java
+@@ -4864,7 +4864,7 @@ public class Float256VectorTests extends AbstractVectorTest {
+     static void maskFromToLongFloat256VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Float512VectorTests.java b/test/jdk/jdk/incubator/vector/Float512VectorTests.java
+index 24cf5857f9d..40b0810cfe7 100644
+--- a/test/jdk/jdk/incubator/vector/Float512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float512VectorTests.java
+@@ -4864,7 +4864,7 @@ public class Float512VectorTests extends AbstractVectorTest {
+     static void maskFromToLongFloat512VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Float64VectorTests.java b/test/jdk/jdk/incubator/vector/Float64VectorTests.java
+index b15496bc85f..0965e4f539a 100644
+--- a/test/jdk/jdk/incubator/vector/Float64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float64VectorTests.java
+@@ -4864,7 +4864,7 @@ public class Float64VectorTests extends AbstractVectorTest {
+     static void maskFromToLongFloat64VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Int128VectorTests.java b/test/jdk/jdk/incubator/vector/Int128VectorTests.java
+index 9414df97eaa..163b602d460 100644
+--- a/test/jdk/jdk/incubator/vector/Int128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int128VectorTests.java
+@@ -5289,7 +5289,7 @@ public class Int128VectorTests extends AbstractVectorTest {
+     static void maskFromToLongInt128VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Int256VectorTests.java b/test/jdk/jdk/incubator/vector/Int256VectorTests.java
+index e9260e429e5..2ae81da45ad 100644
+--- a/test/jdk/jdk/incubator/vector/Int256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int256VectorTests.java
+@@ -5289,7 +5289,7 @@ public class Int256VectorTests extends AbstractVectorTest {
+     static void maskFromToLongInt256VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Int512VectorTests.java b/test/jdk/jdk/incubator/vector/Int512VectorTests.java
+index c20853ea427..7c61a4eb424 100644
+--- a/test/jdk/jdk/incubator/vector/Int512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int512VectorTests.java
+@@ -5289,7 +5289,7 @@ public class Int512VectorTests extends AbstractVectorTest {
+     static void maskFromToLongInt512VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Int64VectorTests.java b/test/jdk/jdk/incubator/vector/Int64VectorTests.java
+index 0fdedf309b8..cc1014cd60a 100644
+--- a/test/jdk/jdk/incubator/vector/Int64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int64VectorTests.java
+@@ -5289,7 +5289,7 @@ public class Int64VectorTests extends AbstractVectorTest {
+     static void maskFromToLongInt64VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Long128VectorTests.java b/test/jdk/jdk/incubator/vector/Long128VectorTests.java
+index f5eaa0efc87..4299c57184f 100644
+--- a/test/jdk/jdk/incubator/vector/Long128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long128VectorTests.java
+@@ -5173,7 +5173,7 @@ public class Long128VectorTests extends AbstractVectorTest {
+     static void maskFromToLongLong128VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Long256VectorTests.java b/test/jdk/jdk/incubator/vector/Long256VectorTests.java
+index 44f0c4f41a0..973cf89fed6 100644
+--- a/test/jdk/jdk/incubator/vector/Long256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long256VectorTests.java
+@@ -5173,7 +5173,7 @@ public class Long256VectorTests extends AbstractVectorTest {
+     static void maskFromToLongLong256VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Long512VectorTests.java b/test/jdk/jdk/incubator/vector/Long512VectorTests.java
+index bd8d7c03cf8..7cfdafc79ae 100644
+--- a/test/jdk/jdk/incubator/vector/Long512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long512VectorTests.java
+@@ -5173,7 +5173,7 @@ public class Long512VectorTests extends AbstractVectorTest {
+     static void maskFromToLongLong512VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Long64VectorTests.java b/test/jdk/jdk/incubator/vector/Long64VectorTests.java
+index e832ba7b0df..950d5d6f6ba 100644
+--- a/test/jdk/jdk/incubator/vector/Long64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Long64VectorTests.java
+@@ -5173,7 +5173,7 @@ public class Long64VectorTests extends AbstractVectorTest {
+     static void maskFromToLongLong64VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Short128VectorTests.java b/test/jdk/jdk/incubator/vector/Short128VectorTests.java
+index 79af2958684..39e9119e8a4 100644
+--- a/test/jdk/jdk/incubator/vector/Short128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short128VectorTests.java
+@@ -5314,7 +5314,7 @@ public class Short128VectorTests extends AbstractVectorTest {
+     static void maskFromToLongShort128VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Short256VectorTests.java b/test/jdk/jdk/incubator/vector/Short256VectorTests.java
+index 25345def2a7..2b4f9260b13 100644
+--- a/test/jdk/jdk/incubator/vector/Short256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short256VectorTests.java
+@@ -5314,7 +5314,7 @@ public class Short256VectorTests extends AbstractVectorTest {
+     static void maskFromToLongShort256VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Short512VectorTests.java b/test/jdk/jdk/incubator/vector/Short512VectorTests.java
+index 04598457767..19e4aeb31bd 100644
+--- a/test/jdk/jdk/incubator/vector/Short512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short512VectorTests.java
+@@ -5314,7 +5314,7 @@ public class Short512VectorTests extends AbstractVectorTest {
+     static void maskFromToLongShort512VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/Short64VectorTests.java b/test/jdk/jdk/incubator/vector/Short64VectorTests.java
+index cbf84a8cf35..45e4e54fb8a 100644
+--- a/test/jdk/jdk/incubator/vector/Short64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short64VectorTests.java
+@@ -5314,7 +5314,7 @@ public class Short64VectorTests extends AbstractVectorTest {
+     static void maskFromToLongShort64VectorTestsSmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ 
+     @DataProvider
+diff --git a/test/jdk/jdk/incubator/vector/templates/Unit-Miscellaneous.template b/test/jdk/jdk/incubator/vector/templates/Unit-Miscellaneous.template
+index a75a6842bd3..59c133936f7 100644
+--- a/test/jdk/jdk/incubator/vector/templates/Unit-Miscellaneous.template
++++ b/test/jdk/jdk/incubator/vector/templates/Unit-Miscellaneous.template
+@@ -499,7 +499,7 @@
+     static void maskFromToLong$vectorteststype$SmokeTest(long inputLong) {
+         var vmask = VectorMask.fromLong(SPECIES, inputLong);
+         long outputLong = vmask.toLong();
+-        Assert.assertEquals(outputLong, inputLong & (((1L << (SPECIES.length() - 1)) << 1) - 1));
++        Assert.assertEquals(outputLong, (inputLong & (((0xFFFFFFFFFFFFFFFFL >>> (64 - SPECIES.length()))))));
+     }
+ #end[!MaxBit]
+ 
+diff --git a/test/micro/org/openjdk/bench/jdk/incubator/vector/MaskQueryOperationsBenchmark.java b/test/micro/org/openjdk/bench/jdk/incubator/vector/MaskQueryOperationsBenchmark.java
+index 5fa4741fad2..0b5ad8d3aa4 100644
+--- a/test/micro/org/openjdk/bench/jdk/incubator/vector/MaskQueryOperationsBenchmark.java
++++ b/test/micro/org/openjdk/bench/jdk/incubator/vector/MaskQueryOperationsBenchmark.java
+@@ -155,4 +155,23 @@ public class MaskQueryOperationsBenchmark {
+     public int testLastTrueLong(Blackhole bh) {
+         return lmask.lastTrue();
+     }
++
++    @Benchmark
++    public long testToLongByte(Blackhole bh) {
++        return bmask.toLong();
++    }
++
++    @Benchmark
++    public long testToLongShort(Blackhole bh) {
++        return smask.toLong();
++    }
++    @Benchmark
++    public long testToLonglong(Blackhole bh) {
++        return imask.toLong();
++    }
++    @Benchmark
++    public long testToLongLong(Blackhole bh) {
++        return lmask.toLong();
++    }
++
+ }

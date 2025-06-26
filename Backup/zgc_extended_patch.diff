@@ -1,0 +1,251 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 719334701a5..f0b20be72d7 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -975,6 +975,10 @@ class Assembler : public AbstractAssembler  {
+   static bool query_compressed_disp_byte(int disp, bool is_evex_inst, int vector_len,
+                                          int cur_tuple_type, int in_size_in_bits, int cur_encoding);
+ 
++  static bool needs_rex2_prefix(Register reg) {
++     return reg->is_valid() && reg->encoding() >= 16;
++  }
++
+   // Generic instructions
+   // Does 32bit or 64bit as needed for the platform. In some sense these
+   // belong in macro assembler but there is no need for both varieties to exist
+diff --git a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
+index 791344e0e8b..befc17ad542 100644
+--- a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.cpp
+@@ -391,10 +391,13 @@ void ZBarrierSetAssembler::store_barrier_fast(MacroAssembler* masm,
+     if (rnew_zaddress != noreg) {
+       // noreg means null; no need to color
+       __ movptr(rnew_zpointer, rnew_zaddress);
++      int format = ZBarrierRelocationFormatLoadGoodBeforeShX;
++      __ relocate(barrier_Relocation::spec(patch_barrier_relocation_offset(format, rnew_zpointer)), format);
+       __ shlq(rnew_zpointer, barrier_Relocation::unpatched);
+-      __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShX);
++
++      format = ZBarrierRelocationFormatStoreGoodBeforeOr;
++      __ relocate(barrier_Relocation::spec(patch_barrier_relocation_offset(format, rnew_zpointer)), format);
+       __ orq_imm32(rnew_zpointer, barrier_Relocation::unpatched);
+-      __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatStoreGoodAfterOr);
+     }
+   } else {
+     __ movzwq(rnew_zpointer, ref_addr);
+@@ -969,16 +972,19 @@ void ZBarrierSetAssembler::try_resolve_jobject_in_native(MacroAssembler* masm,
+ #define __ ce->masm()->
+ 
+ static void z_uncolor(LIR_Assembler* ce, LIR_Opr ref) {
++  int format = ZBarrierRelocationFormatLoadGoodBeforeShX;
++  __ relocate(barrier_Relocation::spec(ZBarrierSetAssembler::patch_barrier_relocation_offset(format, ref->as_register())), format);
+   __ shrq(ref->as_register(), barrier_Relocation::unpatched);
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShX);
+-  __ nop(1);
+ }
+ 
+ static void z_color(LIR_Assembler* ce, LIR_Opr ref) {
++  int format = ZBarrierRelocationFormatLoadGoodBeforeShX;
++  __ relocate(barrier_Relocation::spec(ZBarrierSetAssembler::patch_barrier_relocation_offset(format, ref->as_register())), format);
+   __ shlq(ref->as_register(), barrier_Relocation::unpatched);
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShX);
++
++  format = ZBarrierRelocationFormatStoreGoodBeforeOr;
++  __ relocate(barrier_Relocation::spec(ZBarrierSetAssembler::patch_barrier_relocation_offset(format, ref->as_register())), format);
+   __ orq_imm32(ref->as_register(), barrier_Relocation::unpatched);
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatStoreGoodAfterOr);
+ }
+ 
+ void ZBarrierSetAssembler::generate_c1_uncolor(LIR_Assembler* ce, LIR_Opr ref) const {
+@@ -1277,31 +1283,10 @@ void ZBarrierSetAssembler::generate_c2_store_barrier_stub(MacroAssembler* masm,
+ #undef __
+ #endif // COMPILER2
+ 
+-static int patch_barrier_relocation_offset(int format) {
+-  switch (format) {
+-  case ZBarrierRelocationFormatLoadGoodAfterShX:
+-    return -1;
+-
+-  case ZBarrierRelocationFormatStoreGoodAfterCmp:
+-    return -2;
+-
+-  case ZBarrierRelocationFormatLoadBadAfterTest:
+-  case ZBarrierRelocationFormatMarkBadAfterTest:
+-  case ZBarrierRelocationFormatStoreBadAfterTest:
+-  case ZBarrierRelocationFormatStoreGoodAfterOr:
+-    return -4;
+-  case ZBarrierRelocationFormatStoreGoodAfterMov:
+-    return -3;
+-
+-  default:
+-    ShouldNotReachHere();
+-    return 0;
+-  }
+-}
+ 
+ static uint16_t patch_barrier_relocation_value(int format) {
+   switch (format) {
+-  case ZBarrierRelocationFormatLoadGoodAfterShX:
++  case ZBarrierRelocationFormatLoadGoodBeforeShX:
+     return (uint16_t)ZPointerLoadShift;
+ 
+   case ZBarrierRelocationFormatMarkBadAfterTest:
+@@ -1311,6 +1296,7 @@ static uint16_t patch_barrier_relocation_value(int format) {
+     return (uint16_t)ZPointerLoadBadMask;
+ 
+   case ZBarrierRelocationFormatStoreGoodAfterCmp:
++  case ZBarrierRelocationFormatStoreGoodBeforeOr:
+   case ZBarrierRelocationFormatStoreGoodAfterOr:
+   case ZBarrierRelocationFormatStoreGoodAfterMov:
+     return (uint16_t)ZPointerStoreGoodMask;
+@@ -1325,10 +1311,9 @@ static uint16_t patch_barrier_relocation_value(int format) {
+ }
+ 
+ void ZBarrierSetAssembler::patch_barrier_relocation(address addr, int format) {
+-  const int offset = patch_barrier_relocation_offset(format);
+   const uint16_t value = patch_barrier_relocation_value(format);
+-  uint8_t* const patch_addr = (uint8_t*)addr + offset;
+-  if (format == ZBarrierRelocationFormatLoadGoodAfterShX) {
++  uint8_t* const patch_addr = (uint8_t*)addr;
++  if (format == ZBarrierRelocationFormatLoadGoodBeforeShX) {
+     *patch_addr = (uint8_t)value;
+   } else {
+     *(uint16_t*)patch_addr = value;
+diff --git a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.hpp b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.hpp
+index 6976452bd63..39386a3ea43 100644
+--- a/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/gc/z/zBarrierSetAssembler_x86.hpp
+@@ -49,13 +49,14 @@ class ZLoadBarrierStubC2;
+ class ZStoreBarrierStubC2;
+ #endif // COMPILER2
+ 
+-const int ZBarrierRelocationFormatLoadGoodAfterShX  = 0;
++const int ZBarrierRelocationFormatLoadGoodBeforeShX = 0;
+ const int ZBarrierRelocationFormatLoadBadAfterTest  = 1;
+ const int ZBarrierRelocationFormatMarkBadAfterTest  = 2;
+ const int ZBarrierRelocationFormatStoreGoodAfterCmp = 3;
+ const int ZBarrierRelocationFormatStoreBadAfterTest = 4;
+-const int ZBarrierRelocationFormatStoreGoodAfterOr  = 5;
+-const int ZBarrierRelocationFormatStoreGoodAfterMov = 6;
++const int ZBarrierRelocationFormatStoreGoodBeforeOr = 5;
++const int ZBarrierRelocationFormatStoreGoodAfterOr  = 6;
++const int ZBarrierRelocationFormatStoreGoodAfterMov = 7;
+ 
+ class ZBarrierSetAssembler : public ZBarrierSetAssemblerBase {
+ private:
+@@ -187,6 +188,33 @@ class ZBarrierSetAssembler : public ZBarrierSetAssemblerBase {
+                             Label& slow_path,
+                             Label& slow_path_continuation) const;
+ 
++  static int patch_barrier_relocation_offset(int format, Register reg) {
++    bool is_rex2_prefixed = Assembler::needs_rex2_prefix(reg);
++    switch (format) {
++    case ZBarrierRelocationFormatLoadGoodBeforeShX:
++      return is_rex2_prefixed ? 4 : 3;
++
++    case ZBarrierRelocationFormatStoreGoodBeforeOr:
++      return is_rex2_prefixed ? 4 : 3;
++
++    case ZBarrierRelocationFormatStoreGoodAfterCmp:
++      return -2;
++
++    case ZBarrierRelocationFormatLoadBadAfterTest:
++    case ZBarrierRelocationFormatMarkBadAfterTest:
++    case ZBarrierRelocationFormatStoreBadAfterTest:
++    case ZBarrierRelocationFormatStoreGoodAfterOr:
++      return -4;
++
++    case ZBarrierRelocationFormatStoreGoodAfterMov:
++      return -3;
++
++    default:
++      ShouldNotReachHere();
++      return 0;
++    }
++  }
++
+   void patch_barrier_relocation(address addr, int format);
+ 
+   void patch_barriers();
+diff --git a/src/hotspot/cpu/x86/gc/z/z_x86_64.ad b/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
+index 555a612e675..fa32627d8d7 100644
+--- a/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
++++ b/src/hotspot/cpu/x86/gc/z/z_x86_64.ad
+@@ -35,16 +35,18 @@ source %{
+ #include "gc/z/zBarrierSetAssembler.hpp"
+ 
+ static void z_color(MacroAssembler* masm, const MachNode* node, Register ref) {
++  int format = ZBarrierRelocationFormatLoadGoodBeforeShX;
++  __ relocate(barrier_Relocation::spec(ZBarrierSetAssembler::patch_barrier_relocation_offset(format, ref)), format);
+   __ shlq(ref, barrier_Relocation::unpatched);
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShX);
++  format = ZBarrierRelocationFormatStoreGoodBeforeOr;
++  __ relocate(barrier_Relocation::spec(ZBarrierSetAssembler::patch_barrier_relocation_offset(format, ref)), format);
+   __ orq_imm32(ref, barrier_Relocation::unpatched);
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatStoreGoodAfterOr);
+ }
+ 
+ static void z_uncolor(MacroAssembler* masm, const MachNode* node, Register ref) {
++  int format = ZBarrierRelocationFormatLoadGoodBeforeShX;
++  __ relocate(barrier_Relocation::spec(ZBarrierSetAssembler::patch_barrier_relocation_offset(format, ref)), format);
+   __ shrq(ref, barrier_Relocation::unpatched);
+-  __ relocate(barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShX);
+-  __ nop(1);
+ }
+ 
+ static void z_keep_alive_load_barrier(MacroAssembler* masm, const MachNode* node, Address ref_addr, Register ref) {
+diff --git a/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp b/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
+index 7e239a68983..15c5f949ca5 100644
+--- a/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
++++ b/src/hotspot/cpu/x86/jvmciCodeInstaller_x86.cpp
+@@ -221,7 +221,7 @@ bool CodeInstaller::pd_relocate(address pc, jint mark) {
+       return true;
+ #if INCLUDE_ZGC
+     case Z_BARRIER_RELOCATION_FORMAT_LOAD_GOOD_BEFORE_SHL:
+-      _instructions->relocate(pc, barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodAfterShX);
++      _instructions->relocate(pc, barrier_Relocation::spec(), ZBarrierRelocationFormatLoadGoodBeforeShX);
+       return true;
+     case Z_BARRIER_RELOCATION_FORMAT_LOAD_BAD_AFTER_TEST:
+       _instructions->relocate(pc, barrier_Relocation::spec(), ZBarrierRelocationFormatLoadBadAfterTest);
+diff --git a/src/hotspot/share/code/relocInfo.hpp b/src/hotspot/share/code/relocInfo.hpp
+index 25cca49e50b..d0bf494ffef 100644
+--- a/src/hotspot/share/code/relocInfo.hpp
++++ b/src/hotspot/share/code/relocInfo.hpp
+@@ -1059,16 +1059,21 @@ class barrier_Relocation : public Relocation {
+   // Code assumes that the unpatched value is zero.
+   static const int16_t unpatched = 0;
+ 
+-  static RelocationHolder spec() {
+-    return RelocationHolder::construct<barrier_Relocation>();
++  static RelocationHolder spec(jint offset = 0) {
++    return RelocationHolder::construct<barrier_Relocation>(offset);
+   }
+ 
+   void copy_into(RelocationHolder& holder) const override;
+ 
++  virtual jint offset() {
++    return _offset;
++  }
++
+  private:
++  jint _offset;
+   friend class RelocIterator;
+   friend class RelocationHolder;
+-  barrier_Relocation() : Relocation(relocInfo::barrier_type) { }
++  barrier_Relocation(jint offset = 0) : Relocation(relocInfo::barrier_type), _offset(offset) { }
+ };
+ 
+ 
+diff --git a/src/hotspot/share/gc/z/zNMethod.cpp b/src/hotspot/share/gc/z/zNMethod.cpp
+index bf592c20fa2..8da1b975870 100644
+--- a/src/hotspot/share/gc/z/zNMethod.cpp
++++ b/src/hotspot/share/gc/z/zNMethod.cpp
+@@ -71,7 +71,7 @@ void ZNMethod::attach_gc_data(nmethod* nm) {
+     if (iter.type() == relocInfo::barrier_type) {
+       // Barrier relocation
+       barrier_Relocation* const reloc = iter.barrier_reloc();
+-      barriers.push({ reloc->addr(), reloc->format() });
++      barriers.push({ reloc->addr() + reloc->offset(), reloc->format() });
+     } else if (iter.type() == relocInfo::oop_type) {
+       // Oop relocation
+       oop_Relocation* const reloc = iter.oop_reloc();

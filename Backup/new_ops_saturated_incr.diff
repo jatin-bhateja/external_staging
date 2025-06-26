@@ -1,0 +1,764 @@
+diff --git a/configure b/configure
+old mode 100644
+new mode 100755
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 5709f0942f0..c25e7ae4836 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -3450,6 +3450,20 @@ void Assembler::evmovdquw(Address dst, KRegister mask, XMMRegister src, bool mer
+   emit_operand(src, dst, 0);
+ }
+ 
++// Move Unaligned EVEX enabled Vector (programmable : 8,16,32,64)
++void Assembler::evmovdquw(XMMRegister dst, KRegister mask, XMMRegister src, bool merge, int vector_len) {
++  assert(VM_Version::supports_avx512vlbw(), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ false, /* uses_vl */ true);
++  attributes.set_embedded_opmask_register_specifier(mask);
++  attributes.set_is_evex_instruction();
++  if (merge) {
++    attributes.reset_is_clear_context();
++  }
++  int encode = vex_prefix_and_encode(dst->encoding(), 0, src->encoding(), VEX_SIMD_F2, VEX_OPCODE_0F, &attributes);
++  emit_int16(0x6F, (0xC0 | encode));
++}
++
++
+ void Assembler::evmovdqul(XMMRegister dst, XMMRegister src, int vector_len) {
+   // Unmasked instruction
+   evmovdqul(dst, k0, src, /*merge*/ false, vector_len);
+@@ -4575,6 +4589,14 @@ void Assembler::evpcmpgtb(KRegister kdst, KRegister mask, XMMRegister nds, Addre
+   emit_operand(as_Register(dst_enc), src, 0);
+ }
+ 
++void Assembler::evpcmpub(KRegister kdst, XMMRegister nds, XMMRegister src, ComparisonPredicate vcc, int vector_len) {
++  assert(VM_Version::supports_avx512vlbw(), "");
++  InstructionAttr attributes(vector_len, /* rex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(kdst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int24(0x3E, (0xC0 | encode), vcc);
++}
++
+ void Assembler::evpcmpuw(KRegister kdst, XMMRegister nds, XMMRegister src, ComparisonPredicate vcc, int vector_len) {
+   assert(VM_Version::supports_avx512vlbw(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+@@ -4583,6 +4605,14 @@ void Assembler::evpcmpuw(KRegister kdst, XMMRegister nds, XMMRegister src, Compa
+   emit_int24(0x3E, (0xC0 | encode), vcc);
+ }
+ 
++void Assembler::evpcmpud(KRegister kdst, XMMRegister nds, XMMRegister src, ComparisonPredicate vcc, int vector_len) {
++  assert(VM_Version::supports_avx512vl(), "");
++  InstructionAttr attributes(vector_len, /* rex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(kdst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
++  emit_int24(0x1F, (0xC0 | encode), vcc);
++}
++
+ void Assembler::evpcmpuq(KRegister kdst, XMMRegister nds, XMMRegister src, ComparisonPredicate vcc, int vector_len) {
+   assert(VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index b703e57dfb0..8732f99b7b6 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1903,9 +1903,12 @@ class Assembler : public AbstractAssembler  {
+   void evpcmpgtb(KRegister kdst, XMMRegister nds, Address src, int vector_len);
+   void evpcmpgtb(KRegister kdst, KRegister mask, XMMRegister nds, Address src, int vector_len);
+ 
++  void evpcmpub(KRegister kdst, XMMRegister nds, XMMRegister src, ComparisonPredicate vcc, int vector_len);
++
+   void evpcmpuw(KRegister kdst, XMMRegister nds, XMMRegister src, ComparisonPredicate vcc, int vector_len);
+   void evpcmpuw(KRegister kdst, XMMRegister nds, Address src, ComparisonPredicate vcc, int vector_len);
+ 
++  void evpcmpud(KRegister kdst, XMMRegister nds, XMMRegister src, ComparisonPredicate vcc, int vector_len);
+   void evpcmpuq(KRegister kdst, XMMRegister nds, XMMRegister src, ComparisonPredicate vcc, int vector_len);
+ 
+   void pcmpeqw(XMMRegister dst, XMMRegister src);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 734ed59344f..48a2e0812ff 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -2253,6 +2253,10 @@ void C2_MacroAssembler::evmovdqu(BasicType type, KRegister kmask, Address dst, X
+   MacroAssembler::evmovdqu(type, kmask, dst, src, merge, vector_len);
+ }
+ 
++void C2_MacroAssembler::evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, XMMRegister src, bool merge, int vector_len) {
++  MacroAssembler::evmovdqu(type, kmask, dst, src, merge, vector_len);
++}
++
+ void C2_MacroAssembler::vmovmask(BasicType elem_bt, XMMRegister dst, Address src, XMMRegister mask,
+                                  int vec_enc) {
+   switch(elem_bt) {
+@@ -6542,10 +6546,6 @@ void C2_MacroAssembler::saturating_signed_vector_op(int opc, XMMRegister dst, XM
+     case Op_SaturatingSubVS:
+       vpsubsw(dst, src1, src2, vlen_enc);
+       break;
+-    case Op_SaturatingAddVI:
+-    case Op_SaturatingAddVL:
+-    case Op_SaturatingSubVI:
+-    case Op_SaturatingSubVL:
+     default:
+       fatal("Unsupported operation  %s", NodeClassNames[opc]);
+       break;
+@@ -6566,21 +6566,302 @@ void C2_MacroAssembler::saturating_unsigned_vector_op(int opc, XMMRegister dst,
+     case Op_SaturatingSubVS:
+       vpsubusw(dst, src1, src2, vlen_enc);
+       break;
+-    case Op_SaturatingAddVI:
+-    case Op_SaturatingAddVL:
+-    case Op_SaturatingSubVI:
+-    case Op_SaturatingSubVL:
+     default:
+       fatal("Unsupported operation  %s", NodeClassNames[opc]);
+       break;
+   }
+ }
+ 
+-void C2_MacroAssembler::saturating_vector_op(int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2, bool is_unsigned, int vlen_enc) {
+-  if (is_unsigned) {
+-    saturating_unsigned_vector_op(opc, dst, src1, src2, vlen_enc);
++void C2_MacroAssembler::saturating_unsigned_sub_dq_evex(BasicType etype, XMMRegister dst, XMMRegister src1,
++                                                        XMMRegister src2, KRegister mask, KRegister ktmp,
++                                                        int vlen_enc) {
++  // For unsigned subtraction, overflow happens when magnitude of second input is greater than first input.
++  // overflow = Inp1 <u Inp2
++  evpcmpu(etype, ktmp,  src1, src2, Assembler::lt, vlen_enc);
++  // Res = INP1 - INP2 (non-commutative and non-associative)
++  vpsub(etype, dst, src1, src2, vlen_enc);
++  // Res = Mask ? Zero : Res
++  evmovdqu(etype, ktmp, dst, dst, false, vlen_enc);
++  if (mask != knoreg) {
++    evmovdqu(etype, mask, dst, dst, false, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::saturating_unsigned_sub_dq_avx(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                                       XMMRegister mask, XMMRegister xtmp1, XMMRegister xtmp2, int vlen_enc) {
++  // Emulate unsigned comparison using signed comparison
++  // Mask = Inp1 <u Inp2 => Inp1 + MIN_VALUE < Inp2 + MIN_VALUE
++  vpgenmin_value(etype, xtmp1, xtmp1, vlen_enc, true);
++  vpadd(etype, xtmp2, src1, xtmp1, vlen_enc);
++  vpadd(etype, xtmp1, src2, xtmp1, vlen_enc);
++
++  vpcmpgt(etype, xtmp2, xtmp1, xtmp2, vlen_enc);
++
++  // Res = INP1 - INP2 (non-commutative and non-associative)
++  vpsub(etype, dst, src1, src2, vlen_enc);
++  // Res = Mask ? Zero : Res
++  vpxor(xtmp1, xtmp1, xtmp1, vlen_enc);
++  vpblendvb(dst, dst, xtmp1, xtmp2, vlen_enc);
++  if (mask != xnoreg) {
++    vpxor(xtmp1, xtmp1, xtmp1, vlen_enc);
++    vpblendvb(dst, dst, xtmp1, mask, vlen_enc);
++  }
++}
++
++//TODO effect dst = TEMP
++void C2_MacroAssembler::saturating_unsigned_add_dq_evex(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                                        KRegister mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3,
++                                                        KRegister ktmp, int vlen_enc) {
++  // Unsigned values ranges comprise of only +ve numbers, thus there exist only an upper bound saturation.
++  // overflow = ((UMAX - MAX(SRC1 & SRC2)) <u MIN(SRC1, SRC2)) >>> 31 == 1
++  // Res = Signed Add INP1, INP2
++  vpadd(etype, dst, src1, src2, vlen_enc);
++  // Max_Input = Unsigned MAX INP1, INP2
++  evpmaxu(etype, xtmp1, k0, src1, src2, false, vlen_enc);
++  // Max_Unsigned = -1
++  vpternlogd(xtmp3, 0xff, xtmp3, xtmp3, vlen_enc);
++  // X = Max_Unsigned - Max_Input
++  vpsub(etype, xtmp1, xtmp3, xtmp1, vlen_enc);
++  // Min_Input = Unsigned MIN INP1, INP2
++  evpminu(etype, xtmp2, k0, src1, src2, false, vlen_enc);
++  // Unsigned compare:  Mask = X <u Min_Unsigned
++  evpcmpu(etype, ktmp, xtmp2, xtmp1, Assembler::nlt, vlen_enc);
++  // res  = Mask ? Max_Unsigned : Res
++  evpblend(etype, dst, ktmp,  dst, xtmp3, true, vlen_enc);
++  if (mask != knoreg) {
++    evmovdqu(etype, mask, dst, dst, false, vlen_enc);
++  }
++}
++
++//
++// Adaptation of unsigned addition overflow detection from hacker's delight
++// section 2-13 : overflow = ((a & b) | ((a | b) & ~(s))) >>> 31 == 1
++//
++// Apply Logic optimization on above overflow detection expression by substituting 'a'
++// with boolean values:-
++//   V1 : a = 0  =>  b & ~s
++//   V2 : a = 1  =>  b | ~s
++//
++//        V1  V2
++//         |0  |1
++//      ___|___|___
++//       \       /____ a
++//        \_____/            a + b UMAX
++//           |                 |0   |1
++//        overflow          ___|____|___
++//           |_______________\        /
++//                            \______/
++//                                |
++//                                |
++//                               Res
++//TODO effect dst = TEMP
++void C2_MacroAssembler::saturating_unsigned_add_dq_avx(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                                       XMMRegister mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3,
++                                                       XMMRegister xtmp4, int vlen_enc) {
++  // Res = Signed Add INP1, INP2
++  vpadd(etype, dst, src1, src2, vlen_enc);
++  // T1 = SRC2 & ~Res
++  vpandn(xtmp1, dst, src2, vlen_enc);
++  // Compute Max_Unsigned (T2) = -1
++  vpcmpeqd(xtmp3, xtmp3, xtmp3, vlen_enc);
++  // T2 = ~Res
++  vpxor(xtmp2, xtmp3, dst, vlen_enc);
++  // T3 = SRC2 | ~Res
++  vpor(xtmp2, xtmp2, src2, vlen_enc);
++  // Compute mask for muxing T1 with T3 using SRC1.
++  vpsign_extend_dq(etype, xtmp4, src1, vlen_enc);
++  // Blend T1 and T3 using above mask.
++  vpblendvb(xtmp4, xtmp1, xtmp2, xtmp4, vlen_enc);
++  // Compute mask for blending result with saturated upper bound.
++  vpsign_extend_dq(etype, xtmp4, xtmp4, vlen_enc);
++  vpblendvb(dst, dst, xtmp3, xtmp4, vlen_enc);
++  if (mask != xnoreg) {
++    vpxor(xtmp1, xtmp1, xtmp1, vlen_enc);
++    vpblendvb(dst, dst, xtmp1, mask, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::evpmovq2m_emu(KRegister ktmp, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                      int vlen_enc, bool xtmp2_hold_M1) {
++  if (VM_Version::supports_avx512dq()) {
++    evpmovq2m(ktmp, src, vlen_enc);
+   } else {
+-    saturating_signed_vector_op(opc, dst, src1, src2, vlen_enc);
++    assert(VM_Version::supports_evex(), "");
++    if (!xtmp2_hold_M1) {
++      vpternlogq(xtmp2, 0xff, xtmp2, xtmp2, vlen_enc);
++    }
++    evpsraq(xtmp1, src, 63, vlen_enc);
++    evpcmpeqq(ktmp, k0, xtmp1, xtmp2, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::evpmovd2m_emu(KRegister ktmp, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                                      int vlen_enc, bool xtmp2_hold_M1) {
++  if (VM_Version::supports_avx512dq()) {
++    evpmovd2m(ktmp, src, vlen_enc);
++  } else {
++    assert(VM_Version::supports_evex(), "");
++    if (!xtmp2_hold_M1) {
++      vpternlogd(xtmp2, 0xff, xtmp2, xtmp2, vlen_enc);
++    }
++    vpsrad(xtmp1, src, 31, vlen_enc);
++    Assembler::evpcmpeqd(ktmp, k0, xtmp1, xtmp2, vlen_enc);
++  }
++}
++
++
++void C2_MacroAssembler::vpsign_extend_dq(BasicType etype, XMMRegister dst, XMMRegister src, int vlen_enc) {
++  if (etype == T_LONG) {
++    //FIXME: Handle AVX equivalent.
++    evpsraq(dst, src, 63, vlen_enc);
++  } else {
++    assert(etype == T_INT, "");
++    vpsrad(dst, src, 31, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::vpgenmax_value(BasicType etype, XMMRegister dst, XMMRegister allones, int vlen_enc, bool compute_allones) {
++  if (compute_allones) {
++    vpcmpeqq(allones, allones, allones, vlen_enc);
++  }
++  if (etype == T_LONG) {
++    vpsrlq(dst, allones, 1, vlen_enc);
++  } else {
++    assert(etype == T_INT, "");
++    vpsrld(dst, allones, 1, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::vpgenmin_value(BasicType etype, XMMRegister dst, XMMRegister allones, int vlen_enc, bool compute_allones) {
++  if (compute_allones) {
++    vpcmpeqq(allones, allones, allones, vlen_enc);
++  }
++  if (etype == T_LONG) {
++    vpsllq(dst, allones, 63, vlen_enc);
++  } else {
++    assert(etype == T_INT, "");
++    vpslld(dst, allones, 31, vlen_enc);
++  }
++}
++
++void C2_MacroAssembler::evpcmpu(BasicType etype, KRegister kmask,  XMMRegister src1, XMMRegister src2,
++                                Assembler::ComparisonPredicate cond, int vlen_enc) {
++  switch(etype) {
++    case T_LONG:  evpcmpuq(kmask, src1, src2, cond, vlen_enc); break;
++    case T_INT:   evpcmpud(kmask, src1, src2, cond, vlen_enc); break;
++    case T_SHORT: evpcmpuw(kmask, src1, src2, cond, vlen_enc); break;
++    case T_BYTE:  evpcmpub(kmask, src1, src2, cond, vlen_enc); break;
++    default: fatal("Unsupported type %s", type2name(etype)); break;
++  }
++}
++
++void C2_MacroAssembler::vpcmpgt(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc) {
++  switch(etype) {
++    case  T_LONG:  vpcmpgtq(dst, src1, src2, vlen_enc); break;
++    case  T_INT:   vpcmpgtd(dst, src1, src2, vlen_enc); break;
++    case  T_SHORT: vpcmpgtw(dst, src1, src2, vlen_enc); break;
++    case  T_BYTE:  vpcmpgtb(dst, src1, src2, vlen_enc); break;
++    default: fatal("Unsupported type %s", type2name(etype)); break;
++  }
++}
++
++void C2_MacroAssembler::evpmov_vec_to_mask(BasicType etype, KRegister ktmp, XMMRegister src, XMMRegister xtmp1,
++                                           XMMRegister xtmp2, int vlen_enc, bool xtmp2_hold_M1) {
++  if (etype == T_LONG) {
++    evpmovq2m_emu(ktmp, src, xtmp1, xtmp2, vlen_enc, xtmp2_hold_M1);
++  } else {
++    assert(etype == T_INT, "");
++    evpmovd2m_emu(ktmp, src, xtmp1, xtmp2, vlen_enc, xtmp2_hold_M1);
++  }
++}
++
++void C2_MacroAssembler::saturating_signed_add_sub_dq_evex(BasicType etype, int opc, XMMRegister dst, XMMRegister src1,
++                                                          XMMRegister src2, KRegister mask, XMMRegister xtmp1, XMMRegister xtmp2,
++                                                          KRegister ktmp1, KRegister ktmp2, int vlen_enc) {
++  // Addition/Subtraction happens over two's compliment representation of numbers and is agnostic to signed'ness.
++  // Overflow detection based on Hacker's delight section 2-13.
++  if (opc == Op_SaturatingAddVI || opc == Op_SaturatingAddVL) {
++    // res = src1 + src2
++    vpadd(etype, dst, src1, src2, vlen_enc);
++    // Overflow occurs if result polarity does not comply with equivalent polarity inputs.
++    // overflow = (((res ^ src1) & (res ^ src2)) >>> 31(I)/63(L)) == 1
++    vpxor(xtmp1, dst, src1, vlen_enc);
++    vpxor(xtmp2, dst, src2, vlen_enc);
++    vpand(xtmp2, xtmp1, xtmp2, vlen_enc);
++  } else {
++    assert(opc == Op_SaturatingSubVI || opc == Op_SaturatingSubVL, "");
++    // res = src1 - src2
++    vpsub(etype, dst, src1, src2, vlen_enc);
++    // Overflow occurs when both inputs have opposite polarity and
++    // result polarity does not comply with first input polarity.
++    // overflow = ((src1 ^ src2) & (res ^ src1) >>> 31(I)/63(L)) == 1;
++    vpxor(xtmp1, src1, src2, vlen_enc);
++    vpxor(xtmp2, dst, src1, vlen_enc);
++    vpand(xtmp2, xtmp1, xtmp2, vlen_enc);
++  }
++
++  // Compute overflow detection mask.
++  evpmov_vec_to_mask(etype, ktmp1, xtmp2, xtmp2, xtmp1, vlen_enc);
++  // Note: xtmp1 hold -1 in all its lanes after above call.
++
++  // Compute mask based on first input polarity.
++  evpmov_vec_to_mask(etype, ktmp2, src1, xtmp2, xtmp1, vlen_enc, true);
++
++  vpgenmax_value(etype, xtmp2, xtmp1, vlen_enc);
++  vpgenmin_value(etype, xtmp1, xtmp1, vlen_enc);
++
++  // Compose a vector of saturating (MAX/MIN) values, where lanes corresponding to
++  // set bits in first input polarity mask holds a min value.
++  evpblend(etype, xtmp2, ktmp2, xtmp2, xtmp1, true, vlen_enc);
++  // Blend destination lanes with saturated values using overflow detection mask.
++  evpblend(etype, dst, ktmp1, dst, xtmp2, true, vlen_enc);
++  if (mask != knoreg) {
++    evmovdqu(etype, mask, dst, dst, false, vlen_enc);
++  }
++}
++
++
++void C2_MacroAssembler::saturating_signed_add_sub_dq_avx(BasicType etype, int opc, XMMRegister dst, XMMRegister src1,
++                                                         XMMRegister src2, XMMRegister mask, XMMRegister xtmp1, XMMRegister xtmp2,
++                                                         XMMRegister xtmp3, int vlen_enc) {
++  // Addition/Subtraction happens over two's compliment representation of numbers and is agnostic to signed'ness.
++  // Overflow detection based on Hacker's delight section 2-13.
++  if (opc == Op_SaturatingAddVI || opc == Op_SaturatingAddVL) {
++    // res = src1 + src2
++    vpadd(etype, dst, src1, src2, vlen_enc);
++    // Overflow occurs if result polarity does not comply with equivalent polarity inputs.
++    // overflow = (((res ^ src1) & (res ^ src2)) >>> 31(I)/63(L)) == 1
++    vpxor(xtmp1, dst, src1, vlen_enc);
++    vpxor(xtmp2, dst, src2, vlen_enc);
++    vpand(xtmp2, xtmp1, xtmp2, vlen_enc);
++  } else {
++    assert(opc == Op_SaturatingSubVI || opc == Op_SaturatingSubVL, "");
++    // res = src1 - src2
++    vpsub(etype, dst, src1, src2, vlen_enc);
++    // Overflow occurs when both inputs have opposite polarity and
++    // result polarity does not comply with first input polarity.
++    // overflow = ((src1 ^ src2) & (res ^ src1) >>> 31(I)/63(L)) == 1;
++    vpxor(xtmp1, src1, src2, vlen_enc);
++    vpxor(xtmp2, dst, src1, vlen_enc);
++    vpand(xtmp2, xtmp1, xtmp2, vlen_enc);
++  }
++
++  // Sign-extend to compute overflow detection mask.
++  vpsign_extend_dq(etype, xtmp3, xtmp2, vlen_enc);
++
++  vpcmpeqd(xtmp1, xtmp1, xtmp1, vlen_enc);
++  vpgenmax_value(etype, xtmp2, xtmp1, vlen_enc);
++  vpgenmin_value(etype, xtmp1, xtmp1, vlen_enc);
++
++  // Compose saturating min/max vector using first input polarity mask.
++  vpblendvb(xtmp1, xtmp2, xtmp1, src1, vlen_enc);
++
++  // Blend result with saturating vector using overflow detection mask.
++  vpblendvb(dst, dst, xtmp1, xtmp3, vlen_enc);
++
++  if (mask != xnoreg) {
++    vpxor(xtmp1, xtmp1, xtmp1, vlen_enc);
++    vpblendvb(dst, dst, xtmp1, mask, vlen_enc);
+   }
+ }
+ 
+@@ -6598,10 +6879,6 @@ void C2_MacroAssembler::saturating_signed_vector_op(int opc, XMMRegister dst, XM
+     case Op_SaturatingSubVS:
+       vpsubsw(dst, src1, src2, vlen_enc);
+       break;
+-    case Op_SaturatingAddVI:
+-    case Op_SaturatingAddVL:
+-    case Op_SaturatingSubVI:
+-    case Op_SaturatingSubVL:
+     default:
+       fatal("Unsupported operation  %s", NodeClassNames[opc]);
+       break;
+@@ -6622,16 +6899,20 @@ void C2_MacroAssembler::saturating_unsigned_vector_op(int opc, XMMRegister dst,
+     case Op_SaturatingSubVS:
+       vpsubusw(dst, src1, src2, vlen_enc);
+       break;
+-    case Op_SaturatingAddVI:
+-    case Op_SaturatingAddVL:
+-    case Op_SaturatingSubVI:
+-    case Op_SaturatingSubVL:
+     default:
+       fatal("Unsupported operation  %s", NodeClassNames[opc]);
+       break;
+   }
+ }
+ 
++void C2_MacroAssembler::saturating_vector_op(int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2, bool is_unsigned, int vlen_enc) {
++  if (is_unsigned) {
++    saturating_unsigned_vector_op(opc, dst, src1, src2, vlen_enc);
++  } else {
++    saturating_signed_vector_op(opc, dst, src1, src2, vlen_enc);
++  }
++}
++
+ void C2_MacroAssembler::saturating_vector_op(int opc, XMMRegister dst, XMMRegister src1, Address src2, bool is_unsigned, int vlen_enc) {
+   if (is_unsigned) {
+     saturating_unsigned_vector_op(opc, dst, src1, src2, vlen_enc);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 27963fbac76..6677985cba9 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -113,6 +113,7 @@
+ 
+   void evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, Address src, bool merge, int vector_len);
+   void evmovdqu(BasicType type, KRegister kmask, Address dst, XMMRegister src, bool merge, int vector_len);
++  void evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, XMMRegister src, bool merge, int vector_len);
+ 
+   // extract
+   void extract(BasicType typ, Register dst, XMMRegister src, int idx);
+@@ -509,6 +510,43 @@
+ 
+   void saturating_unsigned_vector_op(int opc, XMMRegister dst, XMMRegister src1, Address src2, int vlen_enc);
+ 
++  void saturating_unsigned_sub_dq_evex(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                       KRegister mask, KRegister ktmp, int vlen_enc);
++
++  void saturating_unsigned_sub_dq_avx(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                      XMMRegister mask, XMMRegister xtmp1, XMMRegister xtmp2, int vlen_enc);
++
++  void saturating_unsigned_add_dq_evex(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                       KRegister mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3,
++                                       KRegister ktmp, int vlen_enc);
++
++  void saturating_unsigned_add_dq_avx(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                      XMMRegister mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3,
++                                      XMMRegister xtmp4, int vlen_enc);
++
++  void saturating_signed_add_sub_dq_avx(BasicType etype, int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                        XMMRegister mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3, int vlen_enc);
++
++  void saturating_signed_add_sub_dq_evex(BasicType etype, int opc, XMMRegister dst, XMMRegister src1, XMMRegister src2,
++                                         KRegister mask, XMMRegister xtmp1, XMMRegister xtmp2, KRegister ktmp1, KRegister ktmp2,
++                                         int vlen_enc);
++  void evpmovd2m_emu(KRegister ktmp, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2, int vlen_enc, bool xtmp2_hold_M1 = false);
++
++  void evpmovq2m_emu(KRegister ktmp, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2, int vlen_enc, bool xtmp2_hold_M1 = false);
++
++  void vpsign_extend_dq(BasicType etype, XMMRegister dst, XMMRegister src, int vlen_enc);
++
++  void vpgenmin_value(BasicType etype, XMMRegister dst, XMMRegister allones, int vlen_enc, bool compute_allones = false);
++
++  void vpgenmax_value(BasicType etype, XMMRegister dst, XMMRegister allones, int vlen_enc, bool compute_allones = false);
++
++  void evpcmpu(BasicType etype, KRegister kmask,  XMMRegister src1, XMMRegister src2, Assembler::ComparisonPredicate cond, int vlen_enc);
++
++  void vpcmpgt(BasicType etype, XMMRegister dst, XMMRegister src1, XMMRegister src2, int vlen_enc);
++
++  void evpmov_vec_to_mask(BasicType etype, KRegister ktmp, XMMRegister src, XMMRegister xtmp1, XMMRegister xtmp2,
++                          int vlen_enc, bool xtmp2_hold_M1 = false);
++
+   void evmasked_saturating_op(int ideal_opc, KRegister mask, XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                               bool is_unsigned, bool merge, int vlen_enc);
+ 
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.cpp b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+index bdb32102ad0..70adea3691a 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.cpp
+@@ -9303,6 +9303,30 @@ void MacroAssembler::byte_array_inflate(Register src, Register dst, Register len
+   bind(done);
+ }
+ 
++void MacroAssembler::evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, XMMRegister src, bool merge, int vector_len) {
++  switch(type) {
++    case T_BYTE:
++    case T_BOOLEAN:
++      evmovdqub(dst, kmask, src, merge, vector_len);
++      break;
++    case T_CHAR:
++    case T_SHORT:
++      evmovdquw(dst, kmask, src, merge, vector_len);
++      break;
++    case T_INT:
++    case T_FLOAT:
++      evmovdqul(dst, kmask, src, merge, vector_len);
++      break;
++    case T_LONG:
++    case T_DOUBLE:
++      evmovdquq(dst, kmask, src, merge, vector_len);
++      break;
++    default:
++      fatal("Unexpected type argument %s", type2name(type));
++      break;
++  }
++}
++
+ 
+ void MacroAssembler::evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, Address src, bool merge, int vector_len) {
+   switch(type) {
+diff --git a/src/hotspot/cpu/x86/macroAssembler_x86.hpp b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+index d6b1923ae6b..98f36f63aa5 100644
+--- a/src/hotspot/cpu/x86/macroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/macroAssembler_x86.hpp
+@@ -1278,6 +1278,7 @@ class MacroAssembler: public Assembler {
+   // AVX512 Unaligned
+   void evmovdqu(BasicType type, KRegister kmask, Address     dst, XMMRegister src, bool merge, int vector_len);
+   void evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, Address     src, bool merge, int vector_len);
++  void evmovdqu(BasicType type, KRegister kmask, XMMRegister dst, XMMRegister src, bool merge, int vector_len);
+ 
+   void evmovdqub(XMMRegister dst, XMMRegister src, int vector_len) { Assembler::evmovdqub(dst, src, vector_len); }
+   void evmovdqub(XMMRegister dst, Address     src, int vector_len) { Assembler::evmovdqub(dst, src, vector_len); }
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 1497e59bef7..a43d142aece 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -10496,6 +10496,208 @@ instruct saturating_subword_op_reg(vec dst, vec src1, vec src2)
+   ins_pipe(pipe_slow);
+ %}
+ 
++instruct saturating_op_reg_evex(vec dst, vec src1, vec src2, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2)
++%{
++  predicate(!Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) == 64);
++  match(Set dst (SaturatingAddVI src1 src2));
++  match(Set dst (SaturatingAddVL src1 src2));
++  match(Set dst (SaturatingSubVI src1 src2));
++  match(Set dst (SaturatingSubVL src1 src2));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2);
++  format %{ "saturating_vector_op $dst, $src1, $src2 \t! using $xtmp1, $xtmp2, $ktmp1 and $ktmp2 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    int opc = this->ideal_Opcode();
++    __ saturating_signed_add_sub_dq_evex(etype, opc, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, knoreg, $xtmp1$$XMMRegister,
++                                         $xtmp2$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_op_reg_avx(vec dst, vec src1, vec src2, vec xtmp1, vec xtmp2, vec xtmp3)
++%{
++  predicate(!Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) < 64);
++  match(Set dst (SaturatingAddVI src1 src2));
++  match(Set dst (SaturatingAddVL src1 src2));
++  match(Set dst (SaturatingSubVI src1 src2));
++  match(Set dst (SaturatingSubVL src1 src2));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3);
++  format %{ "saturating_vector_op $dst, $src1, $src2 \t! using $xtmp1, $xtmp2 and $xtmp3 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    int opc = this->ideal_Opcode();
++    __ saturating_signed_add_sub_dq_avx(etype, opc, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, xnoreg, $xtmp1$$XMMRegister,
++                                        $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_unsigned_add_reg_evex(vec dst, vec src1, vec src2, vec xtmp1, vec xtmp2, vec xtmp3, kReg ktmp)
++%{
++  predicate(Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) == 64);
++  match(Set dst (SaturatingAddVI src1 src2));
++  match(Set dst (SaturatingAddVL src1 src2));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP ktmp);
++  format %{ "saturating_vector_op $dst, $src1, $src2 \t! using $xtmp1, $xtmp2, $xtmp3 and $ktmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    __ saturating_unsigned_add_dq_evex(etype, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, knoreg, $xtmp1$$XMMRegister,
++                                       $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $ktmp$$KRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_unsigned_add_reg_avx(vec dst, vec src1, vec src2, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4)
++%{
++  predicate(Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) < 64);
++  match(Set dst (SaturatingAddVI src1 src2));
++  match(Set dst (SaturatingAddVL src1 src2));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4);
++  format %{ "saturating_vector_op $dst, $src1, $src2 \t! using $xtmp1, $xtmp2, $xtmp3 and $xtmp4 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    __ saturating_unsigned_add_dq_avx(etype, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, xnoreg, $xtmp1$$XMMRegister,
++                                      $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $xtmp4$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_unsigned_sub_reg_evex(vec dst, vec src1, vec src2, kReg ktmp)
++%{
++  predicate(Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) == 64);
++  match(Set dst (SaturatingSubVI src1 src2));
++  match(Set dst (SaturatingSubVL src1 src2));
++  effect(TEMP ktmp);
++  format %{ "saturating_vector_op $dst, $src1, $src2 \t! using $ktmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    __ saturating_unsigned_sub_dq_evex(etype, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, knoreg, $ktmp$$KRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_unsigned_sub_reg_avx(vec dst, vec src1, vec src2, vec xtmp1, vec xtmp2)
++%{
++  predicate(Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) < 64);
++  match(Set dst (SaturatingSubVI src1 src2));
++  match(Set dst (SaturatingSubVL src1 src2));
++  effect(TEMP xtmp1, TEMP xtmp2);
++  format %{ "saturating_vector_op $dst, $src1, $src2 \t! using $xtmp1 and $xtmp2 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    __ saturating_unsigned_sub_dq_avx(etype, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, xnoreg, $xtmp1$$XMMRegister,
++                                      $xtmp2$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_masked_op_reg_evex(vec dst, vec src1, vec src2, kReg mask, vec xtmp1, vec xtmp2, kReg ktmp1, kReg ktmp2)
++%{
++  predicate(!Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) == 64);
++  match(Set dst (SaturatingAddVI (Binary src1 src2) mask));
++  match(Set dst (SaturatingAddVL (Binary src1 src2) mask));
++  match(Set dst (SaturatingSubVI (Binary src1 src2) mask));
++  match(Set dst (SaturatingSubVL (Binary src1 src2) mask));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP ktmp1, TEMP ktmp2);
++  format %{ "saturating_vector_op $dst, $mask, $src1, $src2 \t! using $xtmp1, $xtmp2, $ktmp1 and $ktmp2 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    int opc = this->ideal_Opcode();
++    __ saturating_signed_add_sub_dq_evex(etype, opc, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, $mask$$KRegister,
++                                         $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $ktmp1$$KRegister, $ktmp2$$KRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_masked_op_reg_avx(vec dst, vec src1, vec src2, vec mask, vec xtmp1, vec xtmp2, vec xtmp3)
++%{
++  predicate(!Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) < 64);
++  match(Set dst (SaturatingAddVI (Binary src1 src2) mask));
++  match(Set dst (SaturatingAddVL (Binary src1 src2) mask));
++  match(Set dst (SaturatingSubVI (Binary src1 src2) mask));
++  match(Set dst (SaturatingSubVL (Binary src1 src2) mask));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3);
++  format %{ "saturating_vector_op $dst, $mask, $src1, $src2 \t! using $xtmp1, $xtmp2 and $xtmp3 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    int opc = this->ideal_Opcode();
++    __ saturating_signed_add_sub_dq_avx(etype, opc, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, $mask$$XMMRegister,
++                                        $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_unsigned_masked_add_reg_evex(vec dst, vec src1, vec src2, kReg mask, vec xtmp1, vec xtmp2, vec xtmp3, kReg ktmp)
++%{
++  predicate(Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) == 64);
++  match(Set dst (SaturatingAddVI (Binary src1 src2) mask));
++  match(Set dst (SaturatingAddVL (Binary src1 src2) mask));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP ktmp);
++  format %{ "saturating_vector_op $dst, $mask, $src1, $src2 \t! using $xtmp1, $xtmp2, $xtmp3 and $ktmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    __ saturating_unsigned_add_dq_evex(etype, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, $mask$$KRegister,
++                                       $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $ktmp$$KRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_unsigned_masked_add_reg_avx(vec dst, vec src1, vec src2, vec mask, vec xtmp1, vec xtmp2, vec xtmp3, vec xtmp4)
++%{
++  predicate(Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) < 64);
++  match(Set dst (SaturatingAddVI (Binary src1 src2) mask));
++  match(Set dst (SaturatingAddVL (Binary src1 src2) mask));
++  effect(TEMP dst, TEMP xtmp1, TEMP xtmp2, TEMP xtmp3, TEMP xtmp4);
++  format %{ "saturating_vector_op $dst, $mask, $src1, $src2 \t! using $xtmp1, $xtmp2, $xtmp3 and $xtmp4 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    __ saturating_unsigned_add_dq_avx(etype, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, $mask$$XMMRegister, $xtmp1$$XMMRegister,
++                                      $xtmp2$$XMMRegister, $xtmp3$$XMMRegister, $xtmp4$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_unsigned_masked_sub_reg_evex(vec dst, vec src1, vec src2, kReg mask, kReg ktmp)
++%{
++  predicate(Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) == 64);
++  match(Set dst (SaturatingSubVI (Binary src1 src2) mask));
++  match(Set dst (SaturatingSubVL (Binary src1 src2) mask));
++  effect(TEMP ktmp);
++  format %{ "saturating_vector_op $dst, $mask, $src1, $src2 \t! using $ktmp as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    __ saturating_unsigned_sub_dq_evex(etype, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, $mask$$KRegister, $ktmp$$KRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct saturating_unsigned_masked_sub_reg_avx(vec dst, vec src1, vec src2, vec mask, vec xtmp1, vec xtmp2)
++%{
++  predicate(Type::is_utype(Matcher::vector_element_type(n)) && Matcher::vector_length_in_bytes(n) < 64);
++  match(Set dst (SaturatingSubVI (Binary src1 src2) mask));
++  match(Set dst (SaturatingSubVL (Binary src1 src2) mask));
++  effect(TEMP xtmp1, TEMP xtmp2);
++  format %{ "saturating_vector_op $dst, $mask, $src1, $src2 \t! using $xtmp1 and $xtmp2 as TEMP" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    BasicType etype = Matcher::vector_element_basic_type(this);
++    __ saturating_unsigned_sub_dq_avx(etype, $dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, $mask$$XMMRegister,
++                                      $xtmp1$$XMMRegister, $xtmp2$$XMMRegister, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
+ instruct saturating_subword_op_mem(vec dst, vec src1, memory src2)
+ %{
+   match(Set dst (SaturatingAddVB src1 (LoadVector src2)));

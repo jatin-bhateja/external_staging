@@ -1,0 +1,996 @@
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+import jdk.incubator.vector.VectorMath;
+index 73b908c1c12..3d1a311eac1 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -7042,6 +7042,17 @@ instruct castFF(regF dst)
+   ins_pipe(empty);
+ %}
+ 
++instruct castHH(regF dst)
++%{
++  match(Set dst (CastHH dst));
++
++  size(0);
++  format %{ "# castHH of $dst" %}
++  ins_encode(/* empty encoding */);
++  ins_cost(0);
++  ins_pipe(empty);
++%}
++
+ instruct castDD(regD dst)
+ %{
+   match(Set dst (CastDD dst));
+diff --git a/src/hotspot/share/classfile/vmSymbols.hpp b/src/hotspot/share/classfile/vmSymbols.hpp
+index 835b13547ae..799ca76a863 100644
+--- a/src/hotspot/share/classfile/vmSymbols.hpp
++++ b/src/hotspot/share/classfile/vmSymbols.hpp
+@@ -80,8 +80,6 @@ class SerializeClosure;
+   template(java_lang_Character_CharacterCache,        "java/lang/Character$CharacterCache")       \
+   template(java_lang_CharacterDataLatin1,             "java/lang/CharacterDataLatin1")            \
+   template(java_lang_Float,                           "java/lang/Float")                          \
+-  template(java_lang_Float16,                         "java/lang/Float16")                        \
+-  template(java_lang_Float16_signature,               "Ljava/lang/Float16;")                      \
+   template(java_lang_Double,                          "java/lang/Double")                         \
+   template(java_lang_Byte,                            "java/lang/Byte")                           \
+   template(java_lang_Byte_ByteCache,                  "java/lang/Byte$ByteCache")                 \
+diff --git a/src/hotspot/share/opto/addnode.cpp b/src/hotspot/share/opto/addnode.cpp
+index 136ad011e9d..40a43a0ee73 100644
+--- a/src/hotspot/share/opto/addnode.cpp
++++ b/src/hotspot/share/opto/addnode.cpp
+@@ -1647,9 +1647,6 @@ const Type* MinFNode::add_ring(const Type* t0, const Type* t1 ) const {
+     return f0 < f1 ? r0 : r1;
+   }
+ 
+-  // As per IEEE 754 specification, floating point comparison consider +ve and -ve
+-  // zeros as equals. Thus, performing signed integral comparison for min value
+-  // detection.
+   return (jint_cast(f0) < jint_cast(f1)) ? r0 : r1;
+ }
+ 
+@@ -1699,7 +1696,9 @@ const Type* MaxHFNode::add_ring(const Type* t0, const Type* t1) const {
+     return f0 > f1 ? r0 : r1;
+   }
+ 
+-  // handle max of 0.0,-0.0 case.
++  // As per IEEE 754 specification, floating point comparison consider +ve and -ve
++  // zeros as equals. Thus, performing signed integral comparison for min value
++  // detection.
+   return (jint_cast(f0) > jint_cast(f1)) ? r0 : r1;
+ }
+ 
+diff --git a/src/hotspot/share/opto/castnode.cpp b/src/hotspot/share/opto/castnode.cpp
+index a93c9b382f9..f336b1c11b6 100644
+--- a/src/hotspot/share/opto/castnode.cpp
++++ b/src/hotspot/share/opto/castnode.cpp
+@@ -458,6 +458,8 @@ Node* ConstraintCastNode::make_cast_for_type(Node* c, Node* in, const Type* type
+     return new CastIINode(c, in, type, dependency, false, types);
+   } else if (type->isa_long()) {
+     return new CastLLNode(c, in, type, dependency, types);
++  } else if (type->isa_half_float()) {
++    return new CastHHNode(c, in, type, dependency, types);
+   } else if (type->isa_float()) {
+     return new CastFFNode(c, in, type, dependency, types);
+   } else if (type->isa_double()) {
+diff --git a/src/hotspot/share/opto/castnode.hpp b/src/hotspot/share/opto/castnode.hpp
+index 87989235c67..fab170a8ad8 100644
+--- a/src/hotspot/share/opto/castnode.hpp
++++ b/src/hotspot/share/opto/castnode.hpp
+@@ -141,6 +141,17 @@ class CastLLNode: public ConstraintCastNode {
+   virtual uint ideal_reg() const { return Op_RegL; }
+ };
+ 
++class CastHHNode: public ConstraintCastNode {
++public:
++  CastHHNode(Node* ctrl, Node* n, const Type* t, DependencyType dependency = RegularDependency, const TypeTuple* types = nullptr)
++          : ConstraintCastNode(ctrl, n, t, dependency, types) {
++    assert(ctrl != nullptr, "control must be set");
++    init_class_id(Class_CastHH);
++  }
++  virtual int Opcode() const;
++  virtual uint ideal_reg() const { return in(1)->ideal_reg(); }
++};
++
+ class CastFFNode: public ConstraintCastNode {
+ public:
+   CastFFNode(Node* ctrl, Node* n, const Type* t, DependencyType dependency = RegularDependency, const TypeTuple* types = nullptr)
+diff --git a/src/hotspot/share/opto/classes.hpp b/src/hotspot/share/opto/classes.hpp
+index 5251d7798a1..790d0a9f863 100644
+--- a/src/hotspot/share/opto/classes.hpp
++++ b/src/hotspot/share/opto/classes.hpp
+@@ -65,6 +65,7 @@ macro(CallLeafVector)
+ macro(CallRuntime)
+ macro(CallStaticJava)
+ macro(CastDD)
++macro(CastHH)
+ macro(CastFF)
+ macro(CastII)
+ macro(CastLL)
+diff --git a/src/hotspot/share/opto/convertnode.cpp b/src/hotspot/share/opto/convertnode.cpp
+index 92bc6a97676..a0cdc41bdad 100644
+--- a/src/hotspot/share/opto/convertnode.cpp
++++ b/src/hotspot/share/opto/convertnode.cpp
+@@ -932,7 +932,7 @@ const Type* RoundDoubleModeNode::Value(PhaseGVN* phase) const {
+ //=============================================================================
+ 
+ const Type* ReinterpretS2HFNode::Value(PhaseGVN* phase) const {
+-  const Type* type = phase->type( in(1) );
++  const Type* type = phase->type(in(1));
+   // Convert short constant value to a Half Float constant value
+   if ((type->isa_int() && type->is_int()->is_con())) {
+      jshort hfval = type->is_int()->get_con();
+@@ -950,7 +950,7 @@ Node* ReinterpretS2HFNode::Identity(PhaseGVN* phase) {
+ }
+ 
+ const Type* ReinterpretHF2SNode::Value(PhaseGVN* phase) const {
+-  const Type* type = phase->type( in(1) );
++  const Type* type = phase->type(in(1));
+   // Convert Half float constant value to short constant value.
+   if (type->isa_half_float_constant()) {
+      jshort hfval = type->is_half_float_constant()->_f;
+diff --git a/src/hotspot/share/opto/divnode.cpp b/src/hotspot/share/opto/divnode.cpp
+index 5a5f14c9897..deefe17e515 100644
+--- a/src/hotspot/share/opto/divnode.cpp
++++ b/src/hotspot/share/opto/divnode.cpp
+@@ -773,14 +773,14 @@ const Type* DivHFNode::Value(PhaseGVN* phase) const {
+     return TypeH::ONE;
+   }
+ 
+-  if(t2 == TypeH::ONE) {
++  if (t2 == TypeH::ONE) {
+     return t1;
+   }
+ 
+   // If divisor is a constant and not zero, divide them numbers
+-  if(t1->base() == Type::HalfFloatCon &&
+-     t2->base() == Type::HalfFloatCon &&
+-     t2->getf() != 0.0)  {
++  if (t1->base() == Type::HalfFloatCon &&
++      t2->base() == Type::HalfFloatCon &&
++      t2->getf() != 0.0)  {
+     // could be negative zero
+     return TypeH::make(t1->getf()/t2->getf());
+   }
+@@ -789,10 +789,15 @@ const Type* DivHFNode::Value(PhaseGVN* phase) const {
+   // Note: if t1 and t2 are zero then result is NaN (JVMS page 213)
+   // Test TypeF::ZERO is not sufficient as it could be negative zero
+ 
+-  if(t1 == TypeH::ZERO && !g_isnan(t2->getf()) && t2->getf() != 0.0) {
++  if (t1 == TypeH::ZERO && !g_isnan(t2->getf()) && t2->getf() != 0.0) {
+     return TypeH::ZERO;
+   }
+ 
++  // If divisor or dividend is nan then result is nan.
++  if (g_isnan(t1->getf()) || g_isnan(t2->getf())) {
++    return TypeH::make(NAN);
++  }
++
+   // Otherwise we give up all hope
+   return Type::HALF_FLOAT;
+ }
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index e1684f7bac6..09725eb3c02 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -8634,15 +8634,24 @@ bool LibraryCallKit::inline_fp16_operations(vmIntrinsics::ID id, int num_args) {
+   Node* fld3 = nullptr;
+   switch(num_args) {
+     case 3:
+-      assert(argument(2)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      assert((argument(2)->is_ConI() &&
++              argument(2)->get_int() >= min_jshort &&
++              argument(2)->get_int() <= max_jshort) ||
++             (argument(2)->bottom_type()->array_element_basic_type() == T_SHORT), "");
+       fld3 = _gvn.transform(new ReinterpretS2HFNode(argument(2)));
+     // fall-through
+     case 2:
+-      assert(argument(1)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      assert((argument(1)->is_ConI() &&
++              argument(1)->get_int() >= min_jshort &&
++              argument(1)->get_int() <= max_jshort) ||
++             (argument(1)->bottom_type()->array_element_basic_type() == T_SHORT), "");
+       fld2 = _gvn.transform(new ReinterpretS2HFNode(argument(1)));
+     // fall-through
+     case 1:
+-      assert(argument(0)->bottom_type()->array_element_basic_type() == T_SHORT, "");
++      assert((argument(0)->is_ConI() &&
++              argument(0)->get_int() >= min_jshort &&
++              argument(0)->get_int() <= max_jshort) ||
++             (argument(0)->bottom_type()->array_element_basic_type() == T_SHORT), "");
+       fld1 = _gvn.transform(new ReinterpretS2HFNode(argument(0)));
+       break;
+     default: fatal("Unsupported number of arguments %d", num_args);
+diff --git a/src/hotspot/share/opto/node.hpp b/src/hotspot/share/opto/node.hpp
+index a1fb9603325..84097981fb9 100644
+--- a/src/hotspot/share/opto/node.hpp
++++ b/src/hotspot/share/opto/node.hpp
+@@ -58,6 +58,7 @@ class CallNode;
+ class CallRuntimeNode;
+ class CallStaticJavaNode;
+ class CastFFNode;
++class CastHHNode;
+ class CastDDNode;
+ class CastVVNode;
+ class CastIINode;
+@@ -725,6 +726,7 @@ class Node {
+         DEFINE_CLASS_ID(CastDD, ConstraintCast, 4)
+         DEFINE_CLASS_ID(CastVV, ConstraintCast, 5)
+         DEFINE_CLASS_ID(CastPP, ConstraintCast, 6)
++        DEFINE_CLASS_ID(CastHH, ConstraintCast, 7)
+       DEFINE_CLASS_ID(CMove, Type, 3)
+       DEFINE_CLASS_ID(SafePointScalarObject, Type, 4)
+       DEFINE_CLASS_ID(DecodeNarrowPtr, Type, 5)
+@@ -909,6 +911,7 @@ class Node {
+   DEFINE_CLASS_QUERY(CheckCastPP)
+   DEFINE_CLASS_QUERY(CastII)
+   DEFINE_CLASS_QUERY(CastLL)
++  DEFINE_CLASS_QUERY(CastFF)
+   DEFINE_CLASS_QUERY(ConI)
+   DEFINE_CLASS_QUERY(CastPP)
+   DEFINE_CLASS_QUERY(ConstraintCast)
+diff --git a/src/hotspot/share/opto/type.cpp b/src/hotspot/share/opto/type.cpp
+index aad2437eea7..9c72592995b 100644
+--- a/src/hotspot/share/opto/type.cpp
++++ b/src/hotspot/share/opto/type.cpp
+@@ -27,6 +27,7 @@
+ #include "ci/ciTypeFlow.hpp"
+ #include "classfile/javaClasses.hpp"
+ #include "classfile/symbolTable.hpp"
++#include "classfile/vmSymbols.hpp"
+ #include "compiler/compileLog.hpp"
+ #include "libadt/dict.hpp"
+ #include "memory/oopFactory.hpp"
+@@ -104,7 +105,7 @@ const Type::TypeInfo Type::_type_info[Type::lastype] = {
+   { Return_Address,  T_ADDRESS,    "return_address",false, Op_RegP,              relocInfo::none          },  // Return_Address
+   { Memory,          T_ILLEGAL,    "memory",        false, 0,                    relocInfo::none          },  // Memory
+   { HalfFloatBot,    T_SHORT,      "halffloat_top", false, Op_RegF,              relocInfo::none          },  // HalfFloatTop
+-  { HalfFloatCon,    T_SHORT,      "htcon:",        false, Op_RegF,              relocInfo::none          },  // HalfFloatCon
++  { HalfFloatCon,    T_SHORT,      "hfcon:",        false, Op_RegF,              relocInfo::none          },  // HalfFloatCon
+   { HalfFloatTop,    T_SHORT,      "short",         false, Op_RegF,              relocInfo::none          },  // HalfFloatBot
+   { FloatBot,        T_FLOAT,      "float_top",     false, Op_RegF,              relocInfo::none          },  // FloatTop
+   { FloatCon,        T_FLOAT,      "ftcon:",        false, Op_RegF,              relocInfo::none          },  // FloatCon
+@@ -1081,19 +1082,30 @@ const Type *Type::xmeet( const Type *t ) const {
+   case Bottom:                  // Ye Olde Default
+     return t;
+ 
++  case HalfFloatTop:
++    if (_base == HalfFloatTop) return this;
++  case HalfFloatBot:            // Half Float
++    if (_base == HalfFloatBot || _base == HalfFloatTop) return HALF_FLOAT;
++    if (_base == FloatBot || _base == FloatTop) return Type::BOTTOM;
++    if (_base == DoubleTop || _base == DoubleBot) return Type::BOTTOM;
++    typerr(t);
++    return Type::BOTTOM;
++
+   case FloatTop:
+-    if( _base == FloatTop ) return this;
++    if (_base == FloatTop ) return this;
+   case FloatBot:                // Float
+-    if( _base == FloatBot || _base == FloatTop ) return FLOAT;
+-    if( _base == DoubleTop || _base == DoubleBot ) return Type::BOTTOM;
++    if (_base == FloatBot || _base == FloatTop) return FLOAT;
++    if (_base == HalfFloatTop || _base == HalfFloatBot) return Type::BOTTOM;
++    if (_base == DoubleTop || _base == DoubleBot) return Type::BOTTOM;
+     typerr(t);
+     return Type::BOTTOM;
+ 
+   case DoubleTop:
+-    if( _base == DoubleTop ) return this;
++    if (_base == DoubleTop) return this;
+   case DoubleBot:               // Double
+-    if( _base == DoubleBot || _base == DoubleTop ) return DOUBLE;
+-    if( _base == FloatTop || _base == FloatBot ) return Type::BOTTOM;
++    if (_base == DoubleBot || _base == DoubleTop) return DOUBLE;
++    if (_base == HalfFloatTop || _base == HalfFloatBot) return Type::BOTTOM;
++    if (_base == FloatTop || _base == FloatBot) return Type::BOTTOM;
+     typerr(t);
+     return Type::BOTTOM;
+ 
+@@ -1101,7 +1113,7 @@ const Type *Type::xmeet( const Type *t ) const {
+   case Control:                 // Control of code
+   case Abio:                    // State of world outside of program
+   case Memory:
+-    if( _base == t->_base )  return this;
++    if (_base == t->_base)  return this;
+     typerr(t);
+     return Type::BOTTOM;
+ 
+@@ -1443,7 +1455,7 @@ const TypeH *TypeH::make(short f) {
+ }
+ 
+ const TypeH *TypeH::make(float f) {
+-  assert( StubRoutines::f2hf_adr() != nullptr, "");
++  assert(StubRoutines::f2hf_adr() != nullptr, "");
+   short hf = StubRoutines::f2hf(f);
+   return (TypeH*)(new TypeH(hf))->hashcons();
+ }
+@@ -1452,7 +1464,7 @@ const TypeH *TypeH::make(float f) {
+ // Compute the MEET of two types.  It returns a new Type object.
+ const Type *TypeH::xmeet( const Type *t ) const {
+   // Perform a fast test for common case; meeting the same types together.
+-  if( this == t ) return this;  // Meeting same type-rep?
++  if (this == t) return this;  // Meeting same type-rep?
+ 
+   // Current "this->_base" is FloatCon
+   switch (t->base()) {          // Switch on original type
+@@ -1484,17 +1496,17 @@ const Type *TypeH::xmeet( const Type *t ) const {
+   default:                      // All else is a mistake
+     typerr(t);
+ 
+-  case HalfFloatCon:            // Float-constant vs Float-constant?
+-    if(jint_cast(_f) != jint_cast(t->getf())) {         // unequal constants?
++  case HalfFloatCon:            // Half float-constant vs Half float-constant?
++    if (_f != t->geth()) {      // unequal constants?
+                                 // must compare bitwise as positive zero, negative zero and NaN have
+                                 // all the same representation in C++
+       return HALF_FLOAT;        // Return generic float
+     }                           // Equal constants
+   case Top:
+   case HalfFloatTop:
+-    break;                      // Return the float constant
++    break;                      // Return the Half float constant
+   }
+-  return this;                  // Return the float constant
++  return this;                  // Return the Half float constant
+ }
+ 
+ //------------------------------xdual------------------------------------------
+@@ -1508,7 +1520,7 @@ const Type *TypeH::xdual() const {
+ bool TypeH::eq(const Type *t) const {
+   // Bitwise comparison to distinguish between +/-0. These values must be treated
+   // as different to be consistent with C1 and the interpreter.
+-  return (jint_cast(_f) == jint_cast(t->geth()));
++  return (_f == t->geth());
+ }
+ 
+ //------------------------------hash-------------------------------------------
+@@ -1520,20 +1532,20 @@ uint TypeH::hash(void) const {
+ //------------------------------is_finite--------------------------------------
+ // Has a finite value
+ bool TypeH::is_finite() const {
+-  assert( StubRoutines::hf2f_adr() != nullptr, "");
++  assert(StubRoutines::hf2f_adr() != nullptr, "");
+   float f = StubRoutines::hf2f(geth());
+   return g_isfinite(f) != 0;
+ }
+ 
+ float TypeH::getf() const {
+-  assert( StubRoutines::hf2f_adr() != nullptr, "");
++  assert(StubRoutines::hf2f_adr() != nullptr, "");
+   return StubRoutines::hf2f(geth());
+ }
+ 
+ //------------------------------is_nan-----------------------------------------
+ // Is not a number (NaN)
+-bool TypeH::is_nan()    const {
+-  assert( StubRoutines::hf2f_adr() != nullptr, "");
++bool TypeH::is_nan() const {
++  assert(StubRoutines::hf2f_adr() != nullptr, "");
+   float f = StubRoutines::hf2f(geth());
+   return g_isnan(f) != 0;
+ }
+@@ -1543,7 +1555,7 @@ bool TypeH::is_nan()    const {
+ #ifndef PRODUCT
+ void TypeH::dump2( Dict &d, uint depth, outputStream *st ) const {
+   Type::dump2(d,depth, st);
+-  st->print("%x", _f);
++  st->print("%f", getf());
+ }
+ #endif
+ 
+diff --git a/src/hotspot/share/opto/type.hpp b/src/hotspot/share/opto/type.hpp
+index 939bba8103f..2dc8b989bde 100644
+--- a/src/hotspot/share/opto/type.hpp
++++ b/src/hotspot/share/opto/type.hpp
+@@ -529,9 +529,9 @@ class TypeF : public Type {
+ 
+ // Class of Half Float-Constant Types.
+ class TypeH : public Type {
+-  TypeH( short f ) : Type(HalfFloatCon), _f(f) {};
++  TypeH(short f) : Type(HalfFloatCon), _f(f) {};
+ public:
+-  virtual bool eq( const Type *t ) const;
++  virtual bool eq(const Type *t) const;
+   virtual uint hash() const;             // Type specific hashing
+   virtual bool singleton(void) const;    // TRUE if type is a singleton
+   virtual bool empty(void) const;        // TRUE if type is vacuous
+@@ -545,7 +545,7 @@ class TypeH : public Type {
+   virtual bool        is_nan()    const;  // Is not a number (NaN)
+ 
+   virtual float getf() const;
+-  virtual const Type *xmeet( const Type *t ) const;
++  virtual const Type *xmeet(const Type *t) const;
+   virtual const Type *xdual() const;    // Compute dual right now.
+   // Convenience common pre-built types.
+   static const TypeH *MAX;
+@@ -555,7 +555,7 @@ class TypeH : public Type {
+   static const TypeH *POS_INF;
+   static const TypeH *NEG_INF;
+ #ifndef PRODUCT
+-  virtual void dump2( Dict &d, uint depth, outputStream *st ) const;
++  virtual void dump2(Dict &d, uint depth, outputStream *st) const;
+ #endif
+ };
+ 
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
+index 9b59222cd87..50f6cc29f3c 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Float16.java
+@@ -39,6 +39,7 @@
+ import static java.lang.Float.floatToFloat16;
+ import static java.lang.Integer.numberOfLeadingZeros;
+ import static java.lang.Math.multiplyHigh;
++import jdk.internal.vm.annotation.ForceInline;
+ import jdk.internal.vm.vector.Float16Math;
+ 
+ /**
+@@ -322,8 +323,10 @@ public static Float16 valueOf(long value) {
+     *
+     * @param  f a {@code float}
+     */
++    @ForceInline
+     public static Float16 valueOf(float f) {
+-        return new Float16(floatToFloat16(f));
++        short hf = floatToFloat16(f);
++        return new Float16(hf);
+     }
+ 
+    /**
+@@ -765,6 +768,7 @@ public static boolean isFinite(Float16 f16) {
+      * @jls 5.1.3 Narrowing Primitive Conversion
+      */
+     @Override
++    @ForceInline
+     public byte byteValue() {
+         return (byte)floatValue();
+     }
+@@ -786,6 +790,7 @@ public String toString() {
+      * @jls 5.1.3 Narrowing Primitive Conversion
+      */
+     @Override
++    @ForceInline
+     public short shortValue() {
+         return (short)floatValue();
+     }
+@@ -801,6 +806,7 @@ public short shortValue() {
+      * @jls 5.1.3 Narrowing Primitive Conversion
+      */
+     @Override
++    @ForceInline
+     public int intValue() {
+         return (int)floatValue();
+     }
+@@ -831,6 +837,7 @@ public long longValue() {
+      * @jls 5.1.2 Widening Primitive Conversion
+      */
+     @Override
++    @ForceInline
+     public float floatValue() {
+         return float16ToFloat(value);
+     }
+@@ -846,6 +853,7 @@ public float floatValue() {
+      * @jls 5.1.2 Widening Primitive Conversion
+      */
+     @Override
++    @ForceInline
+     public double doubleValue() {
+         return (double)floatValue();
+     }
+diff --git a/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java b/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+index 5555d9668fc..7b8afe0a570 100644
+--- a/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
++++ b/test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+@@ -43,6 +43,13 @@
+     private short[] dst;
+     private short res;
+ 
++    private static final Float16 POSITIVE_ZERO = valueOf(0.0f);
++    private static final Float16 NEGATIVE_ZERO = valueOf(-0.0f);
++    private static final Float16 MIN_NORMAL = valueOf(0x1.0P-14f);
++    private static final Float16 NEGATIVE_MAX_VALUE = valueOf(-0x1.ffcP+15f);
++    private static final Float16 LT_MAX_HALF_ULP = Float16.valueOf(14.0f);
++    private static final Float16 MAX_HALF_ULP = Float16.valueOf(16.0f);
++
+     public static void main(String args[]) {
+         TestFramework.runWithFlags("--add-modules=jdk.incubator.vector");
+     }
+@@ -59,14 +66,23 @@ public TestFloat16ScalarOperations() {
+     static void assertResult(float actual, float expected, String msg) {
+         if (actual != expected) {
+             if (!Float.isNaN(actual) || !Float.isNaN(expected)) {
+-                String error = "TEST: " + msg + ": actual(" + actual + ") != expected(" + expected + ")";
++                String error = "TEST : " + msg + ": actual(" + actual + ") != expected(" + expected + ")";
++                throw new AssertionError(error);
++            }
++        }
++    }
++
++    static void assertResult(float actual, float expected, String msg, int iter) {
++        if (actual != expected) {
++            if (!Float.isNaN(actual) || !Float.isNaN(expected)) {
++                String error = "TEST (" + iter + "): " + msg + ": actual(" + actual + ") != expected(" + expected + ")";
+                 throw new AssertionError(error);
+             }
+         }
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.ADD_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++    @IR(counts = {IRNode.ADD_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testAdd1() {
+         Float16 res = shortBitsToFloat16((short)0);
+@@ -89,7 +105,7 @@ public void testAdd2() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.SUB_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++    @IR(counts = {IRNode.SUB_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testSub() {
+         Float16 res = shortBitsToFloat16((short)0);
+@@ -100,7 +116,7 @@ public void testSub() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.MUL_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++    @IR(counts = {IRNode.MUL_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testMul() {
+         Float16 res = shortBitsToFloat16((short)0);
+@@ -111,7 +127,7 @@ public void testMul() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.DIV_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++    @IR(counts = {IRNode.DIV_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testDiv() {
+         Float16 res = shortBitsToFloat16((short)0);
+@@ -122,7 +138,7 @@ public void testDiv() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.MAX_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++    @IR(counts = {IRNode.MAX_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testMax() {
+         Float16 res = shortBitsToFloat16((short)0);
+@@ -133,7 +149,7 @@ public void testMax() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.MIN_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++    @IR(counts = {IRNode.MIN_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testMin() {
+         Float16 res = shortBitsToFloat16((short)0);
+@@ -144,7 +160,7 @@ public void testMin() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.SQRT_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++    @IR(counts = {IRNode.SQRT_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testSqrt() {
+         Float16 res = shortBitsToFloat16((short)0);
+@@ -155,7 +171,7 @@ public void testSqrt() {
+     }
+ 
+     @Test
+-    @IR(counts = {IRNode.FMA_HF, "> 0", IRNode.REINTERPRET_S2HF, "> 0", IRNode.REINTERPRET_HF2S, "> 0"},
++    @IR(counts = {IRNode.FMA_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testFma() {
+         Float16 res = shortBitsToFloat16((short)0);
+@@ -166,51 +182,26 @@ public void testFma() {
+         }
+     }
+ 
+-    @Test
+-    @IR(counts = {IRNode.ADD_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
+-        applyIfCPUFeature = {"avx512_fp16", "true"})
+-    public void testAddConstantFolding() {
+-        assertResult(add(valueOf(1.0f), valueOf(2.0f)).floatValue(), 3.0f, "testAddConstantFolding");
+-    }
+-
+-    @Test
+-    @IR(counts = {IRNode.MAX_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
+-        applyIfCPUFeature = {"avx512_fp16", "true"})
+-    public void testMaxConstantFolding() {
+-        assertResult(max(valueOf(1.0f), valueOf(2.0f)).floatValue(), 2.0f, "testMaxConstantFolding");
+-        assertResult(max(valueOf(0.0f), valueOf(-0.0f)).floatValue(), 0.0f, "testMaxConstantFolding");
+-    }
+-
+-    @Test
+-    @IR(counts = {IRNode.MIN_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
+-        applyIfCPUFeature = {"avx512_fp16", "true"})
+-    public void testMinConstantFolding() {
+-        assertResult(min(valueOf(1.0f), valueOf(2.0f)).floatValue(), 1.0f, "testMinConstantFolding");
+-        assertResult(min(valueOf(0.0f), valueOf(-0.0f)).floatValue(), -0.0f, "testMinConstantFolding");
+-    }
+-
+-    @Test
+-    @IR(counts = {IRNode.DIV_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
+-        applyIfCPUFeature = {"avx512_fp16", "true"})
+-    public void testDivConstantFolding() {
+-        assertResult(divide(valueOf(2.0f), valueOf(2.0f)).floatValue(), 1.0f, "testDivConstantFolding");
+-        assertResult(divide(valueOf(0.0f), valueOf(2.0f)).floatValue(), 0.0f, "testDivConstantFolding");
+-    }
+-
+     @Test
+     @IR(counts = {IRNode.MUL_HF, " >0 ", IRNode.REINTERPRET_S2HF, " >0 ", IRNode.REINTERPRET_HF2S, " >0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testDivByPOT() {
+         Float16 actual = valueOf(0.0f);
+-        for (int i = 0; i < 100; i++) {
++        for (int i = 0; i < 50; i++) {
+             Float16 divisor = valueOf(8.0f);
+             Float16 dividend = shortBitsToFloat16(src[i]);
+             actual = add(actual, divide(dividend, divisor));
++            divisor = valueOf(16.0f);
++            actual = add(actual, divide(dividend, divisor));
++            divisor = valueOf(32.0f);
++            actual = add(actual, divide(dividend, divisor));
+         }
+         float expected = 0.0f;
+-        for (int i = 0; i < 100; i++) {
++        for (int i = 0; i < 50; i++) {
+             float dividend = Float.float16ToFloat(src[i]);
+             expected += dividend / 8.0f;
++            expected += dividend / 16.0f;
++            expected += dividend / 32.0f;
+         }
+         assertResult(Math.round(actual.floatValue()), Math.round(expected), "testDivByPOT");
+     }
+@@ -228,20 +219,232 @@ public void testMulByTWO() {
+         assertResult(res.floatValue(), (float)((20 * (20 - 1))/2) * 2.0f, "testMulByTWO");
+     }
+ 
++
++    //
++    // Tests points for various Float16 constant folding transforms. Following figure represents various
++    // special IEEE 754 binary16 values on a number line
++    //
++    //   -Inf                               -0.0                              Inf
++    //   -------|-----------------------------|----------------------------|------
++    //     -MAX_VALUE                        0.0                        MAX_VALUE
++    //
++    //  Number whose exponent lie between -14 and 15, both values inclusive, belongs to normal value range.
++    //  IEEE 754 binary16 specification allows graceful degradation of numbers with exponents less than -14
++    //  into a sub-normal value range i.e. their exponents may extend uptill -24, this is because format
++    //  supports 10 mantissa bits which can be used to represent a number with exponents less than -14.
++    //
++    //  A number below the sub-normal value range is considered as 0.0. With regards to overflowing
++    //  semantics, a value equal to or greater than MAX_VALUE + half ulp (MAX_VALUE) is considered as
++    //  an Infinite value on both side of axis.
++    //
++    //  In addition, format specifies special bit representation for +Inf, -Inf and NaN values.
++    //
++    //  Tests also covers special cases for various operations as per Java SE specification.
++    //
++
++
++    @Test
++    @IR(counts = {IRNode.ADD_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    public void testAddConstantFolding() {
++        // If either value is NaN, then the result is NaN.
++        assertResult(add(Float16.NaN, valueOf(2.0f)).floatValue(), Float.NaN, "testAddConstantFolding");
++        assertResult(add(Float16.NaN, Float16.NaN).floatValue(), Float.NaN, "testAddConstantFolding");
++        assertResult(add(Float16.NaN, Float16.POSITIVE_INFINITY).floatValue(), Float.NaN, "testAddConstantFolding");
++
++        // The sum of two infinities of opposite sign is NaN.
++        assertResult(add(Float16.POSITIVE_INFINITY, Float16.NEGATIVE_INFINITY).floatValue(), Float.NaN, "testAddConstantFolding");
++
++        // The sum of two infinities of the same sign is the infinity of that sign.
++        assertResult(add(Float16.POSITIVE_INFINITY, Float16.POSITIVE_INFINITY).floatValue(), Float.POSITIVE_INFINITY, "testAddConstantFolding");
++        assertResult(add(Float16.NEGATIVE_INFINITY, Float16.NEGATIVE_INFINITY).floatValue(), Float.NEGATIVE_INFINITY, "testAddConstantFolding");
++
++        // The sum of an infinity and a finite value is equal to the infinite operand.
++        assertResult(add(Float16.POSITIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.POSITIVE_INFINITY, "testAddConstantFolding");
++        assertResult(add(Float16.NEGATIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.NEGATIVE_INFINITY, "testAddConstantFolding");
++
++        // The sum of two zeros of opposite sign is positive zero.
++        assertResult(add(NEGATIVE_ZERO, POSITIVE_ZERO).floatValue(), 0.0f, "testAddConstantFolding");
++
++        // The sum of two zeros of the same sign is the zero of that sign.
++        assertResult(add(NEGATIVE_ZERO, NEGATIVE_ZERO).floatValue(), -0.0f, "testAddConstantFolding");
++
++        // The sum of a zero and a nonzero finite value is equal to the nonzero operand.
++        assertResult(add(POSITIVE_ZERO, valueOf(2.0f)).floatValue(), 2.0f, "testAddConstantFolding");
++        assertResult(add(NEGATIVE_ZERO, valueOf(2.0f)).floatValue(), 2.0f, "testAddConstantFolding");
++
++        // Number equal to MAX_VALUE when added to half upl for MAX_VALUE results into Inf.
++        assertResult(add(Float16.MAX_VALUE, MAX_HALF_ULP).floatValue(), Float.POSITIVE_INFINITY, "testAddConstantFolding");
++
++        // If the magnitude of the sum is too large to represent, we say the operation
++        // overflows; the result is then an infinity of appropriate sign.
++        assertResult(add(Float16.MAX_VALUE, Float16.MAX_VALUE).floatValue(), Float.POSITIVE_INFINITY, "testAddConstantFolding");
++
++        // Number equal to MAX_VALUE when added to half upl for MAX_VALUE results into MAX_VALUE.
++        assertResult(add(Float16.MAX_VALUE, LT_MAX_HALF_ULP).floatValue(), Float16.MAX_VALUE.floatValue(), "testAddConstantFolding");
++
++        assertResult(add(valueOf(1.0f), valueOf(2.0f)).floatValue(), 3.0f, "testAddConstantFolding");
++    }
++
++    @Test
++    @IR(counts = {IRNode.SUB_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    public void testSubConstantFolding() {
++        // If either value is NaN, then the result is NaN.
++        assertResult(subtract(Float16.NaN, valueOf(2.0f)).floatValue(), Float.NaN, "testAddConstantFolding");
++        assertResult(subtract(Float16.NaN, Float16.NaN).floatValue(), Float.NaN, "testAddConstantFolding");
++        assertResult(subtract(Float16.NaN, Float16.POSITIVE_INFINITY).floatValue(), Float.NaN, "testAddConstantFolding");
++
++        // The difference of two infinities of opposite sign is NaN.
++        assertResult(subtract(Float16.POSITIVE_INFINITY, Float16.NEGATIVE_INFINITY).floatValue(), Float.POSITIVE_INFINITY, "testAddConstantFolding");
++
++        // The difference of two infinities of the same sign is NaN.
++        assertResult(subtract(Float16.POSITIVE_INFINITY, Float16.POSITIVE_INFINITY).floatValue(), Float.NaN, "testAddConstantFolding");
++        assertResult(subtract(Float16.NEGATIVE_INFINITY, Float16.NEGATIVE_INFINITY).floatValue(), Float.NaN, "testAddConstantFolding");
++
++        // The difference of an infinity and a finite value is equal to the infinite operand.
++        assertResult(subtract(Float16.POSITIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.POSITIVE_INFINITY, "testAddConstantFolding");
++        assertResult(subtract(Float16.NEGATIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.NEGATIVE_INFINITY, "testAddConstantFolding");
++
++        // The difference of two zeros of opposite sign is positive zero.
++        assertResult(subtract(NEGATIVE_ZERO, POSITIVE_ZERO).floatValue(), 0.0f, "testAddConstantFolding");
++
++        // Number equal to -MAX_VALUE when subtracted by half upl of MAX_VALUE results into -Inf.
++        assertResult(subtract(NEGATIVE_MAX_VALUE, MAX_HALF_ULP).floatValue(), Float.NEGATIVE_INFINITY, "testAddConstantFolding");
++
++        // Number equal to -MAX_VALUE when subtracted by a number less than half upl for MAX_VALUE results into -MAX_VALUE.
++        assertResult(subtract(NEGATIVE_MAX_VALUE, LT_MAX_HALF_ULP).floatValue(), NEGATIVE_MAX_VALUE.floatValue(), "testAddConstantFolding");
++
++        assertResult(subtract(valueOf(1.0f), valueOf(2.0f)).floatValue(), -1.0f, "testAddConstantFolding");
++    }
++
++    @Test
++    @Warmup(value = 10000)
++    @IR(counts = {IRNode.MAX_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    public void testMaxConstantFolding() {
++        // If either value is NaN, then the result is NaN.
++        assertResult(max(valueOf(2.0f), Float16.NaN).floatValue(), Float.NaN, "testMaxConstantFolding");
++        assertResult(max(Float16.NaN, Float16.NaN).floatValue(), Float.NaN, "testMaxConstantFolding");
++
++        // This operation considers negative zero to be strictly smaller than positive zero
++        assertResult(max(POSITIVE_ZERO, NEGATIVE_ZERO).floatValue(), 0.0f, "testMaxConstantFolding");
++
++        // Other cases.
++        assertResult(max(Float16.POSITIVE_INFINITY, Float16.NEGATIVE_INFINITY).floatValue(), Float.POSITIVE_INFINITY, "testMaxConstantFolding");
++        assertResult(max(valueOf(1.0f), valueOf(2.0f)).floatValue(), 2.0f, "testMaxConstantFolding");
++        assertResult(max(Float16.MAX_VALUE, Float16.MIN_VALUE).floatValue(), Float16.MAX_VALUE.floatValue(), "testMaxConstantFolding");
++    }
++
++
++    @Test
++    @IR(counts = {IRNode.MIN_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    public void testMinConstantFolding() {
++        // If either value is NaN, then the result is NaN.
++        assertResult(min(valueOf(2.0f), Float16.NaN).floatValue(), Float.NaN, "testMinConstantFolding");
++        assertResult(min(Float16.NaN, Float16.NaN).floatValue(), Float.NaN, "testMinConstantFolding");
++
++        // This operation considers negative zero to be strictly smaller than positive zero
++        assertResult(min(POSITIVE_ZERO, NEGATIVE_ZERO).floatValue(), -0.0f, "testMinConstantFolding");
++
++        // Other cases.
++        assertResult(min(Float16.POSITIVE_INFINITY, Float16.NEGATIVE_INFINITY).floatValue(), Float.NEGATIVE_INFINITY, "testMinConstantFolding");
++        assertResult(min(valueOf(1.0f), valueOf(2.0f)).floatValue(), 1.0f, "testMinConstantFolding");
++        assertResult(min(Float16.MAX_VALUE, Float16.MIN_VALUE).floatValue(), Float16.MIN_VALUE.floatValue(), "testMinConstantFolding");
++    }
++
++    @Test
++    @IR(counts = {IRNode.DIV_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
++        applyIfCPUFeature = {"avx512_fp16", "true"})
++    public void testDivConstantFolding() {
++        // If either value is NaN, then the result is NaN.
++        assertResult(divide(Float16.NaN, POSITIVE_ZERO).floatValue(), Float.NaN, "testDivConstantFolding");
++        assertResult(divide(NEGATIVE_ZERO, Float16.NaN).floatValue(), Float.NaN, "testDivConstantFolding");
++
++        // Division of an infinity by an infinity results in NaN.
++        assertResult(divide(Float16.NEGATIVE_INFINITY, Float16.POSITIVE_INFINITY).floatValue(), Float.NaN, "testDivConstantFolding");
++
++        // Division of an infinity by a finite value results in a signed infinity. Sign of the result is positive if both operands have
++        // the same sign, and negative if the operands have different signs
++        assertResult(divide(Float16.NEGATIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.NEGATIVE_INFINITY, "testDivConstantFolding");
++        assertResult(divide(Float16.POSITIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.POSITIVE_INFINITY, "testDivConstantFolding");
++
++        // Division of a finite value by an infinity results in a signed zero. The sign is
++        // determined by the above rule.
++        assertResult(divide(valueOf(2.0f), Float16.POSITIVE_INFINITY).floatValue(), 0.0f, "testDivConstantFolding");
++        assertResult(divide(valueOf(2.0f), Float16.NEGATIVE_INFINITY).floatValue(), -0.0f, "testDivConstantFolding");
++
++        // Division of a zero by a zero results in NaN; division of zero by any other finite
++        // value results in a signed zero. The sign is determined by the rule stated above.
++        assertResult(divide(POSITIVE_ZERO, NEGATIVE_ZERO).floatValue(), Float.NaN, "testDivConstantFolding");
++        assertResult(divide(POSITIVE_ZERO, Float16.MAX_VALUE).floatValue(), 0.0f, "testDivConstantFolding");
++        assertResult(divide(NEGATIVE_ZERO, Float16.MAX_VALUE).floatValue(), -0.0f, "testDivConstantFolding");
++
++        // Division of a nonzero finite value by a zero results in a signed infinity. The sign
++        // is determined by the rule stated above
++        assertResult(divide(valueOf(2.0f), NEGATIVE_ZERO).floatValue(), Float.NEGATIVE_INFINITY, "testDivConstantFolding");
++        assertResult(divide(valueOf(2.0f), POSITIVE_ZERO).floatValue(), Float.POSITIVE_INFINITY, "testDivConstantFolding");
++
++        // If the magnitude of the quotient is too large to represent, we say the operation
++        // overflows; the result is then an infinity of appropriate sign.
++        assertResult(divide(Float16.MAX_VALUE, Float16.MIN_NORMAL).floatValue(), Float.POSITIVE_INFINITY, "testDivConstantFolding");
++        assertResult(divide(Float16.MAX_VALUE, valueOf(-0x1.0P-14f)).floatValue(), Float.NEGATIVE_INFINITY, "testDivConstantFolding");
++
++        assertResult(divide(valueOf(2.0f), valueOf(2.0f)).floatValue(), 1.0f, "testDivConstantFolding");
++    }
++
+     @Test
+     @IR(counts = {IRNode.MUL_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testMulConstantFolding() {
+-        float expected = 1.0f * 2.0f * 3.0f * 4.0f;
+-        float actual = multiply(multiply(multiply(valueOf(1.0f), valueOf(2.0f)), valueOf(3.0f)), valueOf(4.0f)).floatValue();
+-        assertResult(actual, expected, "testMulConstantFolding");
++        // If any operand is NaN, the result is NaN.
++        assertResult(multiply(Float16.NaN, valueOf(4.0f)).floatValue(), Float.NaN, "testMulConstantFolding");
++        assertResult(multiply(Float16.NaN, Float16.NaN).floatValue(), Float.NaN, "testMulConstantFolding");
++
++        // Multiplication of an infinity by a zero results in NaN.
++        assertResult(multiply(Float16.POSITIVE_INFINITY, POSITIVE_ZERO).floatValue(), Float.NaN, "testMulConstantFolding");
++
++        // Multiplication of an infinity by a finite value results in a signed infinity.
++        assertResult(multiply(Float16.POSITIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.POSITIVE_INFINITY, "testMulConstantFolding");
++        assertResult(multiply(Float16.NEGATIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.NEGATIVE_INFINITY, "testMulConstantFolding");
++
++        // If the magnitude of the product is too large to represent, we say the operation
++        // overflows; the result is then an infinity of appropriate sign
++        assertResult(multiply(Float16.MAX_VALUE, Float16.MAX_VALUE).floatValue(), Float.POSITIVE_INFINITY, "testMulConstantFolding");
++        assertResult(multiply(NEGATIVE_MAX_VALUE, Float16.MAX_VALUE).floatValue(), Float.NEGATIVE_INFINITY, "testMulConstantFolding");
++
++        assertResult(multiply(multiply(multiply(valueOf(1.0f), valueOf(2.0f)), valueOf(3.0f)), valueOf(4.0f)).floatValue(), 1.0f * 2.0f * 3.0f * 4.0f, "testMulConstantFolding");
+     }
+ 
+     @Test
+     @IR(counts = {IRNode.FMA_HF, " 0 ", IRNode.REINTERPRET_S2HF, " 0 ", IRNode.REINTERPRET_HF2S, " 0 "},
+         applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void testFMAConstantFolding() {
++        // If any argument is NaN, the result is NaN.
++        assertResult(fma(Float16.NaN, valueOf(2.0f), valueOf(3.0f)).floatValue(), Float.NaN, "testFMAConstantFolding");
++        assertResult(fma(valueOf(2.0f), Float16.NaN, valueOf(3.0f)).floatValue(), Float.NaN, "testFMAConstantFolding");
++        assertResult(fma(valueOf(2.0f), valueOf(3.0f), Float16.NaN).floatValue(), Float.NaN, "testFMAConstantFolding");
++
++        // If one of the first two arguments is infinite and the other is zero, the result is NaN.
++        assertResult(fma(Float16.POSITIVE_INFINITY, POSITIVE_ZERO, valueOf(2.0f)).floatValue(), Float.NaN, "testFMAConstantFolding");
++        assertResult(fma(Float16.POSITIVE_INFINITY, NEGATIVE_ZERO, valueOf(2.0f)).floatValue(), Float.NaN, "testFMAConstantFolding");
++        assertResult(fma(NEGATIVE_ZERO, Float16.POSITIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.NaN, "testFMAConstantFolding");
++        assertResult(fma(POSITIVE_ZERO, Float16.POSITIVE_INFINITY, valueOf(2.0f)).floatValue(), Float.NaN, "testFMAConstantFolding");
++
++        // If the exact product of the first two arguments is infinite (in other words, at least one of the arguments is infinite
++        // and the other is neither zero nor NaN) and the third argument is an infinity of the opposite sign, the result is NaN.
++        assertResult(fma(valueOf(2.0f), Float16.POSITIVE_INFINITY, Float16.NEGATIVE_INFINITY).floatValue(), Float.NaN, "testFMAConstantFolding");
++        assertResult(fma(valueOf(2.0f), Float16.NEGATIVE_INFINITY, Float16.POSITIVE_INFINITY).floatValue(), Float.NaN, "testFMAConstantFolding");
++        assertResult(fma(Float16.POSITIVE_INFINITY, valueOf(2.0f), Float16.NEGATIVE_INFINITY).floatValue(), Float.NaN, "testFMAConstantFolding");
++        assertResult(fma(Float16.NEGATIVE_INFINITY, valueOf(2.0f), Float16.POSITIVE_INFINITY).floatValue(), Float.NaN, "testFMAConstantFolding");
++
++        // Signed bits.
++        assertResult(fma(NEGATIVE_ZERO, POSITIVE_ZERO, POSITIVE_ZERO).floatValue(), 0.0f, "testFMAConstantFolding");
++        assertResult(fma(NEGATIVE_ZERO, POSITIVE_ZERO, NEGATIVE_ZERO).floatValue(), -0.0f, "testFMAConstantFolding");
++
++        assertResult(fma(Float16.POSITIVE_INFINITY, valueOf(2.0f), valueOf(3.0f)).floatValue(), Float.POSITIVE_INFINITY, "testFMAConstantFolding");
++        assertResult(fma(Float16.NEGATIVE_INFINITY, valueOf(2.0f), valueOf(3.0f)).floatValue(), Float.NEGATIVE_INFINITY, "testFMAConstantFolding");
+         assertResult(fma(valueOf(1.0f), valueOf(2.0f), valueOf(3.0f)).floatValue(), 1.0f * 2.0f + 3.0f, "testFMAConstantFolding");
+-        assertResult(fma(valueOf(Float.NaN), valueOf(2.0f), valueOf(3.0f)).floatValue(), Float.NaN, "testFMAConstantFolding");
+     }
+ }
+diff --git a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorConvChain.java b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorConvChain.java
+index 0afb9cdc97c..174c34b9533 100644
+--- a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorConvChain.java
++++ b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorConvChain.java
+@@ -41,9 +41,12 @@
+ public class TestFloat16VectorConvChain {
+ 
+     @Test
+-    @IR(applyIfCPUFeatureAnd = {"avx512_fp16", "false", "avx512vl", "true"}, counts = {IRNode.VECTOR_CAST_HF2F, IRNode.VECTOR_SIZE_ANY, ">= 1", IRNode.VECTOR_CAST_F2HF, IRNode.VECTOR_SIZE_ANY, " >= 1"})
+-    @IR(applyIfCPUFeatureAnd = {"avx512_fp16", "false", "f16c", "true"}, counts = {IRNode.VECTOR_CAST_HF2F, IRNode.VECTOR_SIZE_ANY, ">= 1", IRNode.VECTOR_CAST_F2HF, IRNode.VECTOR_SIZE_ANY, " >= 1"})
+-    @IR(applyIfCPUFeatureAnd = {"avx512_fp16", "false", "zvfh", "true"}, counts = {IRNode.VECTOR_CAST_HF2F, IRNode.VECTOR_SIZE_ANY, ">= 1", IRNode.VECTOR_CAST_F2HF, IRNode.VECTOR_SIZE_ANY, " >= 1"})
++    @IR(applyIfCPUFeatureAnd = {"avx512_fp16", "false", "avx512vl", "true"},
++        counts = {IRNode.VECTOR_CAST_HF2F, IRNode.VECTOR_SIZE_ANY, ">= 1", IRNode.VECTOR_CAST_F2HF, IRNode.VECTOR_SIZE_ANY, " >= 1"})
++    @IR(applyIfCPUFeatureAnd = {"avx512_fp16", "false", "f16c", "true"},
++        counts = {IRNode.VECTOR_CAST_HF2F, IRNode.VECTOR_SIZE_ANY, ">= 1", IRNode.VECTOR_CAST_F2HF, IRNode.VECTOR_SIZE_ANY, " >= 1"})
++    @IR(applyIfCPUFeatureAnd = {"avx512_fp16", "false", "zvfh", "true"},
++        counts = {IRNode.VECTOR_CAST_HF2F, IRNode.VECTOR_SIZE_ANY, ">= 1", IRNode.VECTOR_CAST_F2HF, IRNode.VECTOR_SIZE_ANY, " >= 1"})
+     public static void test(short [] res, short [] src1, short [] src2) {
+         for (int i = 0; i < res.length; i++) {
+             res[i] = (short)Float.float16ToFloat(Float.floatToFloat16(Float.float16ToFloat(src1[i]) + Float.float16ToFloat(src2[i])));
+diff --git a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOperations.java b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOperations.java
+index a8d1c449a06..e26a142dc1d 100644
+--- a/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOperations.java
++++ b/test/hotspot/jtreg/compiler/vectorization/TestFloat16VectorOperations.java
+@@ -67,7 +67,7 @@ public TestFloat16VectorOperations() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.ADD_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorAddFloat16() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(add(shortBitsToFloat16(input1[i]), shortBitsToFloat16(input2[i])));
+@@ -87,7 +87,7 @@ public void checkResultAdd() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.SUB_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorSubFloat16() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(subtract(shortBitsToFloat16(input1[i]), shortBitsToFloat16(input2[i])));
+@@ -107,7 +107,7 @@ public void checkResultSub() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.MUL_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorMulFloat16() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(multiply(shortBitsToFloat16(input1[i]), shortBitsToFloat16(input2[i])));
+@@ -127,7 +127,7 @@ public void checkResultMul() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.DIV_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorDivFloat16() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(divide(shortBitsToFloat16(input1[i]), shortBitsToFloat16(input2[i])));
+@@ -147,7 +147,7 @@ public void checkResultDiv() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.MIN_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorMinFloat16() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(min(shortBitsToFloat16(input1[i]), shortBitsToFloat16(input2[i])));
+@@ -167,7 +167,7 @@ public void checkResultMin() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.MAX_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorMaxFloat16() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(max(shortBitsToFloat16(input1[i]), shortBitsToFloat16(input2[i])));
+@@ -187,7 +187,7 @@ public void checkResultMax() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.SQRT_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorSqrtFloat16() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(sqrt(shortBitsToFloat16(input1[i])));
+@@ -207,7 +207,7 @@ public void checkResultSqrt() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.FMA_VHF, ">= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorFmaFloat16() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(fma(shortBitsToFloat16(input1[i]), shortBitsToFloat16(input2[i]), shortBitsToFloat16(input3[i])));
+@@ -227,7 +227,7 @@ public void checkResultFma() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.FMA_VHF, " >= 1"},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorFmaFloat16MixedConstants() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(fma(shortBitsToFloat16(input1[i]), shortBitsToFloat16(input2[i]), shortBitsToFloat16(floatToFloat16(3.0f))));
+@@ -247,7 +247,7 @@ public void checkResultFmaMixedConstants() {
+     @Test
+     @Warmup(10000)
+     @IR(counts = {IRNode.FMA_VHF, " 0 "},
+-        applyIfCPUFeatureOr = {"avx512_fp16", "true"})
++        applyIfCPUFeature = {"avx512_fp16", "true"})
+     public void vectorFmaFloat16AllConstants() {
+         for (int i = 0; i < LEN; ++i) {
+             output[i] = float16ToRawShortBits(fma(shortBitsToFloat16(floatToFloat16(1.0f)), shortBitsToFloat16(floatToFloat16(2.0f)), shortBitsToFloat16(floatToFloat16(3.0f))));

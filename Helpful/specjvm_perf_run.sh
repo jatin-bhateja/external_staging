@@ -1,0 +1,20 @@
+
+export JAVA_HOME=/home/jatinbha/sandboxes/jdk-arraycopy-unified/build_images/jdk
+export PATH=$JAVA_HOME/bin:$PATH
+
+for i in compress crypto.aes crypto.rsa crypto.signverify derby mpegaudio scimark.fft.large scimark.fft.small scimark.lu.large scimark.lu.small scimark.monte_carlo scimark.sor.large scimark.sor.small  scimark.sparse.large scimark.sparse.small serial sunflow xml.transform xml.validation
+  do
+    perf stat -e cycles,instructions,cpu/umask=0x07,event=0x28,name=LVL0/,cpu/umask=0x018,event=0x28,name=LVL1/,cpu/umask=0x20,event=0x28,name=LVL2/,cpu/umask=0x02,event=0xc5,name=BR_NEAR/,cpu/umask=0x11,event=0xd0,name=MEM_LOAD/,cpu/umask=0x12,event=0xd0,name=MEM_STORE/ -C 1  taskset -c 1  java -XX:-TieredCompilation -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions  -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe  -ict -ikv  -wt 45 -i 3 -it 5 -bt 1 -ops 1 -ctf true $i 1>> log_withOpt_${i}.txt 2>> log_withOpt_${i}.txt
+    perf stat -e cycles,instructions,cpu/umask=0x07,event=0x28,name=LVL0/,cpu/umask=0x018,event=0x28,name=LVL1/,cpu/umask=0x20,event=0x28,name=LVL2/,cpu/umask=0x02,event=0xc5,name=BR_NEAR/,cpu/umask=0x11,event=0xd0,name=MEM_LOAD/,cpu/umask=0x12,event=0xd0,name=MEM_STORE/ -C 1  taskset -c 1  java -XX:-TieredCompilation -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions  -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe  -ict -ikv  -wt 45 -i 3 -it 5 -bt 1 -ops 1 -ctf true $i 1>> log_withOpt_${i}.txt 2>> log_withOpt_${i}.txt
+    perf stat -e cycles,instructions,cpu/umask=0x07,event=0x28,name=LVL0/,cpu/umask=0x018,event=0x28,name=LVL1/,cpu/umask=0x20,event=0x28,name=LVL2/,cpu/umask=0x02,event=0xc5,name=BR_NEAR/,cpu/umask=0x11,event=0xd0,name=MEM_LOAD/,cpu/umask=0x12,event=0xd0,name=MEM_STORE/ -C 1  taskset -c 1  java -XX:-TieredCompilation -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions  -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe  -ict -ikv  -wt 45 -i 3 -it 5 -bt 1 -ops 1 -ctf true $i 1>> log_withOpt_${i}.txt 2>> log_withOpt_${i}.txt
+  done
+
+export JAVA_HOME=/home/jatinbha/sandboxes/jdk-mainline/build/linux-x86_64-server-release/jdk/
+export PATH=$JAVA_HOME/bin:$PATH
+
+for i in compress crypto.aes crypto.rsa crypto.signverify derby mpegaudio scimark.fft.large scimark.fft.small scimark.lu.large scimark.lu.small scimark.monte_carlo scimark.sor.large scimark.sor.small  scimark.sparse.large scimark.sparse.small serial sunflow xml.transform xml.validation
+  do
+    perf stat -e cycles,instructions,cpu/umask=0x07,event=0x28,name=LVL0/,cpu/umask=0x018,event=0x28,name=LVL1/,cpu/umask=0x20,event=0x28,name=LVL2/,cpu/umask=0x02,event=0xc5,name=BR_NEAR/,cpu/umask=0x11,event=0xd0,name=MEM_LOAD/,cpu/umask=0x12,event=0xd0,name=MEM_STORE/ -C 1  taskset -c 1  java -XX:-TieredCompilation -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions  -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe  -ict -ikv  -wt 45 -i 3 -it 5 -bt 1 -ops 1 -ctf true $i 1>> log_withoutOpt_${i}.txt 2>> log_withoutOpt_${i}.txt
+    perf stat -e cycles,instructions,cpu/umask=0x07,event=0x28,name=LVL0/,cpu/umask=0x018,event=0x28,name=LVL1/,cpu/umask=0x20,event=0x28,name=LVL2/,cpu/umask=0x02,event=0xc5,name=BR_NEAR/,cpu/umask=0x11,event=0xd0,name=MEM_LOAD/,cpu/umask=0x12,event=0xd0,name=MEM_STORE/ -C 1  taskset -c 1  java -XX:-TieredCompilation -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions  -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe  -ict -ikv  -wt 45 -i 3 -it 5 -bt 1 -ops 1 -ctf true $i 1>> log_withoutOpt_${i}.txt 2>> log_withoutOpt_${i}.txt
+    perf stat -e cycles,instructions,cpu/umask=0x07,event=0x28,name=LVL0/,cpu/umask=0x018,event=0x28,name=LVL1/,cpu/umask=0x20,event=0x28,name=LVL2/,cpu/umask=0x02,event=0xc5,name=BR_NEAR/,cpu/umask=0x11,event=0xd0,name=MEM_LOAD/,cpu/umask=0x12,event=0xd0,name=MEM_STORE/ -C 1  taskset -c 1  java -XX:-TieredCompilation -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions  -Xmx20g -Xms20g -Xmn12g -jar SPECjvm2008.jar -peak -coe  -ict -ikv  -wt 45 -i 3 -it 5 -bt 1 -ops 1 -ctf true $i 1>> log_withoutOpt_${i}.txt 2>> log_withoutOpt_${i}.txt
+  done

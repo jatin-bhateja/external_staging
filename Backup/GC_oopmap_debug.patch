@@ -1,0 +1,22 @@
+diff --git a/src/hotspot/share/compiler/oopMap.cpp b/src/hotspot/share/compiler/oopMap.cpp
+index 06d7b44dd9..2f1e708fc5 100644
+--- a/src/hotspot/share/compiler/oopMap.cpp
++++ b/src/hotspot/share/compiler/oopMap.cpp
+@@ -345,6 +345,17 @@ void OopMapSet::all_do(const frame *fr, const RegisterMap *reg_map,
+     for (OopMapStream oms(map); !oms.is_done(); oms.next()) {
+       OopMapValue omv = oms.current();
+       oop* loc = fr->oopmapreg_to_location(omv.reg(),reg_map);
++      if (omv.reg()->is_reg()) {
++         tty->print("=========================================\n");
++         tty->print("CURRENT OOPMAP:\n");
++         map->print();
++         tty->print("\n");
++         reg_map->print();
++         maps->print();
++         tty->print("\n");
++         cb->as_nmethod_or_null()->print();
++         tty->print("\n");
++      }
+       // It should be an error if no location can be found for a
+       // register mentioned as contained an oop of some kind.  Maybe
+       // this was allowed previously because value_value items might

@@ -1,0 +1,276 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index bcf4d5ea13b..720e1f1c87b 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -4382,20 +4382,52 @@ void Assembler::vpermpd(XMMRegister dst, XMMRegister src, int imm8, int vector_l
+   emit_int24(0x01, (0xC0 | encode), imm8);
+ }
+ 
++void Assembler::evpermi2ps(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_evex() && (vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x77, (0xC0 | encode));
++}
++
++void Assembler::evpermi2pd(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_evex() && (vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x77, (0xC0 | encode));
++}
++
++void Assembler::evpermi2d(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_evex() && (vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x76, (0xC0 | encode));
++}
++
+ void Assembler::evpermi2q(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+-  assert(VM_Version::supports_evex(), "");
++  assert(VM_Version::supports_evex() && (vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl()), "");
+   InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
+   emit_int16(0x76, (0xC0 | encode));
+ }
+ 
+-void Assembler::evpermt2b(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
+-  assert(VM_Version::supports_avx512_vbmi(), "");
++void Assembler::evpermi2b(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512_vbmi() && (vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl()), "");
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
+-  emit_int16(0x7D, (0xC0 | encode));
++  emit_int16(0x75, (0xC0 | encode));
++}
++
++void Assembler::evpermi2w(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len) {
++  assert(VM_Version::supports_avx512bw() && (vector_len == Assembler::AVX_512bit || VM_Version::supports_avx512vl()), "");
++  InstructionAttr attributes(vector_len, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
++  attributes.set_is_evex_instruction();
++  int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
++  emit_int16(0x75, (0xC0 | encode));
+ }
+ 
+ void Assembler::evpmultishiftqb(XMMRegister dst, XMMRegister ctl, XMMRegister src, int vector_len) {
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index 097bc9de62a..f090d07912e 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -1790,8 +1790,12 @@ class Assembler : public AbstractAssembler  {
+   void vpermilps(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+   void vpermilpd(XMMRegister dst, XMMRegister src, int imm8, int vector_len);
+   void vpermpd(XMMRegister dst, XMMRegister src, int imm8, int vector_len);
++  void evpermi2b(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evpermi2w(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evpermi2d(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+   void evpermi2q(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+-  void evpermt2b(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evpermi2ps(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
++  void evpermi2pd(XMMRegister dst, XMMRegister nds, XMMRegister src, int vector_len);
+   void evpmultishiftqb(XMMRegister dst, XMMRegister ctl, XMMRegister src, int vector_len);
+ 
+   void pause();
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index d0eb103d81b..73629e85906 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -6621,3 +6621,67 @@ void C2_MacroAssembler::vector_rearrange_int_float(BasicType bt, XMMRegister dst
+     vpermps(dst, shuffle, src, vlen_enc);
+   }
+ }
++
++void C2_MacroAssembler::vector_two_table_permute_evex(BasicType bt, XMMRegister dst, XMMRegister src, XMMRegister shuffle,
++                                                      KRegister mask, XMMRegister xtmp, Register rtmp, int vec_len, int vec_enc) {
++  int elem_sz = type2aelembytes(bt);
++  switch (elem_sz) {
++    case 1: {
++      assert(VM_Version::supports_avx512_vbmi(), "");
++      movl(rtmp, vec_len);
++      evpbroadcastb(xtmp, rtmp, vec_enc);
++      vpaddb(xtmp, shuffle, xtmp, vec_enc);
++      evpblendmb(xtmp, mask, xtmp, shuffle, true, vec_enc);
++      evpermi2b(xtmp, src, dst, vec_enc);
++      evmovdquq(dst, xtmp, vec_enc);
++    } break;
++    case 2: {
++#if 1
++      assert(VM_Version::supports_avx512vlbw(), "");
++      movl(rtmp, vec_len);
++      evpbroadcastw(xtmp, rtmp, vec_enc);
++      vpaddw(xtmp, shuffle, xtmp, vec_enc);
++      evpblendmw(xtmp, mask, xtmp, shuffle, true, vec_enc);
++      evpermi2w(xtmp, src, dst, vec_enc);
++      evmovdquq(dst, xtmp, vec_enc);
++#else
++      evpmovm2w(xtmp, mask, vec_enc);
++      vpsrlw(xtmp, xtmp, 15, vec_enc);
++      vpsllw(xtmp, xtmp, log2i(vec_len), vec_enc);
++      vpor(xtmp, shuffle, xtmp, vec_enc);
++      evpermi2w(xtmp, dst, src, vec_enc);
++      evmovdquq($dst$$XMMRegister, $xtmp$$XMMRegister, vec_enc);
++#endif
++    } break;
++    case 4: {
++      movl(rtmp, vec_len);
++      evpbroadcastd(xtmp, rtmp, vec_enc);
++      vpaddd(xtmp, shuffle, xtmp, vec_enc);
++      if (bt == T_FLOAT) {
++        evblendmps(xtmp, mask, xtmp, shuffle, true, vec_enc);
++        evpermi2ps(xtmp, src, dst, vec_enc);
++        evmovdquq(dst, xtmp, vec_enc);
++      } else {
++        assert(bt == T_INT, "");
++        evpblendmd(xtmp, mask, xtmp, shuffle, true, vec_enc);
++        evpermi2d(xtmp, src, dst, vec_enc);
++        evmovdquq(dst, xtmp, vec_enc);
++      }
++    } break;
++    case 8: {
++      mov64(rtmp, vec_len);
++      evpbroadcastq(xtmp, rtmp, vec_enc);
++      vpaddq(xtmp, shuffle, xtmp, vec_enc);
++      if (bt == T_DOUBLE) {
++        evblendmpd(xtmp, mask, xtmp, shuffle, true, vec_enc);
++        evpermi2pd(xtmp, src, dst, vec_enc);
++        evmovdquq(dst, xtmp, vec_enc);
++      } else {
++        assert(bt == T_LONG, "");
++        evpblendmq(xtmp, mask, xtmp, shuffle, true, vec_enc);
++        evpermi2q(xtmp, src, dst, vec_enc);
++        evmovdquq(dst, xtmp, vec_enc);
++      }
++    } break;
++  }
++}
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+index 8c22990892b..8c80d80b693 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.hpp
+@@ -505,6 +505,9 @@
+                        Register mask, XMMRegister xtmp1, XMMRegister xtmp2, XMMRegister xtmp3, Register rtmp,
+                        Register midx, Register length, int vector_len, int vlen_enc);
+ 
++  void vector_two_table_permute_evex(BasicType bt, XMMRegister dst, XMMRegister src, XMMRegister shuffle,
++                                     KRegister mask, XMMRegister xtmp, Register rtmp, int vec_len, int vec_enc);
++
+ #ifdef _LP64
+   void vgather8b_masked_offset(BasicType elem_bt, XMMRegister dst, Register base, Register idx_base,
+                                Register offset, Register mask, Register midx, Register rtmp, int vlen_enc);
+diff --git a/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp b/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
+index 63226a560f4..42175671108 100644
+--- a/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
++++ b/src/hotspot/cpu/x86/stubGenerator_x86_64.cpp
+@@ -2508,10 +2508,10 @@ address StubGenerator::generate_base64_decodeBlock() {
+     __ evmovdquq(translated3, lookup_lo, Assembler::AVX_512bit);
+ 
+     // Translate the base64 input into "decoded" bytes
+-    __ evpermt2b(translated0, input0, lookup_hi, Assembler::AVX_512bit);
+-    __ evpermt2b(translated1, input1, lookup_hi, Assembler::AVX_512bit);
+-    __ evpermt2b(translated2, input2, lookup_hi, Assembler::AVX_512bit);
+-    __ evpermt2b(translated3, input3, lookup_hi, Assembler::AVX_512bit);
++    __ evpermi2b(translated0, input0, lookup_hi, Assembler::AVX_512bit);
++    __ evpermi2b(translated1, input1, lookup_hi, Assembler::AVX_512bit);
++    __ evpermi2b(translated2, input2, lookup_hi, Assembler::AVX_512bit);
++    __ evpermi2b(translated3, input3, lookup_hi, Assembler::AVX_512bit);
+ 
+     // OR all of the translations together to check for errors (high-order bit of byte set)
+     __ vpternlogd(input0, 0xfe, input1, input2, Assembler::AVX_512bit);
+@@ -2546,9 +2546,9 @@ address StubGenerator::generate_base64_decodeBlock() {
+     // The join vectors specify which byte from which vector goes into the outputs
+     // One of every 4 bytes in the extended vector is zero, so we pack them into their
+     // final positions in the register for storing (256 bytes in, 192 bytes out)
+-    __ evpermt2b(merged0, join01, merged1, Assembler::AVX_512bit);
+-    __ evpermt2b(merged1, join12, merged2, Assembler::AVX_512bit);
+-    __ evpermt2b(merged2, join23, merged3, Assembler::AVX_512bit);
++    __ evpermi2b(merged0, join01, merged1, Assembler::AVX_512bit);
++    __ evpermi2b(merged1, join12, merged2, Assembler::AVX_512bit);
++    __ evpermi2b(merged2, join23, merged3, Assembler::AVX_512bit);
+ 
+     // Store result
+     __ evmovdquq(Address(dest, dp, Address::times_1, 0x00), merged0, Assembler::AVX_512bit);
+@@ -2585,7 +2585,7 @@ address StubGenerator::generate_base64_decodeBlock() {
+ 
+     __ evmovdquq(input0, Address(source, start_offset), Assembler::AVX_512bit);
+     __ evmovdquq(translated0, lookup_lo, Assembler::AVX_512bit);
+-    __ evpermt2b(translated0, input0, lookup_hi, Assembler::AVX_512bit);
++    __ evpermi2b(translated0, input0, lookup_hi, Assembler::AVX_512bit);
+ 
+     __ vpor(errorvec, translated0, input0, Assembler::AVX_512bit);
+ 
+@@ -2666,7 +2666,7 @@ address StubGenerator::generate_base64_decodeBlock() {
+ 
+     // Decode all bytes within our merged input
+     __ evmovdquq(tmp, lookup_lo, Assembler::AVX_512bit);
+-    __ evpermt2b(tmp, input_initial_valid_b64, lookup_hi, Assembler::AVX_512bit);
++    __ evpermi2b(tmp, input_initial_valid_b64, lookup_hi, Assembler::AVX_512bit);
+     __ evporq(mask, tmp, input_initial_valid_b64, Assembler::AVX_512bit);
+ 
+     // Check for error.  Compare (decoded | initial) to all invalid.
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 8c9bbfc3592..f331f317ada 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -10337,3 +10337,56 @@ instruct DoubleClassCheck_reg_reg_vfpclass(rRegI dst, regD src, kReg ktmp, rFlag
+   %}
+   ins_pipe(pipe_slow);
+ %}
++
++instruct two_table_premute_B_evex(vec dst, vec src, vec shuf, kReg mask, vec xtmp, rRegI rtmp)
++%{
++  predicate(VM_Version::supports_avx512bw() &&
++            (Matcher::vector_length_in_bytes(n) == 64 || VM_Version::supports_avx512vl()) &&
++            VM_Version::supports_avx512_vbmi() &&
++            Matcher::vector_element_basic_type(n) == T_BYTE);
++  match(Set dst (VectorBlend (Binary (VectorRearrange dst shuf) (VectorRearrange src shuf)) mask));
++  effect(TEMP xtmp, TEMP rtmp);
++  format %{ "two_table_premute_evex $dst, $src, $shuf, $mask\t! using $xtmp and $rtmp as TEMP" %}
++  ins_encode %{
++    int vec_len = Matcher::vector_length(this);
++    int vec_enc = vector_length_encoding(this);
++    __ vector_two_table_permute_evex(T_BYTE, $dst$$XMMRegister, $src$$XMMRegister, $shuf$$XMMRegister,
++                                     $mask$$KRegister, $xtmp$$XMMRegister, $rtmp$$Register, vec_len, vec_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct two_table_premute_W_evex(vec dst, vec src, vec shuf, kReg mask, vec xtmp, rRegI rtmp)
++%{
++   predicate(VM_Version::supports_avx512bw() &&
++             (Matcher::vector_length_in_bytes(n) == 64 || VM_Version::supports_avx512vl()) &&
++             Matcher::vector_element_basic_type(n) == T_SHORT);
++  match(Set dst (VectorBlend (Binary (VectorRearrange dst shuf) (VectorRearrange src shuf)) mask));
++  effect(TEMP xtmp, TEMP rtmp);
++  format %{ "two_table_premute_evex $dst, $src, $shuf, $mask\t! using $xtmp and $rtmp as TEMP" %}
++  ins_encode %{
++    int vec_len = Matcher::vector_length(this);
++    int vec_enc = vector_length_encoding(this);
++    __ vector_two_table_permute_evex(T_SHORT, $dst$$XMMRegister, $src$$XMMRegister, $shuf$$XMMRegister,
++                                     $mask$$KRegister, $xtmp$$XMMRegister, $rtmp$$Register, vec_len, vec_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
++instruct two_table_premute_DQ_evex(vec dst, vec src, vec shuf, kReg mask, vec xtmp, rRegI rtmp)
++%{
++  predicate((Matcher::vector_length_in_bytes(n) == 64 || VM_Version::supports_avx512vl()) &&
++            (type2aelembytes(Matcher::vector_element_basic_type(n)) == 8 ||
++             type2aelembytes(Matcher::vector_element_basic_type(n)) == 4));
++  match(Set dst (VectorBlend (Binary (VectorRearrange dst shuf) (VectorRearrange src shuf)) mask));
++  effect(TEMP xtmp, TEMP rtmp);
++  format %{ "two_table_premute_evex $dst, $src, $shuf, $mask\t! using $xtmp and $rtmp as TEMP" %}
++  ins_encode %{
++    int vec_len = Matcher::vector_length(this);
++    int vec_enc = vector_length_encoding(this);
++    BasicType bt = Matcher::vector_element_basic_type(this);
++    __ vector_two_table_permute_evex(bt, $dst$$XMMRegister, $src$$XMMRegister, $shuf$$XMMRegister,
++                                     $mask$$KRegister, $xtmp$$XMMRegister, $rtmp$$Register, vec_len, vec_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
