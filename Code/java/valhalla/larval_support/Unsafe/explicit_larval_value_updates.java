@@ -1,6 +1,8 @@
 import jdk.internal.misc.Unsafe;
 import java.lang.reflect.Field;
+import jdk.internal.vm.annotation.*;
 
+@LooselyConsistentValue
 value class MyVector {
 //class MyVector {
    public float lane0;
@@ -65,8 +67,10 @@ public class explicit_larval_value_updates {
     // Configurations
     // - non-flat field
     // - Non-atomic flat field
-    // - atomic flat field (not possible 64 bit constraint) 
+    // - atomic flat field (not possible 64 bit constraint)
 
+    @Strict
+    @NullRestricted
     public MyVector init = new MyVector(1.0f);
 
     public static final Unsafe U = Unsafe.getUnsafe();
@@ -80,7 +84,7 @@ public class explicit_larval_value_updates {
             case 1:
                 return new Bench () {
                     public MyVector apply(MyVector addened, MyVector auguend) {
-                        return addened.add(auguend); 
+                        return addened.add(auguend);
                     }
                 };
             case 2:
@@ -89,13 +93,13 @@ public class explicit_larval_value_updates {
                         MyVector addened_larval = U.makePrivateBuffer(addened);
                         Field [] fields = MyVector.class.getDeclaredFields();
                         for (int i = 0; i < fields.length; i++) {
-                            long offset = U.objectFieldOffset(fields[i]); 
+                            long offset = U.objectFieldOffset(fields[i]);
                             float arg1  = U.getFloat(addened, offset);
                             float arg2  = U.getFloat(auguend, offset);
                             U.putFloat(addened_larval, offset, arg1 + arg2);
                         }
                         addened = U.finishPrivateBuffer(addened_larval);
-                        return addened; 
+                        return addened;
                     }
                 };
             default :
@@ -115,14 +119,14 @@ public class explicit_larval_value_updates {
 
         MyVector res = new MyVector(10.0f);
         for (int i = 0; i < 500000; i++) {
-            res = obj.micro(bm, obj.init, res); 
+            obj.init = obj.micro(bm, obj.init, res);
         }
         res = new MyVector(10.0f);
         long t1 = System.currentTimeMillis();
         for (int i = 0; i < 500000; i++) {
-            res = obj.micro(bm, obj.init, res); 
+            obj.init = obj.micro(bm, obj.init, res);
         }
         long t2 = System.currentTimeMillis();
-        System.out.println("[time] " + (t2-t1) + "ms [res] " + res);
+        System.out.println("[time] " + (t2-t1) + "ms [res] " + obj.init);
     }
 }
