@@ -61,7 +61,7 @@ value class MyVector {
    }
 }
 
-public class explicit_larval_updates {
+public class explicit_larval_value_updates {
     // Configurations
     // - non-flat field
     // - Non-atomic flat field
@@ -110,7 +110,7 @@ public class explicit_larval_updates {
     }
 
     public static void main(String [] args) {
-        explicit_larval_updates obj = new explicit_larval_updates();
+        explicit_larval_value_updates obj = new explicit_larval_value_updates();
         Bench bm = obj.configBench(Integer.parseInt(args[0]));
 
         MyVector res = new MyVector(10.0f);
