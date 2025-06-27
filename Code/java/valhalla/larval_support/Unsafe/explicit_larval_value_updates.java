@@ -86,15 +86,15 @@ public class explicit_larval_value_updates {
             case 2:
                 return new Bench() {
                     public MyVector apply(MyVector addened, MyVector auguend) {
-                        addened = U.makePrivateBuffer(addened);
+                        MyVector addened_larval = U.makePrivateBuffer(addened);
                         Field [] fields = MyVector.class.getDeclaredFields();
                         for (int i = 0; i < fields.length; i++) {
                             long offset = U.objectFieldOffset(fields[i]); 
                             float arg1  = U.getFloat(addened, offset);
                             float arg2  = U.getFloat(auguend, offset);
-                            U.putFloat(addened, offset, arg1 + arg2);
+                            U.putFloat(addened_larval, offset, arg1 + arg2);
                         }
-                        addened = U.finishPrivateBuffer(addened);
+                        addened = U.finishPrivateBuffer(addened_larval);
                         return addened; 
                     }
                 };
