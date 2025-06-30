@@ -1,89 +1,34 @@
 
 import jdk.incubator.vector.*;
-import jdk.incubator.vector.Vector.Shape;
 
 class rotate {
-  public static IntVector.Species S256 = IntVector.SPECIES_256;
-
-  public static void rotateVec(int [] arr, int [] res, int j) {
-      IntVector vec = IntVector.fromArray(S256, arr, 0);
-      vec.rotateEL(3).intoArray(res,0);
-      //vec.rotateEL(j).intoArray(res,0);
-  }
-
-/*
-  public static void rotateVecNew1(int [] arr, int [] res, int j) {
-      int L = S256.length();
-      IntVector vec = IntVector.fromArray(S256, arr, 0);
-      int [] mask = new int[L];
-      j = j % L;
-      for (int i = 0 ; i < mask.length ; i++) {
-        mask[i] = (L - j + i) % L;
+  public static void workload(byte [] arr, byte [] res) {
+      for(int i = 0; i < ByteVector.SPECIES_128.loopBound(res.length); i += ByteVector.SPECIES_128.length()) {
+        ByteVector vec = ByteVector.fromArray(ByteVector.SPECIES_128, arr, i);
+        //vec.lanewise(VectorOperators.ROL, 5).intoArray(res,i);
+        vec.lanewise(VectorOperators.ROL, vec).intoArray(res,i);
       }
-      vec.rearrange(IntVector.shuffleFromArray(S256,mask, 0)).intoArray(res,0); 
   }
-*/
-
-/*
-  public static void rotateVecNew(int [] arr, int [] res, int [] mask, int j) {
-      IntVector vec = IntVector.fromArray(S256, arr, 0);
-      vec.rearrange(IntVector.shuffleFromArray(S256,mask, 0)).intoArray(res,0); 
-  }
-*/
 
   public static void main(String [] args) {
-     int [] arr = new int[8];
-     int [] res = new int[8];
+     byte [] arr = new byte[2048];
+     byte [] res = new byte[2048];
      for (int i = 0 ; i < arr.length ; i++)
-       arr[i] = i+1;
+       arr[i] = (byte)(i+10);
 
      // Warmup
      for (int i = 0 ; i < 700000 ; i++)
-       rotateVec(arr, res, i);
+       workload(arr, res);
 
-     // Old Rotate
+     // Perf
      long start = System.currentTimeMillis();
-     for (int i = 0 ; i < 100000 ; i++)
-       rotateVec(arr, res, i);
+     for (int i = 0 ; i < 200000 ; i++)
+       workload(arr, res);
      long time = System.currentTimeMillis() - start;
      System.out.println("Time = " + time);
 
-     for (var elem : res) {
-       System.out.println(elem + " ");
+     for (int i = 0; i < ByteVector.SPECIES_128.length(); i++) {
+       System.out.println(res[i]);
      }
-      
-/*
-     // warmup
-     for (int i = 0 ; i < 700000 ; i++)
-       rotateVecNew1(arr, res, i);
-
-     // new rotate opt1
-     start = System.currentTimeMillis();
-     for (int i = 0 ; i < 100000 ; i++)
-       rotateVecNew1(arr, res, i);
-     time = System.currentTimeMillis() - start;
-     System.out.println("time = " + time);
-
-     for (var elem : res) {
-       System.out.println(elem + " ");
-     }
-
-     // warmup
-     int mask [] = {-5,-6,-7,0,-1,-2,-3,-4};
-     for (int i = 0 ; i < 700000 ; i++)
-       rotateVecNew(arr, res, mask, i);
-
-     // new rotate opt
-     start = System.currentTimeMillis();
-     for (int i = 0 ; i < 100000 ; i++)
-       rotateVecNew(arr, res, mask, i);
-     time = System.currentTimeMillis() - start;
-     System.out.println("time = " + time);
-
-     for (var elem : res) {
-       System.out.println(elem + " ");
-     }
-*/
-
   }
 }

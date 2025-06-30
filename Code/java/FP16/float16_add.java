@@ -1,12 +1,12 @@
 
-
 import java.util.Arrays;
+import jdk.incubator.vector.*;
 
 public class float16_add {
-  public static void micro(float [] r, Float16 [] a, Float16 [] b) {
-    for (int i = 0; i < a.length; i++) {
-      r[i] = Float16.add(a[i], b[i]).floatValue();
-    }
+
+  public static Float16 micro(Float16 a, Float16 b) {
+     Float16 r1 = Float16.fma(a, b, a);
+     return Float16.fma(r1, a, b);
   }
 
   public static void main (String [] args) {
@@ -18,7 +18,8 @@ public class float16_add {
       src2[i] = Float16.valueOf((short)1);
     }
     for (int i = 0;i < 20000; i++) {
-      micro(res, src1, src2);
+      int idx = i & 1023;
+      res[idx] = micro(src1[idx], src2[idx]).floatValue();
     }
     System.out.println("[res] " + res[3]);
   }
