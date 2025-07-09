@@ -187,8 +187,9 @@ public class bit_compress_expand_KnownBits {
             // We can only estimate the result knownbits from contiguous
             // least significant knowbits of mask, till we hit first unknown
             // mask.KnownBits.ONES
+            long unified_mask_sequence = mask.ZEROS | mask.ONES;
             for (int i = 0, j = 0; i < 64; i++) {
-                if (((mask.ONES >>> i) & 0x1) == 1) {
+                if (((unified_mask_sequence >>> i) & 0x1) == 1) {
                     long src_bit = ((src >>> i) & 0x1) << j;
                     if (src_bit == 0) {
                         res.ZEROS |= src_bit; 
