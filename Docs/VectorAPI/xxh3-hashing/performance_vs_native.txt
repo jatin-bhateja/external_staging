@@ -1,0 +1,122 @@
+    private static final VectorShuffle<Long> LONG_SHUFFLE_PREFERRED = VectorShuffle.fromOp(LongVector.SPECIES_PREFERRED, i -> i ^ 1);
+
+    ...
+
+    for (int block = 0; block < input.length / 1024; block++) {
+        for (int stripe = 0; stripe < 16; stripe++) {
+            int inputOffset = block * 1024 + stripe * 64;
+            int secretOffset = stripe * 8;
+
+            for (int i = 0; i < 8; i += LongVector.SPECIES_PREFERRED.length()) {
+                LongVector accumulatorsVector = LongVector.fromArray(LongVector.SPECIES_PREFERRED, accumulators, i);
+                LongVector inputVector = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, input, inputOffset + i * 8).reinterpretAsLongs();
+                LongVector secretVector = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, SECRET, secretOffset + i * 8).reinterpretAsLongs();
+
+                LongVector key = inputVector
+                        .lanewise(XOR, secretVector)
+                        .reinterpretAsLongs();
+
+                LongVector low = key.and(0xFFFF_FFFFL);
+                LongVector high = key.lanewise(LSHR, 32);
+
+                accumulatorsVector
+                        .add(inputVector.rearrange(LONG_SHUFFLE_PREFERRED))
+                        .add(high.mul(low))
+                        .intoArray(accumulators, i);
+            }
+        }
+    }
+
+It generates the following assembly (loop unrolling disabled for clarity):
+
+  ...
+  0x0000762f8044b730:   lea    r11d,[r8*8+0x0]
+  0x0000762f8044b738:   movsxd r11,r11d
+  0x0000762f8044b73b:   vmovdqu ymm0,YMMWORD PTR [r14+r11*1+0x10]
+  0x0000762f8044b742:   vmovdqu ymm1,YMMWORD PTR [r13+r11*1+0x10]
+  0x0000762f8044b749:   vpshufd ymm2,ymm1,0xb1
+  0x0000762f8044b74e:   vpmulld ymm2,ymm0,ymm2
+  0x0000762f8044b753:   vpshufd ymm3,ymm2,0xb1
+  0x0000762f8044b758:   vpaddd ymm3,ymm3,ymm2
+  0x0000762f8044b75c:   vpsllq ymm3,ymm3,0x20
+  0x0000762f8044b761:   vpmuludq ymm2,ymm0,ymm1
+  0x0000762f8044b765:   vpaddq ymm0,ymm2,ymm3
+  0x0000762f8044b769:   vmovdqu YMMWORD PTR [rdi+r8*8+0x10],ymm0
+  0x0000762f8044b770:   add    r8d,0x4
+  0x0000762f8044b774:   cmp    r8d,0x8
+  0x0000762f8044b778:   jl     0x0000762f8044b730
+  ...
+
+The native implementation for AVX2 looks like this:
+
+    __attribute__((aligned(32))) uint64_t accumulators[8] = {};
+    __m256i* const xacc = (__m256i*) accumulators;
+
+    for (size_t block = 0; block < length / 1024; block++) {
+        for (size_t stripe = 0; stripe < 16; stripe++) {
+            unsigned char* in = input + block * 1024 + stripe * 64;
+            unsigned char* secret = SECRET + stripe * 8;
+
+            const __m256i* const xinput  = (const __m256i *) in;
+            const __m256i* const xsecret = (const __m256i *) secret;
+            for (size_t i = 0; i < 2; i++) {
+                __m256i const data_vec   = _mm256_loadu_si256(xinput + i); // data_vec = xinput[i];
+                __m256i const key_vec     = _mm256_loadu_si256(xsecret + i); // key_vec = xsecret[i];
+                __m256i const data_key    = _mm256_xor_si256(data_vec, key_vec); // data_key = data_vec ^ key_vec;
+                __m256i const data_key_lo = _mm256_srli_epi64(data_key, 32); // data_key_lo = data_key >> 32;
+                __m256i const product     = _mm256_mul_epu32(data_key, data_key_lo); // product = (data_key & 0xffffffff) * (data_key_lo & 0xffffffff);
+                __m256i const data_swap   = _mm256_shuffle_epi32(data_vec, _MM_SHUFFLE(1, 0, 3, 2)); // xacc[i] += swap(data_vec);
+                __m256i const sum         = _mm256_add_epi64(xacc[i], data_swap); // xacc[i] += product;
+                xacc[i]                   = _mm256_add_epi64(product, sum);
+            }
+    }
+
+The corresponding assembly is:
+
+    1198:   vmovdqu ymm4,YMMWORD PTR [rax-0x20]
+    119d:   vmovdqu ymm5,YMMWORD PTR [rax]
+    11a1:   add    rax,0x8
+    11a5:   add    rdx,0x40
+    11a9:   vpxor  ymm0,ymm4,YMMWORD PTR [rdx-0x60]
+    11ae:   vpsrlq ymm1,ymm0,0x20
+    11b3:   vpmuludq ymm0,ymm0,ymm1
+    11b7:   vpshufd ymm1,YMMWORD PTR [rdx-0x60],0x4e
+    11bd:   vpaddq ymm0,ymm0,ymm1
+    11c1:   vpaddq ymm3,ymm0,ymm3
+    11c5:   vpxor  ymm0,ymm5,YMMWORD PTR [rdx-0x40]
+    11ca:   vpsrlq ymm1,ymm0,0x20
+    11cf:   vpmuludq ymm0,ymm0,ymm1
+    11d3:   vpshufd ymm1,YMMWORD PTR [rdx-0x40],0x4e
+    11d9:   vpaddq ymm0,ymm0,ymm1
+    11dd:   vpaddq ymm2,ymm0,ymm2
+    11e1:   cmp    rcx,rax
+    11e4:   jne    1198
+
+
+
+imull REG ( map 0  - no  
+   0xF7 ,  ModRM = E8
+    11 101 000
+    Mode = 11
+    REG = 101 (opcode extension /5)
+   Mod.RM = encoding (SRC)
+
+
+A (63:0) 
+B (63:0)
+-----------------------------------
+=> AH(63:32) | AL(31:0) 
+=> BH(63:32) | BL(31:0)
+
+A * B  =>
+               BH  BL 
+               AH AL x
+================
+P0 =     BL x AL 
+T1  =      BH x AL + P0 >> 32
+P1  =       T1 x 0xFFFFFFFFFFFFFFFF
+P2 =       T1 >> 32
+P3 =        AL * BH + P1
+RES =    AH * BH + P2 + P1 >> 32
+
+

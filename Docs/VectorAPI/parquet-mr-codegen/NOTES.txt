@@ -1,0 +1,82 @@
+
+General guideline:-
+A) Permute at byte granularity.
+B) Upcast unified byte vector into split int vectors.
+c) Intermediate computations happens at integer granularity.
+
+E.g
+
+   17 bytes feed 8 integers.
+   
+  i)   Input_mask = 0x1ffff 
+  ii)  Permute_bytes as per column [A] , species B32
+  iii) perm_table_0 = {0,2,4,6,8,10,12,14}   corresponds to Species := B64
+       perm_table_1 = {1,3,5,7,9,11,13,15}   corresponds to Species := B64
+       perm_table_2 = {2,4,6,8,10,12,14,16}  corresponds to Species := B64
+  iv)  Upcast each permuted value from Byte to integer B64 -> I256
+   v)  Perform right shift, left shift and filter_masking over upcasted vectors (integer granularity using) I256 species.
+  vi)  Reassemble results under the influence of output mask.                                  
+
+[Debug][1] : ==========================================
+[Debug][1] :          Optimize Shifts
+[Debug][1] : ==========================================
+=================================================================================
+                                  [A]     [B]  [C]    [D] 
+[Debug][1] : =================
+[Debug][1] : Assignment : 0
+[Debug][1] : =================
+[Debug][1] : LExprUnpck(int) : 0
+[Debug][1] :  RExprUnpck(byte) : ((in[0]  >> 0 )  ) & 255 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[1]  )  << 8 ) & 65535 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[2]  )  << 16 ) & 131071 // BC : 1 [NR] 
+[Debug][1] : =================
+[Debug][1] : Assignment : 1
+[Debug][1] : =================
+[Debug][1] : LExprUnpck(int) : 1
+[Debug][1] :  RExprUnpck(byte) : ((in[2]  >> 1 )  ) & 127 // BC : 7 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[3]  )  << 7 ) & 32767 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[4]  )  << 15 ) & 131071 // BC : 2 [NR] 
+[Debug][1] : =================
+[Debug][1] : Assignment : 2
+[Debug][1] : =================
+[Debug][1] : LExprUnpck(int) : 2
+[Debug][1] :  RExprUnpck(byte) : ((in[4]  >> 2 )  ) & 63 // BC : 6 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[5]  )  << 6 ) & 16383 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[6]  )  << 14 ) & 131071 // BC : 3 [NR] 
+[Debug][1] : =================
+[Debug][1] : Assignment : 3
+[Debug][1] : =================
+[Debug][1] : LExprUnpck(int) : 3
+[Debug][1] :  RExprUnpck(byte) : ((in[6]  >> 3 )  ) & 31 // BC : 5 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[7]  )  << 5 ) & 8191 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[8]  )  << 13 ) & 131071 // BC : 4 [NR] 
+[Debug][1] : =================
+[Debug][1] : Assignment : 4
+[Debug][1] : =================
+[Debug][1] : LExprUnpck(int) : 4
+[Debug][1] :  RExprUnpck(byte) : ((in[8]  >> 4 )  ) & 15 // BC : 4 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[9]  )  << 4 ) & 4095 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[10]  )  << 12 ) & 131071 // BC : 5 [NR] 
+[Debug][1] : =================
+[Debug][1] : Assignment : 5
+[Debug][1] : =================
+[Debug][1] : LExprUnpck(int) : 5
+[Debug][1] :  RExprUnpck(byte) : ((in[10]  >> 5 )  ) & 7 // BC : 3 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[11]  )  << 3 ) & 2047 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[12]  )  << 11 ) & 131071 // BC : 6 [NR] 
+[Debug][1] : =================
+[Debug][1] : Assignment : 6
+[Debug][1] : =================
+[Debug][1] : LExprUnpck(int) : 6
+[Debug][1] :  RExprUnpck(byte) : ((in[12]  >> 6 )  ) & 3 // BC : 2 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[13]  )  << 2 ) & 1023 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[14]  )  << 10 ) & 131071 // BC : 7 [NR] 
+[Debug][1] : =================
+[Debug][1] : Assignment : 7
+[Debug][1] : =================
+[Debug][1] : LExprUnpck(int) : 7
+[Debug][1] :  RExprUnpck(byte) : ((in[14]  >> 7 )  ) & 1 // BC : 1 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[15]  )  << 1 ) & 511 // BC : 8 [NR] 
+[Debug][1] :  RExprUnpck(byte) : ((in[16]  )  << 9 ) & 131071 // BC : 8 [NR] 
+[Debug][1] : ==========================================
+
