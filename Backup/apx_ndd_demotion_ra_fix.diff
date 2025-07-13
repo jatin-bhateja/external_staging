@@ -1,0 +1,65 @@
+diff --git a/src/hotspot/share/opto/chaitin.cpp b/src/hotspot/share/opto/chaitin.cpp
+index e14d63c7651..15203537e10 100644
+--- a/src/hotspot/share/opto/chaitin.cpp
++++ b/src/hotspot/share/opto/chaitin.cpp
+@@ -1495,6 +1495,25 @@ OptoReg::Name PhaseChaitin::bias_color( LRG &lrg, int chunk ) {
+     }
+   }
+ 
++  copy_lrg = _lrg_map.find(lrg._copy_bias2);
++  if (copy_lrg != 0) {
++    // If he has a color,
++    if(!_ifg->_yanked->test(copy_lrg)) {
++      OptoReg::Name reg = lrgs(copy_lrg).reg();
++      //  And it is legal for you,
++      if (is_legal_reg(lrg, reg, chunk))
++        return reg;
++    } else if( chunk == 0 ) {
++      // Choose a color which is legal for him
++      RegMask tempmask = lrg.mask();
++      tempmask.AND(lrgs(copy_lrg).mask());
++      tempmask.clear_to_sets(lrg.num_regs());
++      OptoReg::Name reg = find_first_set(lrg, tempmask, chunk);
++      if (OptoReg::is_valid(reg))
++        return reg;
++    }
++  }
++
+   // If no bias info exists, just go with the register selection ordering
+   if (lrg._is_vector || lrg.num_regs() == 2 || lrg.is_scalable()) {
+     // Find an aligned set
+@@ -1617,6 +1636,22 @@ uint PhaseChaitin::Select( ) {
+         }
+       }
+     }
++
++    if (UseAPX) {
++      Node* def = lrg->_def;
++      for (uint i = 1; i < def->req(); i++) {
++        uint lruseidx = _lrg_map.find(def->in(i));
++        if (lruseidx != 0 && _ifg->test_edge_sq(lidx, lruseidx) == 0)  {
++          if (lrg->_copy_bias == 0) {
++            lrg->_copy_bias = lruseidx;
++          } else if (lrg->_copy_bias2 == 0) {
++            //FIXME: Should only be applicable to non-commutative operations.
++            lrg->_copy_bias2 = lruseidx;
++          }
++        }
++      }
++    }
++
+     //assert(is_allstack == lrg->mask().is_AllStack(), "nbrs must not change AllStackedness");
+     // Aligned pairs need aligned masks
+     assert(!lrg->_is_vector || !lrg->_fat_proj, "sanity");
+diff --git a/src/hotspot/share/opto/chaitin.hpp b/src/hotspot/share/opto/chaitin.hpp
+index cc3d3479c81..2f6ec8c6f65 100644
+--- a/src/hotspot/share/opto/chaitin.hpp
++++ b/src/hotspot/share/opto/chaitin.hpp
+@@ -63,6 +63,7 @@ class LRG : public ResourceObj {
+ 
+   uint _risk_bias;              // Index of LRG which we want to avoid color
+   uint _copy_bias;              // Index of LRG which we want to share color
++  uint _copy_bias2;             // Index of second LRG which we want to share color
+ 
+   uint _next;                   // Index of next LRG in linked list
+   uint _prev;                   // Index of prev LRG in linked list
