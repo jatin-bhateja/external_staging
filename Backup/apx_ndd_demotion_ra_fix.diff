@@ -1,5 +1,11 @@
+commit 8508a1e71640bde9741910641671c38cad897bed
+Author: Jatin Bhateja <jatin.bhateja@intel.com>
+Date:   Mon Jul 14 07:25:38 2025 +0530
+
+    8351016: RA support for EVEX to REX/REX2 demotion to optimize NDD instructions
+
 diff --git a/src/hotspot/share/opto/chaitin.cpp b/src/hotspot/share/opto/chaitin.cpp
-index e14d63c7651..15203537e10 100644
+index e14d63c7651..84b39fa4794 100644
 --- a/src/hotspot/share/opto/chaitin.cpp
 +++ b/src/hotspot/share/opto/chaitin.cpp
 @@ -1495,6 +1495,25 @@ OptoReg::Name PhaseChaitin::bias_color( LRG &lrg, int chunk ) {
@@ -28,21 +34,38 @@ index e14d63c7651..15203537e10 100644
    // If no bias info exists, just go with the register selection ordering
    if (lrg._is_vector || lrg.num_regs() == 2 || lrg.is_scalable()) {
      // Find an aligned set
-@@ -1617,6 +1636,22 @@ uint PhaseChaitin::Select( ) {
+@@ -1617,6 +1636,39 @@ uint PhaseChaitin::Select( ) {
          }
        }
      }
 +
++    auto is_commutative_oper = [](MachNode* def) {
++      switch(def->ideal_Opcode()) {
++        case Op_AddI: case Op_AddL:
++        case Op_MulI: case Op_MulL:
++        case Op_XorI: case Op_XorL:
++        case Op_OrI:  case Op_OrL:
++        case Op_AndI: case Op_AndL:
++          return true;
++        default:
++          return false;
++      }
++    };
++
 +    if (UseAPX) {
 +      Node* def = lrg->_def;
-+      for (uint i = 1; i < def->req(); i++) {
-+        uint lruseidx = _lrg_map.find(def->in(i));
-+        if (lruseidx != 0 && _ifg->test_edge_sq(lidx, lruseidx) == 0)  {
-+          if (lrg->_copy_bias == 0) {
-+            lrg->_copy_bias = lruseidx;
-+          } else if (lrg->_copy_bias2 == 0) {
-+            //FIXME: Should only be applicable to non-commutative operations.
-+            lrg->_copy_bias2 = lruseidx;
++      if (def->is_Mach()) {
++        MachNode* mdef = def->as_Mach();
++        for (uint i = mdef->oper_input_base(); i < def->req(); i++) {
++          uint lruseidx = _lrg_map.find(def->in(i));
++          // If a def does not interfere with any of its use's def
++          // then bias def color towards its it.
++          if (lruseidx != 0 && _ifg->test_edge_sq(lidx, lruseidx) == 0)  {
++            if (lrg->_copy_bias == 0) {
++              lrg->_copy_bias = lruseidx;
++            } else if (lrg->_copy_bias2 == 0 && is_commutative_oper(mdef)) {
++              lrg->_copy_bias2 = lruseidx;
++            }
 +          }
 +        }
 +      }
