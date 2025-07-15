@@ -1,0 +1,1703 @@
+Summary,Issue key,Issue id,Parent id,Issue Type,Status,Project key,Project name,Project type,Project lead,Project description,Project url,Priority,Resolution,Assignee,Reporter,Creator,Created,Updated,Last Viewed,Resolved,Affects Version/s,Affects Version/s,Affects Version/s,Affects Version/s,Affects Version/s,Fix Version/s,Component/s,Due Date,Votes,Labels,Labels,Labels,Labels,Labels,Labels,Labels,Labels,Description,Environment,Watchers,Watchers,Watchers,Watchers,Watchers,Watchers,Watchers,Log Work,Original Estimate,Remaining Estimate,Time Spent,Work Ratio,Σ Original Estimate,Σ Remaining Estimate,Σ Time Spent,Security Level,Inward issue link (Causes),Inward issue link (Causes),Outward issue link (Causes),Outward issue link (Causes),Outward issue link (Causes),Inward issue link (Duplicate),Inward issue link (Relates),Inward issue link (Relates),Inward issue link (Relates),Inward issue link (Relates),Inward issue link (Relates),Inward issue link (Relates),Inward issue link (Relates),Inward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Outward issue link (Relates),Attachment,Attachment,Attachment,Custom field ( Type of Bug [Challenge] ),Custom field (API Scope),Custom field (Alert Reason),Custom field (Author),Custom field (Business Value),Custom field (CPU),Custom field (Compatibility Kind),Custom field (Compatibility Risk),Custom field (Compatibility Risk Description),Custom field (Cost of Delay),Custom field (Discussion),Custom field (Duration),Custom field (Effort),Custom field (Effort [Delete this field]),Custom field (Endorsed By),Custom field (Epic Colour),Custom field (Epic Link),Custom field (Epic Name),Custom field (Epic Status),Custom field (Epic/Theme),Custom field (Exposure),Custom field (Flagged),Custom field (Goal),Custom field (Imported),Custom field (Indexed),Custom field (Integration Due),Custom field (Interface Kind),Custom field (Introduced In Build),Custom field (Introduced In Version),Custom field (JEP Number),Custom field (JEP Type),Custom field (JSR),Custom field (Number of Tests Affected [Challenge]),Custom field (OS),Custom field (Oracle BP Candidates),Custom field (Oracle Evaluation),Custom field (Oracle WNF),Custom field (Original story points),Custom field (Owner),Custom field (Parent Link),Custom field (Rank),Custom field (Rank (Obsolete)),Custom field (Resolved In Build),Custom field (Reviewed By),Custom field (Scope),Sprint,Custom field (Staffing),Custom field (Story Points),Custom field (Subcomponent),Custom field (Target end),Custom field (Target start),Custom field (Team),Custom field (Time Spent),Custom field (Understanding),Custom field (Value),Custom field (Verification),Custom field (external_bug),Comment,Comment,Comment,Comment,Comment,Comment,Comment,Comment,Comment,Comment,Comment,Comment,Comment
+Integer/Long.compress gets wrong type from CompressBitsNode::Value,JDK-8350896,5151644,,Bug,Open,JDK,JDK,software,duke,,,P2,,jbhateja,epeter,epeter,2025-02-28 00:00,2025-07-15 12:20,2025-07-15 17:46,,19,21,24,25,,25,hotspot,,0,c2,oracle-triage-25,template-framework,,,,,,"I found this during work with the Template Framework JDK-8344942.
+
+[~thartmann] found it was a regression of JDK-8283894, which was my suspicion after tracing it back to code in CompressBitsNode::Value and more specifically bitshuffle_value, on this line:
+
+hi = mask_max_bw < max_bw ? (1L << mask_max_bw) - 1 : src_type->hi_as_long();
+
+Reproduce the result like this:
+
+java -Xbatch -XX:CompileCommand=compileonly,Test::test -XX:+PrintIdeal Test.java
+CompileCommand: compileonly Test.test bool compileonly = true
+AFTER: print_ideal
+  0  Root  === 0 28  [[ 0 1 3 21 ]] inner 
+  3  Start  === 3 0  [[ 3 5 6 7 8 9 ]]  #{0:control, 1:abIO, 2:memory, 3:rawptr:BotPTR, 4:return_address}
+  5  Parm  === 3  [[ 28 ]] Control !jvms: Test::test @ bci:-1 (line 26)
+  6  Parm  === 3  [[ 28 ]] I_O !jvms: Test::test @ bci:-1 (line 26)
+  7  Parm  === 3  [[ 28 ]] Memory  Memory: @BotPTR *+bot, idx=Bot; !jvms: Test::test @ bci:-1 (line 26)
+  8  Parm  === 3  [[ 28 ]] FramePtr !jvms: Test::test @ bci:-1 (line 26)
+  9  Parm  === 3  [[ 28 ]] ReturnAdr !jvms: Test::test @ bci:-1 (line 26)
+ 21  ConI  === 0  [[ 28 ]]  #int:min
+ 28  Return  === 5 6 7 8 9 returns 21  [[ 0 ]] 
+Exception in thread ""main"" java.lang.RuntimeException: Bad value: -2147483648 0
+	at Test.main(Test.java:36)
+
+We can see from the PrintIdeal, that the Integer.compress has been constant folded to the wrong value.
+
+
+------------------------------------------------------------- The identical issue exists for long:
+
+./java -Xbatch -XX:CompileCommand=compileonly,TestL::test -XX:+PrintIdeal TestL.java
+CompileCommand: compileonly TestL.test bool compileonly = true
+AFTER: print_ideal
+  0  Root  === 0 28  [[ 0 1 3 21 ]] inner 
+  3  Start  === 3 0  [[ 3 5 6 7 8 9 ]]  #{0:control, 1:abIO, 2:memory, 3:rawptr:BotPTR, 4:return_address}
+  5  Parm  === 3  [[ 28 ]] Control !jvms: TestL::test @ bci:-1 (line 7)
+  6  Parm  === 3  [[ 28 ]] I_O !jvms: TestL::test @ bci:-1 (line 7)
+  7  Parm  === 3  [[ 28 ]] Memory  Memory: @BotPTR *+bot, idx=Bot; !jvms: TestL::test @ bci:-1 (line 7)
+  8  Parm  === 3  [[ 28 ]] FramePtr !jvms: TestL::test @ bci:-1 (line 7)
+  9  Parm  === 3  [[ 28 ]] ReturnAdr !jvms: TestL::test @ bci:-1 (line 7)
+ 21  ConL  === 0  [[ 28 ]]  #long:min
+ 28  Return  === 5 6 7 8 9 returns 21  [[ 0 ]] 
+Exception in thread ""main"" java.lang.RuntimeException: Bad value: -9223372036854775808 0
+	at TestL.main(TestL.java:17)",,epeter,jbhateja,jrose,psandoz,roboduke,thartmann,,,,,,,,,,,JDK-8283894,,,,,,,,,,,,,,,,,,,,,,,,"2025-02-27 23:58;epeter;Test.java;https://bugs.openjdk.org/secure/attachment/113492/Test.java","2025-02-28 00:17;epeter;TestL.java;https://bugs.openjdk.org/secure/attachment/113493/TestL.java",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3a0j7:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-02-28 21:08;thartmann;ILW = Incorrect result of C2 compiled code, easy to reproduce but edge case, -XX:DisableIntrinsic=_compress_i,_compress_l = HML = P2;;;","2025-02-28 21:09;thartmann;[~sviswanathan], [~jbhateja], could you please have a look?;;;","2025-03-04 17:14;jbhateja;Thanks [~thartmann] I will take a look;;;","2025-03-05 14:47;jbhateja;Bit compressing an integral value squeezes bits corresponding to the set mask bits.
+Here, we have a limiting case of constant input and variable mask where input is the min_integral value and range computation results into assignment of min_integral value to both the delimiting values, i.e., TypeInt.lo and TypeInt.hi and thus resulting into incorrect constant folding.;;;","2025-03-07 23:13;roboduke;A pull request was submitted for review.
+Branch: master
+URL: https://git.openjdk.org/jdk/pull/23947
+Date: 2025-03-07 17:37:36 +0000;;;","2025-06-04 04:06;jrose;Even ""simple"" partial evaluation expressions in C2 methods are subject to hidden flaws due to C++ UB surprises.
+
+This is why, some day, I think all C2 compile-time arithmetic should be performed by a separately curated arithmetic engine.  Not be ad hoc C++ expressions mixed into the optimizer.
+
+By ""arithmetic"" I include arithmetic not only against single values, but also against subsets of their types, when those subsets are relevant to C2.  That includes signed min/max ranges, and probably unsigned umin/umax ranges, and/or bitwise up/down masks.  Most of the relevant formulas are well-known and testable, and have been on the record for a long time.
+
+By ""separately curated"" I mean a C++ interface (for long and its subranges at least) which is sepaartely reviewed by arithmetic experts, and separately stress-tested (for all corner cases) by a gtest (in jtreg format in the source repo).
+;;;",,,,,,,
+RA support for EVEX to REX/REX2 demotion to optimize NDD instructions,JDK-8351016,5151828,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-03-03 12:24,2025-07-14 08:29,2025-07-14 08:35,,25,,,,,tbd,hotspot,,0,apx,,,,,,,," RA extension to demote EEVEX encoded NDD instructions to REX/REX2 encoded instructions:-
+
+Currently, C2 Register Allocation Support For Two Address Instruction is split across the following 5 stages:-
+1.	Selection pattern 
+            match addI_reg (rRegI dst, rRegI src) {
+                   Set dst (AddI dst, src)
+            }
+        -	Two address instructions are the ones where dst operand is the same as the first source operand.
+        -	Matcher generates a MachNode with 3 MachOperands in the above case.
+2.	RA-IFG construction.
+        a.	 Inserts an interference edge b/w two_add operand and all other inputs.
+        b.	Inserts an interference edge b/w instruction and defining node of two_add operand if two_add operand is live beyond the instruction, i.e. was part of live out set at the time of creating interferences for add machine node. 
+3.	RA-PhaseAggressive coalescing 
+        a.	Injects a two_add MachSpillCopyNode before the add to break the live range of the two_add operand.
+4.	RA-Split
+        a.	Unifies the live range of def operand of MachSpillCopyNode with the def operand of  Add MachNode.
+5.	RA-PhaseCoalEascing
+         a.	Coalesce the live range of src operand of MachSpillCopyNode with def of MachNode if the two live ranges do not intersect.
+         b.	This will happen if the src operand is not used beyond the Add IR. 
+
+Thus, the compiler explicitly unifies the live range of two_add operand and its def if their live range do not interfere and do not just rely on colour biasing.
+
+      Q How is NDD instruction different from TwoAddr instruction?
+      A. While the number of MachOperands associated with a TwoAddr MachNode are same for both the variants, RA explicitly unifies the live range of TwoAdd operand with the def operand which ensure allocation of same register to both of them, there by removing redundant copy spill instruction before the two address instruction. 
+
+      Q. What is the need for EVEX to REX / REX2 demotion?
+      A. NDD instruction uses a bulky 4-byte prefix; thus, even though we save GPR2GPR copy spill, which is generally absorbed during the Register Renaming stage and is never issued to OOO execution port, we increase the overall code size which, as a side effect, may impact inlining decisions. 
+
+Thus, EVEX to REX / REX2 demotion is a technique to counter redundant code size increase if one of the two source operands is not live beyond the instruction. There are multiple approaches to address this
+       1.	Once RA determines non-intersecting live ranges of source and definition operand of an NDD MachNode, it can bias the colour to register mask (which by the way is statically associated with operands of a matcher pattern) of legacy register class, to ensure emission of REX encoding rather than giving allocator a freedom to pick any colour from EGPR register class as it will need additional byte for REX2 encoding.
+       2.	An explicit pass in allocation before PhaseCoaleascing to unify the live range of non-intersecting source and definition operand of an NDD MachNode, RA is then free to assign any colour to this live range, during code emission make changes in the assembler layer to emit REX/REX2 flavour of such instructions. 
+       3.	Design an RA-only solution that replaces the NDD MachNode having a non-intersecting source and definition live range with a compatible two-address MachNode; this is similar to an existing RA optimization that replaces MEM2REG SPILL + Operation with a compatible CICS instruction, i.e. use memory operand flavour of an instruction. 
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,JDK-8329030,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3a1cr:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-07-14 08:29;jbhateja;Link to draft pull request.
+https://github.com/openjdk/jdk/pull/26283
+
+;;;",,,,,,,,,,,,
+"Missing Identity transforms for VectorAPI operations MUL, ADD, SUB, DIV",JDK-8361403,5163647,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-07-04 16:15,2025-07-07 10:28,2025-07-15 17:24,,26,,,,,tbd,hotspot,,0,vectorapi,vectorIntrinsics,,,,,,,"Missing VAPI Identity transforms for MUL, ADD, SUB, DIV.
+ 
+X + 0 = X
+X * 1 = X
+X – 0 = X
+X * 0 = 0
+X / X = 1 (only integral types, since floating point types have different semantics for special values for mod and division operations) 
+
+Such cases do not create issues in auto-vectorization flow since existing idealizations on scalar nodes optimize the expressions upfront.
+
+Other distributive property applications
+A * B + A * C = A * (B + C)
+Since multiplication is costly in comparison to addition
+
+JDK-8358521 will be able to handle subset of such expression if both the operations involve scalar broadcasting
+
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,JDK-8358521,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i3c177:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Missing strength reducing transforms for Vector API Div and Mul operations,JDK-8361407,5163653,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-07-04 17:46,2025-07-07 10:28,2025-07-04 18:09,,26,,,,,tbd,hotspot,,0,vectorapi,,,,,,,," Following strength reduction transforms are missing currently for VectorAPI based explicit vectorization flow.
+
+Mul X * POT_NUMBER = X << LOG2(POT_NUMBER) [Integral Types]
+Div X / POT_NUMBER = X >> LOG2(POT_NUMBER)  [Integral types]
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i3c18j:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Optimize vector operations with broadcasted inputs,JDK-8358521,5160453,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-06-03 19:59,2025-07-04 16:15,2025-06-09 21:07,,25,,,,,tbd,hotspot,,0,c2,performance,vectorIntrinsics,,,,,,"Following SIMD kernel makes heavy use of Broadcasted constants.
+
+
+import jdk.incubator.vector.*;
+
+public class  test {
+   public static final VectorSpecies<Integer> ISP = IntVector.SPECIES_PREFERRED;
+
+   public static int micro(int i) {
+       IntVector vec1 = IntVector.broadcast(ISP, 10);
+       IntVector vec2 = IntVector.broadcast(ISP, 20);
+       IntVector vec3 = IntVector.broadcast(ISP, 30);
+
+       return vec1.lanewise(VectorOperators.ADD, vec2)
+                  .lanewise(VectorOperators.MUL, vec3)
+                  .lanewise(VectorOperators.SUB, i)
+                  .lane(1);
+   }
+
+   public static void main(String [] args) {
+      int res = 0;
+      for (int i = 0 ; i < 100000; i++) {
+          res += micro(i);
+      }
+      long t1 = System.currentTimeMillis();
+      for (int i = 0 ; i < 100000; i++) {
+          res += micro(i);
+      }
+      long t2 = System.currentTimeMillis();
+      System.out.println(""[time] "" + (t2-t1) + "" ms [res] "" + res);
+   }
+}
+
+There is an opportunity to constant fold above IR as follows
+
+Existing Ideal Graph :
+
+AFTER: BEFORE_MATCHING
+  0  Root  === 0 2  [[ 0 1 9 21 20 17 11 ]] inner
+  2  Return  === 3 4 5 6 7 returns 8  [[ 0 ]]
+  3  Parm  === 9  [[ 2 ]] Control !jvms: test::micro @ bci:-1 (line 8)
+  4  Parm  === 9  [[ 2 ]] I_O !jvms: test::micro @ bci:-1 (line 8)
+  5  Parm  === 9  [[ 2 ]] Memory  Memory: @BotPTR *+bot, idx=Bot; !jvms: test::micro @ bci:-1 (line 8)
+  6  Parm  === 9  [[ 2 ]] FramePtr !jvms: test::micro @ bci:-1 (line 8)
+  7  Parm  === 9  [[ 2 ]] ReturnAdr !jvms: test::micro @ bci:-1 (line 8)
+  8  ExtractI  === _ 10 11  [[ 2 ]]  !orig=[1981] !jvms: Int512Vector::laneHelper @ bci:16 (line 543) Int512Vector::lane @ bci:88 (line 522) test::micro @ bci:50 (line 15)
+  9  Start  === 9 0  [[ 9 3 4 5 6 7 16 ]]  #{0:control, 1:abIO, 2:memory, 3:rawptr:BotPTR, 4:return_address, 5:int}
+ 10  SubVI  === _ 12 13  [[ 8 ]]  #vectorz<I,16> !jvms: IntVector::lanewiseTemplate @ bci:154 (line 798) Int512Vector::lanewise @ bci:3 (line 278) Int512Vector::lanewise @ bci:3 (line 43) IntVector::lanewise @ bci:43 (line 944) test::micro @ bci:46 (line 14)
+ 11  ConI  === 0  [[ 8 ]]  #int:1
+ 12  MulVI  === _ 14 15  [[ 10 ]]  #vectorz<I,16> !jvms: IntVector::lanewiseTemplate @ bci:154 (line 798) Int512Vector::lanewise @ bci:3 (line 278) Int512Vector::lanewise @ bci:3 (line 43) test::micro @ bci:39 (line 13)
+ 13  Replicate  === _ 16  [[ 10 ]]  #vectorz<I,16> !jvms: IntVector$IntSpecies::broadcastBits @ bci:19 (line 3884) IntVector$IntSpecies::broadcast @ bci:5 (line 3893) IntVector::broadcastTemplate @ bci:7 (line 631) Int512Vector::broadcast @ bci:2 (line 127) Int512Vector::broadcast @ bci:2 (line 43) IntVector::lanewise @ bci:40 (line 944) test::micro @ bci:46 (line 14)
+ 14  Replicate  === _ 17  [[ 12 ]]  #vectorz<I,16> !jvms: IntVector$IntSpecies::broadcastBits @ bci:19 (line 3884) IntVector$IntSpecies::broadcast @ bci:5 (line 3893) IntVector::broadcast @ bci:7 (line 624) test::micro @ bci:23 (line 10)
+ 15  AddVI  === _ 18 19  [[ 12 ]]  #vectorz<I,16> !jvms: IntVector::lanewiseTemplate @ bci:154 (line 798) Int512Vector::lanewise @ bci:3 (line 278) Int512Vector::lanewise @ bci:3 (line 43) test::micro @ bci:32 (line 12)
+ 16  Parm  === 9  [[ 13 ]] Parm0: int !jvms: test::micro @ bci:-1 (line 8)
+ 17  ConI  === 0  [[ 14 ]]  #int:30
+ 18  Replicate  === _ 20  [[ 15 ]]  #vectorz<I,16> !jvms: IntVector$IntSpecies::broadcastBits @ bci:19 (line 3884) IntVector$IntSpecies::broadcast @ bci:5 (line 3893) IntVector::broadcast @ bci:7 (line 624) test::micro @ bci:5 (line 8)
+ 19  Replicate  === _ 21  [[ 15 ]]  #vectorz<I,16> !jvms: IntVector$IntSpecies::broadcastBits @ bci:19 (line 3884) IntVector$IntSpecies::broadcast @ bci:5 (line 3893) IntVector::broadcast @ bci:7 (line 624) test::micro @ bci:14 (line 9)
+ 20  ConI  === 0  [[ 18 ]]  #int:10
+ 21  ConI  === 0  [[ 19 ]]  #int:20
+[time] 90 ms [res] -1229965408
+
+Proposed IR Graph:
+AFTER: BEFORE_MATCHING
+  0  Root  === 0 2  [[ 0 1 9 13 11 ]] inner
+  2  Return  === 3 4 5 6 7 returns 8  [[ 0 ]]
+  3  Parm  === 9  [[ 2 ]] Control !jvms: test::micro @ bci:-1 (line 8)
+  4  Parm  === 9  [[ 2 ]] I_O !jvms: test::micro @ bci:-1 (line 8)
+  5  Parm  === 9  [[ 2 ]] Memory  Memory: @BotPTR *+bot, idx=Bot; !jvms: test::micro @ bci:-1 (line 8)
+  6  Parm  === 9  [[ 2 ]] FramePtr !jvms: test::micro @ bci:-1 (line 8)
+  7  Parm  === 9  [[ 2 ]] ReturnAdr !jvms: test::micro @ bci:-1 (line 8)
+  8  ExtractI  === _ 10 11  [[ 2 ]]  !orig=[1981] !jvms: Int512Vector::laneHelper @ bci:16 (line 543) Int512Vector::lane @ bci:88 (line 522) test::micro @ bci:50 (line 15)
+  9  Start  === 9 0  [[ 9 3 4 5 6 7 14 ]]  #{0:control, 1:abIO, 2:memory, 3:rawptr:BotPTR, 4:return_address, 5:int}
+ 10  Replicate  === _ 12  [[ 8 ]]  #vectorz<I,16> !jvms: IntVector::lanewiseTemplate @ bci:154 (line 798) Int512Vector::lanewise @ bci:3 (line 278) Int512Vector::lanewise @ bci:3 (line 43) IntVector::lanewise @ bci:43 (line 944) test::micro @ bci:46 (line 14)
+ 11  ConI  === 0  [[ 8 ]]  #int:1
+ 12  SubI  === _ 13 14  [[ 10 ]]  !jvms: IntVector::lanewiseTemplate @ bci:154 (line 798) Int512Vector::lanewise @ bci:3 (line 278) Int512Vector::lanewise @ bci:3 (line 43) IntVector::lanewise @ bci:43 (line 944) test::micro @ bci:46 (line 14)
+ 13  ConI  === 0  [[ 12 ]]  #int:900
+ 14  Parm  === 9  [[ 12 ]] Parm0: int !jvms: test::micro @ bci:-1 (line 8)
+[time] 73 ms [res] -1229965408",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,JDK-8361403,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3bhkr:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Stress mode to randomize register selection,JDK-8343294,5142746,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,dlunden,dlunden,2024-10-30 18:25,2025-07-03 20:27,2025-07-07 10:44,,24,,,,,tbd,hotspot,,1,c2,c2-regalloc,oracle-interest,,,,,,"There are numerous opportunities to randomize register selection in the C2 register allocator for stress testing purposes (see `PhaseChaitin::choose_color`). We should add a `StressRegAlloc` flag similar in fashion to other stress flags such as `StressCCP`, `StressIGVN`, `StressIncrementalInlining` etc.
+",,dlunden,dskantz,rcastanedalo,thartmann,,,,,,,,,,,,,,,,,,,JDK-8355466,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i38j4z:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-07-03 20:27;thartmann;I think we should also try to randomize the stack slot # that we spill to.;;;",,,,,,,,,,,,
+Intel Advanced Performance Extension support ,JDK-8329030,5125217,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-03-26 12:59,2025-07-01 11:06,2025-07-14 08:26,,23,,,,,tbd,hotspot,,0,apx,performance,,,,,,,"Add initial support for Intel APX feature.
+
+Specification:
+https://www.intel.com/content/www/us/en/developer/articles/technical/advanced-performance-extensions-apx.html",,gli,jbhateja,mikael,roboduke,skonchad,sviswanathan,thartmann,,,,,,,,,,,,JDK-8359327,JDK-8359386,JDK-8360775,,JDK-8351158,JDK-8339793,JDK-8343214,JDK-8354939,JDK-8341832,JDK-8357267,JDK-8354668,,JDK-8347422,JDK-8352317,JDK-8351016,JDK-8360776,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i35md7:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2024-03-26 16:55;thartmann;[~jbhateja] this looks like a duplicate of JDK-8328998.;;;","2024-03-26 17:39;jbhateja;Hi Tobias, Please consider this as umbrella JBS to track all the APX related enhancements. 
+
+JDK-8328998 corresponds to first sub-task of this enhancement report.;;;","2024-03-26 21:29;thartmann;Okay, should we convert it to a sub-task then?;;;","2024-03-26 22:59;jbhateja;Yes, already linked it to first sub-task.;;;","2025-06-30 22:26;sviswanathan;Sub-tasks 1-3, 6, 8-14 are needed for basic APX implementation.
+Sub-tasks 4-5, 7, 15-16 are nice to have items.;;;",,,,,,,,
+[lworld] UnsafeTest.java fails with -XX:ForceNonTearable=*,JDK-8360656,5162825,,Bug,Open,JDK,JDK,software,duke,,,P4,,jbhateja,thartmann,thartmann,2025-06-26 17:31,2025-06-30 18:11,2025-07-01 12:34,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lw401,lworld,,,,,,,"Running test/hotspot/jtreg/runtime/valhalla/inlinetypes/UnsafeTest.java fails with ""-XX:ForceNonTearable=* -Xint""
+
+class runtime.valhalla.inlinetypes.UnsafeTest$Value3 header size 16
+o: class java.lang.Object offset 24
+v: flattened class runtime.valhalla.inlinetypes.UnsafeTest$Value2 offset 16
+  class runtime.valhalla.inlinetypes.UnsafeTest$Value2 header size 16
+  i: int offset 20
+  v: class runtime.valhalla.inlinetypes.UnsafeTest$Value1 offset 16
+[0.161s][error][gc,verify] ----------
+[0.161s][error][gc,verify] Field 0x000000062e4a2730 of obj 0x000000062e4a2720 in region 123:(E)[0x000000062e400000,0x000000062e4f9c38,0x000000062e800000]
+[0.161s][error][gc,verify] runtime.valhalla.inlinetypes.UnsafeTest$Value3 
+[0.161s][error][gc,verify] {0x000000062e4a2720} - klass: 'runtime/valhalla/inlinetypes/UnsafeTest$Value3' - flags: 
+[0.161s][error][gc,verify] 
+[0.161s][error][gc,verify]  - ---- fields (total size 4 words):
+[0.161s][error][gc,verify]  - final value 'v' 'Lruntime/valhalla/inlinetypes/UnsafeTest$Value2;' @16  Flat inline type field 'runtime/valhalla/inlinetypes/UnsafeTest$Value2':
+[0.161s][error][gc,verify]    - final value 'i' 'I' @20  100 (0x00000064)
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  Internal Error (/oracle/valhalla/open/src/hotspot/share/oops/compressedOops.inline.hpp:58), pid=2197019, tid=2197023
+#  assert(Universe::is_in_heap(result)) failed: object not in heap 0x0000000000000320
+#
+# JRE version: Java(TM) SE Runtime Environment (25.0) (fastdebug build 25-lworld5ea-LTS-2025-05-22-1214417.tobias...)
+# Java VM: Java HotSpot(TM) 64-Bit Server VM (fastdebug 25-lworld5ea-LTS-2025-05-22-1214417.tobias..., interpreted mode, sharing, compressed oops, compressed class ptrs, g1 gc, linux-amd64)
+# Problematic frame:
+# V  [libjvm.so+0x6961f9]  AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<286822ul, G1BarrierSet>, (AccessInternal::BarrierType)3, 286822ul>::oop_access_barrier(oop, long)+0x1d9
+",,thartmann,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3bw7n:",9223372036854775807,,,,,,,runtime,,,,,,,,,,,,,,,,,,,,,
+Optimize flatfield non-atomic update using vector instructions,JDK-8360789,5162971,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-06-27 14:33,2025-06-30 11:08,2025-07-06 17:19,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lw401,lworld,valhalla,,,,,,"Currently, InlineTypeNode::store_flat emits separate store IR for each field of a value class; this can be optimized by using vector instructions.
+
+The size of the value instance is recorded in the layout helper part of Klass header; this can be used to emit efficient vector store instructions. If the size of a value object is less than the vector size, emit a predicated vector instruction after computing a mask based on the object size.
+
+Consider the following IR snipper, where all the fields of a value instance are continuously laid out.
+
+(gdb) p this->dump(3)
+  29  ConL  === 0  [[ 28 202 226 532 584 617 ]]  #long:40
+ 200  ConL  === 0  [[ 199 224 530 582 615 ]]  #long:36
+  33  ConL  === 0  [[ 32 197 222 528 580 613 ]]  #long:32
+ 195  ConL  === 0  [[ 194 220 526 578 611 ]]  #long:28
+  37  ConL  === 0  [[ 36 192 218 524 576 609 ]]  #long:24
+ 190  ConL  === 0  [[ 189 216 522 547 574 607 ]]  #long:20
+ 187  ConL  === 0  [[ 186 214 520 572 605 ]]  #long:16
+ 179  ConL  === 0  [[ 180 183 211 212 518 569 570 602 603 635 ]]  #long:12
+ 363  CheckCastPP  === 360 358  [[ 344 344 369 369 393 393 401 401 410 410 418 418 427 427 435 435 444 444 452 452 461 461 469 469 478 478 486 486 495 495 503 503 617 515 517 518 518 520 520 522 522 524 524 526 526 528 528 530 530 532 532 517 584 540 543 543 584 569 569 570 570 572 572 574 574 576 576 578 578 580 580 582 582 597 617 602 602 603 603 605 605 607 607 609 609 611 611 613 613 615 615 ]]  #MyVector:NotNull:exact *  Oop:MyVector:NotNull:exact * !jvms: MyVector::add @ bci:0 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 597  MemBarStoreStore  === 381 1 514 1 1 363  [[ 598 599 ]]  !jvms: MyVector::<init> @ bci:-1 (line 18) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 532  AddP  === _ 363 363 29  [[ 533 585 618 ]]   Oop:MyVector:NotNull:exact+40 * !jvms: MyVector::<init> @ bci:42 (line 25) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 530  AddP  === _ 363 363 200  [[ 531 583 616 ]]   Oop:MyVector:NotNull:exact+36 * !jvms: MyVector::<init> @ bci:36 (line 24) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 528  AddP  === _ 363 363 33  [[ 529 581 614 ]]   Oop:MyVector:NotNull:exact+32 * !jvms: MyVector::<init> @ bci:30 (line 23) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 526  AddP  === _ 363 363 195  [[ 527 579 612 ]]   Oop:MyVector:NotNull:exact+28 * !jvms: MyVector::<init> @ bci:24 (line 22) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 524  AddP  === _ 363 363 37  [[ 525 577 610 ]]   Oop:MyVector:NotNull:exact+24 * !jvms: MyVector::<init> @ bci:18 (line 21) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 522  AddP  === _ 363 363 190  [[ 523 575 608 ]]   Oop:MyVector:NotNull:exact+20 * !jvms: MyVector::<init> @ bci:12 (line 20) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 520  AddP  === _ 363 363 187  [[ 521 573 606 ]]   Oop:MyVector:NotNull:exact+16 * !jvms: MyVector::<init> @ bci:7 (line 19) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 518  AddP  === _ 363 363 179  [[ 519 571 604 ]]   Oop:MyVector:NotNull:exact+12 * !jvms: MyVector::<init> @ bci:2 (line 18) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 599  Proj  === 597  [[ 600 604 606 608 610 612 614 616 618 331 332 306 307 255 256 629 ]] #2  Memory: @BotPTR *+bot, idx=Bot; !jvms: MyVector::<init> @ bci:-1 (line 18) MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+   0  Root  === 0 91 109 120 131 142 164 177 273 292 387  [[ 0 1 3 19 20 23 25 27 29 31 33 35 37 46 49 57 67 86 99 104 115 126 137 151 159 172 179 182 185 187 190 195 200 229 278 287 545 549 ]]
+ 618  LoadF  === _ 599 532  [[ 601 634 ]]  @MyVector:exact+40 *, name=lane7, idx=20; #float !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 616  LoadF  === _ 599 530  [[ 601 634 ]]  @MyVector:exact+36 *, name=lane6, idx=19; #float !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 614  LoadF  === _ 599 528  [[ 601 634 ]]  @MyVector:exact+32 *, name=lane5, idx=18; #float !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 612  LoadF  === _ 599 526  [[ 601 634 ]]  @MyVector:exact+28 *, name=lane4, idx=17; #float !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 610  LoadF  === _ 599 524  [[ 601 634 ]]  @MyVector:exact+24 *, name=lane3, idx=16; #float !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 608  LoadF  === _ 599 522  [[ 601 634 ]]  @MyVector:exact+20 *, name=lane2, idx=15; #float !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 606  LoadF  === _ 599 520  [[ 601 634 ]]  @MyVector:exact+16 *, name=lane1, idx=14; #float !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+ 604  LoadF  === _ 599 518  [[ 601 634 ]]  @MyVector:exact+12 *, name=lane0, idx=13; #float !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122)
+  99  ConI  === 0  [[ 100 111 122 133 181 233 232 228 210 232 246 297 312 313 316 319 322 334 335 338 341 366 367 370 373 388 388 390 391 394 397 398 399 402 405 405 407 408 411 414 415 416 419 422 422 424 425 428 431 432 433 436 439 439 441 442 445 448 449 450 453 456 456 458 459 462 465 466 467 470 473 473 475 476 479 482 483 484 487 490 490 492 493 496 499 500 501 504 507 507 568 601 619 627 628 631 634 ]]  #int:1
+  20  ConI  === 0  [[ 181 228 233 245 296 312 319 321 334 341 346 366 373 374 390 397 398 407 414 415 424 431 432 441 448 449 458 465 466 475 482 483 492 499 500 550 551 551 552 553 568 601 619 627 634 ]]  #int:0
+  49  ConP  === 0  [[ 50 48 70 69 165 173 181 204 228 231 262 269 319 341 373 376 397 414 431 448 465 482 499 568 601 619 634 ]]  #null
+ 601  InlineType  === _ 49 20 99 604 606 608 610 612 614 616 618  [[ 333 308 257 252 630 ]]  #MyVector:NotNull:exact *  Oop:MyVector:NotNull:exact * !jvms: MyVector::add @ bci:76 (line 40) explicit_larval_value_updates$1::apply @ bci:2 (line 87) explicit_larval_value_updates::micro @ bci:3 (line 113) explicit_larval_value_updates::main @ bci:47 (line 122) 
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"2025-06-27 14:37;jbhateja;explicit_larval_value_updates.java;https://bugs.openjdk.org/secure/attachment/115157/explicit_larval_value_updates.java",,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3bx43:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Microbenchmark for reduced precision dot-product using FlatArrays,JDK-8360877,5163060,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-06-27 17:51,2025-06-30 11:06,2025-06-30 16:14,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lworld+fp16,noreg-self,valhalla,,,,,,"'- Add a new micro benchmark for reduced precision type Int8 and compute the dot-product at 32-bit accumulation.
+- Compare its performance against byte array-backed backing storage.
+- Exiting flat array allocation routines has a native implementation.
+
+There is a considerable performance gap w.r.t primitive array-based backing storage.
+
+Benchmark                                                      (size)   Mode  Cnt     Score   Error  Units
+Int8FlatArrayDotProduct.int8DotProductWith32BitAccumArray           1024  thrpt    2  8237.625          ops/s
+Int8FlatArrayDotProduct.int8DotProductWith32BitAccumArray           2048  thrpt    2  4272.565          ops/s
+Int8FlatArrayDotProduct.int8DotProductWith32BitAccumFlatArray     1024  thrpt    2      57.959          ops/s
+Int8FlatArrayDotProduct.int8DotProductWith32BitAccumFlatArray     2048  thrpt    2       29.011          ops/s",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"2025-06-27 18:05;jbhateja;Int8FlatArrayDotProduct.java;https://bugs.openjdk.org/secure/attachment/115166/Int8FlatArrayDotProduct.java",,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3bxnv:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+String.indexOf intrinsics fail with +EnableX86ECoreOpts and -CompactStrings,JDK-8360271,5162410,,Bug,Open,JDK,JDK,software,duke,,,P2,,jbhateja,shade,shade,2025-06-23 17:09,2025-06-27 11:28,2025-07-01 12:36,,24,,,,,26,hotspot,,0,amazon-interest,c2,oracle-triage-26,,,,,,"Found this when testing JDK 25:
+
+$ CONF=linux-x86_64-server-fastdebug make images test  TEST=java/lang/String/IndexOf.java TEST_VM_OPTS=-XX:-CompactStrings
+
+...
+
+    FAILED: 80 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaddddd[ad]
+(UU)(T3) Trying repeaded needle[2] in haystack[87] at offset[82]
+    FAILED: 81 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaadddd[ad]
+(UU)(T3) Trying repeaded needle[2] in haystack[87] at offset[83]
+    FAILED: 82 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaddd[ad]
+(UU)(T3) Trying repeaded needle[2] in haystack[87] at offset[84]
+    FAILED: 83 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaadd[ad]
+STDERR:
+java.lang.RuntimeException: IndexOf test failed.
+	at IndexOf.main(IndexOf.java:143)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at com.sun.javatest.regtest.agent.MainWrapper$MainTask.run(MainWrapper.java:138)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+
+
+I believe only the subtests with -XX:+EnableX86ECoreOpts are failing, because they enter the AVX2-enabled stub added by JDK-8320448:
+
+#ifdef COMPILER2
+  if ((UseAVX == 2) && EnableX86ECoreOpts) {
+    generate_string_indexof(StubRoutines::_string_indexof_array);
+  }
+#endif
+
+If I disable that block, the test starts to pass. The failure was caught on AMD Zen 3 machines. I have not tested any Xeons. I doubt it is architecture-specific issue.",,jbhateja,shade,thartmann,,,,,,,,,,,,,,JDK-8320448,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3btn7:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-06-23 17:10;shade;Jatin, maybe you could look at it, or assign someone else?;;;","2025-06-23 17:13;shade;Does not seem recent: jdk24u also fails the same way.;;;","2025-06-24 15:15;thartmann;ILW = Incorrect result of C2 compiled code, String.indexOf with -XX:-CompactStrings, disable EnableX86ECoreOpts or AVX2 or compilation of affected method = HML = P2;;;","2025-06-24 15:16;thartmann;Targeting to JDK 26 for now because it's not a recent regression but we should definitely backport the fix.;;;","2025-06-27 11:28;jbhateja;Thanks [~shade] and [~thartmann], I will take a look at this;;;",,,,,,,,
+Handle all constant folding scenarios for floating point division operation,JDK-8360460,5162611,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-06-25 07:56,2025-06-25 12:24,2025-07-01 15:44,,26,,,,,tbd,hotspot,,0,c2,c2-igvn,performance,,,,,,"Existing value transforms associated with DivF and DivD do not handle all the constant folding scenarios listed under section ""15.17.2 Division Operator""  of the Java language specification.
+
+",,epeter,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i3buvv:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-06-25 12:24;epeter;It could be worth to investigate similar cases for ModF and ModD.;;;",,,,,,,,,,,,
+C2: IntVector.fromMemorySegment does not vectorize with byte[] (performance regression),JDK-8358951,5160978,,Bug,Open,JDK,JDK,software,duke,,,P4,,jbhateja,epeter,epeter,2025-06-09 13:33,2025-06-10 18:35,2025-06-11 16:01,,23,24,25,26,,26,hotspot,,0,c2,foreign,oracle-triage-26,performance,vectorAPI,,,,"At the beginning of JDK23, we could load Vectors from mismatching arrays, e.g. IntVector from a byte[] via IntVector.fromMemorySegment, and that would vectorize.
+
+Test2.java is a regression from JDK-8329555 in JDK 23 b20.
+
+Test3.java seems to be a regression from JDK-8339299.
+
+We should add thorough IR tests for all these combinations to ensure we do not get such regressions any more.
+
+---------------- Original Report ----------------------
+
+Please see the attached Test.java
+
+It seems that MemorySegment backed by int[] or native memory do indeed produce vector code. But not with byte[] backed memory. I have not investigated other primitive array types yet.
+
+It could be good to investigate the combination of all Vector types with all backing memory types. Write an IR test and a benchmark for all. To go even further: what happens when you combine different backing memory?
+
+This kind of investigation would be expecially important if we want replace some intrinsics that are currently written with platform specifc assembly, and replace them with Java code that uses MemorySegment and the Vector API.
+
+I ran the experiment like this:
+
+[empeter@emanuel bin]$ ./java -XX:CompileCommand=compileonly,Test::testI -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep LoadVector
+ 1388  LoadVector  === 1353 7 1387  |543  [[ 1088 1413 1153 765 1215 1233 887 1136 1122 902 ]]  @int[int:>=0] (java/lang/Cloneable,java/io/Serializable):NotNull:exact+any *, idx=16; mismatched #vectord<I,2> !jvms: ScopedMemoryAccess::loadFromMemorySegmentScopedInternal @ bci:29 (line 358) ScopedMemoryAccess::loadFromMemorySegment @ bci:14 (line 335) IntVector::fromMemorySegment0Template @ bci:33 (line 3564) Int64Vector::fromMemorySegment0 @ bci:3 (line 957) IntVector::fromMemorySegment @ bci:31 (line 3196) Test::testI @ bci:10 (line 28)
+[empeter@emanuel bin]$ ./java -XX:CompileCommand=compileonly,Test::testB -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep LoadVector
+[empeter@emanuel bin]$ ./java -XX:CompileCommand=compileonly,Test::testN -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep LoadVector
+ 1237  LoadVector  === 1205 7 1235  [[ 814 1263 1049 692 1063 1080 1015 829 ]]  @rawptr:BotPTR, idx=Raw; mismatched #vectord<I,2> (does not depend only on test, raw access) !jvms: ScopedMemoryAccess::loadFromMemorySegmentScopedInternal @ bci:29 (line 358) ScopedMemoryAccess::loadFromMemorySegment @ bci:14 (line 335) IntVector::fromMemorySegment0Template @ bci:33 (line 3564) Int64Vector::fromMemorySegment0 @ bci:3 (line 957) IntVector::fromMemorySegment @ bci:31 (line 3196) Test::testN @ bci:10 (line 38)
+[empeter@emanuel bin]$ ./java -XX:CompileCommand=compileonly,Test::test* -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep LoadVector
+ 1196  LoadVector  === 1193 1194 1191  [[ 809 1230 1042 1068 1048 672 1028 994 794 ]]  @rawptr:BotPTR, idx=Raw; mismatched #vectord<I,2> (does not depend only on test, raw access) !jvms: ScopedMemoryAccess::loadFromMemorySegmentScopedInternal @ bci:29 (line 358) ScopedMemoryAccess::loadFromMemorySegment @ bci:14 (line 335) IntVector::fromMemorySegment0Template @ bci:33 (line 3564) Int64Vector::fromMemorySegment0 @ bci:3 (line 957) IntVector::fromMemorySegment @ bci:31 (line 3196) Test::testI @ bci:10 (line 28)
+ 1196  LoadVector  === 1193 1194 1191  [[ 809 1230 1042 1068 1048 672 1028 994 794 ]]  @rawptr:BotPTR, idx=Raw; mismatched #vectord<I,2> (does not depend only on test, raw access) !jvms: ScopedMemoryAccess::loadFromMemorySegmentScopedInternal @ bci:29 (line 358) ScopedMemoryAccess::loadFromMemorySegment @ bci:14 (line 335) IntVector::fromMemorySegment0Template @ bci:33 (line 3564) Int64Vector::fromMemorySegment0 @ bci:3 (line 957) IntVector::fromMemorySegment @ bci:31 (line 3196) Test::testB @ bci:10 (line 33)
+ 1196  LoadVector  === 1193 1194 1191  [[ 809 1230 1042 1068 1048 672 1028 994 794 ]]  @rawptr:BotPTR, idx=Raw; mismatched #vectord<I,2> (does not depend only on test, raw access) !jvms: ScopedMemoryAccess::loadFromMemorySegmentScopedInternal @ bci:29 (line 358) ScopedMemoryAccess::loadFromMemorySegment @ bci:14 (line 335) IntVector::fromMemorySegment0Template @ bci:33 (line 3564) Int64Vector::fromMemorySegment0 @ bci:3 (line 957) IntVector::fromMemorySegment @ bci:31 (line 3196) Test::testN @ bci:10 (line 38)
+[empeter@emanuel bin]$ ./java -XX:CompileCommand=compileonly,Test::testI -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep StoreVector
+ 1039  ConP  === 0  [[ 1088 1233 1215 1153 1136 1122 ]]  #jdk/incubator/vector/IntVector$$Lambda+0x000000000a0fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *  Oop:jdk/incubator/vector/IntVector$$Lambda+0x000000000a0fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *
+ 1413  StoreVector  === 1313 7 1410 1388  |1212  [[ 1412 ]]  @int[int:>=0] (java/lang/Cloneable,java/io/Serializable):NotNull:exact+any *, idx=16; mismatched  Memory: @int[int:>=0] (java/lang/Cloneable,java/io/Serializable):NotNull:exact+any *, idx=16; !jvms: ScopedMemoryAccess::storeIntoMemorySegmentScopedInternal @ bci:29 (line 441) ScopedMemoryAccess::storeIntoMemorySegment @ bci:15 (line 418) IntVector::intoMemorySegment0 @ bci:32 (line 3663) IntVector::intoMemorySegment @ bci:44 (line 3443) Test::testI @ bci:22 (line 29)
+[empeter@emanuel bin]$ ./java -XX:CompileCommand=compileonly,Test::testB -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep StoreVector
+ 1039  ConP  === 0  [[ 1268 1233 1215 1153 1136 1122 1088 ]]  #jdk/incubator/vector/IntVector$$Lambda+0x000000006d0fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *  Oop:jdk/incubator/vector/IntVector$$Lambda+0x000000006d0fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *
+[empeter@emanuel bin]$ ./java -XX:CompileCommand=compileonly,Test::testN -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep StoreVector
+  966  ConP  === 0  [[ 1015 1080 1063 1049 ]]  #jdk/incubator/vector/IntVector$$Lambda+0x000000001c0fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *  Oop:jdk/incubator/vector/IntVector$$Lambda+0x000000001c0fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *
+ 1263  StoreVector  === 1169 7 1259 1237  [[ 1262 ]]  @rawptr:BotPTR, idx=Raw; mismatched  Memory: @rawptr:BotPTR, idx=Raw; !jvms: ScopedMemoryAccess::storeIntoMemorySegmentScopedInternal @ bci:29 (line 441) ScopedMemoryAccess::storeIntoMemorySegment @ bci:15 (line 418) IntVector::intoMemorySegment0 @ bci:32 (line 3663) IntVector::intoMemorySegment @ bci:44 (line 3443) Test::testN @ bci:22 (line 39)
+[empeter@emanuel bin]$ ./java -XX:CompileCommand=compileonly,Test::test* -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep StoreVector
+  946  ConP  === 0  [[ 1068 994 1048 1042 1028 ]]  #jdk/incubator/vector/IntVector$$Lambda+0x00000000220fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *  Oop:jdk/incubator/vector/IntVector$$Lambda+0x00000000220fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *
+ 1230  StoreVector  === 1225 1226 1223 1196  [[ 1229 ]]  @rawptr:BotPTR, idx=Raw; mismatched  Memory: @rawptr:BotPTR, idx=Raw; !jvms: ScopedMemoryAccess::storeIntoMemorySegmentScopedInternal @ bci:29 (line 441) ScopedMemoryAccess::storeIntoMemorySegment @ bci:15 (line 418) IntVector::intoMemorySegment0 @ bci:32 (line 3663) IntVector::intoMemorySegment @ bci:44 (line 3443) Test::testI @ bci:22 (line 29)
+  946  ConP  === 0  [[ 1068 994 1048 1042 1028 ]]  #jdk/incubator/vector/IntVector$$Lambda+0x00000000220fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *  Oop:jdk/incubator/vector/IntVector$$Lambda+0x00000000220fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *
+ 1230  StoreVector  === 1225 1226 1223 1196  [[ 1229 ]]  @rawptr:BotPTR, idx=Raw; mismatched  Memory: @rawptr:BotPTR, idx=Raw; !jvms: ScopedMemoryAccess::storeIntoMemorySegmentScopedInternal @ bci:29 (line 441) ScopedMemoryAccess::storeIntoMemorySegment @ bci:15 (line 418) IntVector::intoMemorySegment0 @ bci:32 (line 3663) IntVector::intoMemorySegment @ bci:44 (line 3443) Test::testB @ bci:22 (line 34)
+  946  ConP  === 0  [[ 1068 994 1048 1042 1028 ]]  #jdk/incubator/vector/IntVector$$Lambda+0x00000000220fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *  Oop:jdk/incubator/vector/IntVector$$Lambda+0x00000000220fa4c8 (jdk/internal/vm/vector/VectorSupport$StoreVectorOperation):exact *
+ 1230  StoreVector  === 1225 1226 1223 1196  [[ 1229 ]]  @rawptr:BotPTR, idx=Raw; mismatched  Memory: @rawptr:BotPTR, idx=Raw; !jvms: ScopedMemoryAccess::storeIntoMemorySegmentScopedInternal @ bci:29 (line 441) ScopedMemoryAccess::storeIntoMemorySegment @ bci:15 (line 418) IntVector::intoMemorySegment0 @ bci:32 (line 3663) IntVector::intoMemorySegment @ bci:44 (line 3443) Test::testN @ bci:22 (line 39)",,chagedorn,dlong,epeter,pminborg,psandoz,thartmann,,,,,,,,,,,JDK-8339299,JDK-8329555,,,,,,,,,,,,,,,,,,,,,,,"2025-06-09 13:29;epeter;Test.java;https://bugs.openjdk.org/secure/attachment/114836/Test.java","2025-06-10 11:53;epeter;Test2.java;https://bugs.openjdk.org/secure/attachment/114846/Test2.java","2025-06-10 11:58;epeter;Test3.java;https://bugs.openjdk.org/secure/attachment/114848/Test3.java",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3bktf:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-06-09 13:35;epeter;I assigned this to myself so I won't forget it. But I'd be more than happy if someone else volunteers for this!;;;","2025-06-10 05:02;dlong;Should we change this to a performance bug, or leave as an enhancement?;;;","2025-06-10 11:26;epeter;[~dlong] I just found that this used to vectorize in JDK22, so it seems it is indeed a performance regression!
+
+[empeter@emanuel bin]$ /home/empeter/Documents/oracle/jdk-22.0.2/fastdebug/bin/java --add-modules=jdk.incubator.vector  -XX:CompileCommand=compileonly,Test::testB -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep LoadVector
+WARNING: Using incubator modules: jdk.incubator.vector
+ 1197  LoadVector  === 1194 1195 1192  [[ 810 1231 1043 1069 1049 673 1029 995 795 ]]  @rawptr:BotPTR, idx=Raw; mismatched #vectord[2]:{int} (does not depend only on test, raw access) !jvms: ScopedMemoryAccess::loadFromMemorySegmentScopedInternal @ bci:29 (line 357) ScopedMemoryAccess::loadFromMemorySegment @ bci:14 (line 334) IntVector::fromMemorySegment0Template @ bci:33 (line 3505) Int64Vector::fromMemorySegment0 @ bci:3 (line 881) IntVector::fromMemorySegment @ bci:31 (line 3140) Test::testB @ bci:10 (line 33)
+
+It also still vectorizes with latest JDK23.
+
+[empeter@emanuel bin]$ /home/empeter/Documents/oracle/jdk-23.0.2/fastdebug/bin/java --add-modules=jdk.incubator.vector  -XX:CompileCommand=compileonly,Test::testB -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep LoadVector
+WARNING: Using incubator modules: jdk.incubator.vector
+ 1197  LoadVector  === 1194 1195 1192  [[ 810 1231 1043 1069 1049 673 1029 995 795 ]]  @rawptr:BotPTR, idx=Raw; mismatched #vectord[2]:{int} (does not depend only on test, raw access) !jvms: ScopedMemoryAccess::loadFromMemorySegmentScopedInternal @ bci:29 (line 357) ScopedMemoryAccess::loadFromMemorySegment @ bci:14 (line 334) IntVector::fromMemorySegment0Template @ bci:33 (line 3505) Int64Vector::fromMemorySegment0 @ bci:3 (line 881) IntVector::fromMemorySegment @ bci:31 (line 3140) Test::testB @ bci:10 (line 33)
+
+But it does NOT vectorize with latest JDK24:
+
+[empeter@emanuel bin]$ /home/empeter/Documents/oracle/jdk-24.0.2/fastdebug/bin/java --add-modules=jdk.incubator.vector  -XX:CompileCommand=compileonly,Test::testB -XX:CompileCommand=printcompilation,Test::* -Xbatch -XX:+PrintIdeal Test.java | grep LoadVector
+WARNING: Using incubator modules: jdk.incubator.vector
+
+We should try to bisect this, to find the cause!;;;","2025-06-10 11:53;epeter;Things are getting even more complicated. I now wrote a ""Test2.java"". And this one only runs the Byte code, and not also the others. And this has a different behavior!
+
+And it seems to point back to something between JDK23-b18 and JDK23-b21. I think it comes from here: JDK-8329555 integrated in JDK23-b20.
+https://github.com/openjdk/jdk/commit/80b381e91bb649e440321a440ce641a54f89dfb4
+
+How I run it:
+/home/empeter/Documents/oracle/jdk-23-ea+21/fastdebug/bin/java --add-modules=jdk.incubator.vector Test2.java
+...
+Exception in thread ""main"" java.lang.RuntimeException: Test failed: not contains LoadVector.
+	at Test2.runInSeparateVM(Test2.java:40)
+	at Test2.main(Test2.java:63)
+
+vs
+/home/empeter/Documents/oracle/jdk-23-ea+18/fastdebug/bin/java --add-modules=jdk.incubator.vector Test2.java
+...
+Passed: found LoadVector in PrintIdeal output.
+
+
+Note: Test2.java is now ONLY running an IntVector over a byte[].
+
+In Test.java we also run the IntVector over byte[], int[] and native memory. That seems to have a different effect, maybe because of profiling. We should investigate both!
+
+For this, I also wrote a Test3.java, which works like Test.java. Here, the regression seems to be between JDK23 and JDK24:
+
+/home/empeter/Documents/oracle/jdk-23.0.2/fastdebug/bin/java --add-modules=jdk.incubator.vector Test3.java
+...
+Passed: found LoadVector in PrintIdeal output.
+
+/home/empeter/Documents/oracle/jdk-24.0.2/fastdebug/bin/java --add-modules=jdk.incubator.vector Test3.java
+...
+Exception in thread ""main"" java.lang.RuntimeException: Test failed: not contains LoadVector.
+	at Test3.runInSeparateVM(Test3.java:40)
+	at Test3.main(Test3.java:81);;;","2025-06-10 11:58;epeter;From this, I would suspect that JDK-8329555 caused a JDK23 regression (see Test2.java), but there is also a regression during JDK24 additionally (see Test.java and Test3.java).;;;","2025-06-10 12:50;chagedorn;ILW = Performance regression with Memory Segments, low?, no workaround = MLH = P4;;;","2025-06-10 14:38;thartmann;I build-searched Test2.java and it's a regression from JDK-8329555 in JDK 23 b20.;;;","2025-06-10 16:10;thartmann;Test3.java seems to be a regression from JDK-8339299.;;;","2025-06-10 18:29;epeter;Jatin, it seems you have worked in this area before, and first caused the performance regression. Do you want to look into this?;;;",,,,
+Performance drop in SIMD kernel with records,JDK-8358474,5160394,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-06-03 13:05,2025-06-03 20:09,2025-06-19 10:52,,25,,,,,26,hotspot,,0,c2,performance,,,,,,,"Following micro show 6x performance degradation when we use a record to store an intermediate vector.
+
+import jdk.incubator.vector.*;
+import java.util.Arrays;
+import java.util.stream.IntStream;
+
+record Adapter(ShortVector vec) {
+}
+
+public class test_ea_records {
+    public static VectorSpecies<Short> SPEC = ShortVector.SPECIES_PREFERRED;
+
+    public static Adapter getAdapter(ShortVector  vec) {
+       return new Adapter(vec);
+    }
+    public static void micro1(short [] output, short [] input) {
+        for (int i = 0; i < SPEC.loopBound(input.length); i += SPEC.length()) {
+            ShortVector inp = ShortVector.fromArray(SPEC, input, i);
+            inp = inp.lanewise(VectorOperators.MUL, (short)3);
+            inp = inp.lanewise(VectorOperators.MUL, (short)30);
+            inp = inp.lanewise(VectorOperators.MUL, (short)300);
+            inp = inp.lanewise(VectorOperators.MUL, (short)3000);
+            Adapter obj = getAdapter(inp);
+            obj.vec().lanewise(VectorOperators.ADD, (short)10)
+                     .intoArray(output, i);
+        }
+    }
+
+    public static void micro2(short [] output, short [] input) {
+        for (int i = 0; i < SPEC.loopBound(input.length); i += SPEC.length()) {
+            ShortVector inp = ShortVector.fromArray(SPEC, input, i);
+            inp = inp.lanewise(VectorOperators.MUL, (short)3);
+            inp = inp.lanewise(VectorOperators.MUL, (short)30);
+            inp = inp.lanewise(VectorOperators.MUL, (short)300);
+            inp = inp.lanewise(VectorOperators.MUL, (short)3000);
+            inp.lanewise(VectorOperators.ADD, (short)10)
+                     .intoArray(output, i);
+        }
+    }
+
+    public static void main(String [] args) {
+        int algo = Integer.parseInt(args[0]);
+        short [] input = new short[2048];
+        short [] output = new short[2048];
+        IntStream.range(0, input.length).forEach(i -> { input[i] = (short)i; });
+
+        if (algo == 0 || algo == -1) {
+            for (int i = 0; i < 20000; i++) {
+                micro1(output, input);
+            }
+            long t1 = System.currentTimeMillis();
+            for (int i = 0; i < 20000; i++) {
+                micro1(output, input);
+            }
+            long t2 = System.currentTimeMillis();
+            System.out.println(""[time] "" + (t2 - t1) +  "" ms  [res] "" + Arrays.hashCode(output));
+        }
+
+        if (algo == 1 || algo == -1) {
+            for (int i = 0; i < 20000; i++) {
+                micro2(output, input);
+            }
+            long t1 = System.currentTimeMillis();
+            for (int i = 0; i < 20000; i++) {
+                micro2(output, input);
+            }
+            long t2 = System.currentTimeMillis();
+            System.out.println(""[time] "" + (t2 - t1) +  "" ms  [res] "" + Arrays.hashCode(output));
+        }
+    }
+}
+
+SPR2>java --add-modules=jdk.incubator.vector -Xbatch -XX:-TieredCompilation -cp . test_ea_records -1
+WARNING: Using incubator modules: jdk.incubator.vector
+[time] 31 ms  [res] 1419051009
+[time] 5 ms  [res] 1419051009
+
+JIT sequence shows allocation for records are not getting eliminated dispiet of being a non-escaping.
+
+  0x00007f69a4928b49:   mov    0x1c8(%r15),%rax
+  0x00007f69a4928b50:   mov    %rax,%r10
+  0x00007f69a4928b53:   add    $0x50,%r10
+  0x00007f69a4928b57:   vpbroadcastd -0xe1(%rip),%zmm0        # 0x00007f69a4928a80
+                                                            ;   {section_word}
+  0x00007f69a4928b61:   vpmullw 0x10(%r9,%rbp,2),%zmm0,%zmm0
+  0x00007f69a4928b6c:   vpbroadcastd -0xf2(%rip),%zmm1        # 0x00007f69a4928a84
+                                                            ;   {section_word}
+  0x00007f69a4928b76:   vpmullw %zmm1,%zmm0,%zmm0
+  0x00007f69a4928b7c:   vpbroadcastd -0xfe(%rip),%zmm1        # 0x00007f69a4928a88
+                                                            ;   {section_word}
+  0x00007f69a4928b86:   vpmullw %zmm1,%zmm0,%zmm1
+  0x00007f69a4928b8c:   cmp    0x1d8(%r15),%r10
+  0x00007f69a4928b93:   jae    0x00007f69a4928c4d
+  0x00007f69a4928b99:   mov    %r10,0x1c8(%r15)
+  0x00007f69a4928ba0:   prefetchw 0xc0(%r10)
+  0x00007f69a4928ba8:   movq   $0x1,(%rax)
+  0x00007f69a4928baf:   prefetchw 0x100(%r10)
+  0x00007f69a4928bb7:   movl   $0x164930,0x8(%rax)          ;   {metadata({type array short})}
+  0x00007f69a4928bbe:   prefetchw 0x140(%r10)
+  0x00007f69a4928bc6:   movl   $0x20,0xc(%rax)
+  0x00007f69a4928bcd:   prefetchw 0x180(%r10)
+  0x00007f69a4928bd5:   mov    %rax,%rsi
+  0x00007f69a4928bd8:   add    $0x10,%rsi
+  0x00007f69a4928bdc:   vpxord %zmm0,%zmm0,%zmm0
+  0x00007f69a4928be2:   vmovdqu64 %zmm0,(%rsi)
+  0x00007f69a4928be8:   vpbroadcastd -0x166(%rip),%zmm0        # 0x00007f69a4928a8c
+                                                            ;   {section_word}
+  0x00007f69a4928bf2:   vpmullw %zmm0,%zmm1,%zmm0
+  0x00007f69a4928bf8:   vmovdqu32 %zmm0,0x10(%rax)
+  0x00007f69a4928c02:   vpbroadcastd -0x17c(%rip),%zmm1        # 0x00007f69a4928a90
+                                                            ;   {section_word}
+  0x00007f69a4928c0c:   vpaddw %zmm0,%zmm1,%zmm0
+  0x00007f69a4928c12:   cmp    %edi,%ebp
+  0x00007f69a4928c14:   jae    0x00007f69a4928d00
+  0x00007f69a4928c1a:   vmovdqu32 %zmm0,0x10(%rbx,%rbp,2)
+  0x00007f69a4928c25:   add    %r11d,%ebp
+  0x00007f69a4928c28:   mov    0x30(%r15),%r10              ; ImmutableOopMap {r9=Oop rbx=Oop rdx=Oop }
+                                                            ;*goto {reexecute=1 rethrow=0 return_oop=0}
+                                                            ; - (reexecute) test_ea_records::micro@101 (line 13)
+  0x00007f69a4928c2c:   test   %eax,(%r10)                  ;   {poll}
+  0x00007f69a4928c2f:   cmp    %ecx,%ebp
+  0x00007f69a4928c31:   jl     0x00007f69a4928b40
+  0x00007f69a4928c37:   vzeroupper
+  0x00007f69a4928c3a:   add    $0xd0,%rsp
+  0x00007f69a4928c41:   pop    %rbp
+  0x00007f69a4928c42:   cmp    0x28(%r15),%rsp              ;   {poll_return}
+  0x00007f69a4928c46:   ja     0x00007f69a4928deb
+  0x00007f69a4928c4c:   ret",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i3bh7n:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Optimize constant input transcendental APIs,JDK-8358039,5159922,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-05-29 13:43,2025-05-30 04:09,2025-06-09 21:07,,25,,,,,tbd,hotspot,,0,,,,,,,,,"JDK-8353686 intrinsified Math.cbrt and  while JDK-8338694 intrinsified Math.tanh and JDK-8348638 added some tweaks to enhance performance of tanh for large inputs greater than |X| > 22.0 while we still see tanh performance degradation with some input value tracked by JDK-8355238 
+
+However, none of the above JBS addresses performance degradation related to compile-time constant inputs. Existing intrinsic creation framework performs intrinsification eagerly during parse time or lazily during optimization stage, lazy intrinsification gives enough opportunities to constants to seep into the ideal graph.
+
+The current framework also does not facilitate the application of identity transforms, which is tracked by JDK-8350831.
+
+ ",,jbhateja,missa,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3bear:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Extend x86 assembler validation tool to cover existing EVEX encoded instructions.,JDK-8357567,5159390,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-05-22 18:48,2025-05-23 06:03,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,,,,,,,,,"'- Currently tool only supports APX REX2 and Extended EVEX encoded instructions.
+- Emanuel Peter's ""8344942: Template-Based Testing Framework"" exposed some gaps where some of the AVX512 instructions were incorrect.
+- As a future enhancement we plan to extend assembler test tool to support all EVEX encoded and future AVX10 instructions. ",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i3bb0j:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Add AVX2 optimized intrinsic for ML-KEM,JDK-8357524,5159342,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-05-22 11:25,2025-05-22 13:07,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,intrinsic,performance,,,,,,,"'- Future e-core Xeons Clearwater forest only supports AVX2 instruction set and AVX-IFMA.
+- There exist an AVX2 optimized reference implementation of CRYSTALS-Kyber https://csrc.nist.gov/CSRC/media/Projects/post-quantum-cryptography/documents/round-3/submissions/Kyber-Round3.zip
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i3bapv:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+VectorAPI jtreg crashes with -XX:UseAVX=0 -XX:MaxVectorSize=8,JDK-8337791,5136014,,Bug,Open,JDK,JDK,software,duke,,,P3,,jbhateja,jbhateja,jbhateja,2024-08-04 18:22,2025-05-13 15:33,2025-07-15 17:46,,21,25,26,,,26,hotspot,,0,c2,oracle-triage-24,vectorAPI,,,,,,"Various VectorAPI tests are crashing with following options
+
+JAVA_OPTIONS= -XX:UseAVX=0 -XX:MaxVectorSize=8 -Xbatch -XX:-TieredCompilation
+
+test ByteMaxVectorTests.ABSMaskedByteMaxVectorTests(byte[-i * 5], mask[i % 2]): success
+test ByteMaxVectorTests.ABSMaskedByteMaxVectorTests(byte[i * 5], mask[i % 2]): success
+
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  SIGSEGV (0xb) at pc=0x00007812197e0878, pid=86610, tid=86626
+#
+# JRE version: Java(TM) SE Runtime Environment (24.0+8) (fastdebug build 24-ea+8-851)
+# Java VM: Java HotSpot(TM) 64-Bit Server VM (fastdebug 24-ea+8-851, mixed mode, sharing, compressed oops, compressed class ptrs, g1 gc, linux-amd64)
+# Problematic frame:
+# V  [libjvm.so+0x17e0878]  Type::has_memory() const+0x8
+
+Current CompileTask:
+C2:2127  766 %  b        ByteMaxVectorTests::ABSMaskedByteMaxVectorTests @ 82 (151 bytes)
+
+Stack: [0x00007811f5500000,0x00007811f5600000],  sp=0x00007811f55fb8b0,  free space=1006k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+V  [libjvm.so+0x17e0878]  Type::has_memory() const+0x8
+V  [libjvm.so+0xd62ad7]  PhaseCFG::global_code_motion()+0x407
+V  [libjvm.so+0xd65821]  PhaseCFG::do_global_code_motion()+0x51
+V  [libjvm.so+0x9e4d44]  Compile::Code_Gen()+0x2a4
+V  [libjvm.so+0x9e7b9c]  Compile::Compile(ciEnv*, ciMethod*, int, Options, DirectiveSet*)+0x1bec
+V  [libjvm.so+0x8354d5]  C2Compiler::compile_method(ciEnv*, ciMethod*, int, bool, DirectiveSet*)+0x1d5
+V  [libjvm.so+0x9f36f8]  CompileBroker::invoke_compiler_on_method(CompileTask*)+0x928
+V  [libjvm.so+0x9f4388]  CompileBroker::compiler_thread_loop()+0x478
+V  [libjvm.so+0xe9cbac]  JavaThread::thread_main_inner()+0xcc
+V  [libjvm.so+0x17bd2e6]  Thread::call_run()+0xb6
+V  [libjvm.so+0x14a5167]  thread_native_entry(Thread*)+0x127
+C  [libc.so.6+0x9ca94]
+",,jbhateja,kvn,thartmann,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"2024-08-06 16:45;thartmann;hs_err_pid86610.log;https://bugs.openjdk.org/secure/attachment/110526/hs_err_pid86610.log","2024-08-06 16:45;thartmann;replay_pid86610.log;https://bugs.openjdk.org/secure/attachment/110527/replay_pid86610.log",,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i37fsz:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2024-08-06 16:48;thartmann;ILW = SIGSEGV during C2 compilation, single vector API test with -XX:UseAVX=0 -XX:MaxVectorSize=8, disable compilation of affected method = HLM = P3;;;","2024-08-06 21:41;kvn;Important point is that -XX:UseAVX=0 limits vector size to 16 bytes (xmm registers). So 8 bytes vectors should be supported:
+https://github.com/openjdk/jdk/blob/master/src/hotspot/cpu/x86/x86.ad#L2245;;;","2024-10-09 19:27;thartmann;[~jbhateja] Do you plan to fix this for JDK 24 or should be pro-actively defer already?;;;","2024-10-28 14:13;thartmann;I'm deferring this to JDK 25 for now. Feel free to still fix in JDK 24 if the fix is ready in time.;;;","2025-05-13 15:33;thartmann;Since this is an old issue and we are getting closer to RDP 1 for JDK 25 (June 05, 2025), I'm tentatively deferring this to JDK 26. [~jbhateja] feel free to still fix this in JDK 25 if there's time left.;;;",,,,,,,,
+C2 x64 AVX2 vpminmax: assert(regs[i] != regs[j]) failed: regs[1] and regs[2] are both: xmm0,JDK-8351844,5152730,,Bug,Open,JDK,JDK,software,duke,,,P3,,jbhateja,epeter,epeter,2025-03-12 17:30,2025-05-13 14:32,2025-07-15 17:46,,16,17,21,25,26,26,hotspot,,0,c2,oracle-triage-25,template-framework,vectorapi,,,,,"I found this with the Template Framework JDK-8344942.
+
+java -Xbatch -XX:CompileCommand=compileonly,Test::test* -XX:CompileCommand=printcompilation,Test::test* --add-modules=jdk.incubator.vector -XX:UseAVX=2 Test.java
+
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  Internal Error (.../src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp:1010), pid=1913056, tid=1913070
+#  assert(regs[i] != regs[j]) failed: regs[1] and regs[2] are both: xmm0
+#
+# JRE version: Java(TM) SE Runtime Environment (25.0) (fastdebug build 25-internal-LTS-2025-03-11-0926490.emanuel...)
+# Java VM: Java HotSpot(TM) 64-Bit Server VM (fastdebug 25-internal-LTS-2025-03-11-0926490.emanuel..., mixed mode, tiered, compressed oops, compressed class ptrs, g1 gc, linux-amd64)
+# Problematic frame:
+# V  [libjvm.so+0x8bb13d]  void assert_different_registers_impl<XMMRegister, XMMRegister, XMMRegister>(char const*, int, XMMRegister, XMMRegister, XMMRegister)+0xfd
+#
+# Core dump will be written. Default location: Core dumps may be processed with ""/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -- %E"" (or dumping to /oracle-work/jdk-fork0/build/linux-x64-debug/jdk/bin/core.1913056)
+#
+# An error report file with more information is saved as:
+# /.../build/linux-x64-debug/jdk/bin/hs_err_pid1913056.log
+#
+# Compiler replay data is saved as:
+# /.../build/linux-x64-debug/jdk/bin/replay_pid1913056.log
+#
+# If you would like to submit a bug report, please visit:
+#   https://bugreport.java.com/bugreport/crash.jsp
+#
+
+
+Current CompileTask:
+C2:2396  103    b  4       Test::test (43 bytes)
+
+Stack: [0x000074f69a700000,0x000074f69a800000],  sp=0x000074f69a7fb740,  free space=1005k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+V  [libjvm.so+0x8bb13d]  void assert_different_registers_impl<XMMRegister, XMMRegister, XMMRegister>(char const*, int, XMMRegister, XMMRegister, XMMRegister)+0xfd  (c2_MacroAssembler_x86.cpp:1010)
+V  [libjvm.so+0x8b92b4]  C2_MacroAssembler::vpminmax(int, BasicType, XMMRegister, XMMRegister, XMMRegister, int)+0x154  (c2_MacroAssembler_x86.cpp:1010)
+V  [libjvm.so+0x3f7453]  vminmaxL_reg_avxNode::emit(C2_MacroAssembler*, PhaseRegAlloc*) const+0x173  (x86.ad:6561)
+V  [libjvm.so+0x161b95e]  PhaseOutput::scratch_emit_size(Node const*)+0x49e  (output.cpp:3385)
+V  [libjvm.so+0x1613b22]  PhaseOutput::shorten_branches(unsigned int*)+0x382  (output.cpp:539)
+V  [libjvm.so+0x1625e36]  PhaseOutput::Output()+0xa36  (output.cpp:339)
+V  [libjvm.so+0xa7f124]  Compile::Code_Gen()+0xa14  (compile.cpp:3081)
+V  [libjvm.so+0xa8430f]  Compile::Compile(ciEnv*, ciMethod*, int, Options, DirectiveSet*)+0x1fcf  (compile.cpp:891)
+V  [libjvm.so+0x8c3d00]  C2Compiler::compile_method(ciEnv*, ciMethod*, int, bool, DirectiveSet*)+0x440  (c2compiler.cpp:141)
+V  [libjvm.so+0xa91cec]  CompileBroker::invoke_compiler_on_method(CompileTask*)+0xbfc  (compileBroker.cpp:2331)
+V  [libjvm.so+0xa92c28]  CompileBroker::compiler_thread_loop()+0x598  (compileBroker.cpp:1975)
+V  [libjvm.so+0xf7eb0f]  JavaThread::thread_main_inner()+0x12f  (javaThread.cpp:776)
+V  [libjvm.so+0x1947b56]  Thread::call_run()+0xb6  (thread.cpp:231)
+V  [libjvm.so+0x15fa1b8]  thread_native_entry(Thread*)+0x128  (os_linux.cpp:877)
+C  [libc.so.6+0x9caa4]",,epeter,jbhateja,psandoz,thartmann,,,,,,,,,,,,,JDK-8223347,,,,,,,,,,,,,,,,,,,,,,,,"2025-03-12 17:27;epeter;Test.java;https://bugs.openjdk.org/secure/attachment/113726/Test.java","2025-03-12 17:29;epeter;hs_err_pid1913056.log;https://bugs.openjdk.org/secure/attachment/113725/hs_err_pid1913056.log","2025-03-12 17:29;epeter;replay_pid1913056.log;https://bugs.openjdk.org/secure/attachment/113724/replay_pid1913056.log",,,,,,x86,,,,,,,,,,,,,,,,,,,,,,b21,16,,,,,,,,,,,,"0|i3a6x7:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-03-12 17:35;thartmann;Looks like a day 1 bug in the Vector API (JDK-8223347) code.;;;","2025-03-12 17:44;thartmann;ILW = Assert during C2 compilation, single test using Vector API (incubator), no workaround but disable compilation of affected method = HLM = P3;;;","2025-03-12 17:46;thartmann;Paging [~jbhateja] since this is VectorAPI related.;;;","2025-03-12 23:05;jbhateja;Thanks for notifying [~thartmann]. Will analyze and get back.;;;","2025-03-13 11:36;thartmann;Thanks Jatin!;;;","2025-05-13 14:32;thartmann;I'm tentatively deferring this to JDK 26 since it's an old issue and we are getting closer to RDP 1 (June 05, 2025). [~jbhateja] feel free to still fix this in JDK 25 if there's time.;;;",,,,,,,
+"C2: assert((is_integral_type(bt) && bt != T_LONG) || is_signed) failed",JDK-8351864,5152754,,Bug,Open,JDK,JDK,software,duke,,,P3,,jbhateja,epeter,epeter,2025-03-12 20:21,2025-05-13 14:31,2025-07-15 17:46,,19,21,24,25,26,26,hotspot,,0,c2,intrinsic,oracle-triage-25,template-framework,vectorapi,,,,"I found this with the Template Framework JDK-8344942.
+
+I could not extract a stand-alone Java file, only one embedded in a JTREG test. Maybe this is because of profiling?
+
+Still: I spent some hours reproducing this, and credit in the PR would be highly appreciated.
+
+I also improved the assert with this patch, it would be good if that or an even better version would be integrated:
+
+  assert((is_integral_type(bt) && bt != T_LONG) || is_signed, ""sopc=%s, bt=%s, is_signed=%s"",
+         NodeClassNames[sopc], type2name(bt), is_signed ? ""true"" : ""false"");
+
+I ran it with jtreg, and extra vmFlags:
+-XX:-TieredCompilation -Xbatch
+
+/oracle-work/jtreg/bin/jtreg -va -s -jdk:/oracle-work/jdk-fork0/build/linux-x64-debug/images/jdk -javaoptions:""-XX:-TieredCompilation -Xbatch"" -J-Djavatest.maxOutputSize=10000000 /oracle-work/jdk-fork0/open/test/hotspot/jtreg/compiler/vectorapi/TestCast.java
+
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  Internal Error (/oracle-work/jdk-fork0/open/src/hotspot/share/opto/vectornode.cpp:1495), pid=2057327, tid=2057346
+#  assert((is_integral_type(bt) && bt != T_LONG) || is_signed) failed: sopc=(null), bt=float, is_signed=false
+#
+# JRE version: Java(TM) SE Runtime Environment (25.0) (fastdebug build 25-internal-LTS-2025-03-11-0926490.emanuel...)
+# Java VM: Java HotSpot(TM) 64-Bit Server VM (fastdebug 25-internal-LTS-2025-03-11-0926490.emanuel..., mixed mode, sharing, compressed oops, compressed class ptrs, g1 gc, linux-amd64)
+# Problematic frame:
+# V  [libjvm.so+0x19e0c68]  VectorCastNode::opcode(int, BasicType, bool)+0x208
+#
+# Core dump will be written. Default location: Core dumps may be processed with ""/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -- %E"" (or dumping to /oracle-work/jdk-fork0/build/linux-x64-debug/jdk/bin/JTwork/scratch/core.2057327)
+#
+Unsupported internal testing APIs have been used.
+
+# An error report file with more information is saved as:
+# /oracle-work/jdk-fork0/build/linux-x64-debug/jdk/bin/JTwork/scratch/hs_err_pid2057327.log
+#
+# Compiler replay data is saved as:
+# /oracle-work/jdk-fork0/build/linux-x64-debug/jdk/bin/JTwork/scratch/replay_pid2057327.log
+#
+# If you would like to submit a bug report, please visit:
+#   https://bugreport.java.com/bugreport/crash.jsp
+
+
+Current CompileTask:
+C2:374   66    b        compiler.vectorapi.TestCast::test_328 (98 bytes)
+
+Stack: [0x00007a227d800000,0x00007a227d900000],  sp=0x00007a227d8faa40,  free space=1002k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+V  [libjvm.so+0x19e0c68]  VectorCastNode::opcode(int, BasicType, bool)+0x208  (vectornode.cpp:1495)
+V  [libjvm.so+0x19c6f26]  LibraryCallKit::inline_vector_convert()+0x9f6  (vectorIntrinsics.cpp:2342)
+V  [libjvm.so+0x133b902]  LibraryIntrinsic::generate(JVMState*)+0x262  (library_call.cpp:119)
+V  [libjvm.so+0x8cc67b]  CallGenerator::do_late_inline_helper()+0xa1b  (callGenerator.cpp:675)
+V  [libjvm.so+0xa7cf4e]  Compile::inline_incrementally_one()+0x11e  (compile.cpp:2089)
+V  [libjvm.so+0xa7e01b]  Compile::inline_incrementally(PhaseIterGVN&)+0x37b  (compile.cpp:2172)
+V  [libjvm.so+0xa80906]  Compile::Optimize()+0x476  (compile.cpp:2305)
+V  [libjvm.so+0xa8420f]  Compile::Compile(ciEnv*, ciMethod*, int, Options, DirectiveSet*)+0x1ecf  (compile.cpp:858)
+V  [libjvm.so+0x8c3d00]  C2Compiler::compile_method(ciEnv*, ciMethod*, int, bool, DirectiveSet*)+0x440  (c2compiler.cpp:141)
+V  [libjvm.so+0xa91cec]  CompileBroker::invoke_compiler_on_method(CompileTask*)+0xbfc  (compileBroker.cpp:2331)
+V  [libjvm.so+0xa92c28]  CompileBroker::compiler_thread_loop()+0x598  (compileBroker.cpp:1975)
+V  [libjvm.so+0xf7eb0f]  JavaThread::thread_main_inner()+0x12f  (javaThread.cpp:776)
+V  [libjvm.so+0x1947b56]  Thread::call_run()+0xb6  (thread.cpp:231)
+V  [libjvm.so+0x15fa1b8]  thread_native_entry(Thread*)+0x128  (os_linux.cpp:877)
+C  [libc.so.6+0x9caa4]",,epeter,psandoz,thartmann,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"2025-03-12 20:24;epeter;TestCast.java;https://bugs.openjdk.org/secure/attachment/113734/TestCast.java","2025-03-12 20:17;epeter;hs_err_pid2057327.log;https://bugs.openjdk.org/secure/attachment/113733/hs_err_pid2057327.log","2025-03-12 20:17;epeter;replay_pid2057327.log;https://bugs.openjdk.org/secure/attachment/113732/replay_pid2057327.log",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3a72j:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-03-13 18:40;thartmann;Reproduces since JDK 19, probably a regression from JDK-8278173 (paging [~qamai], [~jbhateja]).
+
+ILW = Assert during C2 compilation, single test using Vector API (incubator), -XX:DisableIntrinsic=_VectorConvert or disable compilation of affected method = HLM = P3;;;","2025-05-13 14:31;thartmann;I'm tentatively deferring this to JDK 26 since it's an old issue and we are getting closer to RDP 1 (June 05, 2025). [~jbhateja] feel free to still fix this in JDK 25 if there's time.;;;",,,,,,,,,,,
+Performance regression for Arrays.fill() with AVX512,JDK-8349452,5149723,,Bug,Open,JDK,JDK,software,duke,,,P3,,jbhateja,webbuggrp,webbuggrp,2025-02-03 13:01,2025-05-06 21:10,2025-07-15 17:46,,18,21,25,26,,26,hotspot,,0,c2,dcsae,oracle-triage-25,performance,regression,webbug,,,"ADDITIONAL SYSTEM INFORMATION :
+# Java version
+java 23.0.2 2025-01-21
+java 21.0.6 2025-01-21 LTS
+
+# Operating system details
+$ cat /etc/*release
+DISTRIB_ID=Ubuntu
+DISTRIB_RELEASE=20.04
+DISTRIB_CODENAME=focal
+DISTRIB_DESCRIPTION=""Ubuntu 20.04.6 LTS""
+NAME=""Ubuntu""
+VERSION=""20.04.6 LTS (Focal Fossa)""
+ID=ubuntu
+ID_LIKE=debian
+PRETTY_NAME=""Ubuntu 20.04.6 LTS""
+VERSION_ID=""20.04""
+HOME_URL=""https://www.ubuntu.com/""
+SUPPORT_URL=""https://help.ubuntu.com/""
+BUG_REPORT_URL=""https://bugs.launchpad.net/ubuntu/""
+PRIVACY_POLICY_URL=""https://www.ubuntu.com/legal/terms-and-policies/privacy-policy""
+VERSION_CODENAME=focal
+UBUNTU_CODENAME=focal
+
+A DESCRIPTION OF THE PROBLEM :
+Performance regression for Arrays.fill() in 23.0.2 and 21.0.6 compared to 17.0.12.
+
+REGRESSION : Last worked in version 17.0.14
+
+STEPS TO FOLLOW TO REPRODUCE THE PROBLEM :
+The following steps shows how to reproduce the issue on a Ubuntu Linux
+environment and the corresponding results.
+
+```
+# set corresponding JAVA_HOME before running the commands
+
+17.0.12-oracle:
+java -XX:TieredStopAtLevel=1 ByteMatrix  0.81s user 0.01s system 100% cpu 0.822 total
+java -XX:TieredStopAtLevel=4 ByteMatrix  1.47s user 0.00s system 100% cpu 1.461 total
+
+21.0.6-oracle:
+java -XX:TieredStopAtLevel=1 ByteMatrix  0.82s user 0.01s system 100% cpu 0.836 total
+java -XX:TieredStopAtLevel=4 ByteMatrix  4.22s user 0.01s system 100% cpu 4.214 total
+
+23.0.2-oracle:
+java -XX:TieredStopAtLevel=1 ByteMatrix  0.84s user 0.01s system 100% cpu 0.844 total
+java -XX:TieredStopAtLevel=4 ByteMatrix  4.17s user 0.01s system 100% cpu 4.167 total
+```
+
+EXPECTED VERSUS ACTUAL BEHAVIOR :
+EXPECTED -
+The performance of Arrays.fill() should be similar in newer versions.
+ACTUAL -
+As shown above. There is potential performance issue in C2 JIT compiler. 
+Besides, this issue only happens when `height` is small. If we change 
+`ByteMatrix bM = new ByteMatrix(90, 1);` to `ByteMatrix bM = new ByteMatrix(90,20);`, 
+results look like this:
+```
+17.0.12-oracle:
+java -XX:TieredStopAtLevel=1 ByteMatrix  5.97s user 0.01s system 100% cpu 5.976 total
+java -XX:TieredStopAtLevel=4 ByteMatrix  2.56s user 0.01s system 100% cpu 2.563 total
+
+21.0.6-oracle:
+java -XX:TieredStopAtLevel=1 ByteMatrix  6.11s user 0.02s system 100% cpu 6.126 total
+java -XX:TieredStopAtLevel=4 ByteMatrix  2.22s user 0.02s system 83% cpu 2.677 total
+
+23.0.2-oracle:
+java -XX:TieredStopAtLevel=1 ByteMatrix  9.54s user 0.01s system 87% cpu 10.913 total
+java -XX:TieredStopAtLevel=4 ByteMatrix  2.26s user 0.02s system 99% cpu 2.290 total
+```
+It is interesting the program runs faster with larger values.
+
+---------- BEGIN SOURCE ----------
+# ByteMatrix.java
+
+```java
+import java.util.Arrays;
+
+public final class ByteMatrix {
+    private final byte[][] bytes;
+    public ByteMatrix(int width, int height) {
+        bytes = new byte[(int) width][(int) height];
+    }
+    public void clear(byte value) {
+        for (byte[] aByte : bytes) {
+            Arrays.fill(aByte, value);
+        }
+    }
+    public static void main(String[] args) {
+        ByteMatrix bM = new ByteMatrix(90, 1);
+        int N = 10000000;
+        for (int i = 0; i < N; ++i) {
+            bM.clear((byte) (i % 256));
+        }
+    }
+}
+```
+---------- END SOURCE ----------
+
+FREQUENCY : always
+",,eaymane,epeter,fmatte,jbhateja,thartmann,webbuggrp,,,,,,,,,,,JDK-8275047,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i39oob:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-02-04 22:14;eaymane;Unable to reproduce on an m1 mac system.
+The results are for the smaller 'height' value, and are in milliseconds:
+
+% java --version                         
+java 23 2024-09-17
+Java(TM) SE Runtime Environment (build 23+37-2369)
+Java HotSpot(TM) 64-Bit Server VM (build 23+37-2369, mixed mode, sharing)
+% java -XX:TieredStopAtLevel=1 ByteMatrix
+938
+% java -XX:TieredStopAtLevel=4 ByteMatrix
+1808
+----------------
+% java --version
+java 21.0.6 2025-01-21 LTS
+Java(TM) SE Runtime Environment (build 21.0.6+8-LTS-188)
+Java HotSpot(TM) 64-Bit Server VM (build 21.0.6+8-LTS-188, mixed mode, sharing)
+% java -XX:TieredStopAtLevel=1 ByteMatrix
+937
+% java -XX:TieredStopAtLevel=4 ByteMatrix
+1770
+----------------
+% java --version
+java 17.0.12 2024-07-16 LTS
+Java(TM) SE Runtime Environment (build 17.0.12+8-LTS-286)
+Java HotSpot(TM) 64-Bit Server VM (build 17.0.12+8-LTS-286, mixed mode, sharing)
+% java -XX:TieredStopAtLevel=1 ByteMatrix
+985
+% java -XX:TieredStopAtLevel=4 ByteMatrix
+1766
+;;;","2025-02-05 18:47;epeter;[~eaymane] You tested it on m1. I'm running it on x64 linux.
+
+Here the slightly modified test - I just added some print statements and timing to ensure I'm not measuring time before my code even runs.
+
+import java.util.Arrays;
+
+public final class ByteMatrix {
+    private final byte[][] bytes;
+    public ByteMatrix(int width, int height) {
+        bytes = new byte[(int) width][(int) height];
+    }
+    public void clear(byte value) {
+        for (byte[] aByte : bytes) {
+            Arrays.fill(aByte, value);
+        }
+    }
+    public static void main(String[] args) {
+        System.out.println(""Run."");
+        long t0 = System.nanoTime();
+        ByteMatrix bM = new ByteMatrix(90, 1);
+        int N = 10000000;
+        for (int i = 0; i < N; ++i) {
+            bM.clear((byte) (i % 256));
+        }
+        long t1 = System.nanoTime();
+        System.out.println(""elapsed: "" + (t1 - t0));
+    }
+}
+
+I also disabled turbo-boost, which is critical for such measurements.
+
+/oracle-work/jdk-23.0.2/bin/java -XX:TieredStopAtLevel=1 ByteMatrix
+Run.
+elapsed: 1607271407
+
+/oracle-work/jdk-23.0.2/bin/java -XX:TieredStopAtLevel=4 ByteMatrix
+Run.
+elapsed: 8298166091
+
+/oracle-work/jdk-21.0.6/bin/java -XX:TieredStopAtLevel=4 ByteMatrix
+Run.
+elapsed: 8197218625
+
+/oracle-work/jdk-21.0.6/bin/java -XX:TieredStopAtLevel=1 ByteMatrix
+Run.
+elapsed: 1605899936
+
+
+/oracle-work/jdk-17.0.12/bin/java -XX:TieredStopAtLevel=1 ByteMatrix
+Run.
+elapsed: 1587202016
+
+/oracle-work/jdk-17.0.12/bin/java -XX:TieredStopAtLevel=4 ByteMatrix
+Run.
+elapsed: 2361920526
+
+
+/oracle-work/jdk-17.0.15/bin/java -XX:TieredStopAtLevel=1 ByteMatrix
+Run.
+elapsed: 1590344130
+
+/oracle-work/jdk-17.0.15/bin/java -XX:TieredStopAtLevel=4 ByteMatrix
+Run.
+elapsed: 2197434416
+
+--------------------------------------
+
+This looks like something really did get SIGNIFFICANTLY slower from JDK17 -> JDK21.
+
+I'll investigate a little more, and maybe write a more pin-pointed benchmark.;;;","2025-02-05 19:12;epeter;Creating a test that fails when it takes too much time, so we can run build-search:
+
+import java.util.Arrays;
+
+public final class ByteMatrix {
+    private final byte[][] bytes;
+    public ByteMatrix(int width, int height) {
+        bytes = new byte[(int) width][(int) height];
+    }
+    public void clear(byte value) {
+        for (byte[] aByte : bytes) {
+            Arrays.fill(aByte, value);
+        }
+    }
+    public static void main(String[] args) {
+        System.out.println(""Init and Warmup."");
+        ByteMatrix bM = new ByteMatrix(90, 1);
+
+        int N = 10000000;
+        for (int i = 0; i < N; ++i) {
+            bM.clear((byte) (i % 256));
+        }
+ 
+        System.out.println(""Run."");
+        long t0 = System.nanoTime();
+        for (int i = 0; i < N; ++i) {
+            bM.clear((byte) (i % 256));
+        }
+        long t1 = System.nanoTime();
+        long t = t1 - t0;
+        System.out.println(""elapsed: "" + (t));
+        if (t > 4000000000L) {
+            throw new RuntimeException(""too slow"");
+        }
+    }
+}
+
+
+/oracle-work/jdk-17.0.12/bin/java -XX:TieredStopAtLevel=4 ByteMatrix.java 
+Init and Warmup.
+Run.
+elapsed: 2311643937
+
+/oracle-work/jdk-21.0.6/bin/java -XX:TieredStopAtLevel=4 ByteMatrix.java 
+Init and Warmup.
+Run.
+elapsed: 8180353387
+Exception in thread ""main"" java.lang.RuntimeException: too slow
+	at ByteMatrix.main(ByteMatrix.java:31);;;","2025-02-05 19:18;epeter;Trubo boost can significantly alter the results, because it allows the CPU to work faster (higher clock speed) for a short amount of time, until the CPU heats up and it has to slow down to a sustainable level. Disabling turbo boost means that the CPU runs at a constant clock cycle, and so the time measurement is more reliable.
+
+Aaaah, we just found out that the issue is probably between:
+- AVX2: no regression
+- AVX3 / AVX512: regression. Maybe there is some AVX512 Array::fill intrinsic that is not very good for small arrays.;;;","2025-02-05 19:25;epeter;This could be the cause of the regression. [~jbhateja] Can you have a look?
+JDK-8275047;;;","2025-02-05 19:31;epeter;It looks like it could be a regression from this change in JDK18:
+JDK-8275047: Optimize existing fill stubs for AVX-512 target
+
+I see that [~jbhateja] did performance testing back there, but only starting with array sizes >= 10.
+This regression looks like it is on very small arrays, here 1 element.;;;","2025-02-05 19:31;epeter;[~thartmann] is still running the build-search, so that we can confirm that it is JDK-8275047.;;;","2025-02-05 20:40;thartmann;I confirmed that it's a regression from JDK-8275047 in JDK 18 b21.;;;","2025-02-05 20:42;thartmann;ILW = Performance regression, edge case with Arrays.fill and AVX-512, no workaround but use AVX2 = HLM = P3;;;","2025-02-10 11:44;jbhateja;Peformance of optimized fill for different sizes
+
+GNR>for i in 1 4 8 16 32 64 96 128 256; do echo ""SIZE = $i""; java -Xbatch -XX:-TieredCompilation -XX:UseAVX=2 -cp . ByteMatrix $i; java -Xbatch -XX:-TieredCompilation -XX:UseAVX=3 -cp . ByteMatrix $i; done
+SIZE = 1
+Run.
+elapsed: 1349113781
+Run.
+elapsed: 6520207560
+SIZE = 4
+Run.
+elapsed: 1772088687
+Run.
+elapsed: 6506770516
+SIZE = 8
+Run.
+elapsed: 2477918993
+Run.
+elapsed: 6507166582
+SIZE = 16
+Run.
+elapsed: 2753495712
+Run.
+elapsed: 6654518500
+SIZE = 32
+Run.
+elapsed: 3503449592
+Run.
+elapsed: 7200327857
+SIZE = 64
+Run.
+elapsed: 8699340657
+Run.
+elapsed: 2341319386
+SIZE = 96
+Run.
+elapsed: 7332777796
+Run.
+elapsed: 7262748797
+SIZE = 128
+Run.
+elapsed: 9837441795
+Run.
+elapsed: 2815066980
+SIZE = 256
+Run.
+elapsed: 10630173370
+Run.
+elapsed: 7555739001
+
+
+Without OptimizeFill (Stub)
+GNR>for i in 1 4 8 16 32 64 96 128 256; do echo ""SIZE = $i""; java -Xbatch -XX:-TieredCompilation -XX:UseAVX=2 -cp . ByteMatrix $i; java -Xbatch -XX:-TieredCompilation -XX:UseAVX=3  -XX:-OptimizeFill -cp . ByteMatrix $i; done
+SIZE = 1
+Run.
+elapsed: 1349078338
+Run.
+elapsed: 1348925407
+SIZE = 4
+Run.
+elapsed: 1768614017
+Run.
+elapsed: 1746244560
+SIZE = 8
+Run.
+elapsed: 2450750783
+Run.
+elapsed: 2432879829
+SIZE = 16
+Run.
+elapsed: 2754119558
+Run.
+elapsed: 2815326161
+SIZE = 32
+Run.
+elapsed: 3611029103
+Run.
+elapsed: 3333030676
+SIZE = 64
+Run.
+elapsed: 8700533260
+Run.
+elapsed: 8985031446
+SIZE = 96
+Run.
+elapsed: 7332627568
+Run.
+elapsed: 6786500170
+SIZE = 128
+Run.
+elapsed: 9866379227
+Run.
+elapsed: 10093268601
+SIZE = 256
+Run.
+elapsed: 10628638554
+Run.
+elapsed: 10632333394
+GNR>
+;;;","2025-02-10 11:46;jbhateja; JDK-8275047 optimized the fill stub for AVX512 targets, showing 2-5x gains on fill sizes above 64 bytes.
+For small fill sizes call overhead seems to dominate the performance gains.
+
+This is a typical use case for partial inlining, where fill sizes below 64 bytes (vector size) should be inlined while bigger sizes should call optimized stub.
+
+We already have partial inlining in place for Arraycopy and mismatch operation. 
+
+;;;","2025-02-10 11:48;jbhateja;Workaround is to use -XX:-OptimizeFill runtime flag.;;;","2025-05-06 21:10;thartmann;Tentatively deferring this to JDK 26 because it's an old issue. Feel free to still fix this in JDK 25 if there's time left.;;;"
+Optimize casting operations for x86 e-core target,JDK-8346840,5147014,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-12-26 19:39,2025-05-01 16:51,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,c2,performance,,,,,,,"'- Existing integral and floating casts involving Long and Double types are only efficient on AVX512DQ targets.
+- Intel E-Core Xerons only support AVX2 feature.
+
+Optimize these casts using newly proposed Lowering phase.",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i397z7:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-05-01 16:51;jbhateja;Following is the link to Draft PR for this optimization 
+https://github.com/openjdk/jdk/pull/22886
+
+We are waiting for integration of PhaseLowering
+https://github.com/openjdk/jdk/pull/21599
+;;;",,,,,,,,,,,,
+ZGC: Simplify barrier relocation bookkeeping handling,JDK-8355341,5156724,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-04-23 07:30,2025-04-23 20:46,2025-07-15 17:46,,,,,,,tbd,hotspot,,0,zgc,,,,,,,,"As per following suggestion from Dean Long on PR https://github.com/openjdk/jdk/pull/24664
+
+""This looks OK, but we could do better. Instead of making the relocation point to the end of the instruction and then looking up the offset with patch_barrier_relocation_offset(), why not make the offset always 0 and have the relocation point to the data offset inside the instruction""
+
+We can fold the offset into relocation and simplify the existing scheme.",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3ausr:",9223372036854775807,,,,,,,gc,,,,,,,,,,,,,,,,,,,,,
+Zero initialized stable array index expression is not constant folded,JDK-8353427,5154550,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-04-01 13:22,2025-04-02 21:41,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,c2,performance,,,,,,,"Please consider following test
+
+import jdk.internal.vm.annotation.Stable;
+import java.util.stream.IntStream;
+
+public class constant_value {
+    @Stable
+    public static int [] arr;
+
+    public static int micro(int val) {
+       return arr[0] + arr[1] + arr[2] + arr[8] + arr[16] + val;
+    }
+
+    public static void main(String [] args) {
+        int res = 0;
+        arr = IntStream.range(0, 32).map(i -> 0).toArray();
+        for (int i = 0; i < 10000; i++) {
+            res += micro(i);
+        }
+        System.out.println(""[res] "" + res);
+    }
+}
+
+Here, all the elements of the stable array are set to zero.
+
+java -Xbootclasspath/a:. -XX:CompileCommand=PrintIdealPhase,constant_value::micro,AFTER_PARSING -XX:CompileOnly=constant_value::micro --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED -Xbatch -XX:-TieredCompilation -cp . constant_value
+
+We can see multiple LoadI Nodes in post-parsing IR
+
+AFTER: AFTER_PARSING
+  0  Root  === 0 49  [[ 0 1 3 44 23 39 25 34 29 ]]
+  3  Start  === 3 0  [[ 3 5 6 7 8 9 10 ]]  #{0:control, 1:abIO, 2:memory, 3:rawptr:BotPTR, 4:return_address, 5:int}
+  5  Parm  === 3  [[ 49 ]] Control !jvms: constant_value::micro @ bci:-1 (line 10)
+  6  Parm  === 3  [[ 49 ]] I_O !jvms: constant_value::micro @ bci:-1 (line 10)
+  7  Parm  === 3  [[ 49 46 41 36 27 31 ]] Memory  Memory: @BotPTR *+bot, idx=Bot; !jvms: constant_value::micro @ bci:-1 (line 10)
+  8  Parm  === 3  [[ 49 ]] FramePtr !jvms: constant_value::micro @ bci:-1 (line 10)
+  9  Parm  === 3  [[ 49 ]] ReturnAdr !jvms: constant_value::micro @ bci:-1 (line 10)
+ 10  Parm  === 3  [[ 48 ]] Parm0: int !jvms: constant_value::micro @ bci:-1 (line 10)
+ 23  ConP  === 0  [[ 26 26 30 30 35 35 40 40 45 45 ]]  #stable:int[int:32] (java/lang/Cloneable,java/io/Serializable)<ciTypeArray length=32 type=<ciTypeArrayKlass name=[I loaded=true ident=1353 address=0x00007f729c01a0e0> ident=1367 address=0x00007f73502f96e0> *
+ 25  ConL  === 0  [[ 26 ]]  #long:16
+ 26  AddP  === _ 23 23 25  [[ 27 ]]  !jvms: constant_value::micro @ bci:4 (line 10)
+ 27  LoadI  === _ 7 26  [[ 32 ]]  @int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=4; #int !jvms: constant_value::micro @ bci:4 (line 10)
+ 29  ConL  === 0  [[ 30 ]]  #long:20
+ 30  AddP  === _ 23 23 29  [[ 31 ]]  !jvms: constant_value::micro @ bci:9 (line 10)
+ 31  LoadI  === _ 7 30  [[ 32 ]]  @int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=4; #int !jvms: constant_value::micro @ bci:9 (line 10)
+ 32  AddI  === _ 27 31  [[ 37 ]]  !jvms: constant_value::micro @ bci:10 (line 10)
+ 34  ConL  === 0  [[ 35 ]]  #long:24
+ 35  AddP  === _ 23 23 34  [[ 36 ]]  !jvms: constant_value::micro @ bci:15 (line 10)
+ 36  LoadI  === _ 7 35  [[ 37 ]]  @int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=4; #int !jvms: constant_value::micro @ bci:15 (line 10)
+ 37  AddI  === _ 32 36  [[ 42 ]]  !jvms: constant_value::micro @ bci:16 (line 10)
+ 39  ConL  === 0  [[ 40 ]]  #long:48
+ 40  AddP  === _ 23 23 39  [[ 41 ]]  !jvms: constant_value::micro @ bci:22 (line 10)
+ 41  LoadI  === _ 7 40  [[ 42 ]]  @int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=4; #int !jvms: constant_value::micro @ bci:22 (line 10)
+ 42  AddI  === _ 37 41  [[ 47 ]]  !jvms: constant_value::micro @ bci:23 (line 10)
+ 44  ConL  === 0  [[ 45 ]]  #long:80
+ 45  AddP  === _ 23 23 44  [[ 46 ]]  !jvms: constant_value::micro @ bci:29 (line 10)
+ 46  LoadI  === _ 7 45  [[ 47 ]]  @int[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=4; #int !jvms: constant_value::micro @ bci:29 (line 10)
+ 47  AddI  === _ 42 46  [[ 48 ]]  !jvms: constant_value::micro @ bci:30 (line 10)
+ 48  AddI  === _ 10 47  [[ 49 ]]  !jvms: constant_value::micro @ bci:32 (line 10)
+
+If we initialize the stable array with a non-zero value, e.g., 1, all the array index expressions are folded.
+
+import jdk.internal.vm.annotation.Stable;
+import java.util.stream.IntStream;
+
+public class constant_value {
+    @Stable
+    public static int [] arr;
+
+    public static int micro(int val) {
+       return arr[0] + arr[1] + arr[2] + arr[8] + arr[16] + val;
+    }
+
+    public static void main(String [] args) {
+        int res = 0;
+        arr = IntStream.range(0, 32).map(i -> 1).toArray();
+        for (int i = 0; i < 10000; i++) {
+            res += micro(i);
+        }
+        System.out.println(""[res] "" + res);
+    }
+}
+
+CPROMPT>java -Xbootclasspath/a:. -XX:CompileCommand=PrintIdealPhase,constant_value::micro,AFTER_PARSING -XX:CompileOnly=constant_value::micro --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED -Xbatch -XX:-TieredCompilation -cp . constant_value
+CompileCommand: PrintIdealPhase constant_value.micro const char* PrintIdealPhase = 'AFTER_PARSING'
+CompileCommand: compileonly constant_value.micro bool compileonly = true
+AFTER: AFTER_PARSING
+  0  Root  === 0 52  [[ 0 1 3 50 ]]
+  3  Start  === 3 0  [[ 3 5 6 7 8 9 10 ]]  #{0:control, 1:abIO, 2:memory, 3:rawptr:BotPTR, 4:return_address, 5:int}
+  5  Parm  === 3  [[ 52 ]] Control !jvms: constant_value::micro @ bci:-1 (line 10)
+  6  Parm  === 3  [[ 52 ]] I_O !jvms: constant_value::micro @ bci:-1 (line 10)
+  7  Parm  === 3  [[ 52 ]] Memory  Memory: @BotPTR *+bot, idx=Bot; !jvms: constant_value::micro @ bci:-1 (line 10)
+  8  Parm  === 3  [[ 52 ]] FramePtr !jvms: constant_value::micro @ bci:-1 (line 10)
+  9  Parm  === 3  [[ 52 ]] ReturnAdr !jvms: constant_value::micro @ bci:-1 (line 10)
+ 10  Parm  === 3  [[ 51 ]] Parm0: int !jvms: constant_value::micro @ bci:-1 (line 10)
+ 50  ConI  === 0  [[ 51 ]]  #int:5
+ 51  AddI  === _ 10 50  [[ 52 ]]  !jvms: constant_value::micro @ bci:32 (line 10)
+ 52  Return  === 5 6 7 8 9 returns 51  [[ 0 ]]
+[res] 50045000
+CPROMPT>",,chagedorn,jbhateja,qamai,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3ahrn:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-04-01 20:35;chagedorn;Converting into an RFE since it's just an inefficiency.;;;","2025-04-02 21:41;qamai;I believe this is an expected behaviour, @Stable only folds a constant if it is non-zero, what you want is probably another annotation marking that a field is deeply immutable.;;;",,,,,,,,,,,
+Optimize vector slice operation with constant index using VPALIGNR instruction,JDK-8303762,5095699,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,qamai,qamai,2023-03-07 22:36,2025-03-18 18:35,2025-07-15 17:46,,21,,,,,tbd,hotspot,,0,vectorapi,,,,,,,,"Vector.slice is a method at the top-level class of the Vector API that concatenates the 2 inputs into an intermediate composite and extracts a window equal to the size of the inputs into the result. It is used in vector conversion methods where the part number is not 0 to slice the parts to the correct positions. Slicing is also used in text processing such as utf8 and utf16 validation. x86 starting from SSSE3 has palignr which does vector slicing very efficiently. As a result, I think it is beneficial to add a C2 node for this operation as well as intrinsify Vector.slice method.",,jbhateja,psandoz,qamai,roboduke,,,,,,,,,,,,,,,,,,,JDK-8310459,JDK-8351434,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i30nar:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2023-03-08 00:01;roboduke;A pull request was submitted for review.
+URL: https://git.openjdk.org/jdk/pull/12909
+Date: 2023-03-07 18:23:42 +0000;;;","2025-03-18 18:34;jbhateja;Hi [~qamai], I have modified the front-end implementation and slightly optimized your backed implementation. Please review it once the PR is out.;;;",,,,,,,,,,,
+Investigate Vector API Performance degradation with  UTF-8 Validation,JDK-8351434,5152289,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-03-07 23:57,2025-03-14 04:08,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,vectorapi,,,,,,,,"Please find the context in following mail chain
+
+On Mar 3, 2025, at 1:03 PM, Paul Sandoz <paul.sandoz@oracle.com> wrote:
+
+Ok, thanks! 
+Paul.
+
+
+On Mar 3, 2025, at 11:25 AM, Bhateja, Jatin <jatin.bhateja@intel.com> wrote:
+
+Hi Paul,
+ 
+The C-snippet you showed is making use of two vector permutation instruction, our recently added Vector.selectFrom[1] API may be useful here.
+ 
+I will do some experimentation and get back.
+ 
+Best Regards,
+Jatin.
+ 
+[1] https://download.java.net/java/early_access/jdk24/docs/api/jdk.incubator.vector/jdk/incubator/vector/ByteVector.html#selectFrom(jdk.incubator.vector.Vector,jdk.incubator.vector.Vector)
+ 
+ 
+ 
+From: Paul Sandoz <paul.sandoz@oracle.com>
+Sent: Tuesday, March 4, 2025 12:11 AM
+To: Ian Graves <ian.graves@oracle.com>
+Cc: Bhateja, Jatin <jatin.bhateja@intel.com>; Viswanathan, Sandhya <sandhya.viswanathan@intel.com>
+Subject: Re: Vector API Performance: UTF-8 Validation Example
+ 
+Thanks Ian. 
+ 
+AFAICT the Java algorithm derived from the paper is slightly different the algorithm implemented in C, as if the algorithm evolved? If so we should recognize that, but clearly those algorithmic differences should result in larger differences in generated instructions.
+ 
+It would be good to identify in the Java perfasm results the improvements due to the optimization of selectFrom.
+ 
+I think you have rightly identified the current main bottleneck, which is the code gen of slice, it's not currently an intrinsic [1].
+ 
+ByteVector prev2 = prevInputBlock.slice(species.length() - 2, input);
+ 
+Vs.
+ 
+static inline __m512i avx512_push_last_2bytes_of_a_to_b(__m512i a, __m512i b) {
+  __m512i indexes = _mm512_set_epi64(0x3D3C3B3A39383736, 0x3534333231302F2E,
+                                     0x2D2C2B2A29282726, 0x2524232221201F1E,
+                                     0x1D1C1B1A19181716, 0x1514131211100F0E,
+                                     0x0D0C0B0A09080706, 0x0504030201007F7E);
+  return _mm512_permutex2var_epi8(b, indexes, a);
+}
+ 
+Or 
+ 
+static inline __m256i push_last_2bytes_of_a_to_b(__m256i a, __m256i b) {
+  return _mm256_alignr_epi8(b, _mm256_permute2x128_si256(a, b, 0x21), 14);
+}
+ 
+If the slice offset is a constant I believe there is some opportunity for us to generate similar code.
+ 
+Paul.
+ 
+[1] 
+    final
+    @ForceInline
+    ByteVector sliceTemplate(int origin, Vector<Byte> v1) {
+        ByteVector that = (ByteVector) v1;
+        that.check(this);
+        Objects.checkIndex(origin, length() + 1);
+        ByteVector iotaVector = (ByteVector) iotaShuffle().toBitsVector();
+        ByteVector filter = broadcast((byte)(length() - origin));
+        VectorMask<Byte> blendMask = iotaVector.compare(VectorOperators.LT, filter);
+        AbstractShuffle<Byte> iota = iotaShuffle(origin, 1, true);
+        return that.rearrange(iota).blend(this.rearrange(iota), blendMask);
+    }
+ 
+ 
+On Feb 28, 2025, at 3:17 PM, Ian Graves <ian.graves@oracle.com> wrote:
+ 
+Greetings All!
+ 
+Hello! I’ve been doing some work on the Oracle side experimenting with performance of an example vectorized workload from[1][2] with UTF-8 Validation. I’ve been running some perf benchmarks comparing [1] to [2] with some minor modifications to see how much I could close the gap between the optimized C version vs the Java Vector version. Some of my findings are attached in a rough draft that I intend to share to the list, but wanted to run by you all first. The write up is in Markdown.
+ 
+It seems that I’m observing some bloated code generation around slices and perhaps some other spots in the code that results in much larger hot segments. It seems like a possibility for some optimization work around here, but I think you all may be a better judge of this than me on the specifics. I’m more than happy to dig in further but at this point it probably make sense to share some findings (attached).
+ 
+I’m going to keep at this write up for a little bit, but feel free to read it the draft and offer any opinions or thoughts you may have on ways this could go forward.
+ 
+Thanks!
+ 
+Ian Graves
+ 
+[1] https://github.com/lemire/fastvalidate-utf-8
+[2] https://github.com/AugustNagro/utf8.java
+<utf8-blending.md>
+",,jbhateja,psandoz,qamai,,,,,,,,,,,,,,,,,,,,,,,,,,,,JDK-8341102,JDK-8342662,JDK-8303762,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3a477:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-03-08 01:37;qamai;For slicing, I think constant folding and lowering may be of great help here. During lowering, if we find that the index vector is a constant, then we can replace it with a better instruction (in this case a node that will emit vpalignr). See JDK-8342662 and JDK-8341102;;;",,,,,,,,,,,,
+Improve performance of floating point reduction kernels,JDK-8351488,5152356,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-03-10 16:55,2025-03-10 17:09,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,performance,,,,,,,,"Our recent runs on different leading edge platforms show that Floating point reduction kernels are better off SLP vectorization than with SLP.
+
+While ADD MUL shows degraded performance on Granite Rapids AP.
+Min/Max shows performance degradation on Sierra Forest SP (AVX2 only Xeon)
+
+Please find attached the data.",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"2025-03-10 16:56;jbhateja;reduction_kernel_performance.png;https://bugs.openjdk.org/secure/attachment/113688/reduction_kernel_performance.png","2025-03-10 17:03;jbhateja;test_reduction_perf.java;https://bugs.openjdk.org/secure/attachment/113689/test_reduction_perf.java",,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i3a4m3:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Missing ideal transforms for trigonometric identities  ,JDK-8350831,5151571,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-02-27 12:02,2025-02-27 13:58,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,c2-igvn,performance,,,,,,,"The following micro incurs redundant call overhead for a trigonometric identity involving sin and inverse sin (arcsin) APIs for angles known at compile time.
+
+public static double micro() {
+    return Math.sin(Math.asin(1.0));   // angle can be a constant b/w -1.0 and 1.0
+}
+
+arcsin(sin(x))   => x
+arccos(cos(x)) => x
+sin(arcsin(x)    => x
+cos(arccos(x)  => x
+
+Problem:
+-	Transcendental stubs calls are agnostic to idealizations. 
+Solution:
+-	Creation of idealizable macro nodes, which can be lowered to calls during macro expansion will save redundant call overheads.
+",,jbhateja,missa,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"2025-02-27 12:28;jbhateja;asm.png;https://bugs.openjdk.org/secure/attachment/113486/asm.png","2025-02-27 12:06;jbhateja;identities.png;https://bugs.openjdk.org/secure/attachment/113478/identities.png",,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i3a02z:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Optimize Math.copySign API for Intel e-core targets,JDK-8349138,5149648,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-01-31 16:32,2025-02-10 14:09,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,c2,intrinsic,performance,,,,,,"Math.copySign is only intrinsified on x86 targets supporting the AVX512 feature.
+E-core Xeons support only the AVX2 feature set and still compile java implementation which is composed of logical operations.
+
+Since there is a 3-cycle penalty for copying incoming float/double values to GPRs before being operated upon by logical operation there is an opportunity to optimize this using an efficient instruction sequence. ",,jbhateja,roboduke,thartmann,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i39o7n:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2025-01-31 17:04;roboduke;A pull request was submitted for review.
+Branch: master
+URL: https://git.openjdk.org/jdk/pull/23386
+Date: 2025-01-31 11:22:47 +0000;;;",,,,,,,,,,,,
+Extend existing large page allocations to support hybrid large pages,JDK-8279509,5065666,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2022-01-05 14:50,2025-01-24 18:09,2025-07-15 17:46,,19,,,,,tbd,hotspot,,0,large_memory,large-pages,,,,,,,"'- Current large page support does not perform partial heap allocations. 
+- For large heap sizes split the allocation to multiple large pages in descending order of page size.
+  ",,jbhateja,tschatzl,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i2vk8b:",9223372036854775807,,,,,,,gc,,,,,,,,,"2022-01-10 14:42;tschatzl;The description looks like there are multiple issues here, so please split them into multiple issues. Thanks.
+
+Please also consider discussing the ""For large heap sizes split the allocation to multiple large pages in descending order of page size"" (i.e. effectively suggesting using multiple page sizes for a single reservation) suggestion before in hotspot-gc-dev how this should work with the various collectors assuming that this is meant mainly as a gc enhancement as it is assigned to this component.
+
+The different collectors have different requirements/assumptions for page sizes of the java heap, and e.g. adding g1 support for multiple different page sizes seems to be rather complicated, which at least warrants a split-out into per-gc RFEs (of course keeping those joined that do not differ too much).
+;;;",,,,,,,,,,,,
+Promote scalar IR node sharing using Node::Flag_is_commutative_vector_op,JDK-8348134,5148525,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2025-01-21 13:36,2025-01-21 13:52,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,c2,,,,,,,,"This is a follow-up enhancement to promote scalar IR node sharing using the newly added C2 IR node level flag ""Flag_is_commutative_vector_op"".
+
+It ensures nodes are marked as commutable right during IR construction and enables sharing such IR nodes with flipped inputs during GVN.
+
+Currently, during the idealization of commutative operations, we sort the inputs of commutative IR based on the idx value thereby enabling communing during GVN, this scheme adds an unneeded dependency on the idealization pass and can be aligned as per the newly added Vector IR sharing mechanism.
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,JDK-8342393,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i39ha3:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Optimize UMIN/UMAX reduction operations,JDK-8346256,5146308,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-12-16 13:46,2024-12-17 12:36,2025-07-15 17:46,,25,,,,,tbd,hotspot,,0,vectorapi,,,,,,,,'- Intrinsify and add optimized x86 backend implementation for unsigned min/max for x86  ,,jbhateja,psandoz,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i3940z:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Vector scan operation,JDK-8339348,5137993,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,psandoz,psandoz,2024-08-31 03:49,2024-12-05 13:28,2025-07-15 17:46,,23,,,,,tbd,hotspot,,0,vectorapi,,,,,,,,"Add a cross-lane operation that performs a scan (or prefix sum) of a vector's elements for a given associated operator e.g.,
+
+    public abstract Vector<E> scanLanes(VectorOperators.Associative op);
+
+Although there is no known vector hardware instruction on common CPU architectures we can emit a very efficient sequence of permutation and associative instructions for the target hardware.
+
+The scan should be an ""inclusive"" scan.  That is, the last lane of the output will also be the result of reducing all the lanes.  Also, the first lane of the output will always be equal to the first lane of the input.  A so-called ""exclusive"" scan can be obtained by shifting the lanes by one, and shifting in the identity of the scan op (0 for ADD or OR, -1 for AND, etc.).
+
+(Either kind of scan is easily turned into the other.  But inclusive scans produce strictly more information exclusive scans, since converting the latter to the former requires an extra reduction operation.)
+
+Reductions and scans, used as components of larger algorithms, often take a partial sum (or other accumulated value, for AND/OR/MAX/etc.) from data preceding the current vector, and contribute to partial sums of data that comes after the current vector.  We could represent this directly in the API by providing an optional parameter for the leftward partial sum, for Vector::reduceLanes.  But, for reduction, it is just as easy to add this partial sum to the result returned by reduceLanes.  This is true whether there is a mask (for partial reduction) or not (for unconditional full reduction).
+
+    public Vector<E> scanLanes(VectorOperators.Associative op, ETYPE leftInput) {
+      var that = this.scanLanes(op);
+      return that.lanewise(op, that.broadcast(leftInput));
+    }
+
+For scans, the situation might be more subtle.  In the maskless (unconditional) case, if you are scanning across a sequence of vectors, if you don't have an optional parameter to feed in the leftward scan output, then you have to specify a workaround.  In this case, the workaround is to ""add"" (or AND or OR or MAX) the appropriate leftward reduction value (the ""last scan value to the left"" because it is an inclusive scan) into ALL of the lanes of the current scan result.  That is not much harder than doing the corresponding scalar ""add"" in the case of reduceLanes.
+
+Besides the familiar distinction of scan vs. reduce (vector vs. scalar result) and inclusive vs. exclusive, there is another variation on behavior to consider here, which is whether to have a mask or not.  Here we encounter so-called ""partial"" or ""segmented"" scans.  This happens when the scan operation takes a lane mask operand as well.  In the resulting segmented scan, each output lane gets a scan result, but the scanning is performed disjointly on segments, with each segment accumulating only values within that segment.
+
+Here is a reference to segmented scans:
+https://en.wikipedia.org/wiki/Segmented_scan
+
+Here is a paper by a researcher who has specialized in their use:
+https://www.cs.cmu.edu/~guyb/papers/Ble93.pdf
+
+There are at least five conventions for decoding a mask to derive a set of disjoint lane segments.  Either the beginning or the end of a segment can be marked, and either a 1 or a 0 can mark the segment boundary.  Alternatively, mask parity variations can mark the segment boundaries.  Each representation has its advantages.  For the Vector API, which tends to focus on left-to-right processing, it seems useful to say that a 1 bit (in the mask) defines a new segment, including the corresponding data lane, and also including (after that lane) any immediately following lanes that have a 0 bit (in the mask).  So the bit-count of the mask is the number of complete segments.
+
+If the mask begins with 0 (for the first lane), then that signals the first lane in the current vector continues a scan segment that was started (logically) before the current vector.  We might call this a ""continuing"" scan segment.  THIS case is where another scalar input comes in handy:  We want a way to send in the value of the last lane of the previous scan result, from the previous vector scan, so that it can be added into the lanes which participate in the ""continuing"" scan segment.
+
+(These conventions are less friendly to reverse-order processing, but that can be easily obtained by reversing all vectors and performing forward-order logic to their reversals.)
+
+The implementation of a segmented scan is more expensive than an unsegmented scan, because it requires more bookkeeping.  It is still a log-time operation (but with the constant multiplier about doubled).
+
+At each point in the algorithm, each intermediate partial sum gets a contribution ""from the left"" (from an earlier lane) only if the relevant mask bit is clear.  If some mask bit is set, then contributions ""from the left"" at that point are blocked, replaced by the null/identity value of the associative scan op.  For the initial lane position, the contribution ""from the left"" is supplied by the input scalar argument, and it percolates only until the first lane which is selected with a 1 in the mask.
+
+The declaration for a segmented scan could therefore look like this:
+
+    public abstract Vector<E> scanLanes(VectorOperators.Associative op, VectorMask<E> m, long leftInput);
+    public EVector scanLanes(VectorOperators.Associative op, VectorMask<E> m, ETYPE leftInput);
+
+The optional ""leftInput"" parameter is typically taken from the last lane of the previously scanned vector, or is the identity element if there is none.  The left-input is fed into the leftmost scan segment (the ""continuing"" segment) IF the first lane is unselected by the mask, and ignored otherwise.
+
+If the left-input argument is not supported, or if the algorithm cannot supply it (because it is using thread parallelism as well as vector parallelism!), there is a workaround.  The workaround is to use `VectorMask::firstTrue` to derive a mask that selects only the first segment, if it is a ""continuing"" segment, and no lanes otherwise.  That derived mask would gate the addition of the left-input but just for the ""continuing"" segment.  This is akin to the workaround for non-segmented scan which broadcasts the left-input to ALL lanes of the unsegmented scan result.
+
+Note that an unsegmented scan is equivalent to a segmented scan with a mask where only the first lane is selected, so that the whole vector (and nothing else) is one long scan segment.  It is also equivalent to a segmented scan with NO lanes selected (in the mask) and a null input value for the left-input.
+
+It may be worthwhile to add a method or two to VectorMask to work with scan segments, under these conditions.  The firstTrue method is a starting point.  Perhaps one method could create a mask selecting the lanes UP TO the FIRST selected (1) bit in the input mask.  A complementary method could create a mask selecting the lanes STARTING WITH the first selected (1) bit in the input mask, but stopping with the next selected bit.  Or perhaps these should be scalar operations, hunting for indexes in the mask.
+
+Whether the left-input parameter ""pulls its weight"" depends on the details of the assembly code for the segmented scan.  It is probably more convenient to inject the left-input in the assembly code (and peephole it away if it is not present).  That is, more convenient than asking the user to perform the tricky workaround of building a derived mask.  Convenience here contemplates both maintainability and performance.  It is probably faster for the compiler intrinsic to handle the possibility of an initial ""continuing"" segment, than to have the user code it explicitly.  But in some cases at least (multi-threaded algorithms) the workaround mentioned above will be necessary, to patch together batches that have been handed off to differing threads.
+
+Whether segmented scans as a whole ""pull their weight"" depends on (a) whether they are significantly faster than serial algorithms, and (b) whether they are likely to be used by more than one or two researchers.
+
+Here is a pseudocode implementation of segmented scan which is O(VLEN) rather thatn O(log(VLEN)):
+
+    public Vector<E> scanLanes(VectorOperators.Associative op, VectorMask<E> m, ETYPE leftInput) {
+      ETYPE[] a = this.toArray();
+      var partial = leftInput;
+      var noLanesSet = VectorMask.fromLong(species(), 0);
+      var leftId = this.reduceLanes(op, noLanesSet);
+      //var leftId = VectorOperations.leftIdentity(op);  // hypothetical API
+      for (int i = 0; i < a.length; i++) {
+        if (m.laneIsSet(i))  partial = leftId;
+        var ai = a[i];
+        ai = this.broadcast(partial).lanewise(op, this.broadcast(ai)).lane(0);
+        //ai = VectorOperations.execute(op, partial, ai);  // hypothetical API
+        a[i] = ai;
+        partial = ai;
+      }
+      return fromArray(a);
+    }
+
+An efficient O(log(VLEN)) implementation will resemble the non-segmented scan implementation, except that it may perform extra work on the binary tree of the lanes to ensure that partial sums are propagated only where the mask bits allow.
+",,jbhateja,psandoz,,,,,,,,,,,,,,,,,,,,,JDK-8345549,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i37rhv:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Improve vector API test kernels to force all register operand patterns selection,JDK-8342959,5142363,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-10-24 18:13,2024-10-25 01:21,2025-07-15 17:46,,24,,,,,tbd,hotspot,,0,vectorapi,vectorIntrinsics,,,,,,,"'- Most of the existing Vector API kernels pack the vector operation b/w vector load and stores.
+- There by naturally favoring selection of memory operand pattern.
+- We should add a vector operation layer after loading vector to force the selection of all register operand patterns. ",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i38gs3:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+C2: VM flag -XX:+TraceNewVectors does not dump vector IR generated for vectorAPIs,JDK-8342680,5142047,,Enhancement,Open,JDK,JDK,software,duke,,,P5,,jbhateja,jbhateja,jbhateja,2024-10-21 17:00,2024-10-21 17:21,2025-07-15 17:46,,24,,,,,tbd,hotspot,,0,c2,diagnostics,,,,,,,"'-  This flag is not consistent across auto-vectorization and explicit-vectorization flows.
+-  It currently only dumps Vector IR generated through auto-vectorization flow.
+
+Work around, use -XX:CompileCommand=PrintIdeal,<method_name> to dump entire method IR.",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i38etv:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Porting HalfFloatVector classes.,JDK-8339494,5138359,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-09-03 22:33,2024-09-04 10:41,2025-07-15 17:46,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,,,,,,,,,"'- Port existing HalfFloatVector and its concrete classes from vectorIntrinsics+fp16 to lworld+fp16.
+- These new vector classes uses Float16 array as their backing storage. 
+",,jbhateja,roboduke,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i37sk3:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2024-09-03 23:04;roboduke;A pull request was submitted for review.
+Branch: lworld+fp16
+URL: https://git.openjdk.org/valhalla/pull/1233
+Date: 2024-09-03 17:20:19 +0000;;;",,,,,,,,,,,,
+Support 64-BIT direct absolute JUMP instruction.,JDK-8329034,5125221,5125217,Sub-task,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-03-26 13:13,2024-08-19 18:35,2025-07-15 17:46,,23,,,,,tbd,hotspot,,0,apx,oracle-triage-23,,,,,,,"'- Currently subs a called using register indirect addressing mode because call instruction does not accept a 64 bit direct address.
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i35me3:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+"[vectorapi] Unary operations rint, floor, and ceil",JDK-8333293,5130712,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,psandoz,psandoz,2024-05-30 22:06,2024-05-31 15:21,2025-07-15 17:46,,21,22,23,,,tbd,hotspot,,0,vectorapi,,,,,,,,"See use-case discussed here:
+https://mail.openjdk.org/pipermail/panama-dev/2024-May/020429.html
+
+Add unary operations for float/double vectors for the equivalent Math.rint/floor/ceil. The scalar operations are already intrinsified to vroundpd on x64, and can be auto-vectorized. So it should be relatively easy to add support for vector operations, reusing existing support for vroundpd and adding support for vroundps.  ",,psandoz,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i36jo3:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+InineTypeNode larval out of sync with non-intrinsic makePrivateBuffer,JDK-8330223,5126847,5123369,Sub-task,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-04-15 08:04,2024-04-19 19:28,2025-07-15 17:46,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lworld+vector,,,,,,,,"New code model treat values as identity objects with respect to allocation, constructors are no longer factories which used to return a value using areturn bytecode, instead constructor now ends with a return bytecode after applying the desired initializations on incoming un-initialized value. 
+
+Value1 = new MyValue (10, 20);                         // Immutable
+Value2 = new MyValue(Value1.field, 30)            // 1. Update by explicit transition to mutable state using Unsafe.makePrivateBuffer
+                                                                           // 2. Create a new value altogether. 
+
+Latter case breaks down into two steps.  New value allocation, which will transition IR to larvae (InlineTypeNode::_larval = true),  this will be followed by invokespecial <init> to initialize field values using regular putfield bytecode. 
+
+Thus, a put over value should always receive a value in larval state.  Post updates, new inline type node replaces the original value in the JVM state map  maintained by SafePointNode. 
+
+Non-intrinsic implementation of makePrivateBuffer returns a j.l.o and is scalarized at subsequent checkcast but recently introduced _is_larval state flat in InlineTypeNode is not getting updated.",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i35wf7:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+JVM state propagation issue in Shuffle/Mask recursive constructor with new code model,JDK-8330222,5126846,5123369,Sub-task,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-04-15 07:23,2024-04-19 19:27,2025-07-15 17:46,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lworld+vector,,,,,,,,,,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i35wez:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Fix failures in JTREG with -XX:+DeoptimizeALot,JDK-8330219,5126843,5123369,Sub-task,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-04-15 07:15,2024-04-15 12:15,2025-07-15 17:46,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lworld+vector,noreg-self,,,,,,,"'- After migrating to new code model, we see some failures with DeoptimizeALot at different AVX levels.",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i35web:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Initialization of multifield during putifield bytecode processing by interpreter.,JDK-8330220,5126844,5123369,Sub-task,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-04-15 07:18,2024-04-15 12:15,2025-07-15 17:46,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lworld+vector,,,,,,,,Putfield bytecode is emitted to initialized base multifield as a part of constructors of  VectorPayloads,,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i35wej:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Initialization of scalarized multifield during putfield processing by compilers.,JDK-8330221,5126845,5123369,Sub-task,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-04-15 07:21,2024-04-15 12:12,2025-07-15 17:46,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lworld+vector,,,,,,,,"o	First step in put/get field processing search for ciField corresponding to field index.
+o	For scalarized multifield ci model returns first field of multifield bundle, from correctness standpoint compiler must update all the fields of the multifield bundle.
+o	The runtime uses a per class representation with fields sorted by field index, which facilitates operations like class file reconstruction or validation of class redefinition. The JIT compilers use a per instance representation with fields sorted by offset.
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i35wer:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+New conditional compare and test support.,JDK-8329036,5125223,5125217,Sub-task,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-03-26 13:15,2024-04-04 11:52,2025-07-15 17:46,,23,,,,,tbd,hotspot,,0,apx,oracle-triage-23,,,,,,,,,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i35mej:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+C1 Compiler register allocation support for EGPRs,JDK-8329033,5125220,5125217,Sub-task,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-03-26 13:10,2024-03-26 22:00,2025-07-15 17:46,,23,,,,,tbd,hotspot,,0,apx,c1,oracle-triage-23,,,,,,,,gli,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i35mdv:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+[vector] refactor format and lane conversion intrinsics,JDK-8225740,4992908,,Bug,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jrose,jrose,2019-06-13 23:12,2024-03-19 18:06,2025-07-15 17:46,,repo-panama,,,,,repo-panama,hotspot,,0,vectorIntrinsics,,,,,,,,"share/classes/jdk/incubator/vector/VectorIntrinsics.java
+contains low-level unsafe intrinsics for converting
+between vectors of various formats.
+
+Both reinterpret and cast have the same signature,
+and they are also used in similar ways.
+There is something to refactor here!
+
+Suggested fix: Consolidate these intrinsics, and add an
+opcode parameter to select the various kinds of
+lanewise casting.  The rebracketing done by
+reinterpret is not always lanewise (sometimes
+it is) but it is similar enough to send through
+a combined intrinsic.
+
+Also, this intrinsic should handle conversion between
+vectors, shuffles, and masks of various formats.",,eliu,jrose,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i2jc8r:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+[lworld+vector] Align existing Vector API support with JEP 401 ,JDK-8327435,5123369,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-03-06 12:20,2024-03-07 11:52,2025-07-15 17:46,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lworld+vector,,,,,,,,"Align existing vector API java side implementation with JEP 401 and future JEP Null-Restricted Value Class Type (https://openjdk.org/jeps/8316779)
+",,jbhateja,thartmann,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i35b0z:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2024-03-06 12:41;thartmann;Please not that C2 is still broken in lworld. I'm working on fixing it with JDK-8325660.;;;","2024-03-06 18:52;jbhateja;Hi Tobias, This changes which I merged with PR https://github.com/openjdk/valhalla/pull/1034 were over existing lworld+vector branch which was last merged on 17/1/2024.
+
+I am in process of merging the latest changes from lworld, since there has been significant overhaul with new JEP 401 model.;;;","2024-03-07 11:52;thartmann;Right but what I mean is that C2 is currently completely broken in lworld and only JDK-8325660 will fix it, see:
+https://mail.openjdk.org/pipermail/valhalla-dev/2024-February/012042.html
+
+So you might want to wait with the merge until JDK-8325660 (and some other changes in runtime/libraries) is in.;;;",,,,,,,,,,
+Gather index checking under mask,JDK-8326664,5122406,,Bug,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-02-26 16:38,2024-03-04 15:44,2025-07-15 17:46,,18,21,22,23,,tbd,hotspot,,0,oracle-triage-23,vectorapi,,,,,,,"Currently, gather index out of bounds checking is agnostic to existence of masks, thus an index value is compared against array bounds even if its corresponding mask bit is false.
+
+Look for following FIXME.
+
+https://github.com/openjdk/jdk/blob/master/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template#L4845
+
+",,jbhateja,thartmann,,,,,,,,,,,,,,,,,,,,,JDK-8318650,,,,,,,,JDK-8271515,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i355oj:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2024-02-27 12:32;thartmann;[~jbhateja] I assume this is rather an enhancement than a bug? Converting to enhancement for now.;;;","2024-03-02 19:59;jbhateja;[~thartmann]  This is bug, please consider follow jshell command sequence..
+
+jshell> import jdk.incubator.vector.*
+
+jshell> import java.util.stream.IntStream
+
+jshell> int [] mem = IntStream.range(0, 1024).toArray()
+mem ==> int[1024] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ... , 1020, 1021, 1022, 1023 }
+
+jshell> int [] indices = {0, 20, 40, 2048, 80, 100, 120, 140}
+indices ==> int[8] { 0, 20, 40, 2048, 80, 100, 120, 140 }
+
+jshell> var gvec = IntVector.fromArray(IntVector.SPECIES_256, mem, 0, indices, 0, VectorMask.fromLong(IntVector.SPECIES_256, 0xF0))
+|  Exception java.lang.IndexOutOfBoundsException: Range check failed: vector [0, 20, 40, 2048, 80, 100, 120, 140] out of bounds for length 1024
+|        at VectorIntrinsics.checkIndexFailed (VectorIntrinsics.java:95)
+|        at VectorIntrinsics.checkIndex (VectorIntrinsics.java:85)
+|        at IntVector.fromArray0Template (IntVector.java:3490)
+|        at Int256Vector.fromArray0 (Int256Vector.java:874)
+|        at IntVector.fromArray (IntVector.java:3098)
+|        at do_it$Aux (#5:1)
+|        at (#5:1)
+
+Even though out of bound index is masked out we receive an IOOB exception.;;;","2024-03-02 20:02;jbhateja;For sub-word gathers, we should add a new checkIndex routine on following lines
+
+checkIndex(int [] indices, int alength, VectorMask<Byte> mask) {
+      long lmask = mask.toLong();
+      for (int i = 0, j = 0; i < indices.length; i += S512.length()) {
+          var ivec = IntVector.fromArray(S512, indices, i);
+          if (ivec.compare(VectorOperators.LT, 0)
+             .or(ivec.compare(VectorOperators.GT, alength)
+             .and(VectorMask.fromLong(S512, lmask >> (16 * j++))))
+             .anyTrue()) {
+             throw new IndexOutOfBoundsException();
+         }
+      }
+;;;","2024-03-04 15:44;thartmann;Okay, thanks for the details, [~jbhateja].
+
+Initial-ILW = Incorrect IndexOutOfBoundsException thrown (too strict), with Vector API (Incubator), no workaround = MLH = P4;;;",,,,,,,,,
+Optimize sub-word vector compress and expand APIs for AVX2 target.,JDK-8322958,5118038,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2024-01-03 21:29,2024-01-04 12:00,2025-07-15 17:46,,23,,,,,tbd,hotspot,,0,vectorapi,,,,,,,,,,jbhateja,,,,,,,,,,,,,,,,,,,,,,JDK-8322768,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i34etf:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+[lworld] Add support for larval bit preservation during de-optimization.,JDK-8322547,5117592,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2023-12-20 19:38,2024-01-03 11:47,2025-07-15 17:46,,repo-valhalla,,,,,repo-valhalla,hotspot,,0,lworld,valhalla,,,,,,,"'- Currently larval state are not preserved during de-optimization.
+- Append larval state to safe points while creating SafePointScalarObjectNodes
+- Extend ObjectValue to capture larval state.
+- Runtime support to propagate larval state to newly re-materialized object.
+",,jbhateja,thartmann,,,,,,,,,,,,,,,,,,,,JDK-8322540,,,,,,,,,JDK-8239003,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i34c2b:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2023-12-21 12:01;jbhateja;Also, include suggestion from JDK-8322540;;;",,,,,,,,,,,,
+Support VectorAPI scatter / gather operations over MemorySegments.,JDK-8320698,5115402,,Enhancement,New,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2023-11-24 15:40,2023-11-24 15:42,2025-07-15 17:46,,,,,,,,core-libs,,0,vectorAPI,vectorIntrinsics,,,,,,,"'- This will allow loading / storing elements from / to non-contiguous locations of a memory segments into / from a vector.
+- Support should also allow gather / scatter operations over mismatched memory segments.
+-  Extend existing memory segment vector [masked] load-store APIs to accept a long vector holding location offsets.
+
+Please refer to John Rose's notes for more details.
+https://github.com/openjdk/panama-vector/pull/201#issuecomment-1143927843
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,JDK-8287289,,,,,,,,,,,,,,,,,,generic,,,,,,,,,,,,,,,,,,,,,,,,,,,,generic,,,,,,,"0|i33zfn:",9223372036854775807,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Add C2 intrinsic for Math.clamp,JDK-8306900,5099507,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,yyang,yyang,2023-04-26 13:08,2023-09-20 13:14,2025-07-15 17:46,,21,,,,,tbd,hotspot,,0,c2-intrinsic,performance,,,,,,,"compiler knows its value lattice([min,max]), which looks like a good intrinsic candidate.",,yyang,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i31a2j:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+C2 Superword does not honor AVX3Threshold,JDK-8311911,5105284,,Enhancement,Open,JDK,JDK,software,duke,,,P5,,jbhateja,jbhateja,jbhateja,2023-07-12 10:57,2023-08-21 16:17,2025-07-15 17:46,,22,,,,,tbd,hotspot,,0,c2-superword,performance,,,,,,,"'- On legacy Xeons (Skylake, Cascade Lake)  we saw significant performance degradation with AVX512 instruction due to frequency level switchover penalty, reduced core frequency and hysteresis effect which causes subsequent non-AVX512 instruction stream to execute at a lower frequency.
+- Problem became severe in workloads where we see spikes of AVX512 instructions in otherwise AVX2 instruction trace.
+- Some of the X86 stubs (array copy / fills) do take AVX3Thresholds into consideration but not all.
+
+There are multiple approaches to address this problem.
+1)  Multi versioning of loops guarded by AVX3Threshold, but this may result into code bloating given that we already split the iteration space into
+pre-main-post (atomic vector)-vector_tail- scalar tail.
+
+2) We can use loop profiling information collected by C1 and interpreter to dynamically adjust per loop VectorSize. 
+
+This pass can also take other factors like instruction costs and target feature availability to dynamically adjust per loop vector size, may address some of the issues discovered on KNL (https://bugs.openjdk.org/browse/JDK-8309267)
+
+FTR, from X86 standpoint it is not a pressing issue since latest Xeons are past frequency problems with AVX512.
+",,jbhateja,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,JDK-8287697,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i329jf:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+"Float.isInfinite/Float.isNaN do not get vectorized, even if manually inlined",JDK-8190799,4943978,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,webbuggrp,webbuggrp,2017-11-03 14:29,2023-08-11 12:31,2025-07-15 17:46,,10,9,9.0.1,,,tbd,hotspot,,0,c2,c2-loopopts,dcsfai,reproducer-yes,webbug,,,,"A DESCRIPTION OF THE REQUEST :
+If a Float.isInfinite is in a loop it does not get vectorized. The same behaviour hapens when Float.POSITIVE_INFINITY or Float.NEGATIVE_INFINITY are used directly. 
+See example code: 
+private void zeroIfInfiniteInlined(float[] samples){
+        for (int i = 0; i < samples.length; i++) {
+                if (samples[i] == Float.POSITIVE_INFINITY || samples[i] == Float.NEGATIVE_INFINITY){
+                    samples[i] = 0.0f;
+                }
+        }
+  }
+
+it could generate vector flags which would then be applied to a store. 
+
+JUSTIFICATION :
+The code as above is pretty common in HPC,  often followed by more complex computation. It is important that this call works corectly and fast.  Vectorizing it can help. 
+
+EXPECTED VERSUS ACTUAL BEHAVIOR :
+EXPECTED -
+1. Generate mask for 4,8,16 elements (depending on AVX-128,AVX-256,AVX-512)
+2. If mask is not zero, store with mask. 
+ACTUAL -
+Scalar instructions are used. Loop is not vectorized. 
+
+---------- BEGIN SOURCE ----------
+class IsInfinity {
+    private void zeroIfInfiniteInlined(float[] samples){
+        for (int i = 0; i < samples.length; i++) {
+                if (samples[i] == Float.POSITIVE_INFINITY || samples[i] == Float.NEGATIVE_INFINITY){
+                    samples[i] = 0.0f;
+                }
+        }
+    }
+    private void zeroIfInfinite(float[] samples) {
+            for (int i = 0; i < samples.length; i++) {
+                if (Float.isInfinite(samples[i])) {
+                    samples[i] = 0.0f;
+                }
+        }
+    }
+    private void zeroIfNaN(float[] samples) {
+            for (int i = 0; i < samples.length; i++) {
+                if (Float.isNaN(samples[i])) {
+                    samples[i] = 0.0f;
+                }
+        }
+    }
+    private void zeroIfNaNInlined(float[] samples) {
+            for (int i = 0; i < samples.length; i++) {
+                if (samples[i]!=samples[i]) {
+                    samples[i] = 0.0f;
+                }
+        }
+    }
+
+
+    public static void main(String[] argv) throws Exception {
+        float samples[] = new float[4000];
+        for (int i=0;i<samples.length;i++){
+                samples[i] = i;
+
+        }
+        IsInfinity inf = new IsInfinity();
+        for (int i=0;i<10000;i++){
+                inf.zeroIfInfinite(samples);
+                inf.zeroIfInfiniteInlined(samples);
+                inf.zeroIfNaN(samples);
+                inf.zeroIfNaNInlined(samples);
+        }
+
+    }
+}
+
+---------- END SOURCE ----------
+
+CUSTOMER SUBMITTED WORKAROUND :
+None. 
+
+",,drwhite,fmatte,rlupusoru,thartmann,webbuggrp,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"2017-11-06 20:32;fmatte;IsInfinity.java;https://bugs.openjdk.org/secure/attachment/73371/IsInfinity.java",,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,linux,,,,,,,"0|i2b3m3:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2017-11-06 20:43;fmatte;This issue is with AVX instructions.
+Float.isInfinite and Float.isNaN are not getting vectorzed with AVX ;;;","2017-12-01 03:11;rlupusoru;There are a couple of issues present here that would prevent this code from vectorizing:
+1) scalar cmov is not generated for this code pattern
+2) cmov vectorization is not completely enabled at this time
+3) cmov vectorization only supports doubles and not floats
+4) cmov vectorization requires that the inputs used in comparison are also those used in select
+
+I am submitting a solution to problems 2 and 3 via patch available in https://bugs.openjdk.java.net/browse/JDK-8192846;;;","2018-06-26 09:51;fmatte;Hi [~rlupusoru] thanks for fixing 2 and 3 through https://bugs.openjdk.java.net/browse/JDK-8192846
+Do you have any plans to look for issues 1 and 4?;;;",,,,,,,,,,
+SLP fails due to different address patters on 32bit JVM,JDK-8303885,5095854,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2023-03-09 15:34,2023-03-09 15:55,2025-07-15 17:46,,21,,,,,tbd,hotspot,,0,c2,c2-superword,oraclejdk-na,,,,,,"Test: LoopRangeStrideTest.countDownLoopWithNegScale fails to vectorized on x86.
+
+Problem is around recognizing valid address expression during SWPointer creation for memory operands with 32 bit jvm, this prevents gathering adjacent memory operations. -XX:+TraceSuperWord -XX:+TraceNewVectors -XX:CompileCommand=VectorizeDebug,<method>,3 shows following errors .
+
+SWPointer::memory_alignment: SWPointer p invalid, return bottom_align
+SWPointer::memory_alignment: SWPointer p invalid, return bottom_align
+SWPointer::memory_alignment: SWPointer p invalid, return bottom_align
+SWPointer::memory_alignment: SWPointer p invalid, return bottom_align
+SWPointer::memory_alignment: SWPointer p invalid, return bottom_align
+
+Behavior also exist in JDK17 LTS.",,jbhateja,,,,,,,,,,,,,,,,,,,,,,JDK-8303105,,,,,,,,,,,,,,,,,,,,,,,,,,x86,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i30o8z:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+[SuperWord] Vectorize loop when value from last iteration is used after loop,JDK-8302662,5094358,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,epeter,epeter,2023-02-16 19:41,2023-02-23 21:47,2025-07-15 17:46,,21,,,,,tbd,hotspot,,0,c2-superword,performance,,,,,,,"Currently, we do not vectorize loops like this:
+
+    static double test(double[] data1, double[] data2) {
+        double last = 1;
+        for (int i = 2; i < N-2; i++) {
+            double v = data1[i] * 1.54;
+            data2[i] = v;
+            // Having use of last iteration values prevents vectorization
+            last = v; // Remove this to make it vectorize !
+        }
+        return last;
+    }
+
+See Test.java attached.
+
+./java -XX:-TieredCompilation -Xbatch -XX:CompileCommand=compileonly,Test::test -XX:+TraceSuperWord Test.java
+
+The issue may to be that ""SuperWord::filter_packs"" requires all uses to be vectors. Here, the ""last"" has a scalar use which is after the loop.
+One might have to ""unpack"" the corresponding vector from the last iteration (take the uppermost value in the vector).
+
+Related to RFE JDK-8302652.
+
+Found this during work on JDK-8302139.",,epeter,,,,,,,,,,,,,,,,,,,,,,JDK-8302139,JDK-8302652,,,,,,,,,,,,,,,,,"2023-02-16 20:06;epeter;Test.java;https://bugs.openjdk.org/secure/attachment/102677/Test.java",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i30f0r:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2023-02-17 14:31;epeter;As discussed in email, I assign this to you, [~jbhateja];;;","2023-02-23 21:47;epeter;I found this comment in superword.cpp
+
+    // For now, return false if not all uses are vector.
+    // Later, implement ExtractNode and allow non-vector uses (maybe
+    // just the ones outside the block.)
+
+I think this is exactly what this RFE is about!;;;",,,,,,,,,,,
+Optimize existing masked operation support for AVX-512.,JDK-8262356,5042877,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2021-02-25 13:36,2021-11-25 11:46,2025-07-15 17:46,,17,,,,,tbd,hotspot,,0,,,,,,,,,"'- Currently a vector masked operation performs an operation over all the vector lanes followed by a blend operation which selectively updates the result vector under the influence of mask vector.
+
+- Prior to AVX-512 blending newly computed result with older value was the only way to facilitate masked/predicated vector operations.
+
+- A non-AVX-512 vector blend instruction probes the MSB bit for each mask vector lane in order to selectively choose between two source vector lanes.
+ 
+- With AVX-512 there are two ways in which masked operation can be performed as follows
+Method 1: 
+       vmask = vector_cmp(mask, ALL_ONES)
+       vres = vector_operation vsrc1, vsrc2 
+       vector_blend(vdst,  vres,  vmask)
+ 
+Method 2: 
+      opmask = vector_cmp(mask, ALL_ONES)
+      ves = vector_operation vsrc1, vsrc2, opmask
+
+Clearly emitting a predicated vector operation is much more optimal in terms of emitted code size and is energy efficient since a vector operation conditionally operates over portion of vectors. 
+
+- VectorAPI has significantly extended to scope of masked operations, additionally it offer APIs to perform direct mask manipulation e.g. VectorMask.or/and/not.  Thus a direct operation over an Opmask register will enable generating efficient code.
+
+- Using opmask register we can further optimized existing implementation for VectorMask querying operation like VectorMask.firstTrue/lastTrue/anyTrue/allTrue/trueCount.",,jbhateja,,,,,,,,,,,,,,,,,,,,,,JDK-8264954,JDK-8266287,JDK-8272971,JDK-8272479,JDK-8271273,JDK-8267368,JDK-8272100,JDK-8271539,JDK-8262983,JDK-8264563,JDK-8262355,JDK-8262982,JDK-8266621,JDK-8272359,JDK-8273949,JDK-8273406,JDK-8270264,JDK-8274569,,,,,,,,,x86,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i2rpvv:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+C2: Intrinsify BigInteger::mod,JDK-8172707,4911840,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,webbuggrp,webbuggrp,2017-01-10 15:42,2021-08-12 22:27,2025-07-15 17:46,,10,9,,,,tbd,hotspot,,0,c2,c2-intrinsic,community-candidate,dcsfai,performance,reproducer-yes,starter,webbug,"A DESCRIPTION OF THE REQUEST :
+Add intrinsic for the BigInteger.mod() method to get a faster execution time.
+
+JUSTIFICATION :
+From Java7 to Java 8 the multiply operation is clearly faster, but a modular multiplication (multiply(_).mod(p)) is not.
+In Java 9, BigInteger will get some ""Montgomery multiply intrinsic"" to accelerate modular exponentiation which is useful for cryptographic scheme like RSA or DSA. 
+
+But the modular reduction is not accelerated and it  impairs performance in the following cases:
+- when an alternative modular exponentiation implementation is needed (to be resistant to side channel attacks for example, but other uses case exists);
+- for alternative cryptography like Elliptic Curve Cryptography (ECC), where modular arithmetic is used to implement the arithmetic on elliptic curves; ECC implementation like the one provided by the BouncyCastle library should greatly benefit from this.
+
+Note that acceleration on other BigInteger operations may also be welcome.
+
+
+
+
+EXPECTED VERSUS ACTUAL BEHAVIOR :
+EXPECTED -
+No change the API, but a cost of the modular reduction divided by at least a factor 2.
+
+",,cslucas,fmatte,jbhateja,kvn,webbuggrp,ygaevsky,zmajo,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i25np7:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2017-01-12 15:47;fmatte;This is enhancement request forwarding dev team to evaluate;;;",,,,,,,,,,,,
+Add clearArrayTests to match all the cases in the x86 ad files ,JDK-8269789,5053199,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,sviswanathan,sviswanathan,2021-07-02 06:53,2021-07-02 13:24,2025-07-15 17:46,,17,18,,,,tbd,hotspot,,0,noreg-self,,,,,,,,"Add clearArrayTests to match all the cases in the x86 ad files :
+large vs small
+constant vs variable length",,sviswanathan,,,,,,,,,,,,,,,,,,,,,,JDK-8269775,,,,,,,,,,,,,,,,,,,,,,,,,,x86,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i2tg9f:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
+Optimizing vector logic not operation ,JDK-8241484,5014050,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,jbhateja,jbhateja,2020-03-24 11:59,2020-06-03 09:49,2025-07-15 17:46,,15,,,,,tbd,hotspot,,0,c2,c2compiler,,,,,,,"'- Current  Implementation of vector logic not operation performs a Xor operation between the input vector and Broadcasted -1 value which is read from an externally initialized memory. 
+- The broadcast operation can be made efficient by replacing a read from external memory (which may cause a cache miss) over non-AVX3 targets.
+-  Over AVX3 a single ternary logic instruction is sufficient to replace complete pattern involving Xor and broadcast operation. ",,jbhateja,phh,,,,,,,,,,,,,,,,,,,,,JDK-8241040,JDK-8223198,,,,,,,,,,,,,,,,,,,,,,,,,x86_64,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i2muoj:",9223372036854775807,,,,,,,compiler,,,,,,,,,"2020-03-24 13:05;jbhateja;webrev: http://cr.openjdk.java.net/~jbhateja/8241484/webrev.01_notV/;;;",,,,,,,,,,,,
+X86: Support for VNNI byte Instruction VPDPBUSD,JDK-8215891,4979107,,Enhancement,In Progress,JDK,JDK,software,duke,,,P4,,jbhateja,vdeshpande,vdeshpande,2018-12-22 03:17,2020-05-18 20:40,2025-07-15 17:46,,13,,,,,tbd,hotspot,,0,c2,c2-cg,,,,,,,"This also adds VNNI VPDPBUSD instruction support with autovectorization. 
+It can vectorize this operation in the loop: out[i] += ((in1[4*i] * in2[4*i]) + (in1[4*i+1] * in2[4*i+1]) + (in1[4*i+2] * in2[4*i+2]) + (in1[4*i+3] * in2[4*i+3])); where in1[] and in2[] are byte arrays and out[] is an int array.
+This patch is useful for AI ML/DL applications such as convolution based Neural Nets. 
+More information on VNNI can be found here: https://software.intel.com/sites/default/files/managed/c5/15/architecture-instruction-set-extensions-programming-reference.pdf",,rraghavan,thartmann,vdeshpande,,,,,,,,,,,,,,,,,,,,JDK-8214751,,,,,,,,,,,,,,,,,,,,,,,,,,x86,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i2h0vn:",9223372036854775807,,,,,,,compiler,,,,,Fix Understood,,,,"2018-12-26 14:53;rraghavan;Is this task planned as late enhancement in Rampdown Phase One for JDK 12 itself? 
+(http://openjdk.java.net/projects/jdk/12/)
+If no please modify Fix Version field to 'tbd' or any next version. Thanks.;;;","2019-01-03 18:18;thartmann;The VNNI optimization is broken (see JDK-8216050). Is the intention of this change to fix that?;;;","2019-01-05 00:13;vdeshpande;Hi Tobias, this is for correct generation of the vpdpwssd instruction based on cost in ad file rules.;;;","2019-01-07 14:05;thartmann;Okay, so the problem is missing 'ins_cost' definitions for the new instructions in the .ad file?
+
+I think the support for VPDPBUSD should then be integrated with another enhancement.
+
+ILW = Missing cost definitions lead to suboptimal code generation (regression), VNNI instructions, no workaround = MMH = P3;;;","2019-01-11 00:26;vdeshpande;Yes, we can integrate VPDPBUSD as another enhancement.
+I would push the fix with ins_cost with the fix for JDK-8216050.
+Thanks Tobias.;;;","2019-01-11 14:13;thartmann;Great, thanks!;;;",,,,,,,
+Optimize JCC erratum further,JDK-8239472,5011284,,Enhancement,Open,JDK,JDK,software,duke,,,P4,,jbhateja,eosterlund,eosterlund,2020-02-19 21:28,2020-03-24 17:14,2025-07-15 17:46,,15,,,,,tbd,hotspot,,0,,,,,,,,,"In JDK-8234160 most of the JCC erratum effects were mitigated.
+
+The fix does not cover non-C2 code (including some possibly hot stubs), or C2 intrinsics expanded in AD files. This could be optimized further. We might want to evaluate whether that is worth doing, and how to do that in a way that is as unintrusive as possible to the JVM.",,eosterlund,thartmann,,,,,,,,,,,,,,,,,,,,,JDK-8241502,JDK-8241503,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"0|i2me7n:",9223372036854775807,,,,,,,compiler,,,,,,,,,,,,,,,,,,,,,
