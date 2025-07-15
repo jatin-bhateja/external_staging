@@ -1,0 +1,290 @@
+AES - GCM review...
+===================
+
+ModRM
+  Mod.MODE (11)
+  Mod.REG  (111)
+  Mod.RM    (REG_ENC)
+
+[PREFIX] [OPCODE] [MOD.RM] [SIB] [IMM/DISP]
+
+10 x 6 => 10 x (4 + 2)
+             => 10 x 4 + 10 x 2
+             => 1010 << 2  + 1010 << 1
+                   101000
+                      10100
+                 ------------
+                  1  1  1  1  0  0     
+  
+                                           A3 A2 A1 A0 
+                                           B3 B2 B1 B0
+    =================================
+                                                    |    A3B0      A2B0     A1B0   A0B0
+                                     A3B1    |   A2B1        A1B1        A0B1          X 
+                   A3B2     A2 B2  |   A1B2        A0B2         X              X
+A3B3      A2B3     A1B3     |   A0B3         X               X               X
+=========================================================
+  C6             C5            C4             C3             C2           C1            C0
+==========================================================
+  C0 = A0B0
+  C1 =  A1B0 + A0B1
+  C2 = A2B0 + A1B1 + A0B2
+  C3  = A3B0 + A2B1 + A1B2  + A0B3
+------------------------------------------------------
+   Ci =  j = 0 to i SumOf ( Aj  . B i-j)
+              
+  C4 = A3B1 + A2B2 + A1B3 
+........
+
+
+For example, {53} • {CA} = {01} in Rijndael's field because
+
+(x6 + x4 + x + 1)(x7 + x6 + x3 + x)
+=	(x13 + x12 + x9 + x7) + (x11 + x10 + x7 + x5) + (x8 + x7 + x4 + x2) + (x7 + x6 + x3 + x)
+=	x13 + x12 + x9 + x11 + x10 + x5 + x8 + x4 + x2 + x6 + x3 + x
+=	x13 + x12 + x11 + x10 + x9 + x8 + x6 + x5 + x4 + x3 + x2 + x
+and
+
+x13 + x12 + x11 + x10 + x9 + x8 + x6 + x5 + x4 + x3 + x2 + x mod x8 + x4 + x3 + x1 + 1
+=	(11111101111110 mod 100011011)
+=	{3F7E mod 11B} = {01}
+=	1 (decimal)
+
+Coefficients are modulo characteristic which is 2 for Galois field (2^8)
+
+Since all the other terms in the result have coefficient 1  apart from x^7  which post addition has coefficient 4.
+
+4 modulo 2 = 0, hence x^7 will be chopped off the result....
+
+Finite field (p^n)  where p is characteristic and  'n' is dimension....
+
+Modulo is performed by choosing a irreducible / reducing polynomial  for galois field.
+Reducing polynomial in this case is   x8 + x4 + x3 + x + 1.
+
+Notice that exclusive OR is applied in the example and not arithmetic subtraction, as one might use in grade-school long division.):
+                        
+          11111101111110 (mod) 100011011
+         ^100011011     
+          01110000011110
+          ^100011011    
+           0110110101110
+           ^100011011   
+            010101110110
+            ^100011011  
+             00100011010
+              ^100011011  
+               000000001
+
+
+Multiplication in GF(2^4) with  reducing polynomial  x4 + x + 1
+=====================================================
+
+a = 1110   b = 1011
+=> ( x3 + x2 + x1  ) (x3 + x1 + x0)
+=>  (x3 + x2 + x1)  + (x4 + x3 + x2) + (x6 + x5 + x4)
+=>  x6 +  x5 + 2.x4 + 2, x3 +  2 . x2   + x1 
+
+Removing the terms with 0 coefficients after modulo by characteristic (2)..
+
+=> x6 + x5 + x1
+=>   01 1000 1 0
+
+ Modulo Polynomial = x4 + x + 1
+  10011 
+
+0 1  1  0 0 0 1 0  | 1  0  0  1  1
+    1  0 0  1   1                               XOR
+----------------------------------
+   0  1  0  1   1  1 0
+         1  0 0  1  1 0                      XOR
+------------------------------------
+        0 0 1  0 0 0
+-----------------------------------
+
+Addition and subtraction are performed by adding or subtracting two of these polynomials together, and reducing the result modulo the characteristic.
+
+In a finite field with characteristic 2, addition modulo 2, subtraction modulo 2, and XOR are identical because 1 XOR 1 = 0 , 0 XOR 0  = 0 ,  1 + 1 = 10 mod 2 = 0
+
+=>  Since coefficients of same power terms are module with characteristics hence intermediate partial product  are xored. 
+
+A1:A0 = 64:64
+B1:B0 =  64:64
+P0 =  B0.A0 = [C1:C0]
+P1  =  B1.A0   = [D1:D0]
+P2 = B0.A1   = [E1:E0]
+P3 = B1.A1    = [F1:F0]
+=====================
+
+Steps for AES-GCM (block cipher with additional authentication)
+
+1)     AES-128 (Integrity) 
+        Initialization Vector (IV),   Hash Key, Round Key for each round of   (Permutation, substitution using  S-Box)
+        - Multiple rounds.  -> number of rounds depends on key size, 10 for 128 bit , 12 and 14 for 192 bit etc..
+          - 0th round only AddRoundKeys
+          - n - 1 rounds all 4 steps (Substitution, ShiftRows, AddRoundKeys)
+ 
+          - nth round only MixColumns
+      - With AES-NI we have HW instruction for each round, first and last round and round key generation.
+
+   Plaintext -> Encrypt -> Cipher Text
+    
+2)   GCM (authentication)     
+        - Authentication Data
+        - Hash Key (derived from Key)
+        a)
+                 Layout cipher text and authentication data sequentially followed by their lengths after rounding them to 128 bits.
+
+     -        AAD   CIPHER  LEN(AAD) LEN (CIPHER)
+     -       Compute the hash of entire layout by performing  modular multiplication in Galois field (2^128) with  reducing polynomial 2^128 + 2^7 + 2^4 +  2^1 + 1
+        Authentication data  =  GHASH (H, C,  AAD,)
+      Xi = Xi-1 .  H  mod p  ->  p is irreducible / reducing polynomial.
+
+     - PCMULQDQ  - Carry less multiplication is used to compute the partial products,  each partial product is internally XORed  for reduction.  
+
+Chacha20-Poly1305 is another encryption with additional authentication stream cipher algorithm....
+
+ 
+
+Benchmark                     (dataSize)  (keyLength)  (provider)   Mode  Cnt        Score   Error  Units
+AESGCMBench.encrypt                            127          128                thrpt    2  2570170.817          ops/s
+AESGCMBench.encrypt                            256          128              thrpt    2  2674949.238          ops/s
+AESGCMBench.encrypt                            512          128                thrpt    2  2430815.513          ops/s
+AESGCMBench.encrypt                            1024          128            thrpt    2  2064074.863          ops/s
+AESGCMBench.encryptMultiPart         127          128               thrpt    2  2021564.710          ops/s
+AESGCMBench.encryptMultiPart         256          128              thrpt    2  2458991.623          ops/s
+AESGCMBench.encryptMultiPart         512          128               thrpt    2  2205998.116          ops/s
+AESGCMBench.encryptMultiPart        1024          128             thrpt    2  1872410.628          ops/s
+SPR>
+
+
+Benchmark                     (dataSize)  (keyLength)  (provider)   Mode  Cnt        Score   Error  Units
+AESGCMBench.encrypt                  127          128                         thrpt    2  2549885.539        ops/s
+AESGCMBench.encrypt                  256          128                       thrpt    2  2667087.934         ops/s
+AESGCMBench.encrypt                  512          128                         thrpt    2  2636212.129          ops/s
+AESGCMBench.encrypt                 1024          128                       thrpt    2  2415541.250          ops/s
+AESGCMBench.encryptMultiPart         127          128               thrpt    2  2018959.467          ops/s
+AESGCMBench.encryptMultiPart         256          128             thrpt    2  2477537.924          ops/s
+AESGCMBench.encryptMultiPart         512          128              thrpt    2  2204942.274          ops/s
+AESGCMBench.encryptMultiPart        1024          128            thrpt    2  2052732.420          ops/s
+
+
+
+Benchmark                     (dataSize)  (keyLength)  (provider)   Mode  Cnt        Score   Error  Units
+AESGCMBench.encrypt                  128          192              thrpt    2  2239164.958          ops/s
+AESGCMBench.encrypt                  256          192              thrpt    2  2135716.735          ops/s
+AESGCMBench.encrypt                  512          192              thrpt    2  1946389.351          ops/s
+AESGCMBench.encrypt                 1024          192              thrpt    2  1665104.720          ops/s
+AESGCMBench.encrypt                 1500          192              thrpt    2  1322466.507          ops/s
+AESGCMBench.encrypt                 4096          192              thrpt    2   868199.941          ops/s
+AESGCMBench.encrypt                16384          192              thrpt    2   444460.030          ops/s
+AESGCMBench.encryptMultiPart         128          192              thrpt    2  2089891.258          ops/s
+AESGCMBench.encryptMultiPart         256          192              thrpt    2  1978256.914          ops/s
+AESGCMBench.encryptMultiPart         512          192              thrpt    2  1771458.679          ops/s
+AESGCMBench.encryptMultiPart        1024          192              thrpt    2  1529149.807          ops/s
+AESGCMBench.encryptMultiPart        1500          192              thrpt    2  1056460.381          ops/s
+AESGCMBench.encryptMultiPart        4096          192              thrpt    2   830525.588          ops/s
+AESGCMBench.encryptMultiPart       16384          192              thrpt    2   425070.827          ops/s
+
+
+Benchmark                     (dataSize)  (keyLength)  (provider)   Mode  Cnt        Score   Error  Units
+AESGCMBench.encrypt                  128          192              thrpt    2  2193786.693          ops/s
+AESGCMBench.encrypt                  256          192              thrpt    2  2084644.165          ops/s
+AESGCMBench.encrypt                  512          192              thrpt    2  2087681.081          ops/s
+AESGCMBench.encrypt                 1024          192              thrpt    2  1942175.304          ops/s
+AESGCMBench.encrypt                 1500          192              thrpt    2  1340087.976          ops/s
+AESGCMBench.encrypt                 4096          192              thrpt    2  1154491.409          ops/s
+AESGCMBench.encrypt                16384          192              thrpt    2   474915.672          ops/s
+AESGCMBench.encryptMultiPart         128          192              thrpt    2  2089301.054          ops/s
+AESGCMBench.encryptMultiPart         256          192              thrpt    2  1932497.809          ops/s
+AESGCMBench.encryptMultiPart         512          192              thrpt    2  1778912.919          ops/s
+AESGCMBench.encryptMultiPart        1024          192              thrpt    2  1634855.254          ops/s
+AESGCMBench.encryptMultiPart        1500          192              thrpt    2   933302.006          ops/s
+AESGCMBench.encryptMultiPart        4096          192              thrpt    2  1114223.826          ops/s
+AESGCMBench.encryptMultiPart       16384          192              thrpt    2   460116.793          ops/s
+
+
+
+Sapphire Rapids :-
+Baseline (192 bit key)
+==================
+Benchmark                     (dataSize)  (keyLength)  (provider)   Mode  Cnt        Score   Error  Units
+AESGCMBench.encrypt                  128          192              thrpt    2  2698457.867          ops/s
+AESGCMBench.encrypt                  256          192              thrpt    2  2462944.017          ops/s
+AESGCMBench.encrypt                  512          192              thrpt    2  2307523.023          ops/s
+AESGCMBench.encrypt                 1024          192              thrpt    2  1947350.298          ops/s
+AESGCMBench.encrypt                 4096          192              thrpt    2  1012010.646          ops/s
+AESGCMBench.encrypt                 8192          192              thrpt    2   811758.871          ops/s
+AESGCMBench.encryptMultiPart         128          192              thrpt    2  2479604.003          ops/s
+AESGCMBench.encryptMultiPart         256          192              thrpt    2  2337177.148          ops/s
+AESGCMBench.encryptMultiPart         512          192              thrpt    2  2106429.411          ops/s
+AESGCMBench.encryptMultiPart        1024          192              thrpt    2  1789454.835          ops/s
+AESGCMBench.encryptMultiPart        4096          192              thrpt    2   976095.363          ops/s
+AESGCMBench.encryptMultiPart        8192          192              thrpt    2   603160.590          ops/s
+
+With Patch:-
+==========
+Benchmark                     (dataSize)  (keyLength)  (provider)   Mode  Cnt        Score   Error  Units
+AESGCMBench.encrypt                  128          192              thrpt    2  2697586.002          ops/s
+AESGCMBench.encrypt                  256          192              thrpt    2  2537975.530          ops/s
+AESGCMBench.encrypt                  512          192              thrpt    2  2507991.214          ops/s
+AESGCMBench.encrypt                 1024          192              thrpt    2  2280891.002          ops/s
+AESGCMBench.encrypt                 4096          192              thrpt    2  1347328.381          ops/s
+AESGCMBench.encrypt                 8192          192              thrpt    2   919301.468          ops/s
+AESGCMBench.encryptMultiPart         128          192              thrpt    2  2499030.468          ops/s
+AESGCMBench.encryptMultiPart         256          192              thrpt    2  2341181.414          ops/s
+AESGCMBench.encryptMultiPart         512          192              thrpt    2  2096691.646          ops/s
+AESGCMBench.encryptMultiPart        1024          192              thrpt    2  1955834.807          ops/s
+AESGCMBench.encryptMultiPart        4096          192              thrpt    2  1249842.871          ops/s
+AESGCMBench.encryptMultiPart        8192          192              thrpt    2   859669.902          ops/s
+
+
+
+
+SRC1 [63:0]
+SRC2 [63:0]
+
+SRC1 x SRC2  = 64 x 64 =  128 bit 
+P1 : SRC1 [ 31: 0]
+P2 : SRC1 [63: 32]
+P3 : SRC2 [31:0]
+P4 : SRC2 [63:32]
+
+Partial Product 1 :  P1 x P3 
+PP2           :  P1 x P4
+PP3           :  P2 x P3
+PP4           :  P2 x P4
+
+Unsigned multiplication:-
+                  P1
+           P2
+           P3
+    P3
+   =========
+   =========
+ 
+If upper 32 bits of each 64 bit sources are set to zeros so three out of four partial products are zeros and have no impact on final result.
+ 		
+----------------------
+
+SQRT(x)  = 	
+
+Additional IR transformations :-
+=============================
+Ideal :-
+	a.    UMin (UMin(a, b)  ,  UMax(a, b))  => UMin(a , b)
+	b.   UMax (UMax(a, b),  UMin(a, b))   => UMax(a, b)
+Identity :-
+	c.   UMin (a, a )   => a
+	d.   UMax (a, a)  => a
+
+Performance:-
+-> 
+-> GVN - Hashing , special handling for commutative IR.
+   Node::cmp()
+      ->    
+
+C2 Type System uses inverted lattice representation:-
+
+ Join = dual (meet (dual(x), dual(y))
+ Meet = LUB
+JOIN = GLB 

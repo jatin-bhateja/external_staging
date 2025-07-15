@@ -1,0 +1,156 @@
+Validations details:-
+
+A) x86 backend changes
+   - new assembler instruction
+   - macro assembly routines.
+ 
+    Test point:-  test/jdk/jdk/incubator/vector/ScalarFloat16OperationsTest.java
+         - This test is based on a testng framework and includes new DataProviders to generate test vectors.
+         -  Test vectors cover the entire float16 value range and also special floating point values (NaN, +Int, -Inf, 0.0 and -0.0) 
+
+B) GVN transformations:-
+     -  Value Transforms
+        Test point:- test test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+              -  Covers all the constant folding scenarios for add, sub, mul, div, sqrt, fma, min, and max operations addressed by this patch.
+              -  It also tests special case scenarios for each operation as specified by Java language specification.
+    -   identity Transforms
+        Test point:- test test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+               -  Covers identity transformation for  ReinterpretS2HFNode,  DivHFNode
+    -  idealization Transforms
+        Test points:-  test/hotspot/jtreg/compiler/c2/irTests/MulHFNodeIdealizationTests.java
+                                :-   test test/hotspot/jtreg/compiler/c2/irTests/TestFloat16ScalarOperations.java
+            - Contains test point for following transform 
+                         MulHF idealization i.e. MulHF * 2 => AddHF  
+           -  Contains test point for the following transform
+                         DivHF SRC ,  PoT(constant) =>  MulHF SRC * reciprocal (constant) 
+           - Contains idealization test points for the following transform 
+                   ConvF2HF(FP32BinOp(ConvHF2F(x), ConvHF2F(y))) =>
+                           ReinterpretHF2S(FP16BinOp(ReinterpretS2HF(x), ReinterpretS2HF(y)))
+
+
+Many Thanks, Paul for your suggestion.
+From a compiler standpoint, changes are mainly around unboxing/boxing arguments and return values. Since the _Float16_ class is defined in the incubation module, we cannot refer to it in the wrapper class _Float16Math_ which is part of _java.base_ module. Thus, lambda must pass the boxes as _java.lang.Object_ type arguments will introduce additional type sharpening casts in lambda and defeat our purpose of preserving unmodified code in lambda. The current scheme only deals in intrinsic with short parameters and return values and is free from these concerns.
+
+We didn't do a pattern match for FMA to preserve the user's intent of single rounding for FMA. The user may declare MUL and ADD as a separate operation, and a generic pattern match should not infer an FMA in such a scenario.
+
+Thus, intrinsification is appropriate here rather than a pattern match.
+
+
+
+
+Baseline
+Benchmark                                                      (vectorDim)   Mode  Cnt      Score   Error   Units
+Float16OperationsBenchmark.absBenchmark                                512  thrpt    2  40042.879          ops/ms
+Float16OperationsBenchmark.addBenchmark                                512  thrpt    2   2712.752          ops/ms
+Float16OperationsBenchmark.cosineSimilarityDequantizedFP16             512  thrpt    2   1105.605          ops/ms
+Float16OperationsBenchmark.cosineSimilarityDoubleRoundingFP16          512  thrpt    2   1327.699          ops/ms
+Float16OperationsBenchmark.cosineSimilaritySingleRoundingFP16          512  thrpt    2   1397.952          ops/ms
+Float16OperationsBenchmark.divBenchmark                                512  thrpt    2   1358.580          ops/ms
+Float16OperationsBenchmark.euclideanDistanceDequantizedFP16            512  thrpt    2   1706.412          ops/ms
+Float16OperationsBenchmark.euclideanDistanceFP16                       512  thrpt    2   1482.212          ops/ms
+Float16OperationsBenchmark.fmaBenchmark                                512  thrpt    2   1809.824          ops/ms
+Float16OperationsBenchmark.getExponentBenchmark                        512  thrpt    2   5785.547          ops/ms
+Float16OperationsBenchmark.isFiniteBenchmark                           512  thrpt    2   7047.487          ops/ms
+Float16OperationsBenchmark.isFiniteCMovBenchmark                       512  thrpt    2   5158.402          ops/ms
+Float16OperationsBenchmark.isFiniteStoreBenchmark                      512  thrpt    2   4766.007          ops/ms
+Float16OperationsBenchmark.isInfiniteBenchmark                         512  thrpt    2   4747.150          ops/ms
+Float16OperationsBenchmark.isInfiniteCMovBenchmark                     512  thrpt    2   5575.830          ops/ms
+Float16OperationsBenchmark.isInfiniteStoreBenchmark                    512  thrpt    2   3192.996          ops/ms
+Float16OperationsBenchmark.isNaNBenchmark                              512  thrpt    2   5920.507          ops/ms
+Float16OperationsBenchmark.isNaNCMovBenchmark                          512  thrpt    2   4984.394          ops/ms
+Float16OperationsBenchmark.isNaNStoreBenchmark                         512  thrpt    2   4738.376          ops/ms
+Float16OperationsBenchmark.maxBenchmark                                512  thrpt    2   2712.797          ops/ms
+Float16OperationsBenchmark.minBenchmark                                512  thrpt    2   2713.063          ops/ms
+Float16OperationsBenchmark.mulBenchmark                                512  thrpt    2   2712.990          ops/ms
+Float16OperationsBenchmark.negateBenchmark                             512  thrpt    2  40228.897          ops/ms
+Float16OperationsBenchmark.sqrtBenchmark                               512  thrpt    2    768.891          ops/ms
+Float16OperationsBenchmark.subBenchmark                                512  thrpt    2   2713.260          ops/ms
+
+
+Withopt:
+Benchmark                                                      (vectorDim)   Mode  Cnt      Score   Error   Units
+Float16OperationsBenchmark.absBenchmark                                512  thrpt    2  40107.473          ops/ms
+Float16OperationsBenchmark.addBenchmark                                512  thrpt    2  32358.549          ops/ms
+Float16OperationsBenchmark.cosineSimilarityDequantizedFP16             512  thrpt    2   1105.570          ops/ms
+Float16OperationsBenchmark.cosineSimilarityDoubleRoundingFP16          512  thrpt    2   1329.732          ops/ms
+Float16OperationsBenchmark.cosineSimilaritySingleRoundingFP16          512  thrpt    2   1398.008          ops/ms
+Float16OperationsBenchmark.divBenchmark                                512  thrpt    2   3780.347          ops/ms
+Float16OperationsBenchmark.euclideanDistanceDequantizedFP16            512  thrpt    2   1705.297          ops/ms
+Float16OperationsBenchmark.euclideanDistanceFP16                       512  thrpt    2   1490.803          ops/ms
+Float16OperationsBenchmark.fmaBenchmark                                512  thrpt    2  24573.532          ops/ms
+Float16OperationsBenchmark.getExponentBenchmark                        512  thrpt    2   5790.921          ops/ms
+Float16OperationsBenchmark.isFiniteBenchmark                           512  thrpt    2   7047.436          ops/ms
+Float16OperationsBenchmark.isFiniteCMovBenchmark                       512  thrpt    2   5136.560          ops/ms
+Float16OperationsBenchmark.isFiniteStoreBenchmark                      512  thrpt    2   4741.991          ops/ms
+Float16OperationsBenchmark.isInfiniteBenchmark                         512  thrpt    2   4754.243          ops/ms
+Float16OperationsBenchmark.isInfiniteCMovBenchmark                     512  thrpt    2   5583.183          ops/ms
+Float16OperationsBenchmark.isInfiniteStoreBenchmark                    512  thrpt    2   3191.209          ops/ms
+Float16OperationsBenchmark.isNaNBenchmark                              512  thrpt    2   5924.519          ops/ms
+Float16OperationsBenchmark.isNaNCMovBenchmark                          512  thrpt    2   4984.292          ops/ms
+Float16OperationsBenchmark.isNaNStoreBenchmark                         512  thrpt    2   4733.856          ops/ms
+Float16OperationsBenchmark.maxBenchmark                                512  thrpt    2  31623.404          ops/ms
+Float16OperationsBenchmark.minBenchmark                                512  thrpt    2  31849.761          ops/ms
+Float16OperationsBenchmark.mulBenchmark                                512  thrpt    2  32348.797          ops/ms
+Float16OperationsBenchmark.negateBenchmark                             512  thrpt    2  40283.133          ops/ms
+Float16OperationsBenchmark.sqrtBenchmark                               512  thrpt    2   3361.438          ops/ms
+Float16OperationsBenchmark.subBenchmark                                512  thrpt    2  32334.854          ops/ms
+
+
+
+
+Benchmark                                                      (vectorDim)   Mode  Cnt      Score   Error   Units
+Float16OperationsBenchmark.absBenchmark                               1024  thrpt    2  33173.253          ops/ms
+Float16OperationsBenchmark.addBenchmark                               1024  thrpt    2  22152.370          ops/ms
+Float16OperationsBenchmark.cosineSimilarityDequantizedFP16            1024  thrpt    2    586.228          ops/ms
+Float16OperationsBenchmark.cosineSimilarityDoubleRoundingFP16         1024  thrpt    2    690.227          ops/ms
+Float16OperationsBenchmark.cosineSimilaritySingleRoundingFP16         1024  thrpt    2    726.644          ops/ms
+Float16OperationsBenchmark.divBenchmark                               1024  thrpt    2   2369.306          ops/ms
+Float16OperationsBenchmark.dotProductFP16                             1024  thrpt    2    695.464          ops/ms
+Float16OperationsBenchmark.euclideanDistanceDequantizedFP16           1024  thrpt    2    876.024          ops/ms
+Float16OperationsBenchmark.euclideanDistanceFP16                      1024  thrpt    2    750.835          ops/ms
+Float16OperationsBenchmark.fmaBenchmark                               1024  thrpt    2  17132.646          ops/ms
+Float16OperationsBenchmark.getExponentBenchmark                       1024  thrpt    2   3300.965          ops/ms
+Float16OperationsBenchmark.isFiniteBenchmark                          1024  thrpt    2   4526.286          ops/ms
+Float16OperationsBenchmark.isFiniteCMovBenchmark                      1024  thrpt    2  14805.056          ops/ms
+Float16OperationsBenchmark.isFiniteStoreBenchmark                     1024  thrpt    2   2804.438          ops/ms
+Float16OperationsBenchmark.isInfiniteBenchmark                        1024  thrpt    2   2660.390          ops/ms
+Float16OperationsBenchmark.isInfiniteCMovBenchmark                    1024  thrpt    2  15203.652          ops/ms
+Float16OperationsBenchmark.isInfiniteStoreBenchmark                   1024  thrpt    2   1579.263          ops/ms
+Float16OperationsBenchmark.isNaNBenchmark                             1024  thrpt    2   2989.443          ops/ms
+Float16OperationsBenchmark.isNaNCMovBenchmark                         1024  thrpt    2   1783.369          ops/ms
+Float16OperationsBenchmark.isNaNStoreBenchmark                        1024  thrpt    2   2526.897          ops/ms
+Float16OperationsBenchmark.maxBenchmark                               1024  thrpt    2  22221.674          ops/ms
+Float16OperationsBenchmark.minBenchmark                               1024  thrpt    2  22208.143          ops/ms
+Float16OperationsBenchmark.mulBenchmark                               1024  thrpt    2  22211.170          ops/ms
+Float16OperationsBenchmark.negateBenchmark                            1024  thrpt    2  34223.712          ops/ms
+Float16OperationsBenchmark.sqrtBenchmark                              1024  thrpt    2   2112.674          ops/ms
+Float16OperationsBenchmark.subBenchmark                               1024  thrpt    2  22164.428          ops/ms
+
+
+ Float16 
+   - Max precision bits = 15 
+   - Precision bits needed to accommodate minimum value = 24 {-14 - 10 (denormal)}
+   
+ fp32val
+    rounding to nearest zero lsb
+        up
+        down
+   
+fp16val
+   no rounding
+
+Post operation rounding.
+
+fp32val * f16toF32(fp16val)
+   fp32res to fp16res
+     rounding
+        up 
+        down
+
+Pre operation rounding
+   fp32val_up * fp16toF32(fp16val)
+   fp32val_down * fp16toF32(fp16val)
+
+
+
+

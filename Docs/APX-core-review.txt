@@ -1,0 +1,1440 @@
+APX Code Review:
+================
+
+1) Add EGRP save restoration validation across signal handling in VM_Version. [DONE]
+
+2) There is no check for VM_Version::supports_extended_egpr() or VM_Version::supports_apx_f() in prefix routines which 
+   encodes EGPRs.
+
+3) /sandboxes/apx/src/hotspot/cpu/x86/nativeInst_x86.hpp native instruction detection changes.
+
+4) Re-introduce GRP names for fixed incoding checks...
+
+5) VEX encoded instruction like SHLX with UseAPX requires EVEX encoding.
+   -  C2 RA -> UseAPX => R16 - R31
+
+   -  REX2 based legacy map 0 and 1 instructions does not require EVEX encoding.
+
+   -  APX intercept targets - DMR , PANTHERLAKE (APX10)
+	- Targets with APX to support EVEX encoding even in absence of AVX512. 
+
+Compiler Considerations:
+========================
+
+Runtime Considerations:
+=======================		
+
+GC Considerations:
+==================
+
+ - GC is compiled using non-APX enabled compiler.
+ - GC root are part of OopMapStream which is hold a steam of oop location sites i.e. stack and registers.
+ 
+a) 
+Initial activation stack at GC trigger point / de-opt (top down):-  
+|  leaf
+|       oop = [r15]
+|       oop = stackloc]
+|       oop = [r31]
+|  mid
+|        oop = [r17]
+|
+|  top  OopMap
+V        oop = [r23]
+
+b)
+Points of interest:- 
+- Runtime saves all the GPRs and records its corresponding stack location.
+- All the EGPRs are caller saved registers, thus they must be spilled before call site into stack locations. Compile creates OopMaps to oop holding locations.
+- Moves are captured as callee saves oops, this is how rumtime keep track of stack spill location corresponding to a caller save register.
+
+c)
+GC root set begins from top most activation, oop values held in callee-saved registers are provisioned by spilling locations recorded by RegisterSaver.
+Locations for all the oops held in Caller saved registers are part of oopMap stream of corresponding activation and oop held in callee saved are part of 
+OopStream corresponding to callee activation.
+
+Thus, even if GC itself is compiled using non-APX enabled compiler, it should not be a problem during root set enumeration which always finds the root oops
+in stack locations which holds the values for both GRP / EGPRs.
+
+
+SDE Considerations:
+===================
+
+SDE is a pintool, PIN in JIT mode creates a copy of the executable code blob and perform any instrumentation within the blob, a REX2 / extended EVEX encoded instruction will be replaced by its SW emulation routine.
+A pintool can register signal handlers which overrides application signal handlers. On receiving a signal from OS, PIN which runs a VM may delay delivering signal to application till it reaches a well-defined sync point.
+PINTOOL delegates the application state save/restoration to PIN which may save the CPU state in an auxiliary data structure.
+
+For a REX2 encoded instruction, since underlined target is not capable of executing the instruction, SDE executes a SW emulation routine for it, if it triggers a SIGSEGV then OS will capture the HW CPU state at specific PC (program counter)
+within the instrumented code blob and deliver the signal to PINTOOL registers signal handler.  After taking suitable action, PIN may pass the signal to application signal handler. Post signal handling OS will begin execution from next PC after the faulting PC. 
+
+Consider following example:-
+
+Original instruction sequence.                 SDE instrumented code blob.
+....                                                                    …..
+  MOV64 IMMEDIATE RAX                          MOV64 IMMEDIATE RAX;                                  [A] Native target execution             
+  SHLX RAX, *(R23), RAX                        SDE_SHLX_EX_EVEX_EMU (RAX, SDE_CPU_REG_STATE_R23);    [B] SDE SW EMU routine.
+  MOVQ RAX, MEM                                MOV64 RAX, MEM;                                       [C] Native target execution.
+-----
+
+For APX flow, SDE will bookkeep EGPR state, for a faulting instruction [B] within in instrumented code blob, OS will resume execution from next instruction i.e. [C], thus application running under SDE should preserve the EGPR.
+state without OS support.
+
+
+Validation:
+
+sde64 -follow-subprocess -emit-illegal-insts 0 -icount -dmr -- java -jar /home/jatinbha/sandboxes/jtreg/build/images/jtreg/lib/jtreg.jar -samevm -va -timeout:4 -jdk:$JAVA_HOME TestIntVect.java
+
+
+
+
+   4:	d5 18 c7 01 0a 00 00 	movq   $0xa,(%r17)
+   b:	00 
+   c:	49 c7 02 0a 00 00 00 	movq   $0xa,(%r10)
+  13:	48 c7 01 0a 00 00 00 	movq   $0xa,(%rcx)
+
+Case A) mov $0xa, (%r10)
+49 c7 02 0a 00 00 00
+REX    => 0x4 +   1     0     0    1  
+          0x4 + REX.W REX.R REX.X REX.B
+OPCODE => C7
+
+ModRM  => 02  -> 00 000 010
+      MOD = 00
+      REG = 000  -> 
+      RM  = 010  -> 
+   REG => REX.B + ModRM.RM = 1010 -> R10
+
+REX2                                         REX2.B4 REX2.B3  ModRM.RM 
+REGISTER INDIRECT ADDRESSING OPERAND = R17 -> 1        0     001
+                                      
+REX2 prefix byte = D5 18 => D5 + 000 1 1000
+
+
+Vector API stand alone validation at various AVX levels 
+  - good proof point for functional coverage.
+     
+CPROMPT>
+CPROMPT>sde -dmr -- /home/jatinbha/sandboxes/apx/build/linux-x86_64-server-slowdebug/images/jdk/bin/java         -Dtest.vm.opts=         -Dtest.tool.vm.opts=         -Dtest.compiler.opts=         -Dtest.java.opts='-XX:AllocatePrefetchStyle=0 -XX:-TieredCompilation -Xbatch'         -Dtest.jdk=/home/jatinbha/sandboxes/apx/build/linux-x86_64-server-slowdebug/images/jdk         -Dcompile.jdk=/home/jatinbha/sandboxes/apx/build/linux-x86_64-server-slowdebug/images/jdk         -Dtest.timeout.factor=4.0         -Dtest.root=/home/jatinbha/sandboxes/apx/test/jdk         -Dtest.name=jdk/incubator/vector/Float256VectorTests.java         -Dtest.file=/home/jatinbha/sandboxes/apx/test/jdk/jdk/incubator/vector/Float256VectorTests.java         -Dtest.src=/home/jatinbha/sandboxes/apx/test/jdk/jdk/incubator/vector         -Dtest.src.path=/home/jatinbha/sandboxes/apx/test/jdk/jdk/incubator/vector         -Dtest.classes=/home/jatinbha/sandboxes/apx/test/jdk/jdk/incubator/vector/JTwork/classes/jdk/incubator/vector/Float256VectorTests.d         -Dtest.class.path=/home/jatinbha/sandboxes/apx/test/jdk/jdk/incubator/vector/JTwork/classes/jdk/incubator/vector/Float256VectorTests.d         -Dtest.class.path.prefix=/home/jatinbha/sandboxes/apx/test/jdk/jdk/incubator/vector/JTwork/classes/jdk/incubator/vector/Float256VectorTests.d:/home/jatinbha/sandboxes/apx/test/jdk/jdk/incubator/vector         -Dtest.modules=jdk.incubator.vector         --add-modules jdk.incubator.vector         -XX:AllocatePrefetchStyle=0         -XX:-TieredCompilation         -Xbatch    -XX:UseAVX=0     -ea         -esa         -Xbatch         -XX:-TieredCompilation         com.sun.javatest.regtest.agent.MainWrapper /home/jatinbha/sandboxes/apx/test/jdk/jdk/incubator/vector/JTwork/jdk/incubator/vector/Float256VectorTests.d/testng.0.jta jdk/incubator/vector/Float256VectorTests.java false Float256VectorTests
+WARNING: Using incubator modules: jdk.incubator.vector
+
+Exception: java.lang.ArrayIndexOutOfBoundsException thrown from the UncaughtExceptionHandler in thread "MainThread"
+
+Exception: java.lang.ArrayIndexOutOfBoundsException thrown from the UncaughtExceptionHandler in thread "main"
+CPROMPT>
+
+       
+XSAVE for save /restore:
+=======================
+
+XSAVE feature set comprises eight instructions, XGETBV, XSAVE, XSAVEOPT, XSAVEC, and XRSTOR
+can be executed at any privilege level; XSETBV, XSAVES, and XRSTORS can be executed only if CPL = 0. In addition
+to XCR0, the XSAVES and XRSTORS instructions are controlled also by the IA32_XSS MSR (index DA0H)
+
+  As of now JVM try to comply with XSAVE AREA layout in terms of components offsets but does not use XSAVEOPT to save restore the components states.
+     - TODO: Extend register saver to use XSAVEOPT with specific state component bitmap and measure the performance impact on JIT to VM migrations.
+   
+  1) JVM is free to deviate from layout compliance in favour of its own compact custom layout.
+
+  2) Using XSAVEOPT will enabling saving only incremental modified state, we can always tune state componenent bit map to save XMMs, Opmask. 
+     GPRs are not part of XSAVE state anyways, but with APX EGRPs are included within XSAVE state as a new state component.
+
+  3) pusha-popa can saves/restore GPRS + EGPR state contiguously without leaving any gaps in the stack to comply with XSAVE layout.
+ 
+Reason for JVM not using XSAVE instruction:  RFBM has a dependency on OS for effective state component bitmap [13.7]
+  
+ "The XSAVE instruction takes a single memory operand, which is an XSAVE area. In addition, the register pair
+EDX:EAX is an implicit operand used as a state-component bitmap (see Section 13.1) called the instruction
+mask. The logical-AND of XCR0 and the instruction mask is the requested-feature bitmap (RFBM) of the user
+state components to be saved."
+  
+We can check the relevant state componemts bits of XCR0 register during VM startup and if all the required state components save/restore is enabled 
+by OS then RegisterSave can directly use XSAVEOP instead of custom save/restore logic.
+
+As a first step we can develop a c-micro to compare the performance of existing save - restoration sequence vs XSAVE / XSAVEOPT and XSAVEC. 
+  - It appears that XSAVE may need microcode-sequencer support and front end has bear a switchover penalty for decoding
+    the instruction stream from MS vs MITE/DSB.
+   
+
+JVM Components with target sepecific code exposure :-
+  Interpreter 
+  C1
+     - RA only allocated integral / floating point registers, no allocation for opmask, vector registers.
+	 - Rumtime1 
+	   - Only Save / Restore state affected by C1.
+	   - pusha() / popa()
+	 - Should handle EGPR allocation.
+  C2
+     - RA (APX) 
+	   - Will allow dumping oops in EGPRs
+	   - OopMaps (generated at callsite / loopback edges)
+	      - Capture the locations holding oops.
+		  - For non-call safepoint, oop may be held in Registers.
+		  - OopMaps corresponding to callsite will record stack spill locations (+rbp iff frampointers are not preserved)
+  Runtime
+     - Common across execution engines.
+     - Stubs
+	 - SharedRuntime
+
+
+
+Quick Refreshere on Encoding.
+
+Opcode is a 8 bit value which can accomodate encodings for 256 instructions.
+ - X86 is a CISC instruction set with 1300+ instructions.
+ - Which is why instructions are divided into multiple maps
+ - Where each map is a bundle of 256 instruction.
+ - Legacy instruction set has following 4 maps..
+    0)                | one byte opcode   
+    1) 0F    (map ID) | opcode byte       
+    2) OF_38 (map ID) | opcode byte
+    3) OF_3A (map ID  | opcode byte
+
+- REX -> Support encoding max 2 operands.. [LEGACY PREFIX] [REX] OPCODE ModRM (Mod + REG + RM) [SIB] [IMM32]
+                                              66 - Operand size prefix.
+                                              F2  
+                                              F3
+         All scalar instructions with 3 operands like SHLX, SHRX etc.. needs VEX encoding..
+
+- Rex2 
+    - To encode EGPRs operands for legacy map 0 / 1 instructions...
+
+- Vex
+      - VEX.VVVV = NDS
+      - ModRM.REG = SRC + VEX.R
+      - ModRM.RM  = DST + VEX.B
+      
+    - Encodes legacy prefixes in specific bits of VEX encoding.
+    - Pefix 
+         C4 - 3 byte vex prefix 
+         c5 - 2 byte vex prefix  
+
+     - Techinically its fesable to encode any 2 operand REX based insturction using VEX encoding, but its an overkill as may increase the overall instruction size.
+     
+- Evex
+     
+- Extended EVEX
+   - To encode EGPRs operands for map 2 and 3 and seletected set of VEX encoded instruction which use EGPRs in base/index of address operand..
+
+   - NDS (first source operand in 3 operand instructions).
+   - REG, BASE, INDEX
+   - W - Same as REX.W / VEX.W (operand size 64 bit)
+   
+   - Togather can encode one vector + 3 GPRS.
+     - 3 GPRS
+          - Address DISP(BASE_GPR (B) , INDEX_GPR (X) , SCALE) [memory operand]
+          - GPR [register (R) addressing mode]
+
+For Reviews:
+============
+Case A) Legacy Vex encoded instruction to EEVEX.
+
+   Shifts the bits of the first source operand (the second operand) to the left or right by a COUNT value specified in the second source operand (the third operand). The result is written to the destination operand (the first operand).
+
+   - AT&T: SHLX SRC2, SRC1, DST
+                REG   NDS   BASE
+         -> INDEX is only used for memory operands.
+          
+     VEX.LZ.F2.0F38.W1 F7
+
+    4:	62 ea dd 00     f7        f5      shlx   %r20,%r21,%r22
+      [Extended Evex] [Opcode]  [ ModRM]  
+
+void Assembler::vex_prefix_and_encode(int dst_enc, int nds_enc, int src_enc, 
+
+void Assembler::shlxl(Register dst, Register src1, Register src2) {
+  assert(VM_Version::supports_bmi2(), "");
+  InstructionAttr attributes(AVX_128bit, /* vex_w */ false, /* legacy_mode */ true, /* no_mask_reg */ true, /* uses_vl */ true);
+  int encode = vex_prefix_and_encode(dst->encoding(), src2->encoding(), src1->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_38, &attributes);
+  emit_int16((unsigned char)0xF7, (0xC0 | encode));
+}
+
+
+instruct salI_rReg_rReg(rRegI dst, rRegI src, rRegI shift)
+%{
+  predicate(VM_Version::supports_bmi2());
+  match(Set dst (LShiftI src shift));
+
+  format %{ "shlxl   $dst, $src, $shift" %}
+  ins_encode %{
+    __ shlxl($dst$$Register, $src$$Register, $shift$$Register);
+  %}
+  ins_pipe(ialu_reg_reg);
+%}
+
+
+
+Case B) Existing EVEX enoded instruction with memory operand using EGPR BASE and INDEX.
+
+     - Limiting case of VPTERNLOGQ which accepts 4 operands.
+        - IMM (Truth table result)
+        - SRC1 (Memory with EGPR BASE + INDEX)
+        - SRC2 
+        - DST  
+
+XED bug:
+========
+CPROMPT>sde -itrace-execute-emulate -ptr-check -ptr-check-warn -dmr -- ./a.out 
+res = -1
+CPROMPT>
+CPROMPT>
+CPROMPT>xed -64 -d 62 6b c1 40 25 84 ec 
+626BC1402584EC
+ERROR: BUFFER_TOO_SHORT Could not decode at offset: 0x0 len: 7 PC: 0x0: [626BC1402584EC]
+CPROMPT>
+
+     EVEX       OPCODE       MODRM          SIB
+ 
+  62 6b c1 40 |    25    |    84       |    ec            |	vpternlogq $0xff,0x10(%r20,%r21,8),%zmm23,%zmm24
+                         | 10 000 100  |  11   101   100  |
+                         | MOD REG RM  | SCALE INDEX BASE |
+
+   - SIB       -> BASE (R20), IDX (R21) 
+   - MODRM.REG -> DST (ZMM24)
+   - MODRM.RM  -> SIB + disp32.
+   - EVEX.VVVV -> NDS (ZMM23)
+
+  EVEX
+    62 - mandatory prefix.
+    6b - 0  1  1     0   1  011
+        R3 X3 B3    R4  B4  MMM
+    c1 - 1  1000    0  01
+         W  VVVV   X4  PP
+    40 - 0100 0000
+               V4
+
+EVEX.VVVV =  1 0111 (bit inverted)        -> 16 + 7 = ZMM23 
+DST       =  R4 R3 MODRM.REG = 1 1 0 0 0  -> 16 + 8 = ZMM24 
+BASE      =  B4 B3 SIB.BASE  = 1 0 100    -> 16 + 4 = R20
+INDEX     =  X4 X3 SIB.INDEX = 0(1) 0 101 -> 16 + 5 = R21  
+   
+Note:     
+   REX2.B4 = Default value is 0 and repurposed value is 1 iff base register is one of the extended GPRs. 
+   Similarly REX.X4 default value is 1 and reporposed value is 0 iff index register is one of the extended GPRs.
+
+CPROMPT>gcc -mavx2 -mno-avx512f -mno-apxf rex2_non_evex.c 
+rex2_non_evex.c: In function ‘func’:
+rex2_non_evex.c:4:3: error: the register ‘%r23’ cannot be clobbered in ‘asm’ for the current target
+    4 |   asm volatile (
+      |   ^~~
+CPROMPT>
+
+CPROMPT>cat rex2_non_evex.c 
+
+
+void func() {
+  asm volatile (
+     "addq %%r20, %%r23 \n\t"
+     "shlxq %%r20, %%r23, %%r23 \n\t"
+     "vpternlogd $0xff, %%zmm1, %%zmm2, %%zmm3 \n\t"
+   : : : "%r20", "%r23", "%zmm1" ,"%zmm2", "%zmm3"
+  );
+}
+
+int main() {
+  func();
+  return 0;
+}
+CPROMPT>gcc -mavx2 -mno-avx512f -mapxf rex2_non_evex.c 
+
+ 
+TODO:
+
+1) Add a *StressRegisterAllocation* flag on the lines of other stress flags, this will randomize the allocation sequence which is currently guided by allocation_order
+ and enable catch bugs around dynamic register classes.
+
+2) Synthetic script based sutb to validate all the MAP0 / MAP1 and Extended EVEX promotable instructions, this will execute during VM startup only under test flag.
+
+REX2 PREFIX:-
+M0 R4 X4 B4 W R3 X3 B3	
+
+Instruciton:-
+   -  MOVSS  XMM , MEM
+   -               MEM = (B + I * SCALE + OFFSET)
+  
+MOVSS 0x10(%r17,r19), %xmm15
+
+f3 d5 b4 10 7c 19 10
+                              
+PREFIX : F3 (SSE)
+                  
+REX2   : D5 B4   [1011 0100]
+
+OPCODE : 10
+      
+             MOD REG  RM
+MODRM  : 7C [ 01 111 100] 
+
+MOD(01) + RM(100) => SIB+disp8
+
+SIB    : SCALAE[2] INDEX[3] BASE[3]
+       : 00          011    001
+
+INDEX = 10011 -> R19
+BASE  = 10001 -> R17
+
+REX = REX2.R4 + REX2.R3 + ModRM.REG
+         0         1    +    111   => XMM15
+IMM/DISP : 0x10
+
+
+Two encoding schemes for imm32 movement into REG32:-
+
+ B8+ rd id         MOV r32, imm32          OI    Valid       Valid           Move imm32 to r32.
+
+ C7 /0 id          MOV r/m32, imm32        MI    Valid       Valid           Move imm32 to r/m32.
+      - This covers memory operand, in addition /0 is an extended opcode thus mandates emission of ModRM byte.
+      - Former encoding is compact and optimum for REG only destination operands.
+
+ B8  => 1011 1000  -> Implied addressing mode..
+              ---
+              Lower three bits accomodate destination register operand.. r < 8 , if r > 8 -> REX capture extended encoding bit if r > 16 -> REX2 capture extended encoding bits.
+
+ModRM = 38  -> 00 111 000
+
+JVM Startup:-
+   - VM Thread
+   - C1 Compiler Thread[s]
+   - C2 Compiler Thread[s] 
+   - GC Threads
+   - Java App/ mutator Thread[s] => Executing JIT compiled code comprising of APX ISA.
+      
+Case 1) Single mutator thread.
+             - After STW GC resumes execution at different core.
+             	- Expectation : SDE should be able preserve EGPR state across CPU migrations since its a managed state and not actual architecure state.
+Case 2) Single mutator thread.
+             - After STW GC resumes execution at same core, EGPR state remains undistrubed since GC / runtime is not compiled with APX enabled compiler.
+
+Case 3) Multiple mutator.
+             - Extended GPR state preservation across CPU migrations.
+               - Expectation: SDE should be able to re-instantiate the EGPR state on thread mirgation without explicit OS support.        
+               
+Base case for validation:-
+  - Epsilon GC - no GC
+  - Single mutator.
+    - Validation coverage:-
+        - EGPR State save / restore to know stack locations for method resulution at runtime.  
+  
+Runtime:
+   Inline Cache:
+     [type1 -> method_entry_pc1]
+     [type2 -> method_entry_pc2]
+     [type3 -> method_entry_pc3]
+      
+Compiler
+     mov64 0, receiver_reg
+     call virtual_call_resolution -> first time
+            - Find the receiver of caller in caller RegisterMap, based on calling convention look for receiver in rsi register.
+            - Lookup method based on actual receiver.
+            - Patch up the call site with actual receiver... 
+            - and method method entry address of target.
+                    - Consult inline cache to speedup the lookup process..
+
+            - next invocation.
+              - with callsite and receiver patched, directly calls the resolved method entry.
+
+Validation Points:-
+     - EGPR state / save by mutator thread before invoking a runtime service for method lookup / handling pooling exception.
+        - Mutator switch over to runtime for method resolution.
+            -> Saves all the GPR, FP , EGPR state mutator before invoking runtime service.
+                -> Given that EGPRs are caller saved registers, compiler may anyways be spilling them in callers frame.
+                -> But method resolution may be called by other execution engines also, which by the way are not APX-enable currently. 
+
+        - Signal handling thread invoker handler blob for safe point poll.
+                -> Signal handling thread receives the ucontext for signal generating thread which may be executing on some other core.
+                -> Handler then sets the PC within the UCONTEXT to point to appropriate polling stub, OS then re-instantiates the architectural state from the UCONTEXT
+                   and begins executing faulting thread from PC pointing to handler blob. R15 holds the thread pointer which is successfully re-instantiated by OS post signal handling.
+                -> UCONTEXT does not capture the EGPR state, but nothing may have disturbed the EGPR stats of the faulting thread.
+                -> Threads (SDE java threads) are parked for VM Operations demanding no mutator activity, like STW GCs.
+                     -> SDE still manages the EGPR state.
+                     -> parking - spin loop / pause / os thread management (heavy resumtion cost). 
+    
+                -> Post VM operation, threads are unparked, states are restored, EGPRs states manged by SDE is unaltered.
+ 
+Validation:-
+----------------
+  -  All AVX levels : APX is only enabled for AVX3. 
+  -  All execution engies (C1/ C2 and Interpreter).
+ -  Tier1 tests runs.
+   
+
+Test Point:
+
+
+import jdk.incubator.vector.*;
+
+public class insertQ {
+   public static long micro(long [] arr, int d1, int d2, int d3, int d4, int d5, long value) {
+      long res =  d1 + d2 + d2 + d4 + d5;
+      LongVector.fromArray(LongVector.SPECIES_128, arr, 0)
+                .withLane(1, value)
+                .intoArray(arr, 0);
+      return res + arr[1];
+   }
+
+   public static void main(String [] args) {
+      long res = 0;
+      long [] arr = {1,2};
+      for (int i = 0; i < 10000; i++) {
+          res += micro(arr, 1, 2, 3, 4, 5, res);
+      }
+      System.out.println("[res] " + res);
+   }
+}
+
+
+CPROMPT>sde -dmr  -- java -XX:-TieredCompilation -Xbatch  --add-modules=jdk.incubator.vector -XX:UseAVX=1  -cp . insertQ
+WARNING: Using incubator modules: jdk.incubator.vector
+[res] 90034
+
+CPROMPT>java -XX:-TieredCompilation -Xbatch  --add-modules=jdk.incubator.vector -XX:UseAVX=1  -cp . insertQ
+WARNING: Using incubator modules: jdk.incubator.vector
+[res] -14
+
+Opto Assembly:
+
+041     movq    R16, [rsp + #64]	# spill
+047     vector_insert XMM0,R16,#1
+04d     store_vector [RSI + #16 (8-bit)],XMM0
+
+
+Emitted Encoding:
+
+  0x00007fe7b87e7902:   mov    0x40(%rsp),%rax
+  0x00007fe7b87e7907:   vpinsrq $0x1,%rax,%xmm0,%xmm0
+  0x00007fe7b87e790d:   vmovdqu %xmm0,0x10(%rsi)
+
+
+SIMD PREFIX (66/F3/F2) + REX    [opcode] [modrm] [sib] [disp] [imm]
+   1 byte               1 byte 
+
+VEX                  : SIMD + REX are encoded within VEX 
+(2 / 3 byte prefix)
+
+WE GIVE PREF to VEX for auto-clearing of upper 128 bits.
+
+VEX => Cannot encode EGPR , for that it will promote instructions to EVEX.
+
+Some map2 and map3 GPR based instructions can be encoded using REX prefix e.g blsmsk
+
+But give that map2 and map3 occupies two byte map ID and if such insturction also has a length changing prefix (66)
+
+then its optimimum to encode it using 2 byte VEX encoding perfixed with C5, since VEX encodes prefixes in compact 
+
+bit pattern and has explicit bit reserved for map IDs. Which is why BLSMSK is a VEX encoded legacy map 2 instruction.
+
+APX specification penalty
+
+ - LEGACY MAP 2/3 pure GPR instruction which earlier were encoded using VEX will not be promoted to EVEX which is fixed 4 byte prefix.
+    e.g.
+
+ void Assembler::blsrq(Register dst, Address src) {
+  assert(VM_Version::supports_bmi1(), "bit manipulation instructions not supported");
+  InstructionMark im(this);
+  InstructionAttr attributes(AVX_128bit, /* vex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+  attributes.set_address_attributes(/* tuple_type */ EVEX_NOSCALE, /* input_size_in_bits */ EVEX_64bit);   // Tuple for compressed disp8*N encoding.
+  vex_prefix(src, dst->encoding(), rcx->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F_38, &attributes);
+  emit_int8((unsigned char)0xF3);
+  emit_operand(rcx, src, 0);
+}
+
+
+
+
+
+Testing  Objectives :-
+=====================
+
+A) Encoding validation:-
+  1) Legacy Map 0 / 1  => REX2
+  2) Legacy Map 2 / 3  => EEVEX
+  3) VEX  
+       - ADDRESS (BASE, INDEX)
+       - GPR operands.
+  4) EVEX 
+       - ADDRESS (BASE, INDEX)
+       - GPR operands.
+  
+B) Different AVX and SSE levels:-
+    - UseAVX=0,1,2,3  [-XX:+UseKNLSettings ]
+    - UseSSE=0,1,3,4
+
+C) StressRegisterAllocation
+    - Tricky since allocation sequence is static and depedent on ADLC.
+    - Randomization during allocation.
+
+D) Save restoration
+   - Method resolution
+   - Pool handlers.
+   - Gen ZGC
+   - Non-Gen ZGC
+   - Epsilon 
+ 
+E) Tier1 
+    - with interpreter.
+    - with C1 only compilation.
+    - with C2 only compilation.
+   
+
+void Assembler::cvtsi2ssq(XMMRegister dst, Address src) {
+  NOT_LP64(assert(VM_Version::supports_sse(), ""));
+  InstructionMark im(this);
+  InstructionAttr attributes(AVX_128bit, /* rex_w */ true, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+  attributes.set_address_attributes(/* tuple_type */ EVEX_T1S, /* input_size_in_bits */ EVEX_64bit);
+  simd_prefix(dst, dst, src, VEX_SIMD_F3, VEX_OPCODE_0F, &attributes);
+  emit_int8(0x2A);
+  emit_operand(dst, src, 0);
+}
+
+
+   8:	f3 49 0f 2a c0       	cvtsi2ss %r8,%xmm0
+   d:	c4 c1 fa 2a c0       	vcvtsi2ss %r8,%xmm0,%xmm0'
+
+  
+void pinsrq() {
+  asm volatile (
+     "vpinsrq $1, %%r17 , %%xmm1, %%xmm17 \n\t"
+   : : : "%r17" , "%xmm17"
+  );
+}
+
+
+CPROMPT>gcc insrq.c -mno-avx512f -mno-avx -mapxf -c
+insrq.c: In function ‘pinsrq’:
+insrq.c:4:3: error: the register ‘%xmm17’ cannot be clobbered in ‘asm’ for the current target
+    4 |   asm volatile (
+      |   ^~~
+
+
+
+CPROMPT>cat insrq.c
+
+
+void pinsrq() {
+  asm volatile (
+     "vpinsrq $1, %%r17 , %%xmm11, %%xmm11 \n\t"
+   : : : "%r17" , "%xmm11"
+  );
+}
+CPROMPT>gcc insrq.c -mno-avx512f -mno-avx -mapxf -c
+
+
+CPROMPT>gcc insrq.c -mno-avx512f -mno-avx -c
+insrq.c: In function ‘pinsrq’:
+insrq.c:4:3: error: the register ‘%r17’ cannot be clobbered in ‘asm’ for the current target
+    4 |   asm volatile (
+      |   ^~~
+CPROMPT>
+
+
+========================================================
+With UseAVX = 0
+
+
+void Assembler::cvtsi2ssl(XMMRegister dst, Register src) {
+  NOT_LP64(assert(VM_Version::supports_sse(), ""));
+  InstructionAttr attributes(AVX_128bit, /* rex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+  int encode = simd_prefix_and_encode(dst, dst, as_XMMRegister(src->encoding()), VEX_SIMD_F3, VEX_OPCODE_0F, &attributes, true);
+  emit_int16(0x2A, (0xC0 | encode));
+}
+
+
+SDE ERROR: Illegal instruction at address = 7f3aafa329a0: f3 d5 10 0f 2a c1 48 83 c4 10 5d 49 3b a7 88 
+                                                                  ----
+
+1) OF should not preceed REX2 prefix.
+2) REX2.M0 should be set to 1 since its a MAP1 instruction. This can easily be done by consulting VEX_OPCODE_0F.
+
+cvtsi2ss.o:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000000000 <micro>:
+   0:	55                   	push   %rbp
+   1:	48 89 e5             	mov    %rsp,%rbp
+   4:	f3 d5 90 2a c1       	cvtsi2ss %r17d,%xmm0
+
+========================================================
+
+
+Implementation Constraints:-
+
+1)  simd_prefix_and_encode: Is shared across multiple SSE routines, accepting either both XMM arguments or one XMM and GPR, at AVX=0 XMM0-16 are accessible.
+    Thus any encoding above 16 for src or destination mandates REX2 encoding
+     int encode = simd_prefix_and_encode(dst, dst, src, VEX_SIMD_F3, VEX_OPCODE_0F, &attributes);
+
+2) Bring 0x0F emitted inside all the leaf level prefix_encode routines out at the top level for all the assembler routine explicitly passing is_map1 as true.
+   Handle both Address and Register operands.
+
+3) With this we will not need to explicitly enable the APX support at UseAVX level 3.
+
+
+8  8    8  8    8  8    8  8
+A1*B1 + A2*B2 + A3*B3 + A4*B$
+16       16      16       16
+
+16 + 16 = 17 (one overflow)
+
+16 + 16 = 17 (one overflow)
+
+17 + 17 = 18 (one overflow) 
+
+
+SSE class instruction, no EVEX flavour.
+
+66 0F 3A 61 /r imm8
+PCMPESTRI xmm1, xmm2/m128, imm8
+                ---------
+VTESTPS
+VTESTPD
+
+:g:instruct.*legVec.*memory
+instruct vroundD_mem(legVec dst, memory mem, immU8 rmode) %{
+instruct gather(legVec dst, memory mem, legVec idx, rRegP tmp, legVec mask) %{
+
+Problem:
+========
+Memory Operands of a strict SSE class / non-EEVEX promotable instructions can accept an EGPR Base OR Index.
+
+C2 Compiler Instruction Patterns with memory operands and are not EVEX promotable.
+:g:instruct.*legVec.*memory
+A) instruct vroundD_mem(legVec dst, memory mem, immU8 rmode) %{
+B) instruct gather(legVec dst, memory mem, legVec idx, rRegP tmp, legVec mask) %{
+
+For A) gcc currnetly implicitly promotes vroundpd to  VRNDSCALEPD even with mno-avx512f flag, this looks like a bug in GCC.
+
+   public static void micro(double [] res, double [] src) {
+       for(int i = 0; i < res.length; i++) {
+           res[i] = Math.ceil(src[i]);
+       }
+   }
+
+C2 
+   AVX=3
+132     vrndscalepd XMM0,[RDX + #144 + R22 << #3],#2	! round packed8D
+13e     store_vector [RSI + #144 + R22 << #3],XMM0
+
+   AVX=2
+112     vroundpd XMM0, [RDX + #48 + R22 << #3], #2	! round packedD   // Constrain Memory Operand to 
+11a     store_vector [RSI + #48 + R22 << #3],XMM0
+
+
+080     B8: #	out( B10 B9 ) <- in( B7 B9 ) Loop( B8-B9 inner pre of N193) Freq: 1.9996
+080     movsd   XMM0, [RDX + #16 + R16 << #3]	# double
+086     roundsd XMM0,XMM0
+
+ ;; B8: #	out( B10 B9 ) <- in( B7 B9 ) Loop( B8-B9 inner pre of N193) Freq: 1.9996
+  0x00007fc13b244240:   vmovsd 0x10(%rdx,%rax,8),%xmm0
+  0x00007fc13b244246:   vroundsd $0x2,%xmm0,%xmm0,%xmm0
+
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  SIGSEGV (0xb) at pc=0x00007fc13b244240, pid=39065, tid=39068
+#
+
+
+For B) vpgatherqq: gcc currently explicity errors out on account of non-promotable EVEX insturction.
+// GATHER - VSIB encoding, BASE (GPR) + INDEX (VECTOR) * SCALE + OFFSET 
+
+void micro() {
+   asm volatile (
+      "vpgatherqq %%ymm1, 0x20(%%r21, %%ymm2, 0x8) , %%ymm3  \n\t"
+     :  :  : "%r21" , "%ymm1" , "%ymm2", "%ymm3"
+   );
+}
+
+gatherqq.c: Assembler messages:
+gatherqq.c:5: Error: no EVEX encoding for `vpgatherqq'
+
+
+Solution:
+
+A) Either load the memory address into a register using LEA and constrain the register class of gather memory address register operand to legacy GPR set.
+
+B) define new legacy memory opclass and legacy variants of all the address operands, seamlessly use legacy memory operands where ever needed.
+
+C) Use LEA instruction to load the memory into legacy register GPR operand and then pass it over to register flavour of the memory instruction.
+
+D) Use memory move to safely move memory to registers and then use register flavour of instruction. [X] (vmovdqu is only VEX encodable)
+
+CPROMPT>gcc -mapxf vmovdqu.c -c
+vmovdqu.c: Assembler messages:
+vmovdqu.c:3: Error: no EVEX encoding for `vmovdqu'
+
+
+Gather AVX3:
+============
+Kernel:
+-------
+   // Inject dummy arguments to consume first 6 CC registers.
+   public static void micro(int d1, int d2, int d3, int d4, int d5, int d6, int [] dst, int [] src, int [] index) {
+       IntVector.fromArray(SPECIES, src, 0, index, 0)
+                .intoArray(dst, 0);
+   }
+
+[Verified Entry Point]
+  # {method} {0x00007f0cec401530} 'micro' '(IIIIII[I[I[I)V' in 'gatherd'
+  # parm0:    rsi       = int
+  # parm1:    rdx       = int
+  # parm2:    rcx       = int
+  # parm3:    r8        = int
+  # parm4:    r9        = int
+  # parm5:    rdi       = int
+  # parm6:    [sp+0x50]   = '[I'  (sp of caller)
+  # parm7:    [sp+0x58]   = '[I'
+  # parm8:    [sp+0x60]   = '[I'
+
+
+C2 Emitted Gather Encoding:
+---------------------------
+	62fa7d2f90049085
+
+C2 Emitter Prior LEA encoding.
+-----------------------------
+CPROMPT>xed64 -64 -d d5588d4210
+D5588D4210
+ICLASS:     LEA
+CATEGORY:   MISC
+EXTENSION:  BASE
+IFORM:      LEA_GPRv_AGEN
+ISA_SET:    I86
+ATTRIBUTES: SCALABLE 
+SHORT:      lea r16, ptr [r18+0x10]
+CPROMPT>
+
+C2 Opto Assembly:
+-----------------
+083     load_vector_gather XMM0, [R18 + #16 (8-bit)], XMM2	! using R16 and ktmp as TEMP
+083     load_vector_gather XMM0, [R18 + #16 (8-bit)], XMM2	! using R16 and K7 as TEMP
+          |
+          ---> LEAQ [R18 + #16 (8-bit)], R16
+          |__> EVGATHERD
+
+
+XED Disassembled Instruction:
+
+CPROMPT>xed64 -64 -d 62fa7d2f900490
+62FA7D2F900490
+ICLASS:     VPGATHERDD
+CATEGORY:   GATHER
+EXTENSION:  AVX512EVEX
+IFORM:      VPGATHERDD_YMMu32_MASKmskw_MEMu32_AVX512_VL256
+ISA_SET:    AVX512F_256
+ATTRIBUTES: DISP8_GSCAT DWORD_INDICES GATHER MASKOP_EVEX MEMORY_FAULT_SUPPRESSION SPECIAL_AGEN_REQUIRED 
+SHORT:      vpgatherdd ymm0, k7, dword ptr [r16+ymm2*4]  --> Extended EVEX using R16 GRP as BASE of VSIB encoding.
+
+
+Gather AVX2
+-----------
+
+sde -dmr -debug -- java  -XX:-UseOnStackReplacement -Xbatch -XX:-TieredCompilation --add-modules=jdk.incubator.vector -XX:CompileCommand=Print,gatherd::micro -XX:UseAVX=2  -cp . gatherd
+
+WARNING: Using incubator modules: jdk.incubator.vector
+In: sde_catastrophe_handler
+Thread: 2
+PID: 9834
+SYSTEM TID: 9919
+Exception code: ACCESS_INVALID_ADDRESS
+Exception Class: 2
+Faulty AccessType : 0
+Exception address: 0x7f27f4aa42df
+C: [tid:9919] Tool (or Pin) caused signal 11 at PC 0x7f27f4aa42df
+C: [tid:9919] Location may be in in-lined analysis code, try re-running with '-inline 0' to debug itSegmentation fault (core dumped)
+
+
+------------------
+
+REX -> 2 oper -> REX2 2 oper
+ (MAP 0 , MAP 1)
+                  D5 [M0,B4,R4,I4][W,B3,R3,I3]
+
+VEX -> 2 oper (mem / reg)
+        -> 2 byte prefix : C5  [VVVV, PP , L, R]
+                                8maps 4legacy prefix
+        -> GPR + XMM -> PINSRQ
+
+        -> non-memory operand insturction promotable to EEVEX must have atleast one GPR operand.
+             LPROMPT>x86man  "xmm.*r64" 
+Page list:
+0)   CVTSD2SI.html
+1)   CVTSS2SI.html
+2)   CVTTSD2SI.html
+3)   CVTTSS2SI.html
+4)   FXRSTOR.html
+5)   MOVD:MOVQ.html
+6)   MOVMSKPD.html              => NO EVEX VERSION
+7)   MOVMSKPS.html              => NO EVEX VERSION
+8)   PEXTRB:PEXTRD:PEXTRQ.html  => 
+9)   PEXTRW.html
+10)   PINSRB:PINSRD:PINSRQ.html
+11)   PMOVMSKB.html             => NO EVEX VERSION
+12)   VCVTSD2USI.html
+13)   VCVTSS2USI.html
+14)   VCVTTSD2USI.html
+15)   VCVTTSS2USI.html
+16)   VPBROADCASTB:VPBROADCASTW:VPBROADCASTD:VPBROADCASTQ.html
+
+
+  
+    -> 3 oper (mem / reg and NDS)
+        -> 3 byte prefix : C4  [MMM PP, B,R,I] [ VVVV, W,...]
+                              
+    -> Any VEX encoded 2 operand / 3 operand prefix accessing an EGPR is promoted to AVX512EVEX instruction class space and must be encoded using EEVEX encoding.
+
+
+CPROMPT>xed64 -64 -d 62 da 7d 28 18 13
+62DA7D281813
+ICLASS:     VBROADCASTSS
+CATEGORY:   BROADCAST
+EXTENSION:  AVX512EVEX
+IFORM:      VBROADCASTSS_YMMf32_MASKmskw_MEMf32_AVX512
+ISA_SET:    AVX512F_256
+ATTRIBUTES: DISP8_TUPLE1 MASKOP_EVEX MEMORY_FAULT_SUPPRESSION 
+SHORT:      vbroadcastss ymm2, dword ptr [r27]
+CPROMPT>vi VBROADCASTSS.c
+
+CPROMPT>gcc -c VBROADCASTSS.c -mapxf
+CPROMPT>xed64 -64 -d 62 da 7d 28 18 13
+62DA7D281813
+ICLASS:     VBROADCASTSS
+CATEGORY:   BROADCAST
+EXTENSION:  AVX512EVEX
+IFORM:      VBROADCASTSS_YMMf32_MASKmskw_MEMf32_AVX512
+ISA_SET:    AVX512F_256
+ATTRIBUTES: DISP8_TUPLE1 MASKOP_EVEX MEMORY_FAULT_SUPPRESSION 
+SHORT:      vbroadcastss ymm2, dword ptr [r27]
+  
+Since it now belongs to AVX512EVEX class thus accessing a non-512 bit vector will also demand AVX512VL feature
+
+APX is not an ISA extension, but it provisions additional registers to existing ISA and in order to encode EGPRs
+       
+VEX encoded instruction are pormoted to a AVX512 instruction class, thus UseAVX > 2 is mandatory for promotion of
+ 
+VEX encoded instruciton to EEVEX encoding, in absence of AVX512VL feature those instructions will not be executable
+
+unless processor front-end itself lift that limiation and decoder is able to honour vector length orthogonality even 
+
+in absence of AVX512VL for an EEVEX encoded instruciton.
+
+    In other words, VBROADCASTSS (%r27), ymm2 once encoded using EEVEX, which utilized earlier existing free bits in 4 byte EVEX
+    will also require exsitance of AVX512VL given that vector operand size is now 256 bits...
+                
+28 -> 0010 1000
+       LL => 01 => 256 bit.
+
+Thus even if EEVEX encoding impliclty imply AVX512VL + AVX512F target CPU which support these features will be able
+to execute EEVEX encoded instructions.. 
+
+CPU with CPUID.APX_F will also support AVX512.F and AVX512VL.
+
+Thus with UseAVX = 2 AVX512VL is turned of and APX_F will not make any sense. 
+
+
+C1 - Register Allocation:-
+  - c1_Defs_x86.hpp                   43 pd_nof_fpu_regs_frame_map = FloatRegister::number_of_registers,  // number of registers used during code emission
+  - fill the gap window...
+
+
+
+Validation:- 
+ - Latest 9.41  SDE is able to restore EGPR state across signal handling.
+- Our EGPR save restoration check now works as expected.
+ - Exposed a bug related to incurred APX_F feature enablement with -XX:-UseAPX. 
+
+
+--------------------
+
+Validation :
+=========
+
+Mini error reproducer applications
+
+1)  Bad pointer access error:-
+
+#include <stdio.h>
+
+void micro(long* res, long src1, long src2) {
+   asm volatile (
+      "movq %1, %%r16    \n\t"
+      "movq %2, %%r17    \n\t"
+      "addq %%r16, %%r17 \n\t"
+      "movq %%r17, %0    \n\t"
+     : "=m"(*res)
+     : "r"(src1), "r"(src2)
+   );
+}
+
+
+int main() {
+   long res = 0;
+   //long* pres = &res;
+   long* pres = (long*)0x3;
+   micro(pres, 10, 20);
+   return printf("[res] %ld\n", res);
+}
+
+Error A)
+CPROMPT>sde64 -dmr -ptr_check -icount -itrace-execute  -- ./test_app
+SDE ERROR: DEREFERENCING BAD MEMORY POINTER PC=0x40114e MEMEA=0x3 mov qword ptr [rax], r17
+Image: /home/jatinbha/code/c/APX-Enabling/SDE-APPs/test_app+0x14e (in multi-region image, region# 1)
+Function: micro
+File Name: /home/jatinbha/code/c/APX-Enabling/SDE-APPs/test.c:5
+$$ TID: 0 ICOUNT: 119043
+
+Error B)
+CPROMPT>sde64 -dmr -ptr_check -icount -itrace-execute -align_checker_all -- ./test_app
+ TID: 0 executed instruction with an unaligned memory reference to address 0x3 INSTR: 0x00040114e: IFORM: MOV_MEMv_GPRv :: mov qword ptr [rax], r17
+        IMAGE:    /home/jatinbha/code/c/APX-Enabling/SDE-APPs/test_app
+        FUNCTION: micro
+        FUNCTION ADDR: 0x000401126
+SDE ERROR:  TID: 0 executed instruction with an unaligned memory reference to address 0x3 INSTR: 0x00040114e: IFORM: MOV_MEMv_GPRv :: mov qword ptr [rax], r17
+        IMAGE:    /home/jatinbha/code/c/APX-Enabling/SDE-APPs/test_app
+        FUNCTION: micro
+        FUNCTION ADDR: 0x000401126
+
+$$ TID: 0 ICOUNT: 119049
+
+2)  Mis-aligned access :-
+
+
+#include <stdio.h>
+
+void micro(long* res, long src1, long src2) {
+   asm volatile (
+      "movq %1, %%r16        \n\t"
+      "movq %2, %%r17        \n\t"
+      "addq %%r16, %%r17     \n\t"
+      "movd %%r17, %%xmm0    \n\t"
+      "vmovdqa %%ymm0, %0    \n\t"
+     : "=m"(*res)
+     : "r"(src1), "r"(src2)
+     : "%r16", "%r17", "%xmm0"
+   );
+}
+
+int main() {
+   long res[4] = {0, 0, 0, 0};
+   int dummy = 10;
+   long* pres = (long*)&res;
+   //long* pres = (long*)0x3;
+   micro(pres, dummy, 20);
+   return printf("[res] %ld\n", res);
+}
+
+Error A)
+CPROMPT>sde64 -dmr -ptr_check -icount -itrace-execute -align_checker_all -- ./test_misaligned_app
+$$ TID: 0 ICOUNT: 119071
+Segmentation fault (core dumped)
+CPROMPT>
+
+
+JVM Startup :-
+-  During VM initialization we generate synthetic SIGSEGV to test state restoration across  Signal handling.
+-  This is done by setting pointer to illegal address 0x0.
+-  Thus, with -ptr_check, we may see following error just after JVM launch..
+
+CPROMPT>sde64 -dmr -icount -itrace-execute-emulate -ptr_check -- /home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk/bin/java         -Dtest.vm.opts=         -Dtest.tool.vm.opts=         -Dtest.compiler.opts=         -Dtest.java.opts=-XX:UseAVX=2         -Dtest.jdk=/home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk         -Dcompile.jdk=/home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk         -Dtest.timeout.factor=4.0         -Dtest.root=/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg         -Dtest.name=compiler/vectorapi/TestTwoVectorPermute.java         -Dtest.verbose=Verbose[p=FULL,f=FULL,e=FULL,t=false,m=false]         -Dtest.file=/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg/compiler/vectorapi/TestTwoVectorPermute.java         -Dtest.src=/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg/compiler/vectorapi         -Dtest.src.path=/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg/compiler/vectorapi:/home/jatinbha/sandboxes/apx-release/jdk/test/lib:/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg         -Dtest.classes=/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg/compiler/vectorapi/JTwork/classes/compiler/vectorapi/TestTwoVectorPermute.d         -Dtest.class.path=/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg/compiler/vectorapi/JTwork/classes/compiler/vectorapi/TestTwoVectorPermute.d:/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg/compiler/vectorapi/JTwork/classes/test/lib:/home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg/compiler/vectorapi/JTwork/classes         -Dtest.modules=jdk.incubator.vector         --add-modules jdk.incubator.vector         -XX:UseAVX=2         -XX:+UnlockDiagnosticVMOptions         -Xbatch         -XX:TieredStopAtLevel=3         com.sun.javatest.regtest.agent.MainWrapper /home/jatinbha/sandboxes/apx-release/jdk/test/hotspot/jtreg/compiler/vectorapi/JTwork/compiler/vectorapi/TestTwoVectorPermute.d/main.2.jta
+SDE ERROR: DEREFERENCING BAD MEMORY POINTER PC=0x7f51b74ce5b3 MEMEA=0x0 mov eax, dword ptr [rsi]
+$$ TID: 0 ICOUNT: 2782575
+$$ TID: 1 ICOUNT: 5411327
+CPROMPT>
+
+MEMEA is pointing to 0x0 location...
+
+- Analysis methodology 
+     - Turn of tiered compilation, run only till C1 compilation.
+     - UseAVX=2 (it turns off APX)
+    
+Error:   DMR 
+
+test Int256VectorTests.ABSInt256VectorTests(int[i * 5]): success
+test Int256VectorTests.ABSInt256VectorTests(int[i + 1]): success
+test Int256VectorTests.ABSInt256VectorTests(int[cornerCaseValue(i)]): success
+SDE ERROR: Could not read memory at location 0xc nbytes= 4
+For more detailed error message please run with -ptr-check and compile application with debug information
+
+
+Test shows bad memory pointer reference with both CascadeLake and DiamondRapids. 
+=========================================================================================
+
+To Get this error, following changes were done on stock implementation:-
+  -  Shuffled the GPR allocation sequence to give preferences to EGPR during allocation.
+  -  Disabled synthetically induced SIGSEGVs during JVM startup.
+
+Works fine without emulation...
+
+CPROMPT>sde64 -clx -ptr_check -icount -- /home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk/bin/java         -Dtest.vm.opts=         -Dtest.tool.vm.opts=         -Dtest.compiler.opts=         -Dtest.java.opts=         -Dtest.jdk=/home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk         -Dcompile.jdk=/home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk         -Dtest.timeout.factor=4.0         -Dtest.root=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk         -Dtest.name=jdk/incubator/vector/Int256VectorTests.java         -Dtest.verbose=Verbose[p=FULL,f=FULL,e=FULL,t=false,m=false]         -Dtest.file=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/Int256VectorTests.java         -Dtest.src=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector         -Dtest.src.path=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector:/home/jatinbha/sandboxes/apx-release/jdk/test/lib         -Dtest.classes=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/JTwork/classes/jdk/incubator/vector/Int256VectorTests.d         -Dtest.class.path=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/JTwork/classes/jdk/incubator/vector/Int256VectorTests.d:/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/JTwork/classes/test/lib         -Dtest.modules=jdk.incubator.vector         --add-modules jdk.incubator.vector         -ea         -esa         -Xbatch         -XX:-TieredCompilation        com.sun.javatest.regtest.agent.MainWrapper /home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/JTwork/jdk/incubator/vector/Int256VectorTests.d/testng.0.jta jdk/incubator/vector/Int256VectorTests.java false Int256VectorTests
+WARNING: Using incubator modules: jdk.incubator.vector
+SDE ERROR: DEREFERENCING BAD MEMORY POINTER PC=0x7f5c6c501ef3 MEMEA=0x8 mov r10d, dword ptr [rdx+0x8]
+$$ TID: 0 ICOUNT: 2777117
+$$ TID: 7 ICOUNT: 1580891
+$$ TID: 1 ICOUNT: 1724096571
+$$ TID: 2 ICOUNT: 7744
+$$ TID: 3 ICOUNT: 7694
+$$ TID: 4 ICOUNT: 6193
+$$ TID: 5 ICOUNT: 7716
+$$ TID: 6 ICOUNT: 213235
+$$ TID: 8 ICOUNT: 8110
+$$ TID: 9 ICOUNT: 1157675
+$$ TID: 10 ICOUNT: 143481
+$$ TID: 11 ICOUNT: 15590
+$$ TID: 12 ICOUNT: 93183
+$$ TID: 13 ICOUNT: 309452
+$$ TID: 14 ICOUNT: 550411044
+$$ TID: 15 ICOUNT: 6920939
+$$ TID: 16 ICOUNT: 15752
+$$ TID: 17 ICOUNT: 15515562
+CPROMPT>
+CPROMPT>
+
+CPROMPT>sde64 -dmr -ptr_check -icount -- /home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk/bin/java         -Dtest.vm.opts=         -Dtest.tool.vm.opts=         -Dtest.compiler.opts=         -Dtest.java.opts=         -Dtest.jdk=/home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk         -Dcompile.jdk=/home/jatinbha/sandboxes/apx-release/jdk/build/linux-x86_64-server-fastdebug/images/jdk         -Dtest.timeout.factor=4.0         -Dtest.root=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk         -Dtest.name=jdk/incubator/vector/Int256VectorTests.java         -Dtest.verbose=Verbose[p=FULL,f=FULL,e=FULL,t=false,m=false]         -Dtest.file=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/Int256VectorTests.java         -Dtest.src=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector         -Dtest.src.path=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector:/home/jatinbha/sandboxes/apx-release/jdk/test/lib         -Dtest.classes=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/JTwork/classes/jdk/incubator/vector/Int256VectorTests.d         -Dtest.class.path=/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/JTwork/classes/jdk/incubator/vector/Int256VectorTests.d:/home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/JTwork/classes/test/lib         -Dtest.modules=jdk.incubator.vector         --add-modules jdk.incubator.vector         -ea         -esa         -Xbatch         -XX:-TieredCompilation        com.sun.javatest.regtest.agent.MainWrapper /home/jatinbha/sandboxes/apx-release/jdk/test/jdk/jdk/incubator/vector/JTwork/jdk/incubator/vector/Int256VectorTests.d/testng.0.jta jdk/incubator/vector/Int256VectorTests.java false Int256VectorTests
+WARNING: Using incubator modules: jdk.incubator.vector
+SDE ERROR: DEREFERENCING BAD MEMORY POINTER PC=0x7fd55076d9f3 MEMEA=0x8 mov r10d, dword ptr [rdx+0x8]
+$$ TID: 0 ICOUNT: 2777015
+$$ TID: 1 ICOUNT: 1759007690
+$$ TID: 2 ICOUNT: 7744
+$$ TID: 3 ICOUNT: 7690
+$$ TID: 7 ICOUNT: 1625854
+$$ TID: 4 ICOUNT: 6193
+$$ TID: 5 ICOUNT: 7716
+$$ TID: 6 ICOUNT: 217973
+$$ TID: 8 ICOUNT: 8134
+$$ TID: 9 ICOUNT: 1157884
+$$ TID: 10 ICOUNT: 143674
+$$ TID: 12 ICOUNT: 95161
+$$ TID: 11 ICOUNT: 15574
+$$ TID: 13 ICOUNT: 316760
+$$ TID: 14 ICOUNT: 553165537
+$$ TID: 15 ICOUNT: 6920159
+$$ TID: 16 ICOUNT: 15752
+$$ TID: 17 ICOUNT: 15504207
+
+x86 Instruction Format and competitive ISA analysis :-=
+===============================================
+- 1-15 byte variable length encoding.
+- CISC instruction set. 
+- Rich ISA encompassing scalar, vector and memory operand instructions, 1300+ instruction 
+- Frequently uses instruction have shorter encodings 1 or 2 bytes.
+
+[PREFIX] [OPCODE] [MOD.RM] [SIB] [IMM / DISPP]
+ - REX2    : 2B  : B5 XXXX XXXX
+- EEVEX : 4B  : 63 XXXX XXXX XXXX XXXX XXXX XXXX
+- VEX       : 2B (C3 XXXX XXXX)  & 3B (C2 XXXXXXXX XXXXXXXX XXXXXXXX)
+-  REX      : 1 B : 4 XXXX
+- LEGACY PREFIX : 66 (operand size override) , F3  (SIMD), F2 (SIMD) 
+
+AARCH64:-
+===========
+- 32 bit (4 bytes) fixed sized encodings. Lesser number of instructions
+- A64 is a predicated ISA, 32 GPRs , 32 Vectors, 15 predicate registers, uses NDD instructions.
+- Format : 11 bit opcode + 5 bit oper1 + 5 bit oper2 + 5 bit oper3 => 11 + 15 = 26,  remaining 6 are reserved or encodes predicate registers. (4 bits).
+- Unlike x86 its a load-store ISA,  memory operands are loaded into GPRs (X0-x31), all operation are performed over GPRs.
+- RISCV is another load-store ISA with fixed 32 bit instruction size.
+- Uses Scalable vectors, vector length is not part of instrution encoding.
+   - Instead instruction uses predicate register to select relevant portion of vector, thus user can explicitly control the vector size in their data parallel code.
+-  Two execution modes
+     - A32, T16 (16 bit compact encoding)
+     - A64 (32 bit instruciton encoding)
+     - NEON
+     - SVE, SVE2
+     - SME, SME2
+
+
+APX vs AARCH64  (ARM , Apple-Silicon)
+=====================================
+    - Conditional ISA - Impact.
+         - SETZUCC
+         - CCMP , CTEST
+    - Spilling saving from EGPRs
+   -  Code size increase (REX2 , EEVEX)
+   -  NDD
+   - JMPABS 
+-  APX 2.0 Spec access
+
+Competetive Benchmarking:-
+=========================
+     
+KPI for micro level perfomance comparison
+    -  Insturciton latency.
+    -  Operation level parity
+             -  Number of instructions needed to support a perticular operation on x86 vs AARCH64.
+  
+KPI for macro level performance comparison
+    - Selected set of JMH benchmarks 
+         - Through put : operation per sec
+         - Latency : cycles per operation
+         - Throughput under given SLA
+
+
+
+- Test tool:
+       
+
+Missing : Map1
+BSFL
+BSFQ
+BSRL
+BSRQ
+BSWAPL
+BSWPQ
+BTQ
+CVTTSD2SIQ
+
+Missing: Map0
+CALL  with register indirect encoding.
+CMPB
+CMPL
+CMPEXCHGB
+CMPEXCHGL
+CMPEXCHGI
+CMPEXCHGQ
+
+
+bsfl
+bsfq
+bsrl
+bsrq
+bswapl
+bswapq
+btq
+call
+cmpb
+cmpl
+cmp_literal32
+cmpq
+cmpw
+cmpxchgb
+cmpxchgl
+cmpxchgq
+cmpxchgw
+cvttsd2siq
+incl
+incq
+jmp
+lea
+leal
+leaq
+mov
+mov64
+movb
+movl
+movq
+movsbl
+movsbq
+movslq
+movswl
+movswq
+movw
+movzbl
+movzbq
+movzwl
+movzwq
+orw
+popp
+pushp
+sall
+salq
+testb
+testl
+testq
+xaddb
+xaddl
+xaddq
+xaddw
+xchgb
+xchgl
+xchgq
+xchgw
+CPROMPT>
+
+Maissing : MAP 4
+pushp
+popp
+
+
+CVTT
+
+__ shlq(r31);
+Ours:   d5 19 d3 e7   -> CL
+Theirs: d5 19 d1 e7  -> 1 
+
+void micro(){
+   asm volatile(
+      "shlq $1, %%r11 \n\t"
+      "shlq %%r11     \n\t"
+  :  :  : "%r11"
+   );
+}
+CPROMPT>objdump -D shl.o
+
+shl.o:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000000000 <micro>:
+   0:   55                      push   %rbp
+   1:   48 89 e5                mov    %rsp,%rbp
+   4:   49 d1 e3                shl    $1,%r11
+   7:   49 d1 e3                shl    $1,%r11
+
+
+// For single register operand salq, C2 assumes shift to will be passed through CL register and emits the encoding with opcode set to  'D3".
+void Assembler::shlq(Register dst) {
+  int encode = prefixq_and_encode(dst->encoding());
+  emit_int16((unsigned char)0xD3, (0xE0 | encode));
+}
+
+// With immediate shift operand we explicitly handle special case of shift by '1' bit... and emit D1 opcode. /// [A]
+void Assembler::shlq(Register dst, int imm8) {
+  assert(isShiftCount(imm8 >> 1), "illegal shift count");
+  int encode = prefixq_and_encode(dst->encoding());
+  if (imm8 == 1) {
+    emit_int16((unsigned char)0xD1, (0xE0 | encode));
+  } else {
+    emit_int24((unsigned char)0xC1, (0xE0 | encode), imm8);
+  }
+}
+
+So  GCC is following a different convention than C2,  but both are emitting correct encodings.
+Our, test infrastructure is biased toward C2 and hence does not comply with GCC encoding, thus we are skipping over following cases...
+
+Please see below a small inline assembly snippet and its corresponding encoding..
+
+void micro(){
+   asm volatile(
+      "shlq $1, %%r11          \n\t"                                       [InstID 1]
+      "shlq %%r11                  \n\t"                                      [InstID 2]
+      "shlq %%cl, %%r11 \n\t"                                          [InstID 3]
+  :  :  : "%r11", "%rcx"
+   );
+}
+CPROMPT>objdump -D shl.o
+Disassembly of section .text:
+0000000000000000 <micro>:
+   0:   55                      push   %rbp
+   1:   48 89 e5                mov    %rsp,%rbp
+   4:   49 d1 e3                 shl    $1,%r11                       [InstID  1]
+   7:   49 d1 e3                  shl    $1,%r11                      [InstID  2]                
+   a:   49 d3 e3                 shl    %cl,%r1 1                  [ InstID 3]
+
+
+ Prefix + Opcode + ModRM  [SIB] [32 bits DISPLACEMENT] [IMM-4 byte]  = max inst size = 4 + 1 + 1 + 1 + 4 + 4 = 15 bytes.
+   2/1                1                   1                                  
+
+GDB stack trace :-	
+
+(gdb)
+ define print_stack_trace
+     set $caller_base_ptr = *(long*)((char*)$rbp)
+    set $caller_inst_ptr = *(long*)((char*)$rbp + 8)
+   while ($caller_inst_ptr)
+         p (void (*))$caller_inst_ptr
+        set $caller_inst_ptr = *(long*)((char*)$caller_base_ptr + 8)
+       set $caller_base_ptr = *(long*)((char*)$caller_base_ptr)
+   end
+end
+
+(gdb) print_stack_trace
+
+$78 = (void *) 0x40114f <mid+24>
+$79 = (void *) 0x40116e <top+24>
+$80 = (void *) 0x401181 <main+14>
+$81 = (void *) 0x7ffff7de60b3 <__libc_start_main+243>
+Cannot access memory at address 0x8
+(gdb)
+
+Max 4    1    1         1      4        4 	
+PEFIX OPCODE MODRM      [SIB] [DISP32] [IMM32]
+D5 18    c1 
+            11 000 001
+            MODE = 11
+            REG  = 000
+            BASE = 001
+0001 1000
+
+
+
+
+BB#001:
+         16  Prolog  ===  [[ ]]   [40000000010]
+          3  MachProj  === 4  [[ 2 ]] #0/unmatched !jvms: test::micro @ bci:-1 (line 5)
+          5  MachProj  === 4  [[ 2 ]] #1/unmatched !jvms: test::micro @ bci:-1 (line 5)
+          6  MachProj  === 4  [[ 2 ]] #2/unmatched  Memory: @BotPTR *+bot, idx=Bot; !jvms: test::micro @ bci:-1 (line 5)
+ RSP      7  MachProj  === 4  [[ 2 ]] #3 !jvms: test::micro @ bci:-1 (line 5)
+          8  MachProj  === 4  [[ 2 ]] #4 !jvms: test::micro @ bci:-1 (line 5)
+ RSI     11  MachProj  === 4  [[ 9 ]] #5 !jvms: test::micro @ bci:-1 (line 5)
+          0  Con  === 4  [[ ]]  #top
+ RAX      9  addL_rReg_rReg_imm_ndd  === _ 11  [[ 10 2 ]] #100/0x0000000000000064 !jvms: test::micro @ bci:4 (line 5)
+ RFLAGS  10  MachProj  === 9  [[ ]] #1
+         17  Epilog  ===  [[ ]]   [40000000017]
+          2  Ret  === 3 5 6 7 8 9  [[ 1 ]]
+
+
+BB#001:
+         18  Prolog  ===  [[ ]]   [40000000010]
+          3  MachProj  === 4  [[ 2 ]] #0/unmatched !jvms: test::micro @ bci:-1 (line 5)
+          5  MachProj  === 4  [[ 2 ]] #1/unmatched !jvms: test::micro @ bci:-1 (line 5)
+          6  MachProj  === 4  [[ 2 ]] #2/unmatched  Memory: @BotPTR *+bot, idx=Bot; !jvms: test::micro @ bci:-1 (line 5)
+ RSP      7  MachProj  === 4  [[ 2 ]] #3 !jvms: test::micro @ bci:-1 (line 5)
+          8  MachProj  === 4  [[ 2 ]] #4 !jvms: test::micro @ bci:-1 (line 5)
+ RSI     11  MachProj  === 4  [[ 16 17 ]] #5 !jvms: test::micro @ bci:-1 (line 5)
+          0  Con  === 4  [[ ]]  #top
+ RAX     17  leaL_rReg_immL32_peep  === _ 11  [[ 2 ]] #100/0x0000000000000064
+         19  Epilog  ===  [[ ]]   [40000000019]
+          2  Ret  === 3 5 6 7 8 17  [[ 1 ]]
+
+
+Caller saved register:-
+- RAX
+- RCX
+- RDX
+- RSI - WINDOWS 
+- RDI - WINDOWS
+- R8
+- R9
+- R10
+- R11	
+- R16 - R31
+
+
+
+instruct xorI_rReg_mem_rReg_ndd(rRegI dst, memory src1, rRegI src2, rFlagsReg cr)
+instruct andL_rReg_mem_rReg_ndd(rRegL dst, memory src1, rRegL src2, rFlagsReg cr)
+instruct xorL_rReg_mem_rReg_ndd(rRegL dst, memory src1, rRegL src2, rFlagsReg cr)
+
+
+instruct mulI_rReg_rReg_mem_ndd(rRegI dst, rRegI src1, memory src2, rFlagsReg cr)
+instruct mulL_rReg_rReg_mem_ndd(rRegL dst, rRegL src1, memory src2, rFlagsReg cr)
+instruct andI_rReg_rReg_mem_ndd(rRegI dst, rRegI src1, memory src2, rFlagsReg cr)
+instruct orI_rReg_rReg_mem_ndd(rRegI dst, rRegI src1, memory src2, rFlagsReg cr)
+instruct xorI_rReg_rReg_mem_ndd(rRegI dst, rRegI src1, memory src2, rFlagsReg cr)
+instruct andL_rReg_rReg_mem_ndd(rRegL dst, rRegL src1, memory src2, rFlagsReg cr)
+instruct orL_rReg_rReg_mem_ndd(rRegL dst, rRegL src1, memory src2, rFlagsReg cr)
+instruct xorL_rReg_rReg_mem_ndd(rRegL dst, rRegL src1, memory src2, rFlagsReg cr)
+
+
+instruct xorI_rReg_mem_rReg_ndd(rRegI dst, memory src1, rRegI src2, rFlagsReg cr)
+instruct xorI_rReg_rReg_mem_ndd(rRegI dst, rRegI src1, memory src2, rFlagsReg cr)
+
+instruct andL_rReg_mem_rReg_ndd(rRegL dst, memory src1, rRegL src2, rFlagsReg cr)
+instruct andL_rReg_rReg_mem_ndd(rRegL dst, rRegL src1, memory src2, rFlagsReg cr)
+		
+instruct xorL_rReg_mem_rReg_ndd(rRegL dst, memory src1, rRegL src2, rFlagsReg cr)
+instruct xorL_rReg_rReg_mem_ndd(rRegL dst, rRegL src1, memory src2, rFlagsReg cr)
+
+
+Test failures:-
+ - Strict check
+   - B1 - instMask 0xFF
+        - instPattern 62
+   - B2 - instMask 0x7
+          instPattern = 0x2
+   - B3 - instMask 00
+        - instPattern 00
+   - B4 - instMask 00
+        - instPattern 00
+   - B5 - instMask 0xFF
+        - instPattern 0xF2 
+

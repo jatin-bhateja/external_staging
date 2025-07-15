@@ -1,0 +1,232 @@
+Rotate Optimization:-
+
+Explicit Vectorization:-
+ ======================
+ 
+Short rotate:-
+   // Variable scalar shift count : Optimized   AVX2  AVX512
+   // Immediate scalar shift count : Optimized  AVX2  AVX512
+   // Variable vector shift count : Optimized AVX512 , TBD AVX2
+
+AVX2: 256 bit short
+    -> Two double word shifts left and right... AVX2 does not support vector variable word shift instruction.
+
+Byte rotate:
+
+   // Case1 : Immediate shift. redundant source unpacking AVX2 AVX512
+   // Case2 : Scalar Variable shift redundant source unpacking   AVX2 AVX512
+   // Case3 : Vector Variable shift redundant source unpacking AVX2 AVX512
+
+Missing Benchmarks :
+testRotateRightConB
+testRotateRightConS
+Nomenclature should clearly reflect above three cases....
+
+
+Auto-Vectorization :-
+=================
+- >   Rotate SRC[i] , IMM                                ->   RotateV   LoadVector SRC ,  IMM                                                                -> is_var_shift = false
+->    Rotate SRC[i],  VAR_SHIFT           ->   RotateV   LoadVector SRC,   REPLICATE VAR_SHIFT            -> is_var_shift = false
+->    Rotate SRC[i],  VAR_SHIFT[i]      ->   RotateV    LoadVector SRC,  LoadVector VAR_SHIFT             -> is_var_shift = true
+
+-> Auto-vectorization only works for Integer / Long rotates.
+
+-> Targets supports three flavors of rotates
+       1.  IMM shift
+       2.  Scalar VAR shift
+       3.  Vector VAR shift
+ - x86 supports 1 and 3 on AVX512	
+    - Emulated Rotates for sub-word vector which are represented as single Rotate IR uses all the three flavor of shifts to be optimal. 
+ - RISCV supports 1, 2 and 3 on targets supporting RVV features.
+ - ARM  do not support directly or using emulated IR, but directly dismantles in constituent shift and logical OR IR nodes.
+    
+
+Quick note on data flow analysis meet / join.
+
+- > Lattice is a partial order where each pair of lattice nodes have supremum and infremum.
+- > C2  compiler uses inverted integer lattice, where top hold nothing and bottom holds fully range...
+ -> In theory
+      - Meet  operation picks the immediate post-dominator (infremum or greatest common denominator) node of two participating lattice nodes.
+     - Join  operation picks   lowest common ancestor (supremum) lattice to two participating lattice nodes. 
+ - > Join =   Dual (Dual A  MEET Dual B)
+ ->  Join of two integral value ranges
+       ( -10,  20)  and  (-20 , 100)
+         =  Dual A = 20, -10
+         =  Dual B  = 100, -20
+        = Meet  Dual A DualB =  (Min(20,100),   Max(-10, -20))
+        = (20, -10)
+      Now take dual of above
+       = ( -10 , 20)
+
+So with C2,   meet is join in theory and vice-versa.
+
+template<class T> TypePtr::MeetResult TypePtr::meet_instptr(PTR& ptr, const TypeInterfaces*& interfaces, const T* this_type, const T* other_type,
+....
+ // Now we find the LCA of Java classes
+  ciKlass* k = this_klass->least_common_ancestor(other_klass);
+....
+LCA is parent class of two participating instance klasses.
+
+Add KnownBits on top to refine full ranges...
+
+Benchmark                                                       (bits)  (shift)  (size)   Mode  Cnt     Score   Error   Units
+RotateBenchmark.testRotateBytesConstantShift                       256        7    1024  thrpt    2  3480.337          ops/ms
+RotateBenchmark.testRotateBytesScalarVarShift                      256        7    1024  thrpt    2  3144.953          ops/ms
+RotateBenchmark.testRotateBytesVectorVarShift                      256        7    1024  thrpt    2   986.420          ops/ms
+RotateBenchmark.testRotateIntsAutoVectorizationImmediateShift      256        7    1024  thrpt    2  6117.509          ops/ms
+RotateBenchmark.testRotateIntsAutoVectorizationScalarVarShift      256        7    1024  thrpt    2  4155.020          ops/ms
+RotateBenchmark.testRotateIntsAutoVectorizationVectorVarShift      256        7    1024  thrpt    2  3708.653          ops/ms
+RotateBenchmark.testRotateIntsConstantShift                        256        7    1024  thrpt    2  5379.855          ops/ms
+RotateBenchmark.testRotateIntsScalarVarShift                       256        7    1024  thrpt    2  3480.281          ops/ms
+RotateBenchmark.testRotateIntsVectorVarShift                       256        7    1024  thrpt    2  4716.921          ops/ms
+RotateBenchmark.testRotateLongsAutoVectorizationImmediateShift     256        7    1024  thrpt    2  3267.884          ops/ms
+RotateBenchmark.testRotateLongsAutoVectorizationScalarVarShift     256        7    1024  thrpt    2  4275.848          ops/ms
+RotateBenchmark.testRotateLongsAutoVectorizationVectorVarShift     256        7    1024  thrpt    2  3926.247          ops/ms
+RotateBenchmark.testRotateLongsConstantShift                       256        7    1024  thrpt    2  2662.291          ops/ms
+RotateBenchmark.testRotateLongsVectorVarShift                      256        7    1024  thrpt    2  2434.686          ops/ms
+RotateBenchmark.testRotateShortsConstantShift                      256        7    1024  thrpt    2  9578.500          ops/ms
+RotateBenchmark.testRotateShortsScalarVarShift                     256        7    1024  thrpt    2  5566.692          ops/ms
+RotateBenchmark.testRotateShortsVectorVarShift                     256        7    1024  thrpt    2  1528.677          ops/ms
+
+Benchmark                                                       (bits)  (shift)  (size)   Mode  Cnt      Score   Error   Units
+RotateBenchmark.testRotateBytesConstantShift                       256        7    1024  thrpt    2   3493.297          ops/ms
+RotateBenchmark.testRotateBytesScalarVarShift                      256        7    1024  thrpt    2   3183.566          ops/ms
+RotateBenchmark.testRotateBytesVectorVarShift                      256        7    1024  thrpt    2    986.640          ops/ms
+RotateBenchmark.testRotateIntsAutoVectorizationImmediateShift      256        7    1024  thrpt    2   6109.354          ops/ms
+RotateBenchmark.testRotateIntsAutoVectorizationScalarVarShift      256        7    1024  thrpt    2   4156.434          ops/ms
+RotateBenchmark.testRotateIntsAutoVectorizationVectorVarShift      256        7    1024  thrpt    2   3698.763          ops/ms
+RotateBenchmark.testRotateIntsConstantShift                        256        7    1024  thrpt    2   5206.393          ops/ms
+RotateBenchmark.testRotateIntsScalarVarShift                       256        7    1024  thrpt    2   3481.497          ops/ms
+RotateBenchmark.testRotateIntsVectorVarShift                       256        7    1024  thrpt    2   4769.844          ops/ms
+RotateBenchmark.testRotateLongsAutoVectorizationImmediateShift     256        7    1024  thrpt    2   3131.091          ops/ms
+RotateBenchmark.testRotateLongsAutoVectorizationScalarVarShift     256        7    1024  thrpt    2   4276.203          ops/ms
+RotateBenchmark.testRotateLongsAutoVectorizationVectorVarShift     256        7    1024  thrpt    2   3933.333          ops/ms
+RotateBenchmark.testRotateLongsConstantShift                       256        7    1024  thrpt    2   2658.147          ops/ms
+RotateBenchmark.testRotateLongsVectorVarShift                      256        7    1024  thrpt    2   2409.622          ops/ms
+
+
+ RotateBenchmark.testRotateShortsConstantShift                      256        7    1024  thrpt    2  9578.500          ops/ms
+RotateBenchmark.testRotateShortsScalarVarShift                     256        7    1024  thrpt    2  5566.692          ops/ms
+RotateBenchmark.testRotateShortsVectorVarShift                     256        7    1024  thrpt    2  1528.677          ops/ms
+
+RotateBenchmark.testRotateShortsConstantShift                      256        7    1024  thrpt    2  11831.331          ops/ms
+RotateBenchmark.testRotateShortsScalarVarShift                     256        7    1024  thrpt    2   4675.373          ops/ms
+RotateBenchmark.testRotateShortsVectorVarShift                     256        7    1024  thrpt    2   2143.523          ops/ms
+
+LPROMPT>echo "100 * ((11831 - 9578)/ 9578)" | bc -l         // Immediate Shift
+23.52265608686573397300
+LPROMPT>echo "100 * ((4675 - 5566) / 5566)" | bc -l      // Scalar Shift
+-16.00790513833992094800 
+LPROMPT>echo "100 * ((2143 - 1528) / 1528 )" | bc -l          // Vector Shift
+40.24869109947643979000
+LPROMPT>
+
+
+-XX:-UseCompactObjectHeaders
+[65.638s][info][gc,heap ] GC(93) Humongous regions: 0->0
+[time] 38065 ms
+[66.505s][info][gc,heap,exit] Heap
+[66.505s][info][gc,heap,exit]  garbage-first heap   total reserved 10485760K, committed 10485760K, used 4079472K [0x0000000580000000, 0x0000000800000000)
+[66.505s][info][gc,heap,exit]   region size 8192K, 499 young (4087808K), 1 survivors (8192K)
+[66.505s][info][gc,heap,exit]  Metaspace       used 136K, committed 320K, reserved 1114112K
+[66.505s][info][gc,heap,exit]   class space    used 5K, committed 128K, reserved 1048576K
+
+[49.469s][info][gc,heap ] GC(87) Old regions: 2->2
+[49.469s][info][gc,heap ] GC(87) Humongous regions: 0->0
+[time] 24271 ms
+[50.265s][info][gc,heap,exit] Heap
+[50.265s][info][gc,heap,exit]  garbage-first heap   total reserved 10485760K, committed 10485760K, used 4279668K [0x0000000580000000, 0x0000000800000000)
+[50.265s][info][gc,heap,exit]   region size 8192K, 523 young (4284416K), 1 survivors (8192K)
+[50.265s][info][gc,heap,exit]  Metaspace       used 137K, committed 320K, reserved 1114112K
+[50.265s][info][gc,heap,exit]   class space    used 9K, committed 128K, reserved 1048576K-
+
+
+Lowering of Sub-word Rotate Operation:-
+========================================
+
+Dismantling (only x86 support direct rotate instruction, AARCH64 and other targets ISA does not have direct rotate instruction) 
+       1) Existing RotateVB =>  LShiftVB  + URShiftVB + OrV
+
+Proposal :
+      1)  Let expander always generate LShiftV + URShiftV and OrV.
+     2) Shared lowering pass  / Idealization routines 
+           will either idealize above IR fragment into RotateV if target finds it profitable or, 
+           will lower some IRs like LShiftVB , URShiftVB into 
+            -  VectorCastB2X (short) + LShiftVS  + VectorCastS2B
+                This will promote sharing casting IR through GVN optimization.
+            - Thus, following rotate components will factor out common IR post GVN.
+                LShiftVB     =>  VectorCastB2X(short)  + LShiftVS       +  VectorCastS2X(byte) 
+                URShiftVB =>   VectorCastB2X(short) + URShiftVS  +  VectorCastS2X(byte)
+
+       Post lowering + Post GVN optimization will comprise of:-
+
+                                    Source          Shift
+                                           |                          |
+                                 VectorCastB2X(short)
+                                        /                                \
+                                      /                                    \
+                           LShiftVS              URShiftVS
+                                     |                                        |         
+                                     |                                        |
+           VectorCastS2X(byte)      VectorCastS2X(byte)
+                                     \                                      /
+                                        \                                / 
+                                           \                          /
+                                              \                    /
+                                                 \              /                           
+                                                     OrV
+                                                          |
+
+    - PhaseLowering::lower
+                |
+                ---->  128 bits case on AVX2 target...
+                      case  LShiftVB :
+                                       Node* inp = phase->transform(new VectorCastB2X (TypeVect = {short, num_lanes}, in(1));
+                                       Node* shift = phase->transform(new VectorCastB2X (TypeVect = {short, num_lanes}, in(2));
+                                       Node* oper = phase->transform(new LShiftVS(inp,  shift));
+                                      return phase->transform(new VectorCastS2X(TypeVect = {byte, num_lanes}, oper); 
+                    case  URShiftVB :
+                                       Node* inp = phase->transform(new VectorCastB2X (TypeVect = {short, num_lanes}, in(1));
+                                       Node* shift = phase->transform(new VectorCastB2X (TypeVect = {short, num_lanes}, in(2));
+                                       Node* oper = phase->transform(new URShiftVS(inp,  shift));
+                                      return phase->transform(new VectorCastS2X(TypeVect = {byte, num_lanes}, oper); 
+
+         -> 256 bit LShiftVB and URShiftVB are lowered to two 256 bit LShiftVS and URShiftVS.
+
+
+
+Benchmark                              Mode  Cnt  Score   Error  Units
+DoubleClassCheck.testIsFiniteBranch    avgt    2  2.167          ns/op
+DoubleClassCheck.testIsFiniteCMov      avgt    2  0.582          ns/op
+DoubleClassCheck.testIsFiniteStore     avgt    2  0.461          ns/op
+DoubleClassCheck.testIsInfiniteBranch  avgt    2  1.360          ns/op
+DoubleClassCheck.testIsInfiniteCMov    avgt    2  0.474          ns/op
+DoubleClassCheck.testIsInfiniteStore   avgt    2  0.433          ns/op
+
+FloatClassCheck.testIsFiniteBranch     avgt    2  2.130          ns/op
+FloatClassCheck.testIsFiniteCMov       avgt    2  0.647          ns/op
+FloatClassCheck.testIsFiniteStore      avgt    2  0.427          ns/op
+FloatClassCheck.testIsInfiniteBranch   avgt    2  1.375          ns/op
+FloatClassCheck.testIsInfiniteCMov     avgt    2  0.636          ns/op
+FloatClassCheck.testIsInfiniteStore    avgt    2  0.405          ns/op
+
+
+Baseline:
+========
+Benchmark                            Mode  Cnt  Score   Error  Units
+DoubleClassCheck.testIsFiniteBranch  avgt    2  2.210          ns/op
+DoubleClassCheck.testIsFiniteCMov    avgt    2  0.472          ns/op
+DoubleClassCheck.testIsFiniteStore   avgt    2  0.466          ns/op
+FloatClassCheck.testIsFiniteBranch   avgt    2  2.199          ns/op
+FloatClassCheck.testIsFiniteCMov     avgt    2  0.464          ns/op
+FloatClassCheck.testIsFiniteStore    avgt    2  0.606          ns/op
+
+WithOpt:
+========
+Benchmark                            Mode  Cnt  Score   Error  Units
+DoubleClassCheck.testIsFiniteBranch  avgt    2  2.164          ns/op
+DoubleClassCheck.testIsFiniteCMov    avgt    2  0.582          ns/op
+DoubleClassCheck.testIsFiniteStore   avgt    2  0.458          ns/op
+FloatClassCheck.testIsFiniteBranch   avgt    2  2.138          ns/op
+FloatClassCheck.testIsFiniteCMov     avgt    2  0.644          ns/op
+FloatClassCheck.testIsFiniteStore    avgt    2  0.423          ns/op
