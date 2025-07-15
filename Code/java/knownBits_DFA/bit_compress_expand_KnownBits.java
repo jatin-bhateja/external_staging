@@ -7,6 +7,11 @@ class KnownBits {
         ONES = 0;
     }
 
+    public KnownBits(long con) {
+        ZEROS = ~con & -1L;
+        ONES =   con & -1L;
+    }
+
     public void setZeroBit(int pos) {
         assert pos >= 0 && pos < 64;
         ZEROS |= (1L << pos);
@@ -49,6 +54,11 @@ class KnownBits {
         assert isConstant();
         return ~ZEROS | ONES
     }
+
+    public void sync(long con) {
+        ONES = con & -1L;
+        ZEROS = ~con & -1L;
+    }
 }
 
 
@@ -76,7 +86,7 @@ public class bit_compress_expand_KnownBits {
 
         if (mask.isConstant() && src.isConstant()) {
             // Case 1: Both mask and source are known at compile time. 
-            return Long.expand(src.getConstant(), mask.getConstant());
+            return res.sync(Long.expand(src.getConstant(), mask.getConstant()));
         } else if (mask.isConstant()) {
             // Case 2: unknown source, but known mask at compile time.
             long mask_value = mask.getConstant();
@@ -150,7 +160,7 @@ public class bit_compress_expand_KnownBits {
 
         if (mask.isConstant() && src.isConstant()) {
             // Case 1: mask and source are both known at compile time. 
-            return Long.compress(src.getConstant(), mask.getConstant());
+            return res.sync(Long.compress(src.getConstant(), mask.getConstant()));
         } else if (mask.isConstant()) {
             // Case 2: unknown source, but mask is known at compile time.
             long mask_value = mask.getConstant();
