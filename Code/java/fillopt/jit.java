@@ -1,12 +1,13 @@
 
 class jit {
-  public static int LEN = 16;
+  public static int LEN = 10000;
   public static long [] arr;
 
   // MUT
   public static long micro(long [] arr, int index, long value) {
-     for (int inner = 0 ; inner < LEN ; inner++)
-        arr[inner] = 51L;
+     for (int inner = 0 ; inner < LEN ; inner++) {
+        arr[inner] = index;
+     }
      return arr[index];
   }
 
