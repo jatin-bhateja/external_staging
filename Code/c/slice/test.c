@@ -157,7 +157,7 @@ void micro_16b(int* dst, int* src1, int* src2) {
    asm volatile(
       "vmovdqu %1,  %%xmm1 \n\t"
       "vmovdqu %2,  %%xmm2 \n\t"
-      "vpalignr $16, %%xmm1, %%xmm2, %%xmm3 \n\t"
+      "vpalignr $8, %%xmm1, %%xmm2, %%xmm3 \n\t"
       "vmovdqu %%xmm3, %0 \n\t"
      : "=m"(*dst)
      : "m"(*src1), "m"(*src2)
