@@ -259,21 +259,6 @@ LRG gen_lrg_masks(BasicType type) {
   return lrg;
 }
 
-
-/*
-class Node {
-  private:
-    std::vector<Node*> _in;
-    std::vector<Node*> _out;
-    LRG lrg;
-
-  public:
-    Node() {
-                  
-    }
-};
-*/
-
 int main() {
   srand(time(0));
   LRG lrg1 = gen_lrg_masks(T_INT);
