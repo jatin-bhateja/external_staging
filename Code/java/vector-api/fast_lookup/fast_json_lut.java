@@ -1,9 +1,10 @@
+// Author : Jatin Bhateja
 
 import jdk.incubator.vector.*;
-import java.util.concurrent.*;
+import java.util.Random;
 
 public class fast_json_lut {
-    public static VectorSpecies<Byte> B512 = ByteVector.SPECIES_512;
+    public static final VectorSpecies<Byte> B512 = ByteVector.SPECIES_512;
 
     // With new Vector.selectFrom API we can declare 128 byte
     // lookup tables.
@@ -88,7 +89,7 @@ public class fast_json_lut {
         return lut;
     }
 
-    public static VectorSpecies<Byte> B128 = ByteVector.SPECIES_128;
+    public static final VectorSpecies<Byte> B128 = ByteVector.SPECIES_128;
 
     public static byte [][] lut_old = generate_old_lookup_tables();
 
@@ -129,6 +130,37 @@ public class fast_json_lut {
         return matches;
     }
 
+    public static long match_scalar(byte [] str) {
+        long matches = 0;
+        for (int i = 0; i < str.length; i++) {
+            switch(str[i]) {
+                case 0x2c:
+                    matches += 1;
+                    break;
+                case 0x3a:
+                    matches += 1;
+                    break;
+                case 0x5b:
+                case 0x5d:
+                case 0x7b:
+                case 0x7d:
+                    matches += 1;
+                    break;
+                case 0x9:
+                case 0xa:
+                case 0xd:
+                    matches += 1;
+                    break;
+                case 0x20:
+                    matches += 1;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return matches;
+    }
+
     interface MicroBench {
         public long apply(byte [] str);
     }
@@ -148,15 +180,17 @@ public class fast_json_lut {
     }
 
     public static void main(String [] args) {
+        Random rd = new Random(1034);
         byte [] str = new byte[128];
         byte [] codepoints = {(byte)0x9, (byte)0xa, (byte)0xd, (byte)0x20, (byte)0x5b,
                               (byte)0x5d, (byte)0x7b, (byte)0x7d, (byte)0x3a, (byte)0x2c};
         for (int i = 0; i < 32; i++) {
-            int idx = ThreadLocalRandom.current().nextInt(str.length);
-            int cidx = ThreadLocalRandom.current().nextInt(codepoints.length);
+            int idx = rd.nextInt(str.length);
+            int cidx = rd.nextInt(codepoints.length);
             str[idx] = codepoints[cidx];
         }
 
+        BenchMark("match_scalar", (s) -> match_scalar(s), str);
         BenchMark("match_curent", (s) -> match_current(s), str);
         BenchMark("match_optimized", (s) -> match_optimized(s), str);
     }
