@@ -1,0 +1,172 @@
+
+UTF8 encoding:
+--------------
+
+We place the characters from least significant byte starting from least significant bit.
+  - ASCII single byte encoding
+    0xxxyyyy
+  - Two byte encoding
+    110xxxyy 10yyzzzz
+  - Three byte encoding
+    1110gggg  10xxxxyy  10yyzzzz
+  - Four byte encoding
+    11110cdd  10ddgggg  10xxxxyy  10yyzzzz
+
+Validation:
+-----------
+
+1) If none of the bytes begin has 1 in its MSB then all the bytes of the stream are ASCII characters.
+2) We need to verify that all byte values are no larger than 0xF4 (or 244): we can achieve this check with
+an 8-bit saturated subtraction with 0xF4. The result of the subtraction is zero.
+3) When the byte value 0xED is found, the next byte must be no larger than 0x9F; when the byte value
+0xF4 is found, the next byte must be no larger than 0x8F.We can check these conditions with vectorized
+byte comparisons and byte shifts.
+  - Above checks ensures we honor the constraints on three and four bytes  encoding.
+
+✅ Valid UTF-8 Must:
+Respect leading byte rules (as per table above)
+Have correct continuation bytes (10xxxxxx)
+Use minimal length encoding
+Avoid surrogate halves (U+D800 to U+DFFF)
+Stay within max range (up to U+10FFFF)
+
+Above constraints on 3 and 4 byte encodings ensures that the decoded UTF string does not exceeds U+10FFFF
+
+4) The byte values 0xC0 and 0xC1 are forbidden. When the byte value is 0xE0, the next byte value is larger
+than 0xA0. When the byte value is 0xF0, the next byte value is at least 0x90.
+
+– When a byte value is outside the range of ASCII values, it belongs to one out of four classes, depending
+on the value of its high nibble:
+– If the high nibble is 8, 9, a or b (in hexadecimal) then the byte is the second, third of fourth byte
+in a code point.
+– If the high nibble is c or d then the byte must be the first of a sequence of two bytes forming a
+code point.
+    - 110x xxxx => 1101 / 1100   
+– If the high nibble is e then the byte is the first out of a code point made of three bytes.
+    - 1110 xxxx => 1110
+– Finally, if the high nibble is f, then the byte is first in a sequence of four bytes.
+    - 1111 0xxx => 1111
+
+Quick test for valid UTF using saturate subtraction and VPSHUFB 
+
+  - Map input bytes to 0 1 2 3 4  where 
+    -  continuation byte is mapped to  0
+    -  first byte of two byte encoding is mapped to 2
+    -  first byte of three byte encoding is mapped to 3
+    -  first byte of four byte encoding is mapped to 4
+    and 
+    -  ascii bytes are mapped to 1.
+
+ Thus, the UTF-8 sequence will look like following
+    - four byte UTF-8 sequence - 4 0 0 0 
+    - three byte UTF-8 sequence - 3 0 0
+    - two byte UTF-8 sequence - 2 0
+    - ASCII sequence will be - 1
+   
+step 0 :    4 0 0 0 3 0 0 2 0 1 1  (input string)
+step 1 :      4 0 0 0 3 0 0 2 0 1  (s0 >> 1)
+step 2 :      3 0 0 0 2 0 0 1 0 0  (s1 - 1)
+step 3 :    4 3 0 0 3 2 0 2 1 1 1  (s0 + s2)
+step 4 :        4 0 0 0 3 0 0 2 0  (s3 >> 1)
+step 5 :        2 0 0 0 1 0 0 0 0  (s4 - 1)
+step 6 :    4 3 2 0 3 2 1 2 1 1 1  (s3 + s5)
+step 7 :          4 0 0 0 3 0 0 2
+step 8 :          1 0 0 0 1 0 0 0
+step 9 :    4 3 2 1 3 2 1 3 1 1 1
+step 10:    1 1 1 1 1 1 1 1 1 1 1  (s6 > s8)
+step 11:    allones             
+
+Lets check for invalid input
+0
+step 0 :    4 0 0 1 3 0 0 2 0 1 1  (input string)
+step 1 :      4 0 0 1 3 0 0 2 0 1  (s0 >> 1)
+step 2 :      3 0 0 0 2 0 0 1 0 0  (s1 - 1)
+step 3 :    4 3 0 1 3 2 0 2 1 1 1  (s0 + s2)
+step 4 :        4 3 0 1 3 0 0 2 0  (s3 >> 1)
+step 5 :        2 1 0 0 1 0 0 0 0  (s4 - 1)
+step 6 :    4 3 2 1 3 2 1 2 1 1 1  (s3 + s5)
+step 7 :    0 0 0 0 0 0 0 0 0 0 0  (bcast)
+step 8 :    1 1 1 1 1 1 1 1 1 1 1  (s6 > s8)
+step 9 :    allones             
+
+
+110X XXXX
+1110 XXXX
+1111 0XXX
+
+Table to identify two, three or four byte UTF encoding.
+-------------------------------------------------------
+ - 1100 | 1101 -> 2
+ - 1110        -> 3
+ - 1111        -> 4
+
+ 0000 -> 1
+ 0001 -> 1
+ 0010 -> 1
+ 0011 -> 1
+ 0100 -> 1
+ 0101 -> 1
+ 0110 -> 1
+ 0111 -> 1
+ 1000 -> 0
+ 1001 -> 0
+ 1010 -> 0
+ 1011 -> 0
+ 1100 -> 2
+ 1101 -> 2
+ 1110 -> 3
+ 1111 -> 4
+
+
+    1111
+    1001
+ --------
+    1111
+   0000X
+  0000XX
+ 1111XXX
+ -------
+ 1110111 -> XOR carryless
+ 0001000 -> flip the bits
+         -> LZC -> 3, mask -> (1 << (7 - 3) - 1) -> 1111
+ 0001111
+
+
+jshell> // Double quote mask
+
+jshell> byte [] str = {(byte)0, (byte) 1, (byte)2, (byte)0x9, (byte)1, (byte)4, (byte)3, (byte)0x9}
+str ==> byte[8] { 0, 1, 2, 9, 1, 4, 3, 9 }
+
+jshell> var mask = vec.compare(VectorOperators.EQ, (byte)0x9)
+mask ==> Mask[...T...T]
+
+jshell> var p2 = 64 - Long.numberOfLeadingZeros(mask.toLong()) - 1
+p2 ==> 7
+
+jshell> var p1 = Long.numberOfTrailingZeros(mask.toLong())
+p1 ==> 3
+
+jshell> var str_mask = ((1L << (p2 - p1)) - 1) << p1
+str_mask ==> 120
+
+jshell> var vec = ByteVector.fromArray(ByteVector.SPECIES_64, str, 0)
+vec ==> [0, 1, 2, 9, 1, 4, 3, 9]
+
+jshell> VectorMask.fromLong(ByteVector.SPECIES_64, str_mask)
+$47 ==> Mask[...TTTT.]
+
+jshell> var extract = VectorMask.fromLong(ByteVector.SPECIES_64, str_mask)
+extract ==> Mask[...TTTT.]
+
+
+// bit mask to index.
+
+jshell> ByteVector.SPECIES_64.iotaShuffle(0, 1, true).toVector().compress(extract)
+$53 ==> [3, 4, 5, 6, 0, 0, 0, 0]
+
+
+jshell> ByteVector.SPECIES_64.iotaShuffle(0, 1, true).toVector().blend(ByteVector.broadcast(ByteVector.SPECIES_64, 0), extract.not())
+$57 ==> [0, 0, 0, 3, 4, 5, 6, 0]
+
+
+
