@@ -1,0 +1,103 @@
+Baseline:
+=========
+ Performance counter stats for '/mnt/c/GitHub/lworld/valhalla/build/linux-x86_64-server-slowdebug/images/jdk//bin/java -Xbatch -XX:-TieredCompilation -XX:CompileCommand=Print,test_compress::micro -cp . test_compress':
+
+           5289.35 msec task-clock                       #    0.951 CPUs utilized             
+              2112      context-switches                 #  399.293 /sec                      
+                10      cpu-migrations                   #    1.891 /sec                      
+             21505      page-faults                      #    4.066 K/sec                     
+       24329079894      cycles                           #    4.600 GHz                       
+        1319976188      stalled-cycles-frontend          #    5.43% frontend cycles idle      
+       84815338636      instructions                     #    3.49  insn per cycle            
+                                                  #    0.02  stalled cycles per insn   
+       10705823114      branches                         #    2.024 G/sec                     
+          19154969      branch-misses                    #    0.18% of all branches           
+
+       5.563498818 seconds time elapsed
+
+       5.011463000 seconds user
+       0.251171000 seconds sys
+
+------------------------ OptoAssembly for Compile_id = 8 -----------------------
+#
+#  int ( int, int )
+#
+000     N1: #	out( B1 ) <- in( B3 B2 )  Freq: 1
+
+000     B1: #	out( B3 B2 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (144 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #16	# Create frame
+
+01a     xorl    R10, R10	# int
+01d     movl    R11, #5	# int
+023     cmpl    R11, RSI
+026     cmovlgt R11, RSI	# min
+02a     cmpl    R11, R10
+02d     cmovllt R11, R10	# max
+031     pextl  RAX, R11, RDX	! parallel bit extract
+036     testl   RAX, RAX
+038     jl,s   B3  P=0.000000 C=6784.000000
+
+03a     B2: #	out( N1 ) <- in( B1 )  Freq: 1
+03a     addq    rsp, 16	# Destroy frame
+	popq    rbp
+	cmpq    rsp, poll_offset[r15_thread] 
+	ja      #safepoint_stub	# Safepoint: poll for GC
+
+049     ret
+
+04a     B3: #	out( N1 ) <- in( B1 )  Freq: 4.76837e-07
+04a     movl    RSI, #-187	# int
+04f     movl    RBP, RAX	# spill
+        nop 	# 2 bytes pad for loops and calls
+053     call,static  wrapper for: uncommon_trap(reason='unstable_if' action='reinterpret' debug_id='0')
+        # test_compress::micro @ bci:17 (line 7) L[0]=_ L[1]=_ L[2]=_ STK[0]=RBP
+        # OopMap {off=88/0x58}
+060     stop	# ShouldNotReachHere
+
+Withopt:
+========
+ Performance counter stats for '/mnt/c/GitHub/jdk/build/linux-x86_64-server-slowdebug/images/jdk//bin/java -Xbatch -XX:-TieredCompilation -XX:CompileCommand=Print,test_compress::micro -cp . test_compress':
+
+            663.70 msec task-clock                       #    0.816 CPUs utilized             
+              1462      context-switches                 #    2.203 K/sec                     
+                 4      cpu-migrations                   #    6.027 /sec                      
+             14566      page-faults                      #   21.947 K/sec                     
+        2672604843      cycles                           #    4.027 GHz                       
+        1014349463      stalled-cycles-frontend          #   37.95% frontend cycles idle      
+        4151688716      instructions                     #    1.55  insn per cycle            
+                                                  #    0.24  stalled cycles per insn   
+         819204263      branches                         #    1.234 G/sec                     
+          14530718      branch-misses                    #    1.77% of all branches           
+
+       0.813760237 seconds time elapsed
+
+       0.460724000 seconds user
+       0.183508000 seconds sys
+
+------------------------ OptoAssembly for Compile_id = 8 -----------------------
+#
+#  int ( int, int )
+#
+000     N1: #	out( B1 ) <- in( B1 )  Freq: 1
+
+000     B1: #	out( N1 ) <- BLOCK HEAD IS JUNK  Freq: 1
+000     # stack bang (96 bytes)
+	pushq   rbp	# Save rbp
+	subq    rsp, #16	# Create frame
+
+01a     movl    R11, #5	# int
+020     cmpl    R11, RSI
+023     cmovlgt R11, RSI	# min
+027     xorl    R8, R8	# int
+02a     cmpl    R8, R11
+02d     cmovllt R8, R11	# max
+031     pextl  RAX, R8, RDX	! parallel bit extract
+036     addq    rsp, 16	# Destroy frame
+	popq    rbp
+	cmpq    rsp, poll_offset[r15_thread] 
+	ja      #safepoint_stub	# Safepoint: poll for GC
+
+045     ret
+
