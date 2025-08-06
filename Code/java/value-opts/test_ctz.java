@@ -7,7 +7,8 @@ public class test_ctz {
     public static final long ub = ThreadLocalRandom.current().nextLong(10000); 
 
     public static long micro(long param) {
-        long constrained_param = Math.min(ub, Math.max(param, lb));
+        long constrained_param = Math.min(175, Math.max(param, 160));
+        //long constrained_param = Math.min(ub, Math.max(param, lb));
         return Long.numberOfLeadingZeros(constrained_param);
     }
 

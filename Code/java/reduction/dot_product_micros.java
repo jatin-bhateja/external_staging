@@ -93,6 +93,7 @@ public class dot_product_micros {
         }
         return res; 
     } 
+
     public static float dot_product_vector(float [] src1, float [] src2) {
         FloatVector vtemp = FloatVector.broadcast(FSP, 0.0f);
         int i = 0;
@@ -119,6 +120,30 @@ public class dot_product_micros {
         } 
         long t2 = System.currentTimeMillis();
         System.out.println("[" + msg + " time] " + (t2-t1) + " ms  [res] " + res);
+    } 
+
+    // Only with FastMath FP model, java enforces strict math semantics.
+    public static float dot_product_reduction(float [] src1, float [] src2) {
+        float res = 0.0f;
+        for (int i = 0; i < SIZE; i+=2) {
+            // cross iteration RAW dependency on 'res' makes the
+            // loop non-vectorizable.
+            res = Math.fma(src1[i], src2[i], res);
+            // src1[i] src2[i] res
+            // |______ | ______|
+            //       | | |
+            //      [FmaF]
+            //         |
+            // 
+            //  VEC = BCAST 0.0f
+            //  // Enforces one rounding after addition and multiplication
+            //  is performed at infinitesimal precision.
+            //  VEC = FmaVF src1[i], src2[i], VEC 
+            //  // Additional rounding due to explicit add operation.
+            //  RES = AddReductionVF VEC
+            res = Math.fma(src1[i+1], src2[i+1], res);
+        }
+        return res; 
     } 
 
     interface Micro {
