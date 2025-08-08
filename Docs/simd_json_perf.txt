@@ -1,0 +1,42 @@
+Baseline: jdk-24.0.2
+Benchmark                                (fileName)   Mode  Cnt      Score   Error  Units
+Utf8ValidatorBenchmark.utf8Validator  /twitter.json  thrpt    2  62117.351          ops/s
+
+Withopt: jdk-24.0.2
+Benchmark                                (fileName)   Mode  Cnt      Score   Error  Units
+Utf8ValidatorBenchmark.utf8Validator  /twitter.json  thrpt    2  80763.046          ops/s
+
+Root cause: Exitance of VPERMB instruction on AVX512_VBMI targets, this will be expensive
+on AVX2 targets, while ALIGNR based slice instruction will be much more performant on AVX2/E-core
+targets.
+   1.33%  ││ │  0x0000735a1422bde2:   vpermb %zmm0,%zmm3,%zmm1
+   5.41%  ││ │  0x0000735a1422bde8:   vpermb %zmm11,%zmm3,%zmm2
+   1.54%  ││ │  0x0000735a1422bdee:   vpblendmb %zmm1,%zmm2,%zmm1{%k3}
+
+Baseline: jdk-26
+Benchmark                                     (fileName)   Mode  Cnt      Score   Error  Units
+Utf8ValidatorBenchmark.utf8Validator       /twitter.json  thrpt    2  59075.477          ops/s
+
+Withopt: jdk-26 (without ALIGNR)
+Benchmark                                     (fileName)   Mode  Cnt      Score   Error  Units
+Utf8ValidatorBenchmark.utf8Validator       /twitter.json  thrpt    2  81333.082          ops/s
+
+Withopt: jdk mainline (with ALIGNR)
+Benchmark                                     (fileName)   Mode  Cnt      Score   Error  Units
+Utf8ValidatorBenchmark.utf8Validator       /twitter.json  thrpt    2  85728.800          ops/s
+Utf8ValidatorBenchmark.utf8Validator:·asm  /twitter.json  thrpt             NaN            --- 
+
+-----------------------------------------------------------------------------------------------
+Utf8Validator with slice API is performant on AVX512 targets even without ALIGNR based acceleration
+But, on AVX2/E-core platforms only ALIGNR based slice will be performant.
+
+On AMD targets, where clint and servers both support AVX512 ISA, slice based Utf8Validator will always
+be performant even with stock JDK-24.0.2.
+
+While on Intel targets we need to wait till integration of JDK-8303762 and bumping of gradle to jdk-25+,
+JDK-8290322 improved the byte vector rearrange on AVX2/E-core targets but its performance does not
+match up top VPERMB.  
+
+
+AI:
+ Respond to Ian on https://bugs.openjdk.org/browse/JDK-8351434
