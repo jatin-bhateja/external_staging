@@ -8,7 +8,6 @@ public class test_ctz {
 
     public static long micro(long param) {
         long constrained_param = Math.min(175, Math.max(param, 160));
-        //long constrained_param = Math.min(ub, Math.max(param, lb));
         return Long.numberOfLeadingZeros(constrained_param);
     }
 
@@ -22,7 +21,8 @@ public class test_ctz {
             res += micro(i);
         }
         long t2 = System.currentTimeMillis();
-        System.out.println("[time] " + (t2 - t1) + "ms [res] " + res + " [lb:ub] " + lb + ":" + ub);
+        //System.out.println("[time] " + (t2 - t1) + "ms [res] " + res + " [lb:ub] " + lb + ":" + ub);
+        System.out.println("[time] " + (t2 - t1) + "ms [res] " + res);
     }
 }
 
