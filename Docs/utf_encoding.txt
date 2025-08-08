@@ -200,4 +200,77 @@ Two byte violations
 1111 0...  | 10....... 10...... 10...... 10..... - overlong continuation for 4 byte encoding.
 
 
+U+0080	U+07FF	110xxxyy	10yyzzzz
+Min UTF8 - 2 byte value  - 11000010   10000000
+Max UTF8 - 2 byte value - 11011111   10111111
 
+U+0800	U+FFFF	1110wwww	10xxxxyy	   10yyzzzz
+Min UTF8 - 3 byte value  -   1110|0000  10|100000    10|000000
+Max UTF8 - 3 byte value -   1110|1111   10|111111   10|111111
+                                                                                                    
+
+----------------------------------------------------------------------
+Quick notes on Utf8Validation implementation :-
+----------------------------------------------------------------------
+
+There are two categories of errors which are detected using 3 distributed lookup table which are indexed using 4 bit values i.e. first three nibbles of pair of bytes.
+
+    a.  errors detected using two consecutive byte sequence, strictly speaking higher order 12 bits of consecutive byte sequence.
+        -  overlong 2 bytes
+        -  overlong 3 bytes
+        -  overlong 4 bytes
+                 - All overlong errors are related to encoding which can be represented in smaller number of bytes, given that all the binary number
+                   holds a property that a number lesser than a given binary number can be formed by displacing its trailing set bits to a lower bit position 
+                   hence we pick minimum value of multi byte encodings and check for bit patterns lower than the first 12 bits.
+                   2 byte encoding
+                          -  11yyxxxx 10zzzzzz
+                          -  Min value :  110|00010 10|000000   -> C0 and C1 are illegal two byte encodings.
+                                -   Byte1hi - 110|0 
+                                -   Byte1lo - 0010
+                                -   Byte2hi - 10|00
+
+                         - Any value less than minimum value will have Byte1lo as 0000,  0001, therefore first two rows of second lookup table 
+                           "createByte1LowLookup" sets bits for OVERLONG_2BYTE.
+                         - Existing distributed table lookup are generated based on this concept.
+                 
+                  Similarly for 3 byte encoding minimum value is 
+                          - 1110 xxxx 10yyzzzz 10vvuuuu
+                          - Min value : 1110 0000 1000000 1000000
+                          - Thus Byte1hi lookup table set OVERLONG_3BYTE at index 1110 while Byte2hi lookup table set OVERLONG_3BYTE at index value
+                            less than 1000 i.e. 0000 0001 0010 0011 0100 0101 0110 0111.
+                  
+                  Similar logic also applies to malformed 4 byte encoding less than 0x10FFFF.
+                         -   1111 0xxx 10yyzzzz 10uuvvvv 10aabbbb
+                         -   Minimum value :  11110|000 10|000000 10|000000 10|000000 
+                         -   | convention used here differentiates b/w fixed format bits and actual decodable bits.
+                         -   There are no set decodable bits in first twelve bits of minimum bit sequence of 4 byte encoding.
+                              thus, we set OVERLONG_4BYTS bit at index 1111 of Byte1hi and  at index 0000 of Byte1lo lookup tables.
+
+    b.  TOO_SHORT, these are the cases where a leading byte is followed by non-continuation byte.
+            -  11xx xxx   - a 2, 3 and 4 byte encoded UTF8 characters will always has most significant two bits set.
+            -  Thus we set TOO_SHORT bit for 1100, 1101, 1110 and 1111 indexes of Byte1hi lookup table.
+            -  This byte should be followed by a continuation byte, i.e. the one which begins with 10 at the most significant bits else its an error scenario
+            -  Which is why TOO_SHORT bit is set for index values 0000, 0001, 0010, 0011, 0100, 0101, 0110, 0111 of  Byte2hi lookup table.
+    
+     c.  TOO_LONG, these are the cases where a leading ASCII byte is followed by a continuation byte.
+            - All ASCII characters begin with 0 at the most significant bit, thus 0000-0111 indexes of Byte1hi lookup table set a TOO_LONG bit.
+            - If upper nibble of second byte holds a bit pattern '10' as its most significant two bits then its an error scenario, which is why
+              indexes 1000-1011 of Byte2hi lookup table set TOO_LONG bit.
+ 
+     d.  TOO_LARGE,  these are characters where decoded bits are greater than U+10FFFF.
+           -  This check is mainly for 4 byte encoding, where any value greater than 11110_100 10_001111 10_111111 10_111111 is illegal.
+           -  Therefore, index 1111 of Byte1hi, index range 0100 -> 1111 of table Byte1lo and indexes greater than equal to 1001 of Byte2hi lookup table set TOO_LARGE bit.
+ 
+     e.   SURROGATE, these are bit patterns which overlap with legal UTF16 encoding bit patterns and therefore qualify as illegal UTF8 encodings.
+           - Again central ideal here is that we set the same bit across index ranges of all the lookup tables to enable fast error detection.
+
+     f.   3 or 4 bytes encoding error, missing continuation bytes.
+        - We first look for previous 2 and pervious 3 bytes of each consecutive continuation bit pattern and error out if bit patten of leading byte 
+          does not match with 3 or 4 byte encoding format bits i.e. 1110 or 11110.
+        -  TWO_CONTINUATIONS bits are set for index corresponding to 10xx  10xx of Byte1hi and Byte2hi lookup tables.
+           Since we use 4 bit nibble of first twelve bit of consecutive byte pair,  and perform a logical and b/w the results of lookup
+           hence TWO_CONTINUATIONS bit is set for all the indexes of Byte1lo lookup table.
+
+    Current, implementation of distribute 3 lookup table is very efficient, for this patch we are aiming to reduce the code of looking up last, last two and last three bytes 
+    using constant index Vector.slice operation.
+               
