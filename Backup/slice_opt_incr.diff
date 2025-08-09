@@ -1,0 +1,127 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index 0da88db5973..b0337319117 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -6619,6 +6619,7 @@ void Assembler::vpalignr(XMMRegister dst, XMMRegister nds, XMMRegister src, int
+ 
+ void Assembler::evalignd(XMMRegister dst, XMMRegister nds, XMMRegister src, uint8_t imm8, int vector_len) {
+   assert(VM_Version::supports_evex(), "");
++  assert(vector_len == AVX_512bit || VM_Version::supports_avx512vl(), "");
+   InstructionAttr attributes(vector_len, /* vex_w */ false, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ true);
+   attributes.set_is_evex_instruction();
+   int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
+diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+index 1e81dda73c0..1d6e8d73eb5 100644
+--- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
++++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
+@@ -7115,7 +7115,7 @@ void C2_MacroAssembler::vector_saturating_op(int ideal_opc, BasicType elem_bt, X
+ void C2_MacroAssembler::vector_slice_32B_op(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                                             XMMRegister xtmp, int origin, int vlen_enc) {
+    assert(vlen_enc == Assembler::AVX_256bit, "");
+-   if (origin <= 16) {
++   if (origin < 16) {
+      // ALIGNR instruction concatenates the corresponding 128 bit
+      // lanes of two source vectors and then performs the right
+      // shift operation over intermediate value. Thus source vectors
+@@ -7156,7 +7156,7 @@ void C2_MacroAssembler::vector_slice_32B_op(XMMRegister dst, XMMRegister src1, X
+ 
+ void C2_MacroAssembler::vector_slice_64B_op(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                                             XMMRegister xtmp, int origin, int vlen_enc) {
+-  if (origin <= 16) {
++  if (origin < 16) {
+     // Initial source vectors
+     //        0.........512            0.........512
+     // src1 = [v1 v2 v3 v4] and src2 = [v5 v6 v7 v8]
+@@ -7184,7 +7184,7 @@ void C2_MacroAssembler::vector_slice_64B_op(XMMRegister dst, XMMRegister src1, X
+     //                  |_____________|
+      evalignd(xtmp, src2, src1, 4, vlen_enc);
+      vpalignr(dst, xtmp, src1, origin, vlen_enc);
+-   } else if (origin > 16 && origin <= 32) {
++   } else if (origin > 16 && origin < 32) {
+     // Similarly, for SHIFT between 16 and 32 bytes
+     // result will be sliced out of src1 and lower
+     // two 128 bit lanes of src2.
+@@ -7198,7 +7198,7 @@ void C2_MacroAssembler::vector_slice_64B_op(XMMRegister dst, XMMRegister src1, X
+      evalignd(xtmp, src2, src1, 4, vlen_enc);
+      evalignd(dst, src2, src1, 8, vlen_enc);
+      vpalignr(dst, dst, xtmp, origin - 16, vlen_enc);
+-   } else if (origin > 32 && origin <= 48) {
++   } else if (origin > 32 && origin < 48) {
+     // For SHIFT between 32 and 48 bytes
+     // result will be sliced out of src1 and lower
+     // four 128 bit lanes of src2.
+@@ -7223,7 +7223,7 @@ void C2_MacroAssembler::vector_slice_64B_op(XMMRegister dst, XMMRegister src1, X
+     // res[511:384] = {src2[511:384], src2[383:256]}
+     // Thus, source vector lanes should have following format.
+     // src1 = {v4, v5, v6, v7} and src2 = {v5, v6, v7, v8}
+-     assert(origin > 48 && origin <= 64, "");
++     assert(origin > 48 && origin < 64, "");
+      evalignd(xtmp, src2, src1, 12, vlen_enc);
+      vpalignr(dst, src2, xtmp, origin - 48, vlen_enc);
+    }
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 0c3bc0e325f..7aac95b99e0 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -1727,6 +1727,9 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
+       if (UseAVX < 1 || size_in_bits < 128) {
+         return false;
+       }
++      if (size_in_bits == 512 && !VM_Version::supports_avx512bw()) {
++        return false;
++      }
+       break;
+     case Op_VectorLoadShuffle:
+     case Op_VectorRearrange:
+@@ -10775,7 +10778,7 @@ instruct vector_slice_const_origin_LT16B_reg(vec dst, vec src1, vec src2, immI o
+ 
+ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI origin, vec xtmp)
+ %{
+-  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vlbw());
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vl() && n->in(2)->get_int() != 16);
+   match(Set dst (VectorSlice (Binary src1 src2) origin));
+   effect(TEMP xtmp);
+   format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
+@@ -10786,9 +10789,21 @@ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI o
+   ins_pipe(pipe_slow);
+ %}
+ 
++instruct vector_slice_const_origin_GT16B_IDX_16_reg(vec dst, vec src1, vec src2, immI origin)
++%{
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vl() && n->in(2)->get_int() == 16);
++  match(Set dst (VectorSlice (Binary src1 src2) origin));
++  format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    __ vperm2i128($dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, 0x21);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
+ instruct vector_slice_const_origin_GT16B_reg_evex(vec dst, vec src1, vec src2, immI origin, vec xtmp)
+ %{
+-  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vlbw());
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vl() && (n->in(2)->get_int() & 0x3) != 0);
+   match(Set dst (VectorSlice (Binary src1 src2) origin));
+   effect(TEMP dst, TEMP xtmp);
+   format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
+@@ -10799,6 +10814,19 @@ instruct vector_slice_const_origin_GT16B_reg_evex(vec dst, vec src1, vec src2, i
+   ins_pipe(pipe_slow);
+ %}
+ 
++instruct vector_slice_const_origin_GT16B_IDX_MULT4_evex(vec dst, vec src1, vec src2, immI origin)
++%{
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vl() && (n->in(2)->get_int() & 0x3) == 0);
++  match(Set dst (VectorSlice (Binary src1 src2) origin));
++  format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2" %}
++  ins_encode %{
++    int vlen_enc = vector_length_encoding(this);
++    int normalized_origin = $origin$$constant >> 2;
++    __ evalignd($dst$$XMMRegister, $src2$$XMMRegister, $src1$$XMMRegister, normalized_origin, vlen_enc);
++  %}
++  ins_pipe(pipe_slow);
++%}
++
+ instruct vector_sqrt_HF_reg(vec dst, vec src)
+ %{
+   match(Set dst (SqrtVHF src));
