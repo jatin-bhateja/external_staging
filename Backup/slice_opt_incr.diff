@@ -60,7 +60,7 @@ index 1e81dda73c0..1d6e8d73eb5 100644
       vpalignr(dst, src2, xtmp, origin - 48, vlen_enc);
     }
 diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
-index 0c3bc0e325f..7aac95b99e0 100644
+index dae7830ea52..7d3a39bed31 100644
 --- a/src/hotspot/cpu/x86/x86.ad
 +++ b/src/hotspot/cpu/x86/x86.ad
 @@ -1727,6 +1727,9 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
@@ -73,7 +73,7 @@ index 0c3bc0e325f..7aac95b99e0 100644
        break;
      case Op_VectorLoadShuffle:
      case Op_VectorRearrange:
-@@ -10775,7 +10778,7 @@ instruct vector_slice_const_origin_LT16B_reg(vec dst, vec src1, vec src2, immI o
+@@ -10778,7 +10781,7 @@ instruct vector_slice_const_origin_LT16B_reg(vec dst, vec src1, vec src2, immI o
  
  instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI origin, vec xtmp)
  %{
@@ -82,7 +82,7 @@ index 0c3bc0e325f..7aac95b99e0 100644
    match(Set dst (VectorSlice (Binary src1 src2) origin));
    effect(TEMP xtmp);
    format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
-@@ -10786,9 +10789,21 @@ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI o
+@@ -10789,9 +10792,21 @@ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI o
    ins_pipe(pipe_slow);
  %}
  
@@ -105,7 +105,7 @@ index 0c3bc0e325f..7aac95b99e0 100644
    match(Set dst (VectorSlice (Binary src1 src2) origin));
    effect(TEMP dst, TEMP xtmp);
    format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
-@@ -10799,6 +10814,19 @@ instruct vector_slice_const_origin_GT16B_reg_evex(vec dst, vec src1, vec src2, i
+@@ -10802,6 +10817,19 @@ instruct vector_slice_const_origin_GT16B_reg_evex(vec dst, vec src1, vec src2, i
    ins_pipe(pipe_slow);
  %}
  
