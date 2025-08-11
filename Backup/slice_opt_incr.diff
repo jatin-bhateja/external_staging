@@ -1,8 +1,21 @@
 diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
-index 0da88db5973..b0337319117 100644
+index 0da88db5973..087312f769a 100644
 --- a/src/hotspot/cpu/x86/assembler_x86.cpp
 +++ b/src/hotspot/cpu/x86/assembler_x86.cpp
-@@ -6619,6 +6619,7 @@ void Assembler::vpalignr(XMMRegister dst, XMMRegister nds, XMMRegister src, int
+@@ -6608,10 +6608,8 @@ void Assembler::palignr(XMMRegister dst, XMMRegister src, int imm8) {
+ }
+ 
+ void Assembler::vpalignr(XMMRegister dst, XMMRegister nds, XMMRegister src, int imm8, int vector_len) {
+-  assert(vector_len == AVX_128bit? VM_Version::supports_avx() :
+-         vector_len == AVX_256bit? VM_Version::supports_avx2() :
+-         vector_len == AVX_512bit? VM_Version::supports_avx512bw() :
+-         0, "");
++  assert(UseAVX > 0 && (vector_len == Assembler::AVX_512bit || (!needs_evex(dst, nds, src) || VM_Version::supports_avx512vl())), "");
++  assert(!needs_evex(dst, nds, src) || VM_Version::supports_avx512bw(), "");
+   InstructionAttr attributes(vector_len, /* rex_w */ false, /* legacy_mode */ _legacy_mode_bw, /* no_mask_reg */ true, /* uses_vl */ true);
+   int encode = simd_prefix_and_encode(dst, nds, src, VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
+   emit_int24(0x0F, (0xC0 | encode), imm8);
+@@ -6619,6 +6617,7 @@ void Assembler::vpalignr(XMMRegister dst, XMMRegister nds, XMMRegister src, int
  
  void Assembler::evalignd(XMMRegister dst, XMMRegister nds, XMMRegister src, uint8_t imm8, int vector_len) {
    assert(VM_Version::supports_evex(), "");
@@ -11,7 +24,7 @@ index 0da88db5973..b0337319117 100644
    attributes.set_is_evex_instruction();
    int encode = vex_prefix_and_encode(dst->encoding(), nds->encoding(), src->encoding(), VEX_SIMD_66, VEX_OPCODE_0F_3A, &attributes);
 diff --git a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
-index 1e81dda73c0..1d6e8d73eb5 100644
+index 1e81dda73c0..96b9243225d 100644
 --- a/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
 +++ b/src/hotspot/cpu/x86/c2_MacroAssembler_x86.cpp
 @@ -7115,7 +7115,7 @@ void C2_MacroAssembler::vector_saturating_op(int ideal_opc, BasicType elem_bt, X
@@ -59,8 +72,17 @@ index 1e81dda73c0..1d6e8d73eb5 100644
       evalignd(xtmp, src2, src1, 12, vlen_enc);
       vpalignr(dst, src2, xtmp, origin - 48, vlen_enc);
     }
+@@ -7231,7 +7231,7 @@ void C2_MacroAssembler::vector_slice_64B_op(XMMRegister dst, XMMRegister src1, X
+ 
+ void C2_MacroAssembler::vector_slice_op(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                                         XMMRegister xtmp, int origin, int vlen_enc) {
+-  if (VM_Version::supports_avx512vl() || vlen_enc == Assembler::AVX_512bit) {
++  if (VM_Version::supports_avx512vlbw()) {
+     vector_slice_64B_op(dst, src1, src2, xtmp, origin, vlen_enc);
+   } else {
+     assert(vlen_enc == Assembler::AVX_256bit, "");
 diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
-index dae7830ea52..4877b4798a2 100644
+index dae7830ea52..291558b6f4c 100644
 --- a/src/hotspot/cpu/x86/x86.ad
 +++ b/src/hotspot/cpu/x86/x86.ad
 @@ -1727,6 +1727,9 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
@@ -73,17 +95,19 @@ index dae7830ea52..4877b4798a2 100644
        break;
      case Op_VectorLoadShuffle:
      case Op_VectorRearrange:
-@@ -10776,9 +10779,21 @@ instruct vector_slice_const_origin_LT16B_reg(vec dst, vec src1, vec src2, immI o
+@@ -10776,9 +10779,23 @@ instruct vector_slice_const_origin_LT16B_reg(vec dst, vec src1, vec src2, immI o
    ins_pipe(pipe_slow);
  %}
  
-+instruct vector_slice_const_origin_GT16B_IDX_16_reg(vec dst, vec src1, vec src2, immI origin)
++instruct vector_slice_const_origin_GT16B_index16B_reg(vec dst, vec src1, vec src2, immI origin)
 +%{
-+  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vl() && n->in(2)->get_int() == 16);
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vlbw() && n->in(2)->get_int() == 16);
 +  match(Set dst (VectorSlice (Binary src1 src2) origin));
 +  format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2" %}
 +  ins_encode %{
 +    int vlen_enc = vector_length_encoding(this);
++    // src1 = [v2, v1], src2 = [v4, v3]
++    // dst = [v3, v2]
 +    __ vperm2i128($dst$$XMMRegister, $src1$$XMMRegister, $src2$$XMMRegister, 0x21);
 +  %}
 +  ins_pipe(pipe_slow);
@@ -92,17 +116,17 @@ index dae7830ea52..4877b4798a2 100644
  instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI origin, vec xtmp)
  %{
 -  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vlbw());
-+  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vl() && n->in(2)->get_int() != 16);
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vlbw() && n->in(2)->get_int() != 16);
    match(Set dst (VectorSlice (Binary src1 src2) origin));
    effect(TEMP xtmp);
    format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
-@@ -10789,9 +10804,22 @@ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI o
+@@ -10789,9 +10806,22 @@ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI o
    ins_pipe(pipe_slow);
  %}
  
-+instruct vector_slice_const_origin_GT16B_IDX_MULT4_evex(vec dst, vec src1, vec src2, immI origin)
++instruct vector_slice_const_origin_GT16B_index_multiple4_reg_evex(vec dst, vec src1, vec src2, immI origin)
 +%{
-+  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vl() && (n->in(2)->get_int() & 0x3) == 0);
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vlbw() && (n->in(2)->get_int() & 0x3) == 0);
 +  match(Set dst (VectorSlice (Binary src1 src2) origin));
 +  format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2" %}
 +  ins_encode %{
@@ -116,12 +140,12 @@ index dae7830ea52..4877b4798a2 100644
  instruct vector_slice_const_origin_GT16B_reg_evex(vec dst, vec src1, vec src2, immI origin, vec xtmp)
  %{
 -  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vlbw());
-+  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vl() && (n->in(2)->get_int() & 0x3) != 0);
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vlbw() && (n->in(2)->get_int() & 0x3) != 0);
    match(Set dst (VectorSlice (Binary src1 src2) origin));
    effect(TEMP dst, TEMP xtmp);
    format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
 diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
-index a2979bc3976..ab54c47a3c5 100644
+index a2979bc3976..899fe82ee17 100644
 --- a/src/hotspot/share/opto/vectorIntrinsics.cpp
 +++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
 @@ -1672,7 +1672,7 @@ bool LibraryCallKit::inline_vector_blend() {
@@ -153,7 +177,7 @@ index a2979bc3976..ab54c47a3c5 100644
      return false; // operand unboxing failed
    }
  
-+  // Re-computing the origin in type agnostic bytes value.
++  // Defining origin in terms of number of bytes to make it type agnostic value.
    Node* origin_node = gvn().intcon(origin->get_con() * type2aelembytes(elem_bt));
    const TypeVect* vector_type = TypeVect::make(elem_bt, num_elem);
    Node* operation = gvn().transform(new VectorSliceNode(v1, v2, origin_node, vector_type));
@@ -228,7 +252,7 @@ index 7fb1eeb800c..baea4c274f9 100644
          vectorNode(VECTOR_BLEND_B, "VectorBlend", TYPE_BYTE);
 diff --git a/test/hotspot/jtreg/compiler/vectorapi/TestSliceOptValueTransforms.java b/test/hotspot/jtreg/compiler/vectorapi/TestSliceOptValueTransforms.java
 new file mode 100644
-index 00000000000..a0fff3aadb6
+index 00000000000..fb7ae21c16a
 --- /dev/null
 +++ b/test/hotspot/jtreg/compiler/vectorapi/TestSliceOptValueTransforms.java
 @@ -0,0 +1,305 @@
@@ -272,7 +296,7 @@ index 00000000000..a0fff3aadb6
 +
 +public class TestSliceOptValueTransforms {
 +    public static final int SIZE = 1024;
-+    
++
 +    public static final VectorSpecies<Byte> BSP = ByteVector.SPECIES_PREFERRED;
 +    public static final VectorSpecies<Short> SSP = ShortVector.SPECIES_PREFERRED;
 +    public static final VectorSpecies<Integer> ISP = IntVector.SPECIES_PREFERRED;
@@ -311,10 +335,10 @@ index 00000000000..a0fff3aadb6
 +        lsrc2 = new long[SIZE];
 +        ldst  = new long[SIZE];
 +
-+        G.fill(G.ints(), isrc1); 
-+        G.fill(G.ints(), isrc2); 
-+        G.fill(G.longs(), lsrc1); 
-+        G.fill(G.longs(), lsrc2); 
++        G.fill(G.ints(), isrc1);
++        G.fill(G.ints(), isrc2);
++        G.fill(G.longs(), lsrc1);
++        G.fill(G.longs(), lsrc2);
 +
 +        for (int i = 0; i < SIZE; i++) {
 +            bsrc1[i] = (byte)(isrc1[i]);
@@ -332,7 +356,7 @@ index 00000000000..a0fff3aadb6
 +            ByteVector.fromArray(BSP, bsrc1, i)
 +                      .slice(0, ByteVector.fromArray(BSP, bsrc2, i))
 +                      .intoArray(bdst, i);
-+    }
++        }
 +    }
 +
 +    @Test
@@ -356,7 +380,7 @@ index 00000000000..a0fff3aadb6
 +    }
 +
 +    @Test
-+    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_16_reg", " >0 "},
++    @IR(counts = {"vector_slice_const_origin_GT16B_index16B_reg", " >0 "},
 +        phase = {CompilePhase.MATCHING}, applyIfCPUFeatureAnd = {"avx512f", "false", "avx2", "true"})
 +    public void test16BSliceIndexByte() {
 +        for (int i = 0; i < BSP.loopBound(SIZE); i += BSP.length()) {
@@ -367,7 +391,7 @@ index 00000000000..a0fff3aadb6
 +    }
 +
 +    @Test
-+    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_MULT4_evex", " >0 "},
++    @IR(counts = {"vector_slice_const_origin_GT16B_index_multiple4_reg_evex", " >0 "},
 +        phase = {CompilePhase.MATCHING}, applyIfCPUFeature = {"avx512vl", "true"})
 +    public void testMultipleOf4BSliceIndexByte() {
 +        for (int i = 0; i < BSP.loopBound(SIZE); i += BSP.length()) {
@@ -408,7 +432,7 @@ index 00000000000..a0fff3aadb6
 +    }
 +
 +    @Test
-+    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_16_reg", " >0 "},
++    @IR(counts = {"vector_slice_const_origin_GT16B_index16B_reg", " >0 "},
 +        phase = {CompilePhase.MATCHING}, applyIfCPUFeatureAnd = {"avx512f", "false", "avx2", "true"})
 +    public void test16BSliceIndexShort() {
 +        for (int i = 0; i < SSP.loopBound(SIZE); i += SSP.length()) {
@@ -419,12 +443,12 @@ index 00000000000..a0fff3aadb6
 +    }
 +
 +    @Test
-+    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_MULT4_evex", " >0 "},
++    @IR(counts = {"vector_slice_const_origin_GT16B_index_multiple4_reg_evex", " >0 "},
 +        phase = {CompilePhase.MATCHING}, applyIfCPUFeature = {"avx512vl", "true"})
 +    public void testMultipleOf4BSliceIndexShort() {
 +        for (int i = 0; i < SSP.loopBound(SIZE); i += SSP.length()) {
 +            ShortVector.fromArray(SSP, ssrc1, i)
-+                       .slice(16, ShortVector.fromArray(SSP, ssrc2, i))
++                       .slice(4, ShortVector.fromArray(SSP, ssrc2, i))
 +                       .intoArray(sdst, i);
 +        }
 +    }
@@ -460,7 +484,7 @@ index 00000000000..a0fff3aadb6
 +    }
 +
 +    @Test
-+    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_16_reg", " >0 "},
++    @IR(counts = {"vector_slice_const_origin_GT16B_index16B_reg", " >0 "},
 +        phase = {CompilePhase.MATCHING}, applyIfCPUFeatureAnd = {"avx512f", "false", "avx2", "true"})
 +    public void test16BSliceIndexInt() {
 +        for (int i = 0; i < ISP.loopBound(SIZE); i += ISP.length()) {
@@ -471,12 +495,12 @@ index 00000000000..a0fff3aadb6
 +    }
 +
 +    @Test
-+    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_MULT4_evex", " >0 "},
++    @IR(counts = {"vector_slice_const_origin_GT16B_index_multiple4_reg_evex", " >0 "},
 +        phase = {CompilePhase.MATCHING}, applyIfCPUFeature = {"avx512vl", "true"})
 +    public void testMultipleOf4BSliceIndexInt() {
 +        for (int i = 0; i < ISP.loopBound(SIZE); i += ISP.length()) {
 +            IntVector.fromArray(ISP, isrc1, i)
-+                     .slice(8, IntVector.fromArray(ISP, isrc2, i))
++                     .slice(4, IntVector.fromArray(ISP, isrc2, i))
 +                     .intoArray(idst, i);
 +        }
 +    }
@@ -512,7 +536,7 @@ index 00000000000..a0fff3aadb6
 +    }
 +
 +    @Test
-+    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_16_reg", " >0 "},
++    @IR(counts = {"vector_slice_const_origin_GT16B_index16B_reg", " >0 "},
 +        phase = {CompilePhase.MATCHING}, applyIfCPUFeatureAnd = {"avx512f", "false", "avx2", "true"})
 +    public void test16BSliceIndexLong() {
 +        for (int i = 0; i < LSP.loopBound(SIZE); i += LSP.length()) {
@@ -523,12 +547,12 @@ index 00000000000..a0fff3aadb6
 +    }
 +
 +    @Test
-+    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_MULT4_evex", " >0 "},
++    @IR(counts = {"vector_slice_const_origin_GT16B_index_multiple4_reg_evex", " >0 "},
 +        phase = {CompilePhase.MATCHING}, applyIfCPUFeature = {"avx512vl", "true"})
 +    public void testMultipleOf4BSliceIndexLong() {
 +        for (int i = 0; i < LSP.loopBound(SIZE); i += LSP.length()) {
 +            LongVector.fromArray(LSP, lsrc1, i)
-+                      .slice(4, LongVector.fromArray(LSP, lsrc2, i))
++                      .slice(2, LongVector.fromArray(LSP, lsrc2, i))
 +                      .intoArray(ldst, i);
 +        }
 +    }
