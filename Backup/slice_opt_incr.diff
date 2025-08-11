@@ -60,7 +60,7 @@ index 1e81dda73c0..1d6e8d73eb5 100644
       vpalignr(dst, src2, xtmp, origin - 48, vlen_enc);
     }
 diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
-index dae7830ea52..7d3a39bed31 100644
+index dae7830ea52..4877b4798a2 100644
 --- a/src/hotspot/cpu/x86/x86.ad
 +++ b/src/hotspot/cpu/x86/x86.ad
 @@ -1727,6 +1727,9 @@ bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType bt) {
@@ -73,16 +73,7 @@ index dae7830ea52..7d3a39bed31 100644
        break;
      case Op_VectorLoadShuffle:
      case Op_VectorRearrange:
-@@ -10778,7 +10781,7 @@ instruct vector_slice_const_origin_LT16B_reg(vec dst, vec src1, vec src2, immI o
- 
- instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI origin, vec xtmp)
- %{
--  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vlbw());
-+  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vl() && n->in(2)->get_int() != 16);
-   match(Set dst (VectorSlice (Binary src1 src2) origin));
-   effect(TEMP xtmp);
-   format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
-@@ -10789,9 +10792,21 @@ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI o
+@@ -10776,9 +10779,21 @@ instruct vector_slice_const_origin_LT16B_reg(vec dst, vec src1, vec src2, immI o
    ins_pipe(pipe_slow);
  %}
  
@@ -98,14 +89,14 @@ index dae7830ea52..7d3a39bed31 100644
 +  ins_pipe(pipe_slow);
 +%}
 +
- instruct vector_slice_const_origin_GT16B_reg_evex(vec dst, vec src1, vec src2, immI origin, vec xtmp)
+ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI origin, vec xtmp)
  %{
--  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vlbw());
-+  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vl() && (n->in(2)->get_int() & 0x3) != 0);
+-  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vlbw());
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && !VM_Version::supports_avx512vl() && n->in(2)->get_int() != 16);
    match(Set dst (VectorSlice (Binary src1 src2) origin));
-   effect(TEMP dst, TEMP xtmp);
+   effect(TEMP xtmp);
    format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
-@@ -10802,6 +10817,19 @@ instruct vector_slice_const_origin_GT16B_reg_evex(vec dst, vec src1, vec src2, i
+@@ -10789,9 +10804,22 @@ instruct vector_slice_const_origin_GT16B_reg(vec dst, vec src1, vec src2, immI o
    ins_pipe(pipe_slow);
  %}
  
@@ -122,9 +113,13 @@ index dae7830ea52..7d3a39bed31 100644
 +  ins_pipe(pipe_slow);
 +%}
 +
- instruct vector_sqrt_HF_reg(vec dst, vec src)
+ instruct vector_slice_const_origin_GT16B_reg_evex(vec dst, vec src1, vec src2, immI origin, vec xtmp)
  %{
-   match(Set dst (SqrtVHF src));
+-  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vlbw());
++  predicate(Matcher::vector_length_in_bytes(n) > 16 && VM_Version::supports_avx512vl() && (n->in(2)->get_int() & 0x3) != 0);
+   match(Set dst (VectorSlice (Binary src1 src2) origin));
+   effect(TEMP dst, TEMP xtmp);
+   format %{ "vector_slice_const_origin $dst, $origin, $src1, $src2 \t!using $xtmp as TEMP" %}
 diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
 index a2979bc3976..ab54c47a3c5 100644
 --- a/src/hotspot/share/opto/vectorIntrinsics.cpp
