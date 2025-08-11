@@ -125,3 +125,416 @@ index dae7830ea52..7d3a39bed31 100644
  instruct vector_sqrt_HF_reg(vec dst, vec src)
  %{
    match(Set dst (SqrtVHF src));
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index a2979bc3976..ab54c47a3c5 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -1672,7 +1672,7 @@ bool LibraryCallKit::inline_vector_blend() {
+ //                       Class<? extends V> vClass, Class<E> eClass, int length, V v1, V v2,
+ //                       VectorSliceOp<V> defaultImpl)
+ bool LibraryCallKit::inline_vector_slice() {
+-  const TypeInt*     origin         = gvn().type(argument(0))->isa_int();
++  const TypeInt*     origin       = gvn().type(argument(0))->isa_int();
+   const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
+@@ -1700,13 +1700,13 @@ bool LibraryCallKit::inline_vector_slice() {
+   int num_elem = vlen->get_con();
+   BasicType elem_bt = elem_type->basic_type();
+ 
+-  if (!Matcher::supports_vector_slice_with_non_constant_index(num_elem, elem_bt) && !origin->is_con()) {
++  if (Matcher::supports_vector_slice_with_non_constant_index(num_elem, elem_bt) || !origin->is_con()) {
+     log_if_needed("  ** vector slice from non-constant index not supported");
+     return false;
+   }
+ 
+   if (!arch_supports_vector(Op_VectorSlice, num_elem, elem_bt, VecMaskNotUsed)) {
+-    log_if_needed("  ** not supported: arity=2 op=slice vlen=%d etype=%s ismask=useload/none",
++    log_if_needed("  ** not supported: arity=2 op=slice vlen=%d etype=%s",
+                     num_elem, type2name(elem_bt));
+     return false; // not supported
+   }
+@@ -1720,6 +1720,7 @@ bool LibraryCallKit::inline_vector_slice() {
+     return false; // operand unboxing failed
+   }
+ 
++  // Re-computing the origin in type agnostic bytes value.
+   Node* origin_node = gvn().intcon(origin->get_con() * type2aelembytes(elem_bt));
+   const TypeVect* vector_type = TypeVect::make(elem_bt, num_elem);
+   Node* operation = gvn().transform(new VectorSliceNode(v1, v2, origin_node, vector_type));
+diff --git a/src/hotspot/share/opto/vectornode.cpp b/src/hotspot/share/opto/vectornode.cpp
+index c126c91da1b..d04577e4761 100644
+--- a/src/hotspot/share/opto/vectornode.cpp
++++ b/src/hotspot/share/opto/vectornode.cpp
+@@ -2403,6 +2403,21 @@ Node* UMaxVNode::Identity(PhaseGVN* phase) {
+   }
+   return this;
+ }
++
++Node* VectorSliceNode::Identity(PhaseGVN* phase) {
++  if (origin()->is_Con()) {
++    jint index = origin()->get_int();
++    uint vlen = vect_type()->length_in_bytes();
++    if (vlen == (uint)index) {
++      return vec2();
++    }
++    if (index == 0) {
++      return vec1();
++    }
++  }
++  return this;
++}
++
+ #ifndef PRODUCT
+ void VectorBoxAllocateNode::dump_spec(outputStream *st) const {
+   CallStaticJavaNode::dump_spec(st);
+diff --git a/src/hotspot/share/opto/vectornode.hpp b/src/hotspot/share/opto/vectornode.hpp
+index de26373b92c..27303bccc28 100644
+--- a/src/hotspot/share/opto/vectornode.hpp
++++ b/src/hotspot/share/opto/vectornode.hpp
+@@ -1727,6 +1727,7 @@ class VectorSliceNode : public VectorNode {
+   Node* vec1() const { return in(1); }
+   Node* vec2() const { return in(2); }
+   Node* origin() const { return in(3); }
++  virtual Node* Identity(PhaseGVN* phase);
+ };
+ 
+ 
+diff --git a/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java b/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
+index 7fb1eeb800c..7a097b17cf0 100644
+--- a/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
++++ b/test/hotspot/jtreg/compiler/lib/ir_framework/IRNode.java
+@@ -2240,6 +2240,11 @@ public class IRNode {
+         machOnlyNameRegex(RISCV_VAND_NOTL_VX_MASKED, "vand_notL_vx_masked");
+     }
+ 
++    public static final String VECTOR_SLICE = VECTOR_PREFIX + "VECTOR_SLICE" + POSTFIX;
++    static {
++        vectorNode(VECTOR_SLICE, "VectorSlice", TYPE_BYTE);
++    }
++
+     public static final String VECTOR_BLEND_B = VECTOR_PREFIX + "VECTOR_BLEND_B" + POSTFIX;
+     static {
+         vectorNode(VECTOR_BLEND_B, "VectorBlend", TYPE_BYTE);
+diff --git a/test/hotspot/jtreg/compiler/vectorapi/TestSliceOptValueTransforms.java b/test/hotspot/jtreg/compiler/vectorapi/TestSliceOptValueTransforms.java
+new file mode 100644
+index 00000000000..a33f9dbf61c
+--- /dev/null
++++ b/test/hotspot/jtreg/compiler/vectorapi/TestSliceOptValueTransforms.java
+@@ -0,0 +1,305 @@
++/*
++ * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/**
++* @test
++* @bug 8303762
++* @summary Optimize vector slice operation with constant index using VPALIGNR instruction
++* @modules jdk.incubator.vector
++* @library /test/lib /
++* @run main/othervm -XX:+UnlockDiagnosticVMOptions -Xbatch -XX:TieredStopAtLevel=3 compiler.vectorapi.TestSliceOptValueTransforms
++*/
++package compiler.vectorapi;
++
++import compiler.lib.generators.*;
++import compiler.lib.ir_framework.*;
++import jdk.incubator.vector.*;
++
++public class TestSliceOptValueTransforms {
++    public static final int SIZE = 1024;
++    
++    public static final VectorSpecies<Byte> BSP = ByteVector.SPECIES_PREFERRED;
++    public static final VectorSpecies<Short> SSP = ShortVector.SPECIES_PREFERRED;
++    public static final VectorSpecies<Integer> ISP = IntVector.SPECIES_PREFERRED;
++    public static final VectorSpecies<Long> LSP = LongVector.SPECIES_PREFERRED;
++
++    public static byte [] bsrc1;
++    public static byte [] bsrc2;
++    public static byte [] bdst;
++
++    public static short [] ssrc1;
++    public static short [] ssrc2;
++    public static short [] sdst;
++
++    public static int [] isrc1;
++    public static int [] isrc2;
++    public static int [] idst;
++
++    public static long [] lsrc1;
++    public static long [] lsrc2;
++    public static long [] ldst;
++
++    @Setup()
++    public TestSetup() {
++        bsrc1 = new byte[SIZE];
++        bsrc2 = new byte[SIZE];
++        bdst  = new byte[SIZE];
++
++        ssrc1 = new short[SIZE];
++        ssrc2 = new short[SIZE];
++        sdst  = new short[SIZE];
++
++        isrc1 = new int[SIZE];
++        isrc2 = new int[SIZE];
++        idst  = new int[SIZE];
++
++        lsrc1 = new long[SIZE];
++        lsrc2 = new long[SIZE];
++        ldst  = new long[SIZE];
++
++        Generators igen = Generators.G.ints();
++        Generators lgen = Generators.G.longs();
++
++        for (int i = 0; i < SIZE; i++) {
++            bsrc1[i] = (byte)igen.next();
++            bsrc2[i] = (byte)igen.next();
++
++            ssrc1[i] = (short)igen.next();
++            ssrc2[i] = (short)igen.next();
++
++            isrc1[i] = igen.next();
++            isrc2[i] = igen.next();
++
++            lsrc1[i] = lgen.next();
++            lsrc2[i] = lgen.next();
++        }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.VECTOR_SLICE}, applyIfCPUFeatureAnd = {"avx2", "true"})
++    public void testZeroSliceIndexByte() {
++        for (int i = 0; i < BSP.loopBound(SIZE); i += BSP.length()) {
++            ByteVector.fromArray(BSP, bsrc1, i)
++                      .slice(0, ByteVector.fromArray(BSP, bsrc2, i))
++                      .intoArray(bdst, i);
++    }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.VECTOR_SLICE}, applyIfCPUFeature = {"avx2", "true"})
++    public void testMaxSliceIndexByte() {
++        for (int i = 0; i < BSP.loopBound(SIZE); i += BSP.length()) {
++            ByteVector.fromArray(BSP, bsrc1, i)
++                      .slice(BSP.length(), ByteVector.fromArray(BSP, bsrc2, i))
++                      .intoArray(bdst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.VECTOR_SLICE, " >= 0 "}, applyIfCPUFeature = {"avx2", "true"})
++    public void testVariableSliceIndexByte() {
++        for (int i = 0; i < BSP.loopBound(SIZE); i += BSP.length()) {
++            ByteVector.fromArray(BSP, bsrc1, i)
++                      .slice(i % BSP.length(), ByteVector.fromArray(BSP, bsrc2, i))
++                      .intoArray(bdst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_16_reg", IRNode.VECTOR_SIZE_32, " >= 0 "},
++        phase = {CompilePhase.MATCHING}, applyIfCPUFeatureAnd = {"avx512f", "false", "avx2", "true"})
++    public void test16BSliceIndexByte() {
++        for (int i = 0; i < BSP.loopBound(SIZE); i += BSP.length()) {
++            ByteVector.fromArray(BSP, bsrc1, i)
++                      .slice(16, ByteVector.fromArray(BSP, bsrc2, i))
++                      .intoArray(bdst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_MULT4_evex", IRNode.VECTOR_SIZE_32, " >= 0 "},
++        phase = {CompilePhase.MATCHING}, applyIfCPUFeature = {"avx512vl", "true"})
++    public void testMultipleOf4BSliceIndexByte() {
++        for (int i = 0; i < BSP.loopBound(SIZE); i += BSP.length()) {
++            ByteVector.fromArray(BSP, bsrc1, i)
++                      .slice(8, ByteVector.fromArray(BSP, bsrc2, i))
++                      .intoArray(bdst, i);
++        }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.VECTOR_SLICE}, applyIfCPUFeatureAnd = {"avx2", "true"})
++    public void testZeroSliceIndexShort() {
++        for (int i = 0; i < SSP.loopBound(SIZE); i += SSP.length()) {
++            ShortVector.fromArray(SSP, ssrc1, i)
++                       .slice(0, ShortVector.fromArray(SSP, ssrc2, i))
++                       .intoArray(sdst, i);
++        }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.VECTOR_SLICE}, applyIfCPUFeature = {"avx2", "true"})
++    public void testMaxSliceIndexShort() {
++        for (int i = 0; i < SSP.loopBound(SIZE); i += SSP.length()) {
++            ShortVector.fromArray(SSP, ssrc1, i)
++                       .slice(SSP.length(), ShortVector.fromArray(SSP, ssrc2, i))
++                       .intoArray(sdst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.VECTOR_SLICE, " >= 0 "}, applyIfCPUFeature = {"avx2", "true"})
++    public void testVariableSliceIndexShort() {
++        for (int i = 0; i < SSP.loopBound(SIZE); i += SSP.length()) {
++            ShortVector.fromArray(SSP, ssrc1, i)
++                       .slice(i % SSP.length(), ShortVector.fromArray(SSP, ssrc2, i))
++                       .intoArray(sdst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_16_reg", IRNode.VECTOR_SIZE_8, " >= 0 "},
++        phase = {CompilePhase.MATCHING}, applyIfCPUFeatureAnd = {"avx512f", "false", "avx2", "true"})
++    public void test16BSliceIndexShort() {
++        for (int i = 0; i < SSP.loopBound(SIZE); i += SSP.length()) {
++            ShortVector.fromArray(SSP, ssrc1, i)
++                       .slice(8, ShortVector.fromArray(SSP, ssrc2, i))
++                       .intoArray(sdst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_MULT4_evex", IRNode.VECTOR_SIZE_16, " >= 0 "},
++        phase = {CompilePhase.MATCHING}, applyIfCPUFeature = {"avx512vl", "true"})
++    public void testMultipleOf4BSliceIndexShort() {
++        for (int i = 0; i < SSP.loopBound(SIZE); i += SSP.length()) {
++            ShortVector.fromArray(SSP, ssrc1, i)
++                       .slice(16, ShortVector.fromArray(SSP, ssrc2, i))
++                       .intoArray(sdst, i);
++        }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.VECTOR_SLICE}, applyIfCPUFeatureAnd = {"avx2", "true"})
++    public void testZeroSliceIndexInt() {
++        for (int i = 0; i < ISP.loopBound(SIZE); i += ISP.length()) {
++            IntVector.fromArray(ISP, isrc1, i)
++                     .slice(0, IntVector.fromArray(ISP, isrc2, i))
++                     .intoArray(idst, i);
++        }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.VECTOR_SLICE}, applyIfCPUFeature = {"avx2", "true"})
++    public void testMaxSliceIndexInt() {
++        for (int i = 0; i < ISP.loopBound(SIZE); i += ISP.length()) {
++            IntVector.fromArray(ISP, isrc1, i)
++                     .slice(ISP.length(), IntVector.fromArray(ISP, isrc2, i))
++                     .intoArray(idst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.VECTOR_SLICE, " >= 0 "}, applyIfCPUFeature = {"avx2", "true"})
++    public void testVariableSliceIndexInt() {
++        for (int i = 0; i < ISP.loopBound(SIZE); i += ISP.length()) {
++            IntVector.fromArray(ISP, isrc1, i)
++                     .slice(i % ISP.length(), IntVector.fromArray(ISP, isrc2, i))
++                     .intoArray(idst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_16_reg", IRNode.VECTOR_SIZE_8, " >= 0 "},
++        phase = {CompilePhase.MATCHING}, applyIfCPUFeatureAnd = {"avx512f", "false", "avx2", "true"})
++    public void test16BSliceIndexInt() {
++        for (int i = 0; i < ISP.loopBound(SIZE); i += ISP.length()) {
++            IntVector.fromArray(ISP, isrc1, i)
++                     .slice(4, IntVector.fromArray(ISP, isrc2, i))
++                     .intoArray(idst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_MULT4_evex", IRNode.VECTOR_SIZE_16, " >= 0 "},
++        phase = {CompilePhase.MATCHING}, applyIfCPUFeature = {"avx512vl", "true"})
++    public void testMultipleOf4BSliceIndexInt() {
++        for (int i = 0; i < ISP.loopBound(SIZE); i += ISP.length()) {
++            IntVector.fromArray(ISP, isrc1, i)
++                     .slice(8, IntVector.fromArray(ISP, isrc2, i))
++                     .intoArray(idst, i);
++        }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.VECTOR_SLICE}, applyIfCPUFeatureAnd = {"avx2", "true"})
++    public void testZeroSliceIndexLong() {
++        for (int i = 0; i < LSP.loopBound(SIZE); i += LSP.length()) {
++            LongVector.fromArray(LSP, lsrc1, i)
++                      .slice(0, LongVector.fromArray(LSP, lsrc2, i))
++                      .intoArray(ldst, i);
++        }
++    }
++
++    @Test
++    @IR(failOn = {IRNode.VECTOR_SLICE}, applyIfCPUFeature = {"avx2", "true"})
++    public void testMaxSliceIndexLong() {
++        for (int i = 0; i < LSP.loopBound(SIZE); i += LSP.length()) {
++            LongVector.fromArray(LSP, lsrc1, i)
++                      .slice(LSP.length(), LongVector.fromArray(LSP, lsrc2, i))
++                      .intoArray(ldst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {IRNode.VECTOR_SLICE, " >= 0 "}, applyIfCPUFeature = {"avx2", "true"})
++    public void testVariableSliceIndexLong() {
++        for (int i = 0; i < LSP.loopBound(SIZE); i += LSP.length()) {
++            LongVector.fromArray(LSP, lsrc1, i)
++                      .slice(i % LSP.length(), LongVector.fromArray(LSP, lsrc2, i))
++                      .intoArray(ldst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_16_reg", IRNode.VECTOR_SIZE_4, " >= 0 "},
++        phase = {CompilePhase.MATCHING}, applyIfCPUFeatureAnd = {"avx512f", "false", "avx2", "true"})
++    public void test16BSliceIndexLong() {
++        for (int i = 0; i < LSP.loopBound(SIZE); i += LSP.length()) {
++            LongVector.fromArray(LSP, lsrc1, i)
++                      .slice(2, LongVector.fromArray(LSP, lsrc2, i))
++                      .intoArray(ldst, i);
++        }
++    }
++
++    @Test
++    @IR(counts = {"vector_slice_const_origin_GT16B_IDX_MULT4_evex", IRNode.VECTOR_SIZE_8, " >= 0 "},
++        phase = {CompilePhase.MATCHING}, applyIfCPUFeature = {"avx512vl", "true"})
++    public void testMultipleOf4BSliceIndexLong() {
++        for (int i = 0; i < LSP.loopBound(SIZE); i += LSP.length()) {
++            LongVector.fromArray(LSP, lsrc1, i)
++                      .slice(4, LongVector.fromArray(LSP, lsrc2, i))
++                      .intoArray(ldst, i);
++        }
++    }
++}
+diff --git a/test/hotspot/jtreg/testlibrary_tests/ir_framework/tests/TestPhaseIRMatching.java b/test/hotspot/jtreg/testlibrary_tests/ir_framework/tests/TestPhaseIRMatching.java
+index fe21dce73b5..6594ec746eb 100644
+--- a/test/hotspot/jtreg/testlibrary_tests/ir_framework/tests/TestPhaseIRMatching.java
++++ b/test/hotspot/jtreg/testlibrary_tests/ir_framework/tests/TestPhaseIRMatching.java
+@@ -785,4 +785,4 @@ public int loadDoubleNested() {
+     public void storeDoubleNested() {
+         doubleNest.i = 1;
+     }
+-}
+\ No newline at end of file
++}
