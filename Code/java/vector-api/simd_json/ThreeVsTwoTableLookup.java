@@ -39,7 +39,7 @@ public class ThreeVsTwoTableLookup {
     //                  most significant two bits of first byte 
     public static byte [] genStream() {
         Random rd = new Random(1111);
-        byte [] stream = new byte[8196];
+        byte [] stream = new byte[4096];
         for (int i = 0; i < stream.length; i++) {
             stream[i] = (byte)(rd.nextInt());
         }
