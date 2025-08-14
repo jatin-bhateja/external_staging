@@ -1,0 +1,31 @@
+
+panama-vector:-
+  - Enable functional support on panama-vector with short [] as the backing storage.
+  - Cleanup existing HalfFloatVector support and align JDK mainline Float16 support.
+  - Unify the backend implementation.
+  - Fill intrinsic layer gaps to enable validation of x86 and aarch64 backends.
+  - Functional and performance validate end-to-end flow. 
+  
+lworld+fp16:-
+  - Three way merge, lworld to lworld+vector.
+    - Function and performance validation with following configurations.
+     bool InlineTypePassFieldsAsArgs  
+     bool InlineTypeReturnedAsFields	
+     bool UseArrayFlattening        
+     bool UseAtomicValueFlattening  
+     bool UseFieldFlattening       
+     bool UseNonAtomicValueFlattening
+     bool UseNullableValueFlattening 
+     DeoptimizeALot
+     SafepointALot
+     IncrementalInlining
+     UseAVX = 0,1,2,3,KNL
+     TieredCompilation :- ON / OFF
+     TieredStopAtLevel=0,1,2,3
+     
+    - Bring at par with lworld+vector.
+    - Replaced short [] array backing storage with flat Float16[].
+    - Re-align Float16 java implementation with multifield based payloads.
+    - Lift multifield limitation of not operating on box types.
+    - Functional and performance validation.   
+
