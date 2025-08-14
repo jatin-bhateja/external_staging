@@ -101,7 +101,7 @@ public class SimdJSONTableLookup {
         TWO_CONTINUATIONS, TWO_CONTINUATIONS, TWO_CONTINUATIONS, TWO_CONTINUATIONS,
         // 0b1100_00 -> OVERLONG_2BYTE | TOO_SHORT
         OVERLONG_2BYTE | TOO_SHORT,
-        // 0b1100_01 -> TOO_SHORT, cannot be OVERLONG_2BYTE since 3rd bit is 1 and 100 > 010 
+        // 0b1100_01 -> TOO_SHORT, cannot be OVERLONG_2BYTE since 3rd bit is 1 and 100 > 010
         // 010 is least signifiant 3 bits of lower nibble of two byte UTF8 encoding.
         TOO_SHORT,
         // 0b1100_10 - 0b1100_11 -> TOO_SHORT
@@ -113,12 +113,12 @@ public class SimdJSONTableLookup {
         // 0b1110_11 -> TOO_SHORT | SURROGATE
         TOO_SHORT | SURROGATE,
         // 4 byte sequence, 0b11110_0
-        OVERLONG_4BYTE | TOO_LARGE | TOO_SHORT | TOO_LARGE_1000
+        OVERLONG_4BYTE | TOO_LARGE | TOO_SHORT | TOO_LARGE_1000,
         // 4 byte sequence, 0b11110_1
-        TOO_SHORT | TOO_LARGE, 
+        TOO_SHORT | TOO_LARGE,
         // 11111_0 - 11111_1
         TOO_LARGE_1000
-    } 
+    };
 
     // 2bit byte1lo | 4bits byte2hi
     public static byte [] byte1Lo2HighArrayNew = {
@@ -133,10 +133,10 @@ public class SimdJSONTableLookup {
         TOO_LONG | TWO_CONTINUATIONS | OVERLONG_2BYTE | SURROGATE | TOO_LARGE,
         TOO_LONG | TWO_CONTINUATIONS | OVERLONG_2BYTE | SURROGATE | TOO_LARGE,
         // 0b01_1100 - 0b01_1111 -> leading byte -> non-continuation byte -> TOO_SHORT
-        TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT
-        // 0b10_0000 - 0b10_0111 -> leading byte -> ASCII -> TOO_SHORT 
+        TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
+        // 0b10_0000 - 0b10_0111 -> leading byte -> ASCII -> TOO_SHORT
         TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
-        // 0b10_1000 - 0b10_1011 
+        // 0b10_1000 - 0b10_1011
         TOO_LONG | TWO_CONTINUATIONS | OVERLONG_2BYTE | OVERLONG_3BYTE | OVERLONG_4BYTE | TOO_LARGE_1000,
         TOO_LONG | TWO_CONTINUATIONS | OVERLONG_2BYTE | OVERLONG_3BYTE | TOO_LARGE,
         TOO_LONG | TWO_CONTINUATIONS | OVERLONG_2BYTE | SURROGATE | TOO_LARGE,
@@ -152,33 +152,34 @@ public class SimdJSONTableLookup {
         TOO_LONG | TWO_CONTINUATIONS | OVERLONG_2BYTE | SURROGATE | TOO_LARGE,
         // 0b11_1100 - 0b11_1111  leading byte -> non continuation -> TOO_SHORT
         TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT
-    }; 
+    };
 
     public static byte [] utf8_stream = {
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
             (byte)0b1110_0010, (byte)0b0010_0010, (byte)0b0010_0010, (byte)0b0110_0010,
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
             (byte)0b1110_0010, (byte)0b0010_0010, (byte)0b0010_0010, (byte)0b0110_0010,
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
-            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010, 
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
+            (byte)0b1100_0010, (byte)0b0000_0010, (byte)0b0100_0010, (byte)0b1100_0010,
     };
 
     public static final VectorSpecies<Byte> BSP = ByteVector.SPECIES_PREFERRED;
+    public static final VectorSpecies<Integer> ISP = IntVector.SPECIES_PREFERRED;
 
     public static final ByteVector tbl1 = loadTable(1);
     public static final ByteVector tbl2 = loadTable(2);
     public static final ByteVector tbl3 = loadTable(3);
- 
+
     public static final ByteVector tbl4 = loadTable(4);
     public static final ByteVector tbl5 = loadTable(5);
 
@@ -198,7 +199,7 @@ public class SimdJSONTableLookup {
         }
         return ByteVector.fromArray(BSP, table, 0);
     }
-   
+
     public static long three_table_distributed_lookup() {
         long error = 0;
         ByteVector v0 = ByteVector.broadcast(BSP, 0);
@@ -206,11 +207,11 @@ public class SimdJSONTableLookup {
             ByteVector v1 = ByteVector.fromArray(BSP, utf8_stream, i);
             ByteVector prev1V = v0.slice(BSP.length() - 1, v1);
             ByteVector prev1_msb_6b_ByteV = prev1V.reinterpretAsInts().lanewise(VectorOperators.LSHR, 2)
-                                                  .lanewise(VectorOperators.AND, IntVector.broadcast(IntVector.SPECIES_256, 0x3F3F3F3F))
+                                                  .lanewise(VectorOperators.AND, IntVector.broadcast(ISP, 0x3F3F3F3F))
                                                   .reinterpretAsBytes();
-            ByteVector perv1_lsb2_v1_msb_4bitV = prev1ByteV.lanewise(VectorOperators.LSHR, 4).selectFrom(tbl1); 
-            ByteVector lookup_res2 = prev1ByteV.and((byte)0xF).selectFrom(tbl2); 
-            ByteVector lookup_res3 = v1.lanewise(VectorOperators.LSHR, 4).selectFrom(tbl3); 
+            ByteVector lookup_res1 = prev1V.lanewise(VectorOperators.LSHR, 4).selectFrom(tbl1);
+            ByteVector lookup_res2 = prev1V.and((byte)0xF).selectFrom(tbl2);
+            ByteVector lookup_res3 = v1.lanewise(VectorOperators.LSHR, 4).selectFrom(tbl3);
             VectorMask<Byte> res = lookup_res3.and(lookup_res2).and(lookup_res1).compare(VectorOperators.GT, (byte)0);
             v0 = v1;
             error += res.trueCount();
@@ -223,11 +224,15 @@ public class SimdJSONTableLookup {
         ByteVector v0 = ByteVector.broadcast(BSP, 0);
         for (int i = 0; i < BSP.loopBound(utf8_stream.length); i += BSP.length()) {
             ByteVector v1 = ByteVector.fromArray(BSP, utf8_stream, i);
-            ByteVector prev1ByteV  = v0.slice(BSP.length() - 1, v1);
-            ByteVector lookup_res1 = prev1ByteV.lanewise(VectorOperators.LSHR, 4).selectFrom(tbl1); 
-            ByteVector lookup_res2 = prev1ByteV.and((byte)0xF).selectFrom(tbl2); 
-            ByteVector lookup_res3 = v1.lanewise(VectorOperators.LSHR, 4).selectFrom(tbl3); 
-            VectorMask<Byte> res = lookup_res3.and(lookup_res2).and(lookup_res1).compare(VectorOperators.GT, (byte)0);
+            ByteVector prevV  = v0.slice(BSP.length() - 1, v1);
+            ByteVector lookup_res1 = prevV.selectFrom(tbl4);
+            ByteVector lookup_res2 = v1.and((byte)0xF)
+                                       .or(prevV.reinterpretAsInts()
+                                                .lanewise(VectorOperators.LSHR, 2)
+                                                .reinterpretAsBytes()
+                                                .and((byte)0x30))
+                                       .selectFrom(tbl5);
+            VectorMask<Byte> res = lookup_res1.and(lookup_res2).compare(VectorOperators.GT, (byte)0);
             v0 = v1;
             error += res.trueCount();
         }
@@ -235,7 +240,7 @@ public class SimdJSONTableLookup {
     }
 
     interface BMInterface {
-        public long apply(); 
+        public long apply();
     }
 
     public static void runBm(String msg, BMInterface bm) {
@@ -252,6 +257,10 @@ public class SimdJSONTableLookup {
     }
 
     public static void main(String [] args) {
-        runBm("three_table_distributed_lookup", () -> three_table_distributed_lookup());         
+        if (Integer.parseInt(args[0]) == 0) {
+            runBm("two_table_distributed_lookup", () -> two_table_distributed_lookup());
+        } else {
+            runBm("three_table_distributed_lookup", () -> three_table_distributed_lookup());
+        }
     }
 }
