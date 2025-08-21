@@ -1,0 +1,133 @@
+diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
+index 894715c6600..24324405bbe 100644
+--- a/src/hotspot/share/classfile/vmIntrinsics.hpp
++++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
+@@ -494,8 +494,8 @@ class methodHandle;
+                                                                                                                         \
+   do_class(com_sun_crypto_provider_galoisCounterMode, "com/sun/crypto/provider/GaloisCounterMode")                      \
+    do_intrinsic(_galoisCounterMode_AESCrypt, com_sun_crypto_provider_galoisCounterMode, gcm_crypt_name, aes_gcm_signature, F_S)   \
+-   do_name(gcm_crypt_name, "implGCMCrypt0")                                                                                 \
+-   do_signature(aes_gcm_signature, "([BII[BI[BILcom/sun/crypto/provider/GCTR;Lcom/sun/crypto/provider/GHASH;)I")                                                             \
++   do_name(gcm_crypt_name, "implGCMCrypt0")                                                                             \
++   do_signature(aes_gcm_signature, "([BII[BI[BILcom/sun/crypto/provider/GCTR;Lcom/sun/crypto/provider/GHASH;)I")        \
+                                                                                                                         \
+   /* support for sun.security.provider.MD5 */                                                                           \
+   do_class(sun_security_provider_md5,                              "sun/security/provider/MD5")                         \
+@@ -1245,7 +1245,7 @@ class methodHandle;
+                                         "Ljdk/internal/vm/vector/VectorSupport$VectorMask;"                                                     \
+                                         "Ljdk/internal/vm/vector/VectorSupport$VectorSelectFromOp;)"                                            \
+                                         "Ljdk/internal/vm/vector/VectorSupport$Vector;")                                                        \
+-   do_name(vector_select_from_name, "selectFromOp")                                                                                              \
++   do_name(vector_select_from_name, "selectFromOp")                                                                                            \
+                                                                                                                                                \
+   do_intrinsic(_VectorExtract, jdk_internal_vm_vector_VectorSupport, vector_extract_name, vector_extract_sig, F_S)                             \
+    do_signature(vector_extract_sig, "(Ljava/lang/Class;"                                                                                       \
+@@ -1261,7 +1261,7 @@ class methodHandle;
+                                                                                                                                                \
+  do_intrinsic(_VectorInsert, jdk_internal_vm_vector_VectorSupport, vector_insert_name, vector_insert_sig, F_S)                                 \
+    do_signature(vector_insert_sig, "(Ljava/lang/Class;"                                                                                        \
+-				    "Ljava/lang/Class;"                                                                                        \
++                                    "Ljava/lang/Class;"                                                                                        \
+                                     "Ljava/lang/Class;"                                                                                        \
+                                     "I"                                                                                                        \
+                                     "I"                                                                                                        \
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index 9cfac0c980e..64cf0cb616f 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -325,17 +325,19 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* mask_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(3))->isa_instptr();
++  const TypeInt*     opr_type     = gvn().type(argument(5))->isa_int();
+   const TypeInt*     vlen         = gvn().type(argument(6))->isa_int();
+ 
+-  if (opr          == nullptr || !opr->is_con() ||
++  if (opr          == nullptr || !opr->is_con() || !opr_type->is_con() ||
+       vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
+       vlen         == nullptr || !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: opr=%s vclass=%s etype=%s vlen=%s",
++    log_if_needed("  ** missing constant: opr=%s vclass=%s etype=%s opr_type=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(3)->Opcode()],
+-                    NodeClassNames[argument(4)->Opcode()]);
++                    NodeClassNames[argument(5)->Opcode()],
++                    NodeClassNames[argument(6)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
+@@ -375,7 +377,7 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   bool is_unsigned = VectorSupport::is_unsigned_op(opr->get_con());
+ 
+   int num_elem = vlen->get_con();
+-  int opc = VectorSupport::vop2ideal(opr->get_con(), elem_bt);
++  int opc = VectorSupport::vop2ideal(opr->get_con(), elem_bt, opr_type->get_con());
+   int sopc = has_scalar_op ? VectorNode::opcode(opc, elem_bt) : opc;
+   if (sopc == 0 || num_elem == 1) {
+     log_if_needed("  ** operation not supported: arity=%d opc=%s[%d] vlen=%d etype=%s",
+@@ -497,7 +499,7 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+ //  <V extends VectorPayload, E>
+ //  V libraryBinaryOp(long addr, Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType, int length, String debugName,
+ //                    V v1, V v2,
+-//                    BinaryOperation<V,?> defaultImpl) 
++//                    BinaryOperation<V,?> defaultImpl)
+ //
+ bool LibraryCallKit::inline_vector_call(int arity) {
+   assert(Matcher::supports_vector_calling_convention(), "required");
+@@ -1577,7 +1579,7 @@ bool LibraryCallKit::inline_vector_reduction() {
+ //               Class<?> mClass, Class<?> cClass, Class<E> eClass, int opType,
+ //               int length,
+ //               M m1, M m2,
+-//               BiFunction<M, M, Boolean> defaultImpl) 
++//               BiFunction<M, M, Boolean> defaultImpl)
+ //
+ //
+ bool LibraryCallKit::inline_vector_test() {
+@@ -2871,7 +2873,7 @@ bool LibraryCallKit::inline_vector_select_from_two_vectors() {
+ //  VectorPayload compressExpandOp(int opr,
+ //                                 Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
+ //                                 int length, V v, M m,
+-//                                 CompressExpandOperation<V, M> defaultImpl) 
++//                                 CompressExpandOperation<V, M> defaultImpl)
+ //
+ bool LibraryCallKit::inline_vector_compress_expand() {
+   const TypeInt*     opr          = gvn().type(argument(0))->isa_int();
+diff --git a/src/hotspot/share/prims/vectorSupport.cpp b/src/hotspot/share/prims/vectorSupport.cpp
+index 8bdef69234f..43378387322 100644
+--- a/src/hotspot/share/prims/vectorSupport.cpp
++++ b/src/hotspot/share/prims/vectorSupport.cpp
+@@ -199,13 +199,17 @@ bool VectorSupport::is_unsigned_op(jint id) {
+   }
+ }
+ 
+-int VectorSupport::vop2ideal(jint id, BasicType bt) {
++int VectorSupport::vop2ideal(jint id, BasicType bt, int operType) {
+   VectorOperation vop = (VectorOperation)id;
+   switch (vop) {
+     case VECTOR_OP_ADD: {
+       switch (bt) {
+         case T_BYTE:   // fall-through
+-        case T_SHORT:  // fall-through
++        case T_SHORT:
++          if (operType == VECTOR_TYPE_FP16) {
++            return Op_AddHF;
++          }
++          // fall-through
+         case T_INT:    return Op_AddI;
+         case T_LONG:   return Op_AddL;
+         case T_FLOAT:  return Op_AddF;
+diff --git a/src/hotspot/share/prims/vectorSupport.hpp b/src/hotspot/share/prims/vectorSupport.hpp
+index 8f9bb0db155..2122f5dea92 100644
+--- a/src/hotspot/share/prims/vectorSupport.hpp
++++ b/src/hotspot/share/prims/vectorSupport.hpp
+@@ -130,7 +130,7 @@ class VectorSupport : AllStatic {
+     MODE_BITS_COERCED_LONG_TO_MASK = 1
+   };
+ 
+-  static int vop2ideal(jint vop, BasicType bt);
++  static int vop2ideal(jint vop, BasicType bt, int operType = VECTOR_TYPE_PRIM);
+   static bool has_scalar_op(jint id);
+   static bool is_unsigned_op(jint id);
+ 
