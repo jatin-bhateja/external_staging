@@ -1,0 +1,132 @@
+Ruby:-
+
+Specification : https://www.ruby-lang.org/en/
+     - Use case : server side web development using rails framework.
+     - Implementation
+          a.  Cruby/MRI - C language based interpreter with global interpreter lock. Switches context on IO waiting thread otherwise executes ruby bytecode stream of a thread in blocking fashion. Threads are implemented at user level and non mapped to OS treads. Used by 90% of ruby application.
+          b.  Jruby - Implemented in Java, parses .rb files, AST, optimization and backend directly emits java byte code. 
+                    - Ruby threads are mapped to OS threads giving this significant performance uplift over MRI.
+                    - Slow startup in comparison to MRI. 
+                    - JVM lifts the performance after warmup.
+                    - Easy interoperability with Java SE libraries and jdk.incubator modules.
+          c. Truffle ruby 
+                    - Ruby specification implementation using Graal's truffle framework.
+                    - Polyglot and can run with different languages supported by Graal.
+
+     - Ruby extensions are exposed though a rich library of predefined modules.
+          - JSON is one such module which is used to parse and generate JSON files from Ruby's data structures.
+
+Few notes on rub build system
+  - Ruby packages are deployed as GEM files.
+  - Ruby's package and dependency management is performed using bundle.
+    - bundle install reads dependency information from Gemfile. Project specific information can be speficified in <project>.gemspec file.
+  - Ruby uses Rakefile base build management system.
+    - In order to build a ruby project with java components we need to use jruby as the RUBY_ENGIN and not C/MRI 
+    - Rakefile lists set of tasks which can be printed by jruby -S rake --tasks
+
+PROMPT>jruby -S rake --tasks
+ *** JAVA_HOME is set to "/home/jatinbha/softwares/jdk-25"
+ *** java binaries are assumed to be in "/home/jatinbha/softwares/jdk-25/bin"
+rake build                 # Build json-2.13.2.gem into the pkg directory / Build all gems and archives for a new release of the jruby extension
+rake build:checksum        # Generate SHA512 checksum of json-2.13.2.gem into the checksums directory
+rake clean                 # Remove any temporary products
+rake clobber               # Remove any generated files
+rake compile               # Compiling jruby extension
+rake create_generator_jar  # Create generator jar
+rake create_jar            # Create parser and generator jars
+rake create_parser_jar     # Create parser jar
+rake default               # Compile in the the source directory
+rake install               # Build and install json-2.13.2.gem into system gems
+rake install:local         # Build and install json-2.13.2.gem into system gems without network access
+rake jruby_gem             # Package the jruby gem
+rake ragel                 # Generate parser with ragel
+rake release[remote]       # Create tag v2.13.2 and build and push json-2.13.2.gem to rubygems.org
+rake test                  # Testing library (jruby)
+PROMPT>
+
+    - On successful build a .gem file is generated in pkg folder.
+    - Use gem to install the newly generated gem file
+
+PROMPT>gem install json-2.13.2-java.gem 
+Successfully installed json-2.13.2-java
+1 gem installed
+
+     - To run the benchmark use following command
+
+jruby -J--add-modules=jdk.incubator.vector -J-Djson.enableVectorizedEscapeScanner=true -J-Djson.enableVectorizedStringEncoder=true benchmark/parser.rb   
+
+Performance optimization of JSON modules using Java VectorAPI
+
+1) Checkout https://github.com/jatin-bhateja/json.git
+
+2) Checkout https://github.com/jruby/jruby.git
+
+3) cd to jruby 
+     JAVA_HOME=/home/jatinbha/softwares/jdk-25/bin/java
+     PROMPT>./mvnw
+
+4) cd to json directory
+   sudo apt-get install bundler
+
+5) sudo apt-get install rake
+
+6) sudo apt-get install gem
+
+7) bundle install -> Reads Gemfile placed in json directory and installs the dependencies.
+
+8) Run  BENCHMARK=1 bundle install
+
+9) jruby -S rake build
+
+Integrate VectorAPI optimized json PR.
+
+PROMPT>git checkout -b vapi_json
+Switched to a new branch 'vapi_json'
+PROMPT>git remote add upstream https://github.com/ruby/json.git
+PROMPT>
+PROMPT>git fetch upstream pull/824/head
+remote: Enumerating objects: 91, done.
+remote: Counting objects: 100% (33/33), done.
+remote: Total 91 (delta 33), reused 33 (delta 33), pack-reused 58 (from 1)
+Unpacking objects: 100% (91/91), 13.63 KiB | 18.00 KiB/s, done.
+From https://github.com/ruby/json
+ * branch            refs/pull/824/head -> FETCH_HEAD
+PROMPT>git merge FETCH_HEAD
+Auto-merging java/src/json/ext/Generator.java
+Merge made by the 'ort' strategy.
+ Rakefile                                       |  28 ++++++++++++++++++++----
+ java/src/json/ext/EscapeScanner.java           | 106 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ java/src/json/ext/Generator.java               |  49 +++++++++++++++++++++++++++++++++++++++---
+ java/src/json/ext/StringEncoder.java           | 137 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---------------------------
+ java/src/json/ext/VectorizedEscapeScanner.java |  99 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ java/src/json/ext/VectorizedStringEncoder.java |  77 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 457 insertions(+), 39 deletions(-)
+ create mode 100644 java/src/json/ext/EscapeScanner.java
+ create mode 100644 java/src/json/ext/VectorizedEscapeScanner.java
+ create mode 100644 java/src/json/ext/VectorizedStringEncoder.java
+PROMPT>
+
+10) jruby -S rake build
+
+11) gem install pkg/json-2.13.2-java.gem
+Successfully installed json-2.13.2-java
+1 gem installed
+
+12) jruby -J--add-modules=jdk.incubator.vector -J-Djson.enableVectorizedEscapeScanner=true -J-Djson.enableVectorizedStringEncoder=true benchmark/parser.rb   
+
+To resolve following error manually install benchmark/ips and re-run 12.
+
+PROMPT>jruby -J--add-modules=jdk.incubator.vector -J-Djson.enableVectorizedEscapeScanner=true -J-Djson.enableVectorizedStringEncoder=true benchmark/parser.rb   
+WARNING: Using incubator modules: jdk.incubator.vector
+Ignoring resolv-0.6.2 because its extensions are not built. Try: gem pristine resolv --version 0.6.2
+LoadError: cannot load such file -- benchmark/ips
+  require at org/jruby/RubyKernel.java:1183
+  require at /mnt/c/GitHub/workloads/VectorAPI/jruby/lib/ruby/stdlib/rubygems/core_ext/kernel_require.rb:136
+   <main> at benchmark/parser.rb:1
+PROMPT>vi Gemfile
+PROMPT>gem install benchmark-ips
+Fetching benchmark-ips-2.14.0.gem
+Successfully installed benchmark-ips-2.14.0
+1 gem installed
+
+          
