@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px 10px 22px 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {position: fixed; bottom: 0; margin: 0; padding: 2px 3px 2px 3px; outline: 1px solid #ffc000; display: none; overflow: hidden; white-space: nowrap; background-color: #ffffe0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {left: 0}
+	#match {right: 0}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 1744px}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>CPU profile</h1>
+<header style='text-align: left'><button id='inverted' title='Invert'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/async-profiler/async-profiler'>async-profiler</a></header>
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+<p id='status'></p>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<script>
+	// Copyright The async-profiler authors
+	// SPDX-License-Identifier: Apache-2.0
+	'use strict';
+	let root, px, pattern;
+	let level0 = 0, left0 = 0, width0 = 0;
+	let nav = [], navIndex, matchval;
+	let inverted = false;
+	const levels = Array(109);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(key, level, left, width, inln, c1, int) {
+		levels[level0 = level].push({level, left: left0 += left, width: width0 = width || width0,
+			color: getColor(palette[key & 7]), title: cpool[key >>> 3],
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function u(key, width, inln, c1, int) {
+		f(key, level0 + 1, 0, width, inln, c1, int)
+	}
+
+	function n(key, width, inln, c1, int) {
+		f(key, level0, width0, width, inln, c1, int)
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function removeStack(left, width) {
+		for (let h = 0; h < levels.length; h++) {
+			const frames = levels[h], newFrames = [];
+			for (let i = 0; i < frames.length; i++) {
+				const f = frames[i];
+				if (f.left >= left + width) {
+					f.left -= width;
+				} else if (f.left + f.width > left) {
+					if ((f.width -= width) <= 0 && h) continue;
+				}
+				newFrames.push(f);
+			}
+			levels[h] = newFrames;
+		}
+	}
+
+	function search(r) {
+		if (r === true && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, nav = []);
+		navIndex = -1;
+		document.getElementById('matchval').textContent = matchval = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inline-block' : 'none';
+	}
+
+	function render(newRoot, nav) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] || (marked[f.left] = f);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					const m = marked[x];
+					if (nav) nav.push(m);
+					total += m.width;
+					left = +x + m.width;
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (f.level < root.level) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = inverted ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	function unpack(cpool) {
+		for (let i = 1; i < cpool.length; i++) {
+			cpool[i] = cpool[i - 1].substring(0, cpool[i].charCodeAt(0) - 32) + cpool[i].substring(1);
+		}
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((inverted ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				if (f !== root) getSelection().removeAllRanges();
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((inverted ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + f.details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (event.altKey && h >= root.level) {
+						removeStack(f.left, f.width);
+						root.width > f.width ? render(root) : render();
+					} else if (f !== root) {
+						render(f);
+					}
+					canvas.onmousemove();
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				status.style.display = 'inline-block';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = null;
+	}
+
+	canvas.ondblclick = function() {
+		getSelection().selectAllChildren(hl);
+	}
+
+	document.getElementById('inverted').onclick = function() {
+		inverted = !inverted;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function(event) {
+		if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+			event.preventDefault();
+			search(true);
+		} else if (event.key === 'Escape') {
+			search(false);
+		} else if ((event.key === 'n' || event.key === 'N') && nav.length > 0) {
+			navIndex = (navIndex + (event.shiftKey ? nav.length - 1 : 1)) % nav.length;
+			render(nav[navIndex]);
+			document.getElementById('matchval').textContent = matchval + ' (' + (navIndex + 1) + ' of ' + nav.length + ')';
+			window.scroll(0, inverted ? root.level * 16 : canvasHeight - (root.level + 1) * 16);
+			canvas.onmousemove();
+		}
+	}
+
+const cpool = [
+'all',
+' AgeTable::print_age_table',
+'!llocTracer::send_allocation_in_new_tlab',
+'=outside_tlab',
+'%ateHeap',
+' BarrierSetNMethod::nmethod_stub_entry_barrier',
+' C2Compiler::compile_method',
+'!ardTableBarrierSet::on_slowpath_allocation_exit',
+'!lassLoaderData::oops_do',
+'/Graph::clear_claimed_marks',
+'6roots_cld_do',
+'!odeHeap::find_blob',
+'"mpile::Compile',
+')find_alias_type',
+'\'Broker::compiler_thread_loop',
+'/invoke_compiler_on_method',
+'"ncurrentGCThread::run',
+'#stantPool::name_and_type_ref_index_at',
+' FreeListAllocator::reset',
+' G1AllocRegion::new_alloc_region_and_allocate',
+'"BatchedTask::work',
+'"CLDScanClosure::do_cld',
+'#SetCandidateGroup::G1CSetCandidateGroup',
+'#ardSet::~G1CardSet',
+')MemoryManager::G1CardSetMemoryManager',
+'#ollectedHeap::attempt_allocation_humongous',
+'Dslow',
+'1do_collection_pause_at_safepoint_helper',
+'1free_humongous_region',
+'1humongous_obj_allocate',
+'G_initialize_regions',
+'1max_tlab_size',
+'2em_allocate',
+'1new_mutator_alloc_region',
+'5region',
+'1par_iterate_regions_array',
+'1rebuild_free_region_list',
+'1set_humongous_metadata',
+'1try_collect_concurrently',
+'$ncurrentMark::clear_statistics',
+'2pre_concurrent_start',
+'0Thread::concurrent_undo_cycle_do',
+'8run_service',
+',Refine::adjust_threads_periodically',
+'2Thread::run_service',
+'"EvacuateRegionsBaseTask::work',
+'1Task::evacuate_live_objects',
+'7scan_roots',
+'"FreeHumongousRegionClosure::do_heap_region_index',
+'"HeapPrinterMark::~G1HeapPrinterMark',
+'&Region::clear_humongous',
+'.set_starts_humongous',
+',Manager::allocate_free_region',
+'5iterate',
+'5par_iterate',
+'5rebuild_free_list',
+'&Transition::Data::Data',
+'2print',
+'"MergeHeapRootsTask::G1FlushHumongousCandidateRemSets::do_heap_region_index',
+'6work',
+'#onitoringSupport::recalculate_sizes',
+'5update_sizes',
+'"ParCopyClosure<(G1Barrier)0, true>::do_oop',
+'<1, false>::do_oop',
+'?true>::do_oop',
+'%EvacuateFollowersClosure::do_void',
+'#ostEvacuateCollectionSetCleanupTask2::EagerlyReclaimHumongousObjectsTask::do_work',
+'#reConcurrentStartTask::ResetMarkingStateTask::do_work',
+'%pareEvacuationTask::G1PrepareRegionsClosure::do_heap_region',
+'9work',
+'$imaryConcurrentRefineThread::do_refinement_step',
+'"RegionMarkStatsCache::reset',
+'$mSet::merge_heap_roots',
+'*scan_heap_roots',
+'#ootProcessor::evacuate_roots',
+'1process_java_roots',
+'9vm_roots',
+'"ScanHRForRegionClosure::scan_heap_roots',
+'"YoungCollector::collect',
+'2evacuate_initial_collection_set',
+'2post_evacuate_collection_set',
+'3re_evacuate_collection_set',
+' HandleMark::initialize',
+' JavaThread::oops_do_frames',
+'4no_frames',
+',thread_main_inner',
+'!frObjectAllocationSample::send_event',
+' MemAllocator::allocate',
+'.mem_allocate',
+':_inside_tlab_slow',
+'"taspaceUtils::get_combined_statistics',
+'4statistics',
+'!utex::lock_without_safepoint_check',
+'\'try_lock',
+' ObjArrayAllocator::initialize',
+'!ptoRuntime::is_deoptimized_caller_frame',
+'-new_array_nozero_C',
+' Parse::Parse',
+'\'do_all_blocks',
+'*call',
+'*field_access',
+'*get_xxx',
+'*one_block',
+'%Generator::generate',
+'!redictedCallGenerator::generate',
+' SpinPause',
+' TaskTerminator::offer_termination',
+'!hread::call_run',
+'(oops_do',
+'&s::possibly_parallel_oops_do',
+'!ypeArrayKlass::allocate_common',
+' VMError::is_error_reported',
+'"Thread::evaluate_operation',
+'+xecute',
+'*inner_execute',
+'*run',
+'"_G1TryInitiateConcMark::doit',
+'>_prologue',
+'#Operation::evaluate',
+' WorkerThread::run',
+',s::run_task',
+' [unknown_Java]',
+' __GI___clock_gettime',
+'\'pthread_mutex_init',
+'"libc_malloc',
+'"memset_avx2_unaligned_erms',
+'"pthread_cond_broadcast',
+'*mutex_unlock_usercnt',
+'"strncpy_avx2',
+'"tls_get_addr',
+'!dl_update_slotinfo',
+'!int_free',
+'%malloc',
+' do_futex_wait.constprop.0',
+' encoder_benchmark.run',
+'2️❤ def benchmark_coder #4',
+':script',
+':{} \\=\\^main\\_ #2',
+'K3',
+' frame::oops_do_internal',
+',interpreted_do',
+'\'sender_for_interpreter_frame',
+' is_init_completed',
+' java/lang/invoke/DelegatingMethodHandle$Holder.delegate',
+'2irectMethodHandle$Holder.invokeStatic',
+'QVirtual',
+'1Invokers$Holder.invokeExact_MT',
+'AlinkToCallSite',
+'GTargetMethod',
+'1LambdaForm$MH.0x000000006b06c000.invoke',
+'Md000.invoke',
+'L72c00.guard',
+'L90c00.invoke',
+'M2c00.guard',
+'M9400.guard',
+'La1800.invoke',
+'M5000.invoke',
+'M6800.invoke',
+'M8800.invoke',
+'Ma000.invoke',
+'Lb0800.invoke',
+'M3400.invoke',
+'M6400.invoke',
+'M7400.invoke',
+'M8800.invoke',
+'M9800.invoke',
+'Mec00.guard',
+'Lc1400.invoke',
+'M2000.invoke',
+'M3000.invoke',
+'N400.invoke',
+'M4400.guard',
+'N800.guard',
+'M5800.invoke',
+'1MethodHandle.invokeBasic',
+'DWithArguments',
+'%util/Arrays.copyOf',
+'!byte_arraycopy',
+'&disjoint_arraycopy',
+'!son/ext/ByteListDirectOutputStream.ensureBuffer',
+'Dgrow',
+'Dwrite',
+'1Transcoder.quoteStop',
+')Generator$Handler.generateNew',
+'CToBuffer',
+'5shHandler.generate',
+'3Session.getStringEncoder',
+'2.appendFixnum',
+'3fltoa',
+'3generateArray',
+';Fixnum',
+'<or',
+';Hash',
+';Json',
+';String',
+'3processEntry',
+'2State._configure',
+'8generate',
+')OptionsReader.get',
+':Bool',
+':String',
+')ParserConfig$INVOKER$i$1$0$initialize.call',
+'5.initialize',
+'6newInstance',
+')StringEncoder.append',
+'7escapeAscii',
+'7flushPos',
+'7generate',
+')Utils.repeat',
+'5Write',
+')VectorizedStringEncoder.encode',
+' metaspace::VirtualSpaceList::vslist_class',
+'Dnonclass',
+'#hod_entry_barrier',
+'!nt/c/Github/workloads/VectorAPI/jruby/lib/ruby/gems/shared/gems/json_minus_2_dot_13_dot_2_minus_java/lib/json/common.️❤ def dump #0',
+'s_java/lib/json/common.️❤ def initialize #0',
+'s_java/lib/json/ext/generator/state.️❤ def configure #0',
+'s_java/lib/json/ext/generator/state.️❤ def initialize #0',
+' nmethod::oops_do',
+' org/jcodings/MultiByteEncoding.lengthForThreeUptoFour',
+'IwoUptoFour',
+'-specific/UTF8Encoding.length',
+'%ruby/Main.internalRun',
+'/main',
+'/run',
+'*Ruby.newSymbol',
+'/runFromMain',
+'2Normally',
+'2Script',
+'.Array.getNativeClassIndex',
+'.Boolean.getNativeClassIndex',
+'.Fixnum.getNativeClassIndex',
+'5times',
+'.Hash.getNativeClassIndex',
+'.Integer$INVOKER$i$0$0$times.call',
+'.Nil.getNativeClassIndex',
+'.Object.callInit',
+'.String.getNativeClassIndex',
+'5hash',
+'5scanForCodeRange',
+'6trHashCode',
+'/ymbol$SymbolTable.getSymbol',
+'4.symbolBytesFromString',
+'*internal/runtime/methods/JavaMethod$JavaMethodOneOrN.call',
+'XZeroBlock.call',
+'CMixedModeIRMethod.INTERPRET_METHOD',
+'Ucall',
+'+r/Compiler$1.load',
+'-instructions/YieldInstr.interpret',
+'/terpreter/StartupInterpreterEngine.interpret',
+'RprocessOtherOp',
+'-runtime/IRRuntimeHelpers.yieldSpecific',
+'-targets/indy/InvokeSite.invoke',
+'EperformIndirectCall',
+'*runtime/Block.yieldSpecific',
+'2CompiledIRBlockBody.yieldDirect',
+'2IRBlockBody.yieldSpecific',
+'2callsite/CachingCallSite.call',
+'*util/PerlHash.hash',
+'/StringSupport.codeRangeScan',
+'JAsciiCompatible',
+'=preciseLength',
+'=searchNonAscii',
+'!s::malloc',
+' sem_post@@GLIBC_2.2.5',
+'!tart_thread',
+' thread_native_entry',
+' void WeakProcessor::Task::work<G1STWIsAliveClosure, G1KeepAliveClosure>',
+'4weak_oops_do<G1STWIsAliveClosure, G1KeepAliveClosure>',
+'!table stub'
+];
+unpack(cpool);
+
+n(3,3020)
+u(971,10)
+u(1393,2)
+n(1707,3)
+u(44,2)
+f(1748,4,1,1)
+f(92,3,1)
+f(1833,2,1)
+n(1849,2)
+n(1897,1)
+n(2089)
+f(979,1,1)
+n(1019)
+n(1043)
+n(1051)
+n(1059)
+n(1067,2)
+n(1681)
+u(1633)
+u(1449)
+u(1681)
+f(1785,1,2,2928)
+u(1793)
+u(1777)
+u(1809)
+u(1817)
+u(1825)
+u(1977)
+u(1401)
+u(1169)
+u(1193)
+u(1201)
+u(1153)
+u(1073)
+u(1089)
+u(1177)
+u(1241)
+u(1161)
+u(2017)
+u(2025)
+u(1969)
+u(1961)
+u(1993)
+u(2001)
+u(1985)
+u(2009)
+u(2033)
+u(2049)
+u(2041)
+u(1169)
+u(1217)
+u(1153)
+u(1097)
+u(1177)
+u(1241)
+u(1161)
+u(2017)
+u(2025)
+u(1953)
+u(1873)
+u(1857,2928,0,0,1)
+f(2033,41,1,2927)
+u(2049)
+u(2041)
+u(1169)
+u(1385)
+u(1153)
+f(1105,47,1,2926,0,0,2)
+f(1177,48,2,2923)
+u(1233)
+u(1145)
+f(1233,51,1,2922)
+u(1145)
+u(1257)
+u(1153,2921)
+u(1081)
+u(1177)
+u(1209,1352)
+u(1145)
+u(1209)
+u(1145)
+u(1273,4)
+u(1265)
+u(1369)
+u(1145)
+u(1225)
+u(1145)
+u(1289)
+u(1153)
+u(1721)
+u(1177)
+u(1233)
+u(1145)
+u(1233)
+u(1145)
+u(1305,1)
+u(1297)
+u(1377)
+u(1145)
+u(1209)
+u(1145)
+u(1361)
+u(1153)
+u(1737)
+u(1177)
+u(1209)
+u(1145)
+u(1209)
+u(1145)
+u(1313)
+u(1153)
+u(1729)
+u(1177)
+u(1209)
+u(1145)
+u(1209)
+u(1145)
+u(1321)
+u(1161)
+u(1569)
+u(1601)
+u(1601)
+u(1585)
+u(1801)
+u(1929)
+u(1929)
+f(1337,75,1,3)
+u(1153)
+u(1625)
+u(1889)
+u(2058,3,1,0,0)
+f(1945,80,1,2)
+u(1609)
+u(1617)
+u(1593)
+u(1585)
+u(1801)
+u(1929)
+u(1929)
+f(1936,88,1,1)
+f(1281,61,1,1348)
+u(1161)
+u(1905)
+u(1922,1348,929,0,0)
+u(1913,419)
+u(1913)
+u(2073,419,66,0,0)
+u(2073,419,66,0,0)
+u(2081,419,66,0,0)
+f(2089,70,65,196)
+f(1769,71,35,161)
+f(1762,72,18,143)
+u(1754)
+f(2097,70,143,158,1,0,0)
+f(2066,65,158,929)
+f(1233,57,929,1569)
+u(1145)
+u(1233)
+u(1145)
+u(1345)
+u(1153)
+u(1713)
+u(1177)
+u(1329)
+u(1145)
+u(1329)
+u(1145)
+u(1353)
+u(1161)
+u(1577)
+u(1545)
+u(1465)
+u(1473)
+u(1481)
+u(1481)
+u(1537)
+u(1561)
+u(1529)
+u(1513,1564)
+f(1529,81,3,1561)
+f(1537,82,6,1555)
+u(1561,1555,77,0,0)
+f(1529,84,49,1273,28,0,0)
+f(1449,85,25,2)
+u(1434)
+f(1427,87,1,1)
+f(1521,85,1,6)
+u(1449,1)
+u(1434)
+f(1498,86,1,5)
+u(1506)
+f(1537,85,5,1189)
+u(1561,1186,171,0,0)
+f(1529,87,104,823,67,0,0)
+f(1449,88,66,9)
+f(1434,89,1,8)
+f(1427,90,5,3)
+f(1513,88,3,84)
+f(1529,89,2,82)
+f(1537,90,1,81)
+u(1561,81,20,0,0)
+f(1529,92,11,54,9,0,0)
+f(1513,93,9,11)
+f(1529,94,3,6)
+u(1521,5)
+f(1498,96,2,3)
+u(1450)
+u(1434)
+f(1427,99,2,1)
+f(1849,95,1)
+f(1674,94,1,2)
+u(1450)
+u(1434)
+f(1521,93,2,6)
+u(1498)
+u(1450,2)
+u(1434)
+u(1427)
+f(1506,95,2,4)
+f(1537,93,4,12)
+u(1561)
+u(1529,10)
+u(1537)
+u(1562,10,6,0,0)
+f(1530,98,2,5,4,0,0)
+f(1553,99,4,1)
+u(1657)
+f(1553,98,1,3)
+u(1657)
+f(1681,100,2,1)
+f(1553,95,1,2)
+u(1657)
+f(1681,97,1,1)
+f(1553,93,1,15)
+u(1657)
+f(1681,95,5,10)
+f(1633,96,6,4)
+u(1449)
+f(1434,98,1,3)
+f(1419,99,2,1)
+f(1833,93,1)
+f(1553,92,1,16)
+f(1657,93,1,15)
+f(1681,94,10,5)
+f(1633,95,1,4,1,0,0)
+f(1449,96,1,3)
+u(1434)
+u(1427)
+f(1521,88,3,17)
+f(1498,89,2,15)
+u(1450,6)
+u(1434)
+f(1427,92,3,3)
+f(1506,90,3,9)
+f(1537,88,9,494)
+f(1561,89,1,493,102,0,0)
+f(1529,90,52,270,50,0,0)
+f(1449,91,43,6)
+f(1434,92,2,4)
+f(1513,91,4,24)
+f(1529,92,1,22)
+u(1537,21)
+u(1561,21,1,0,0)
+f(1529,95,1,16)
+u(1513,5)
+f(1529,97,2,2)
+n(1674,1)
+u(1450)
+u(1434)
+f(1537,96,1,7)
+u(1561,7,2,0,0)
+f(1529,98,1,5,1,0,0)
+f(1537,99,1,4)
+u(1561,4,1,0,0)
+f(1529,101,1,1)
+u(1521)
+u(1498)
+u(1450)
+u(1434)
+u(1427)
+f(1553,101,1,2)
+u(1657)
+f(1681,103,1,1)
+f(1553,98,1)
+f(1553,96,1,4)
+u(1657)
+f(1681,98,3,1)
+u(1633)
+u(1449)
+u(1434)
+u(1427)
+f(1553,95,1,4)
+u(1657)
+f(1681,97,3,1)
+f(1865,93,1)
+f(1674,92,1)
+u(1450)
+u(1434)
+f(1521,91,1,6)
+f(1498,92,1,5)
+u(1450,3)
+u(1434)
+u(1427)
+f(1506,93,3,2)
+f(1537,91,2,123)
+u(1561,121,16,0,0)
+f(1529,93,3,110,13,0,0)
+f(1513,94,13,73)
+f(1529,95,1,72)
+u(1537)
+u(1561,72,3,0,0)
+f(1529,98,1,70,2,0,0)
+f(1513,99,2,64)
+u(1449,61)
+u(1433)
+u(1441)
+u(1410,61,59,0,0)
+f(772,104,28,2)
+u(884)
+u(700)
+u(708,1)
+u(212)
+f(756,107,1)
+f(1427,104,1,31)
+f(1529,100,31,3)
+f(1521,101,1,2)
+f(1498,102,1,1)
+u(1450)
+u(1434)
+u(1427)
+f(1553,99,1,4)
+u(1657)
+f(1681,101,2,2)
+f(1553,98,2,1)
+u(1657)
+f(1537,94,1,23)
+u(1562,23,9,0,0)
+f(1529,96,4,18,5,0,0)
+f(1513,97,5,13)
+f(1529,98,1,12)
+u(1537)
+u(1561,12,3,0,0)
+f(1529,101,1,10,2,0,0)
+f(1513,102,2,2)
+f(1529,103,1,1)
+u(1521)
+u(1498)
+u(1506)
+f(1553,102,1,6)
+u(1657)
+f(1681,104,3,3)
+u(1634,3,1,0,0)
+f(1449,106,1,2)
+u(1434)
+f(1427,108,1,1)
+f(1553,101,1)
+u(1657)
+u(1681)
+u(1633)
+u(1449)
+u(1434)
+u(1427)
+f(1553,96,1)
+u(1657)
+f(1833,94,1)
+f(1553,93,1,8)
+u(1657)
+f(1681,95,7,1)
+f(1666,92,1,2,1,0,0)
+f(1665,93,1,1)
+f(1553,91,1,59)
+u(1657)
+f(1458,93,35,2)
+u(1634)
+f(1681,93,2,22)
+f(1633,94,9,10,1,0,0)
+f(1449,95,1,9)
+f(1434,96,1,8,6,0,0)
+f(1427,97,4,2)
+n(1441)
+u(1410,2,1,0,0)
+u(772,1)
+u(884)
+u(700)
+u(708)
+u(716)
+u(252)
+f(1427,99,1)
+f(1641,94,1,2)
+f(1634,95,1,1)
+u(1450)
+u(1434)
+f(1649,94,1)
+u(1633)
+u(1450)
+u(1434)
+f(1897,91,1,2)
+n(2155,7)
+f(1553,90,7,171)
+f(1490,91,3,1)
+n(1657,167)
+f(1458,92,86,4)
+u(1634)
+f(1681,92,4,77)
+f(1633,93,25,52,5,0,0)
+f(1449,94,5,47)
+f(1433,95,1,46,9,0,0)
+f(1419,96,4,1)
+n(1427,4)
+n(1441,37)
+u(1410,37,35,0,0)
+f(772,98,18,2)
+u(884)
+u(28,1)
+n(700)
+u(708)
+u(260)
+u(212)
+u(156)
+u(268)
+u(276)
+u(420)
+f(1427,98,1,17)
+f(1553,88,17,146)
+f(1657,89,6,140)
+f(1681,90,70,70)
+f(1633,91,29,26,6,0,0)
+f(1449,92,6,20)
+f(1434,93,1,19,9,0,0)
+f(1427,94,3,6)
+n(1441,10)
+u(1410,10,6,0,0)
+f(60,96,2,1)
+n(772,3)
+u(884)
+u(700)
+u(20,1)
+u(692)
+f(260,99,1)
+n(708)
+u(1003)
+f(1427,96,1,4)
+f(1641,91,4)
+f(1634,92,1,3)
+u(1450)
+u(1434)
+f(1649,91,3,11,2,0,0)
+f(1633,92,2,9)
+u(1450)
+u(1434)
+f(1427,95,3,6)
+f(1841,88,6,3)
+n(1897)
+n(2155,1)
+f(1553,87,1,259)
+f(1657,88,8,251)
+f(1458,89,159,1)
+u(1634)
+f(1681,89,1,91)
+f(1633,90,40,51,14,0,0)
+f(1449,91,14,37)
+f(1434,92,6,31,30,0,0)
+f(1419,93,16,3)
+n(1427,11)
+n(1441,1)
+u(1409)
+u(772)
+u(884)
+u(700)
+u(708)
+u(1003)
+f(1666,86,1,3,2,0,0)
+f(1665,87,2,1)
+f(1553,85,1,45)
+u(1657)
+f(1458,87,17,1)
+u(1634)
+f(1681,87,1,27)
+f(1634,88,7,10,6,0,0)
+f(1449,89,6,4)
+f(1434,90,1,3)
+f(1427,91,1,2)
+f(1641,88,2,1)
+u(1634)
+u(1450)
+u(1434)
+f(1650,88,1,9,3,0,0)
+f(1633,89,3,6)
+f(1450,90,1,5)
+u(1434)
+f(1419,92,2,1)
+n(1427,2)
+f(1849,85,2,1)
+n(1881,2)
+n(2155,3)
+f(1553,84,3,233)
+f(1490,85,3,1)
+n(1657,229)
+f(1458,86,55,1)
+u(1634)
+f(1681,86,1,173)
+f(1633,87,13,160,9,0,0)
+f(1449,88,9,151)
+f(1433,89,1,150,15,0,0)
+f(1419,90,8,2)
+n(1427,5)
+n(1441,135)
+u(1410,135,118,0,0)
+f(772,92,61,9)
+u(764,1)
+u(892)
+f(884,93,1,8)
+u(700)
+u(708)
+u(204,7)
+u(236,6)
+u(244,4)
+u(300)
+f(412,100,1,3)
+u(36,1)
+u(995)
+f(180,101,1)
+u(196)
+u(1027)
+f(2108,101,1)
+f(492,98,1,2)
+u(484)
+f(740,100,1,1)
+f(308,97,1)
+u(908)
+u(940)
+u(1140)
+f(1035,96,1)
+f(987,92,1)
+n(995)
+n(1011,4)
+n(1059,2)
+n(1427,57)
+f(1537,80,57,5)
+u(1561,5,1,0,0)
+f(1529,82,1,1)
+u(1553)
+u(1657)
+u(1681)
+u(1634)
+f(1553,82,1,3)
+u(1657)
+f(1681,84,2,1)
+u(1633)
+u(1449)
+u(1434)
+u(1427)
+f(1393,54,1)
+f(1185,48,1)
+u(1249)
+f(2123,1,1,73)
+u(2132)
+u(860)
+u(132,3)
+u(340,2)
+u(332)
+u(76)
+f(356,5,2,1)
+u(564)
+u(348)
+u(748)
+f(684,4,1)
+u(116)
+u(124)
+u(52)
+u(100)
+u(828)
+u(780)
+u(788)
+u(820)
+u(796)
+u(836)
+u(828)
+u(780)
+u(788)
+u(820)
+u(796)
+u(836)
+u(836)
+u(828)
+u(780)
+u(788)
+u(820)
+u(796)
+u(836)
+u(828)
+u(780)
+u(788)
+u(820)
+u(796)
+u(828)
+u(780)
+u(788)
+u(820)
+u(796)
+u(828)
+u(780)
+u(788)
+u(820)
+u(796)
+u(836)
+u(828)
+u(780)
+u(788)
+u(820)
+u(804)
+u(812)
+u(108)
+f(924,4,1,22)
+u(660,1)
+n(916,21)
+u(900)
+u(948)
+u(932)
+u(220)
+u(628)
+f(396,11,1,3)
+u(12,1)
+n(460,2)
+u(452)
+u(724)
+u(732)
+u(1692,1)
+n(1700)
+f(636,11,1,2)
+u(580,1)
+u(964)
+u(2115)
+f(964,12,1)
+u(2115)
+f(644,11,1,5)
+u(292,1)
+u(444)
+u(964)
+u(2115)
+f(964,12,1,3)
+u(2115)
+f(2148,12,3,1)
+u(964)
+u(2115)
+f(652,11,1,10)
+u(324,5)
+u(964)
+u(2115)
+f(964,12,5)
+u(2115)
+f(956,4,5,46)
+u(164,5)
+u(532,2)
+u(428)
+u(388)
+u(228)
+u(404)
+u(148,1)
+n(188)
+f(572,6,1,2)
+n(1003,1)
+f(364,5,1,29)
+u(372,14)
+u(524)
+u(843,13)
+n(852,1)
+f(380,6,1,15)
+u(588,1)
+u(620)
+f(596,7,1,14)
+u(604,13)
+u(84,8)
+u(172)
+u(68,6)
+f(508,12,1,1)
+n(516,4)
+f(508,11,4,2)
+f(876,9,2,5)
+u(868)
+u(668,4)
+u(1116,1)
+n(1124,2)
+u(140)
+f(1132,12,2,1)
+f(676,11,1)
+f(612,8,1)
+u(500)
+f(476,5,1,2)
+u(284,1)
+u(316)
+f(428,6,1)
+u(468)
+f(540,5,1)
+n(556)
+u(436)
+u(548)
+f(2115,5,1,5)
+n(2140,3)
+f(1035,4,3,1)
+
+search();
+</script></body></html>
