@@ -129,4 +129,92 @@ Fetching benchmark-ips-2.14.0.gem
 Successfully installed benchmark-ips-2.14.0
 1 gem installed
 
+
+Performance:-
+=============
+
+A) jruby -J--add-modules=jdk.incubator.vector -J-Djson.enableVectorizedEscapeScanner=false -J-Djson.enableVectorizedStringEncoder=false benchmark/parser.rb   
+
+
+== Parsing twitter.json (567916 bytes)
+jruby 10.0.3.0-SNAPSHOT (3.4.5) 2025-08-28 d908f6272c OpenJDK 64-Bit Server VM 25-ea+27-3363 on 25-ea+27-3363 +indy +jit [x86_64-linux]
+Warming up --------------------------------------
+                json    11.000 i/100ms
+          json_coder    11.000 i/100ms
+Calculating -------------------------------------
+                json    118.521 (± 4.2%) i/s    (8.44 ms/i) -    594.000 in   5.022996s
+          json_coder    116.868 (± 6.0%) i/s    (8.56 ms/i) -    583.000 in   5.005963s
+
+Comparison:
+                json:      118.5 i/s
+          json_coder:      116.9 i/s - same-ish: difference falls within error
+
+
+
+B) jruby -J--add-modules=jdk.incubator.vector -J-Djson.enableVectorizedEscapeScanner=true -J-Djson.enableVectorizedStringEncoder=true benchmark/parser.rb 
           
+== Parsing twitter.json (567916 bytes)
+jruby 10.0.3.0-SNAPSHOT (3.4.5) 2025-08-28 d908f6272c OpenJDK 64-Bit Server VM 25-ea+27-3363 on 25-ea+27-3363 +indy +jit [x86_64-linux]
+Warming up --------------------------------------
+                json    12.000 i/100ms
+          json_coder    11.000 i/100ms
+Calculating -------------------------------------
+                json    119.136 (± 6.7%) i/s    (8.39 ms/i) -    600.000 in   5.063605s
+          json_coder    121.836 (± 4.1%) i/s    (8.21 ms/i) -    616.000 in   5.065827s
+
+Comparison:
+                json:      119.1 i/s
+          json_coder:      121.8 i/s - same-ish: difference falls within error
+
+
+
+New Benchmark:
+PROMPT>cat test_implementation.rb
+# test_implementation.rb
+require 'json'
+#require "benchmark/ips"
+require "benchmark"
+
+puts "Ruby Engine: #{RUBY_ENGINE}"
+puts "JSON::Parser: #{JSON::Parser}"
+#puts "JSON::Generator: #{JSON::Generator}"
+
+# Test functionality
+#json_str = File.read("benchmark/data/twitter.json")
+
+def kernel(json_str)
+    parsed = JSON.parse(json_str)
+    #puts "Parsed hashcode : #{parsed.hash}"
+    json_str_res = JSON.generate(parsed)
+    #puts "Generated: #{json_str_res.hash}"
+end
+
+json_str = File.read("benchmark/data/activitypub.json")
+#Benchmark.ips do |x|
+# x.report("json") { kernel(json_str)}
+#end
+
+warmup_execution_time = Benchmark.measure do
+  20000.times { kernel(json_str) }
+end
+puts "Warmup execution time: #{warmup_execution_time.real}"
+
+execution_time = Benchmark.measure do
+  50000.times { kernel(json_str) }
+end
+
+puts "Execution time: #{execution_time.real}"
+
+Run:
+jruby -J--add-modules=jdk.incubator.vector -J-Djson.enableVectorizedStringEncoder=true -J-XX:CompileCommand=Print,json.ext.VectorizedStringEncoder::encode -J-XX:-TieredCompilation -J-Djson.enableVectorizedEscapeScanner=true test_implementation.rb
+
+Profile:
+PROMPT>jps
+42545 Main
+42600 Jps
+PROMPT>asprof -d 30 -f profile.html 42545
+Profiling for 30 seconds
+
+
+https://makisushi.io/posts/benchmarking-ruby-code-analyzing-performance-and-identifying-bottlenecks
+
