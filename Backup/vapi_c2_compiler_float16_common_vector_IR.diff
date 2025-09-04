@@ -1,36 +1,3 @@
-diff --git a/src/hotspot/share/classfile/vmIntrinsics.hpp b/src/hotspot/share/classfile/vmIntrinsics.hpp
-index 894715c6600..24324405bbe 100644
---- a/src/hotspot/share/classfile/vmIntrinsics.hpp
-+++ b/src/hotspot/share/classfile/vmIntrinsics.hpp
-@@ -494,8 +494,8 @@ class methodHandle;
-                                                                                                                         \
-   do_class(com_sun_crypto_provider_galoisCounterMode, "com/sun/crypto/provider/GaloisCounterMode")                      \
-    do_intrinsic(_galoisCounterMode_AESCrypt, com_sun_crypto_provider_galoisCounterMode, gcm_crypt_name, aes_gcm_signature, F_S)   \
--   do_name(gcm_crypt_name, "implGCMCrypt0")                                                                                 \
--   do_signature(aes_gcm_signature, "([BII[BI[BILcom/sun/crypto/provider/GCTR;Lcom/sun/crypto/provider/GHASH;)I")                                                             \
-+   do_name(gcm_crypt_name, "implGCMCrypt0")                                                                             \
-+   do_signature(aes_gcm_signature, "([BII[BI[BILcom/sun/crypto/provider/GCTR;Lcom/sun/crypto/provider/GHASH;)I")        \
-                                                                                                                         \
-   /* support for sun.security.provider.MD5 */                                                                           \
-   do_class(sun_security_provider_md5,                              "sun/security/provider/MD5")                         \
-@@ -1245,7 +1245,7 @@ class methodHandle;
-                                         "Ljdk/internal/vm/vector/VectorSupport$VectorMask;"                                                     \
-                                         "Ljdk/internal/vm/vector/VectorSupport$VectorSelectFromOp;)"                                            \
-                                         "Ljdk/internal/vm/vector/VectorSupport$Vector;")                                                        \
--   do_name(vector_select_from_name, "selectFromOp")                                                                                              \
-+   do_name(vector_select_from_name, "selectFromOp")                                                                                            \
-                                                                                                                                                \
-   do_intrinsic(_VectorExtract, jdk_internal_vm_vector_VectorSupport, vector_extract_name, vector_extract_sig, F_S)                             \
-    do_signature(vector_extract_sig, "(Ljava/lang/Class;"                                                                                       \
-@@ -1261,7 +1261,7 @@ class methodHandle;
-                                                                                                                                                \
-  do_intrinsic(_VectorInsert, jdk_internal_vm_vector_VectorSupport, vector_insert_name, vector_insert_sig, F_S)                                 \
-    do_signature(vector_insert_sig, "(Ljava/lang/Class;"                                                                                        \
--				    "Ljava/lang/Class;"                                                                                        \
-+                                    "Ljava/lang/Class;"                                                                                        \
-                                     "Ljava/lang/Class;"                                                                                        \
-                                     "I"                                                                                                        \
-                                     "I"                                                                                                        \
 diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
 index 9cfac0c980e..64cf0cb616f 100644
 --- a/src/hotspot/share/opto/vectorIntrinsics.cpp
@@ -67,33 +34,6 @@ index 9cfac0c980e..64cf0cb616f 100644
    int sopc = has_scalar_op ? VectorNode::opcode(opc, elem_bt) : opc;
    if (sopc == 0 || num_elem == 1) {
      log_if_needed("  ** operation not supported: arity=%d opc=%s[%d] vlen=%d etype=%s",
-@@ -497,7 +499,7 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
- //  <V extends VectorPayload, E>
- //  V libraryBinaryOp(long addr, Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType, int length, String debugName,
- //                    V v1, V v2,
--//                    BinaryOperation<V,?> defaultImpl) 
-+//                    BinaryOperation<V,?> defaultImpl)
- //
- bool LibraryCallKit::inline_vector_call(int arity) {
-   assert(Matcher::supports_vector_calling_convention(), "required");
-@@ -1577,7 +1579,7 @@ bool LibraryCallKit::inline_vector_reduction() {
- //               Class<?> mClass, Class<?> cClass, Class<E> eClass, int opType,
- //               int length,
- //               M m1, M m2,
--//               BiFunction<M, M, Boolean> defaultImpl) 
-+//               BiFunction<M, M, Boolean> defaultImpl)
- //
- //
- bool LibraryCallKit::inline_vector_test() {
-@@ -2871,7 +2873,7 @@ bool LibraryCallKit::inline_vector_select_from_two_vectors() {
- //  VectorPayload compressExpandOp(int opr,
- //                                 Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
- //                                 int length, V v, M m,
--//                                 CompressExpandOperation<V, M> defaultImpl) 
-+//                                 CompressExpandOperation<V, M> defaultImpl)
- //
- bool LibraryCallKit::inline_vector_compress_expand() {
-   const TypeInt*     opr          = gvn().type(argument(0))->isa_int();
 diff --git a/src/hotspot/share/prims/vectorSupport.cpp b/src/hotspot/share/prims/vectorSupport.cpp
 index 8bdef69234f..d3d3536440a 100644
 --- a/src/hotspot/share/prims/vectorSupport.cpp
