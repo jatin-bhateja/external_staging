@@ -18,3 +18,27 @@ mx vm -XX:-TieredCompilation -XX:+UnlockExperimentalVMOptions -XX:+UseJVMCICompi
 
 
 mx vm -XX:-TieredCompilation -XX:+UnlockExperimentalVMOptions -XX:+UseJVMCICompiler -XX:-JVMCIPrintProperties -Djdk.graal.PrintPropertiesAll=false -Djvmci.PrintConfig=true --add-modules=jdk.incubator.vector -cp /home/jatinbha/code/java/avx10/graal test 1024
+
+ /home/jatin_bhateja/sandboxes/graal/sdk/mxbuild/linux-amd64/GRAALJDK_CE_1602C36D2E_JAVA26/graaljdk-ce-1602c36d2e-java26-26.0.0-dev/bin/java -s
+erver -XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI --add-exports=java.base/jdk.internal.misc=jdk.graal.compiler -Djdk.graal.CompilationFailureAction=Diagnose -Djdk.g
+raal.DumpOnError=true -Djdk.graal.ShowDumpFiles=true -Djdk.graal.PrintGraph=Network -Djdk.graal.ObjdumpExecutables=objdump,gobjdump -XX:-PrintCompilation -XX:-TieredCompi
+lation -Dgraalvm.locatorDisabled=true -XX:+UseJVMCICompiler -XX:CompileCommand=Print,test_pea::runBench -cp . test_pea 100000 10000 1
+
+
+Steps:-
+
+1/ Checkout https://github.com/oracle/graal.git
+2/ Checkout https://github.com/graalvm/mx.git
+3/ set <dir>/mx to PATH
+4/ cd <dir>/graal/compiler
+   mx --java-home <JDK-26> build
+   mx --java-home <JDK-26> archive
+   cd ../<dir>/vm
+   mx --java-home <JDK-26> build
+
+5/ export GRAAL_HOME=<dir>/graal/sdk/latest_graalvm_home
+
+Run - Graal compiler using JVMCI
+
+$GRAAL_HOME/bin/java -XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI --add-exports=java.base/jdk.internal.misc=jdk.graal.compiler -XX:-JVMCIPrintProperties -Djdk.graal.PrintPropertiesAll=false  -Dgraalvm.locatorDisabled=true -XX:+UseJVMCICompiler -Djdk.graal.PrintCompilation=true -cp . test_pea 100000 10000 0
+
