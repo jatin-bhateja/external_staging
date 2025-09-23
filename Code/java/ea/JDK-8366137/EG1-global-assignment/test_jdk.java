@@ -115,7 +115,7 @@ public class test_jdk {
             res += bm.apply(i, 10); 
         } 
         long t2 = System.currentTimeMillis();
-        IO.println("[" + msg + " time ] " + (t2 - t1) + " ms  [res] " + res);
+        System.out.println("[" + msg + " time ] " + (t2 - t1) + " ms  [res] " + res);
     }
     
     public static void main(String [] args) {

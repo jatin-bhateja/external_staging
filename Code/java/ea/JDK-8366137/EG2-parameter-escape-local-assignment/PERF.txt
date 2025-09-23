@@ -1,0 +1,23 @@
+
+C2 compiler:-
+-------------
+/mnt/c/Github/softwares/graalvm-ee-java17-21.3.15//bin/javac test_jdk.java
+/home/jatinbha/softwares/jdk-26/bin/java -XX:-TieredCompilation -XX:CompileCommand=DontInline,test_jdk::* -cp . test_jdk
+CompileCommand: dontinline test_jdk.* bool dontinline = true
+[time] 39 ms  [res] 5978820.5
+
+
+Graal compiler:-
+----------------
+/mnt/c/Github/softwares/graalvm-ee-java17-21.3.15//bin/java -XX:+UnlockExperimentalVMOptions -XX:CompileCommand=DontInline,test_jdk::* -XX:+EnableJVMCI -XX:+UseJVMCICompiler -XX:+TieredCompilation -cp . test_jdk
+CompileCommand: dontinline test_jdk.* bool dontinline = true
+[time] 171 ms  [res] 5978820.5
+
+Valhalla:-
+-----------
+/mnt/c/Github/valhalla/build/linux-x86_64-server-release/images/jdk/bin/javac --enable-preview -source 25 test_valhalla.java
+Note: test_valhalla.java uses preview features of Java SE 25.
+Note: Recompile with -Xlint:preview for details.
+/mnt/c/Github/valhalla/build/linux-x86_64-server-release/images/jdk/bin/java -XX:-TieredCompilation -XX:CompileCommand=DontInline,test_valhalla::* --enable-preview -cp . test_valhalla
+CompileCommand: dontinline test_valhalla.* bool dontinline = true
+[time] 30 ms  [res] 5978820.5

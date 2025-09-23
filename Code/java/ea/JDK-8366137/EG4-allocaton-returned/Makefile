@@ -5,11 +5,11 @@ JAVA_VALHALLA=/mnt/c/Github/valhalla/build/linux-x86_64-server-release/images/jd
 JAVAC_JDK=/home/jatinbha/softwares/jdk-26/bin/javac
 JAVA_JDK=/home/jatinbha/softwares/jdk-26/bin/java
 
-JAVAC_GRAAL=/mnt/c/Github/graal/sdk/latest_graalvm_home/bin/javac
-JAVA_GRAAL=/mnt/c/Github/graal/sdk/latest_graalvm_home/bin/java
+JAVAC_GRAAL=/mnt/c/Github/softwares/graalvm-ee-java17-21.3.15//bin/javac
+JAVA_GRAAL=/mnt/c/Github/softwares/graalvm-ee-java17-21.3.15//bin/java
 
 compile_jdk:
-	${JAVAC_JDK} test_jdk.java
+	${JAVAC_GRAAL} test_jdk.java
 
 run_jdk:
 	${JAVA_JDK} -XX:-TieredCompilation -XX:CompileCommand=DontInline,test_jdk::* -cp . test_jdk
@@ -40,6 +40,8 @@ all_jdk: compile_jdk run_jdk
 all_valhalla: compile_valhalla run_valhalla 
 
 all_graal: compile_jdk run_graal
+
+all: all_jdk all_graal all_valhalla
 
 clean:
 	rm -rf *.class *.jfr *.dat

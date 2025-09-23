@@ -53,6 +53,6 @@ public class test_valhalla {
             res += micro((float)i); 
         }
         long t2 = System.currentTimeMillis();
-        IO.println("[time] " + (t2 - t1) + " ms  [res] " + res);
+        System.out.println("[time] " + (t2 - t1) + " ms  [res] " + res);
     }
 }
