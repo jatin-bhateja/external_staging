@@ -34,6 +34,16 @@ run_valhalla:
 jfr_valhalla:
 	jfr view method-timing JFR_JDK.jfr
 
+compile_valhalla_relaxed:
+	${JAVAC_VALHALLA} --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED --enable-preview -source 25 test_valhalla_relaxed_atomicity.java
+
+run_valhalla_relaxed:
+	@echo "[RUN] Valhalla Relaxed Atomicity"
+	${JAVA_VALHALLA} --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED -XX:-TieredCompilation --enable-preview -cp . test_valhalla_relaxed_atomicity
+
+	#java -XX:-TieredCompilation --enable-preview -XX:StartFlightRecording:method-timing=test_valhalla,filename=JFR_VALHALLA.jfr -cp . test_valhalla
+
+
 compile_graal:
 	${JAVAC_GRAAL} --enable-preview -source 25 test_jdk.java
 
@@ -41,13 +51,15 @@ run_graal:
 	@echo "[RUN] GRAAL JDK"
 	${JAVA_GRAAL} -XX:+UnlockExperimentalVMOptions -XX:CompileCommand=DontInline,test_jdk::* -XX:+EnableJVMCI -XX:+UseJVMCICompiler -XX:-TieredCompilation -cp . test_jdk 
 
+all_valhalla_relaxed: compile_valhalla_relaxed run_valhalla_relaxed
+
 all_jdk: compile_jdk run_jdk
 
 all_valhalla: compile_valhalla run_valhalla 
 
 all_graal: compile_graal run_graal
 
-all: all_jdk all_graal all_valhalla
+all: all_jdk all_graal all_valhalla all_valhalla_relaxed
 
 clean:
 	rm -rf *.class *.jfr *.dat
