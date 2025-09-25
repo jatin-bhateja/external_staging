@@ -15,7 +15,7 @@ jfr_jdk:
 
 
 compile_valhalla:
-	${JAVAC_VALHALLA} --enable-preview -source 25 test_valhalla.java
+	${JAVAC_VALHALLA} --enable-preview -source 26 test_valhalla.java
 
 run_valhalla:
 	@echo "[RUN] Valhalla"
@@ -27,7 +27,7 @@ jfr_valhalla:
 	jfr view method-timing JFR_JDK.jfr
 
 compile_graal:
-	${JAVAC_GRAAL} --enable-preview -source 25 test_jdk.java
+	${JAVAC_GRAAL} test_jdk.java
 
 run_graal:
 	@echo "[RUN] GRAAL JDK"
