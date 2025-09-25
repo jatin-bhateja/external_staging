@@ -1,12 +1,4 @@
-
-JAVAC_VALHALLA=/mnt/c/Github/valhalla/build/linux-x86_64-server-release/images/jdk/bin/javac
-JAVA_VALHALLA=/mnt/c/Github/valhalla/build/linux-x86_64-server-release/images/jdk/bin/java
-
-JAVAC_JDK=/home/jatinbha/softwares/jdk-26/bin/javac
-JAVA_JDK=/home/jatinbha/softwares/jdk-26/bin/java
-
-JAVAC_GRAAL=/mnt/c/Github/softwares/graalvm-jdk-25+37.1/bin/javac
-JAVA_GRAAL=/mnt/c/Github/softwares/graalvm-jdk-25+37.1/bin/java
+include ../tools.conf
 
 compile_jdk:
 	${JAVAC_JDK} test_jdk.java
