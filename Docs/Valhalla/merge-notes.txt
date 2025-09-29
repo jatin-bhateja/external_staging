@@ -1,0 +1,133 @@
+1/
+
+  void FieldLayoutBuilder::compute_regular_layout() {
+   -  check for significance of layout changes for   if (_super_ends_with_oop) {
+
+  Current field layout order :  multifield, big primitives, small primitives, oop fields
+
+  It seems idea of super_ends_with_oop is to maintain contiguity of oop fields for better
+  cache behavior during oop traversal.
+
+2/  ObjectValue currently preserves _is_larval (deprecate in future) , is_init removed in lworld
+
+
+3/  Re-visit following post-merge.
+
+  // Can this inline type be passed as multiple values?
+  bool InlineKlass::can_be_passed_as_fields() const {
+    return !VectorSupport::skip_value_scalarization(const_cast<InlineKlass*>(this)) &&
+           InlineTypePassFieldsAsArgs;
+  }
+
+  // Can this inline type be returned as multiple values?
+  bool InlineKlass::can_be_returned_as_fields(bool init) const {
+    return !VectorSupport::skip_value_scalarization(const_cast<InlineKlass*>(this)) &&
+           InlineTypeReturnedAsFields &&
+           (init || return_regs() != nullptr);
+  }
+
+
+4/ Orthogonal CDS
+     - VectorSupport being java.base module class has MaxSpecies Payloads which are concretized
+       at class parsing stage.
+    .................
+     parse_fields
+      ...........
+      if (bundle_size < 0) {
+        bundle_size = VectorSupport::get_max_multifield_count(_class_name);
+      }
+      ...........
+
+     - jdk.incubator.vector classes cannot be part of CDS archive 
+
+    @LooselyConsistentValue
+    public value static class VectorPayloadMFMaxS extends VectorPayloadMF {
+        @MultiField(value = -1)
+        short mfield = 0;
+
+   - TODO: re-visit Archive Builder and also check latest AOT cached along with this exploration.
+
+
+5/   Important code pointer 
+       a.  void JVMState::format(PhaseRegAlloc *regalloc, const Node *n, outputStream* st) const {
+              .....
+              Compiler bookkeeps null_marker for eliminated InlineTypeNode on SafePointScalarObjectNode
+              during process_inline_types -> make_scalar_in_safepoints
+
+        b. Checkout:  GraphKit::cast_to_non_larval
+ 
+        c. InlineTypeNode::convert_to_payload
+              - For 128 bit payload support for storing flat atomic field.
+              - Vector store extensions to non-atomic flat field store
+
+        d.  InlineTypeNode::store_flat
+              - null marker store is explicit, can't it be packed in payload, compare perf of two stores with packing + one store.
+ 
+        e.  Checkout inline_unsafe_flat_access
+
+        f.   InlineTypeNode interactions with escape analysis,  create_scalarized_object_description.
+                - NullMarker and is_Larval ordering is important for SafePointScalarObjectNode, as FillLocArray expects materialization fields in strict sequence.
+    
+6/   Earlier is_init flag was propagated to materialized object for nullable value instance, now its the null_marker flag.
+     -  Currently, we also pass _is_larval to ObjectValue for materializing larval value object, this was done for explicitly larval value using makePrivateBuffer
+
+      // An ObjectValue describes an object eliminated by escape analysis.
+      class ObjectValue: public ScopeValue {
+            protected:
+                int                        _id;
+                ScopeValue*                _klass;
+                ScopeValue*                _properties; // Used to pass additional data like the null marker or array properties.
+
+7/   Check if Enum and inline_klass() can be made private after successful build, there was a direct usage in the code using inlinetypenode, if not make is private again.
+
+8/   Fix me TODO in inline_unsafe_access along with larval state assertion check for store to value type instance fields.  
+
+9/   Review and remove the following larval bit propagation handling for de-optimization if we plan to remove makePrivateBuffer
+            -  make_scalar_in_safepoint
+            -  add_inst_fields_to_safepoint
+
+
+10/ [non-merge info]  Elimination condition for arrays.
+            -  Non-constant array length.
+            - The array should have fewer than  EliminateAllocationArraySizeLimit	elements. 
+            -  Allocate -> Initialize  -> ChechCast (rawptr -> exact TypeInstPtr/TypeAryPtr)
+                   -  Escaping state is determined using the connectivity graph 
+                   -  Scalarizability is determined based on following
+                             -  Offset of field is constant. 
+                             -  Alias Index =  [] for arrays -- all the elements of the array are considered as aliases.
+                                                              a[0]
+                                                              a[1]
+                                                              a[2]
+                                                              ......
+                                                              a[7]   are all assigned same alias index i.e. type[].
+                                                    =  Multiple assignment to an array index expressions with constant indices forms chain of initializations which can be
+                                                        traversed through the memory merge node chain, and find_previous_stores forwards the initialization value against a strict
+                                                        offset match.
+                         
+                                                    =  fields, based on the rules of type-based alias analysis, two fields with different offsets are never considered as aliases, and are assigned different alias indices. 
+                             - checkout ConnectionGraph::adjust_scalar_replaceable_state for implementation level details.        
+
+
+11/   Merging state of two blocks - current handling has safety checks.  Re-instantiate if needed.  Removing to align with latest code for now.
+
+
+12/    do_put_xxx :-
+                                -->    VectorPayload*MF 
+                                         -->   multifield 
+                                -->    Initialization of the multifield base is part of the constructor, using the put field bytecode.
+                                         -->    We cannot pass an uninitializedThis to an unsafe or any other method call,  there is no scheme to initialize all the synthetic fields of multifield in a constructor. 
+                                         -->    JDK-8368810, tracks this issue.
+                                         --> Until now,  C2 do_put_xxx was doing a special handling for this by broadcasting the value before put, but it was a kludge which should be fixed by JDK-8368810.
+  
+                                -->   Cases to handle  :  Write dedicated tests for each case on the lines of JDK-8368810, this will cover entire range of vector API use cases.
+                                        -->  put multifield scalarized
+                                        -->  put multifield non-scalarized
+                                        -->  put flat payload with  multifield 
+                                        -->  put  non-flat payload with multifield 
+                                        -->  get multifield scalarized
+                                        -->  get multifield non-scalarized
+                                        -->  get flat payload with multifield
+                                        -->  get non-flat payload with multifield.
+
+                                 
+                                                                          
