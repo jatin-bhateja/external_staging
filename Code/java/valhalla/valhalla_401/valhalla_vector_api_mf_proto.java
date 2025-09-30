@@ -1,7 +1,7 @@
 
-// Compile: javac --enable-preview -source 25 --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED --add-exports=java.base/jdk.internal.misc=ALL-UNNAMED -cp . vector_api_proto.java
+// Compile: javac --enable-preview -source 25 --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED --add-exports=java.base/jdk.internal.misc=ALL-UNNAMED -cp . valhalla_vector_api_mf_proto.java
 
-// Run:     java -Xbootclasspath/a:. --enable-preview --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED -XX:+UseNonAtomicValueFlattening --add-exports=java.base/jdk.internal.misc=ALL-UNNAMED -XX:-PauseAtStartup -XX:PrintInlineLayout -cp . vector_api_proto
+// Run:     java -Xbootclasspath/a:. --enable-preview --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED -XX:+UseNonAtomicValueFlattening --add-exports=java.base/jdk.internal.misc=ALL-UNNAMED -XX:-PauseAtStartup -XX:-UseOnStackReplacement -XX:+PrintInlineLayout -XX:CompileOnly=Float256Vector::add -cp . valhalla_vector_api_mf_proto
 
 /*
     Layout of class VectorPayload256MF@0x7d5c900b39a0 extends java/lang/Object@0x7d5c900b39a0
@@ -84,9 +84,14 @@
 import jdk.internal.vm.annotation.*;
 import jdk.internal.misc.Unsafe;
 
+class Constants {
+    public static final long SOFFSET = 16;
+    public static final byte LANE_CNT = 8;
+}
+
 @LooselyConsistentValue
 value class VectorPayload256MF {
-    @MultiField(value=8)
+    @MultiField(value=Constants.LANE_CNT)
     public float _mfield;
     public VectorPayload256MF(float init) {
         _mfield = init;
@@ -104,15 +109,15 @@ value class Float256Vector {
         _payload = payload;
     }
 
-    // This a use of MultiField is an extension to vector API use case 
+    // This use of MultiField is an extension to vector API use case 
     // since in vector API we only pass abstract vectors across the
     // method boundaries.
     public static Float256Vector add(Float256Vector augend, Float256Vector addened) {
         augend = U.makePrivateBuffer(augend); 
-        for (int i = 0; i < 8; i++) {
-            float val1 = U.getFloat(augend, 16 + 4 * i);
-            float val2 = U.getFloat(addened, 16 + 4 * i);
-            U.putFloat(augend, 16 + 4 * i, val1 + val2);
+        for (int i = 0; i < Constants.LANE_CNT; i++) {
+            float val1 = U.getFloat(augend, Constants.SOFFSET + Float.BYTES * i);
+            float val2 = U.getFloat(addened, Constants.SOFFSET + Float.BYTES * i);
+            U.putFloat(augend, Constants.SOFFSET + Float.BYTES * i, val1 + val2);
         }
         augend = U.finishPrivateBuffer(augend);
         return augend; 
@@ -121,15 +126,15 @@ value class Float256Vector {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append("[ " );
-        for (int i = 0; i < 8; i++) {
-            sb.append(" " + U.getFloat(this, 16 + 4 * i));
+        for (int i = 0; i < Constants.LANE_CNT; i++) {
+            sb.append(" " + U.getFloat(this, Constants.SOFFSET + Float.BYTES * i));
         }
         sb.append(" ]");
         return sb.toString();
     }
 }
 
-public class  vector_api_proto {
+public class  valhalla_vector_api_mf_proto {
     public static void main(String [] args) {
         Float256Vector vec = new Float256Vector(new VectorPayload256MF(0.0f));
         for (int i = 0; i < 100000; i++) {
@@ -138,3 +143,10 @@ public class  vector_api_proto {
         System.out.println("[res] " + vec);
     }
 }
+
+/*
+java -Xbootclasspath/a:. --enable-preview --add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED -XX:+UseNonAtomicValueFlattening --add-exports=java.base/jdk.internal.misc=ALL-UNNAMED -XX:-PauseAtStartup -XX:-InlineTypeReturnedAsFields -XX:-UseOnStackReplacement -XX:+PrintInlineLayout -XX:CompileCommand=Print,Float256Vector::add -XX:CompileOnly=Float256Vector::add -Xbatch -XX:-TieredCompilation -XX:+PrintCompilation -cp . valhalla_vector_api_mf_proto
+
+Disable the return value scalarization to combat the limitation due to vector return calling convention.
+
+*/ 

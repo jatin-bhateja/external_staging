@@ -1,0 +1,38 @@
+diff --git a/src/hotspot/share/opto/library_call.cpp b/src/hotspot/share/opto/library_call.cpp
+index 8fa8ebbba97..a737aa1cdbf 100644
+--- a/src/hotspot/share/opto/library_call.cpp
++++ b/src/hotspot/share/opto/library_call.cpp
+@@ -2770,6 +2770,7 @@ bool LibraryCallKit::inline_unsafe_finish_private_buffer() {
+     return false;
+   }
+
++  buffer = buffer->is_InlineType() ? buffer->as_InlineType()->get_oop() : buffer;
+   AllocateNode* alloc = AllocateNode::Ideal_allocation(buffer);
+   if (alloc == nullptr) {
+     C->record_method_not_compilable("value passed to Unsafe::finishPrivateBuffer must be allocated by Unsafe::makePrivateBuffer");
+diff --git a/src/hotspot/share/opto/type.cpp b/src/hotspot/share/opto/type.cpp
+index ddf939972d8..4e07100a1c9 100644
+--- a/src/hotspot/share/opto/type.cpp
++++ b/src/hotspot/share/opto/type.cpp
+@@ -2396,9 +2396,18 @@ static void collect_inline_fields(ciInlineKlass* vk, const Type** field_array, u
+     } else {
+       BasicType bt = field->type()->basic_type();
+       const Type* ft = Type::get_const_type(field->type());
+-      field_array[pos++] = ft;
+-      if (type2size[bt] == 2) {
+-        field_array[pos++] = Type::HALF;
++      if (field->is_multifield_base()) {
++        for (int i = 0; i < field->type()->bundle_size(); i++) {
++          field_array[pos++] = ft;
++          if (type2size[bt] == 2) {
++            field_array[pos++] = Type::HALF;
++          }
++        }
++      } else {
++        field_array[pos++] = ft;
++        if (type2size[bt] == 2) {
++          field_array[pos++] = Type::HALF;
++        }
+       }
+     }
+   }
