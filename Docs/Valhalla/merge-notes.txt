@@ -119,7 +119,7 @@
                                          -->    JDK-8368810, tracks this issue.
                                          --> Until now,  C2 do_put_xxx was doing a special handling for this by broadcasting the value before put, but it was a kludge which should be fixed by JDK-8368810.
   
-                                -->   Cases to handle  :  Write dedicated tests for each case on the lines of JDK-8368810, this will cover entire range of vector API use cases.
+                                -->   Cases to handle:  Write dedicated tests for each case on the lines of JDK-8368810, this will cover entire range of vector API use cases.
                                         -->  put multifield scalarized
                                         -->  put multifield non-scalarized
                                         -->  put flat payload with  multifield 
@@ -128,6 +128,15 @@
                                         -->  get multifield non-scalarized
                                         -->  get flat payload with multifield
                                         -->  get non-flat payload with multifield.
+
+
+13/  Core concept:-
+          - A value object can be updated when it's in the larval state, either explicitly or implicitly.
+          - When a value is in larval state, then it must be in non-scalarized form, i.e., an oop.
+          - An update to a value object field is a store.
+          - Value object is transitioned to a non-larval state after the constructor call or after finishPrivateBuffer.
+          - Update to multifield in larval state requires an unsafe API.
+
 
                                  
                                                                           

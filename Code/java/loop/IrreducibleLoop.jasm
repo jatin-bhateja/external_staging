@@ -1,0 +1,75 @@
+public identity class IrreducibleLoop version 70:0
+{
+    ; default constructor
+    public Method "<init>":"()V"
+        stack 1 locals 1
+        aload_0
+        invokespecial java/lang/Object/<init>:"()V"
+        return
+    EndMethod
+
+    ; main method
+    public Method "main":"([Ljava/lang/String;)V"
+        stack 5 locals 5
+
+        ; res = 0
+        iconst_0
+        istore 4          ; local 4 = res
+
+        ; i = 0
+        iconst_0
+        istore 1          ; local 1 = i
+
+        ; cond = 200
+        bipush 200
+        istore 2          ; local 2 = cond
+
+        ; Entry -> irreducible edge
+        iload 2
+        sipush 100
+        if_icmple L1      ; if cond <= 100, normal loop
+
+        ; External path directly into B2 (irreducible edge)
+        sipush 999
+        istore 3          ; t2 = 999
+        iload 4
+        iload 3
+        iadd
+        istore 4          ; res += t2
+        iinc 1, 1         ; i++
+        goto L3           ; jump to B3 / loop continuation
+
+    L1: ; Loop Header
+        iload 1
+        iconst_5
+        if_icmpge L4      ; exit if i >= 5
+
+        ; B1
+        iload 1
+        iconst_2
+        imul
+        istore 3          ; t1 = i*2
+
+        ; B2
+        iload 3
+        bipush 10
+        iadd
+        istore 3          ; t2 = t1 + 10
+
+    L3: ; B3 / loop continuation
+        iload 4
+        iload 3
+        iadd
+        istore 4          ; res += t2
+        iinc 1, 1         ; i++
+        goto L1           ; back to loop header
+
+    L4: ; Exit
+        getstatic java/lang/System/out Ljava/io/PrintStream;
+        iload 4
+        invokevirtual java/io/PrintStream/println(I)V
+
+        return
+    EndMethod
+}
+
