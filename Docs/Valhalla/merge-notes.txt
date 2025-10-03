@@ -258,6 +258,30 @@ $10 = 0x7b733c0df768 "Float256Vector.add(LFloat256Vector;LFloat256Vector;)LFloat
 
 To circumvent this issue seen with the test case we can disable scalarization of return values using -XX:-InlineTypeReturnedAsFields
 
+14/  Modifications for new code model
+
+      --    @Multifield
+                    _payalod
+
+      --     Float256Vector
+                  VectorPayalod256MF
+                             _payload  (@MultiField value = 8) 
+
+     --      Constructor 
+                    VectorPayload256MF () {
+                          _payload  = 0.0f; 
+                    }
+                    VectorPayload256MF.<init>
+                          ldc          0.0f
+                          putfield   VectorPayload256MF._payload    // semantics of putfield for primitive, reference and flat payloads. 
+
+15/   putfield semantics:-
+              -  flat value type field
+                   -  copy all the fields of the value type
+              -  
+            
+         
+       
 
                                  
                                                                           
