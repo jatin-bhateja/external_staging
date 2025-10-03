@@ -1,0 +1,59 @@
+- Each def is assigned an LRG, this automatically de-ssa the IR by assigning different LRGs to inputs of a PHI node and Phi node itself.
+- Each LRG is initialized to -1, i.e., spans across all the register and stack locations.
+- Gather LRG masks
+      -  filters the LRG associated with a def by using its out_RegMask.
+      -  back propagates the in_RegMask of input machine operands (use) to their definitions.
+      -  
+-- Coalescing
+     - Aggressive : don't care about spilling, pessimistic only merges non-interfering live ranges. 
+     - Conservative : pessimistic and only merges live ranges if resulting live range is colorable. 
+
+--  Live variable analysis
+     -  Bottom-up dataflow analysis, begins by initializing each block with upward exposed uses.
+     -  Iteratively grows the live out set by unifying the live in set of successors using OR confluence operator.
+     
+-- IFG 
+     -  Construction begins in bottom up manner, starting from last node in the block.
+     -  A def interfere with all the live ranges LRS in immediate liveout set at the point of def.
+             -  interference is register mask aware.
+             -  remove def  and add its inputs to liveout set
+     -  Virtual : 
+             -  Register pressure agnostic interference graph construction.
+    -   Physical
+             -  In addition to IFG construction also computes the block register pressure and identifies LOW to HIGH register pressure boundaries. 
+    -  Generate initial seed spill candiate. 
+
+-   Split
+       -  Split all the spillable live ranges which cross low to high register pressure boundary.
+       -  For each spillable LRG, split points are injected at both USE and DEF side.
+       -  C2 RA also optimizes the spill code injection by doing UP (reg) and DOWN analysis b/w DEF and its USE, there are 4 possible cases
+               -   DEF                USE
+                   DOWN            DOWN         -> Mem2Mem  => Mem2Reg  and Reg2Mem
+                   DOWN            UP              ->  Mem2Reg
+                   UP                  DOWN        ->  Reg2Mem
+                   UP                  UP              -> Reg2Reg
+
+  WHILE(spill_count != 0) {
+           Simplify 
+           Select
+           Split
+  }
+
+In original Chaitin's allocator, Spills were performed during simplify, but optimizing allocator defers spilling to select phase. 
+
+-   Simplify 
+         - Bifurcates the LRGs into _lo_degress and _hi_degree list.
+         - An LRG one added to _lo_degree is removed (added to yanked list ) from the IFG.
+         - Removes _lo_degree LRGs i.e. where _effective_degeess <  _degree_of_freedom
+                  - _effective_degress :  Sum total of _num_reg of neighbors,    in generic graph theory a node is K-colorable is  its degress < K.    
+                  - _degree_of_freedom :  avaible_bits_in_reg_mask  -  num_of_registers required to be allocated for an LRG. LONG needs two VMReg i.e. 1 OptoReg.
+         - Once an LRG is added to _lo_degree list, its neighbouts _degrees are adjusted and some hi_degree neighbour may become _lo_degree.
+
+-  Select
+         -  Colors, _lo_degress and re-inject them into IFG, this is because neighbor's color should be different from the one assiged to an LRG.
+         -  Bias coloring
+                - If the bias_LRG is part of IFG, then return its color.  Just make sure that bias_lrg is non interfereing with  lrg.
+                - Else, try to contrain the register mask of LRG with the bias_LRG and then pick the first avaible color.
+         - If an LRG is non-colorable, assign its LRG::SPILL_REG and mark it as a spilling candiate. 
+
+ 
