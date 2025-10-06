@@ -275,13 +275,74 @@ To circumvent this issue seen with the test case we can disable scalarization of
                           ldc          0.0f
                           putfield   VectorPayload256MF._payload    // semantics of putfield for primitive, reference and flat payloads. 
 
-15/   putfield semantics:-
-              -  flat value type field
-                   -  copy all the fields of the value type
-              -  
+15/   putfield semantics :-
+              -  flat value type field                              --> checks for field type if its inlinetype and field is flat field. copy each component of value type field.
+              -  reference type field                              --> emits StoreP or EncodeP + StoreN  
+              -  on the similar lines @Multifield           --> checks for field type if its multifield then copy entire bundle either by emitting StoreVector OR single field store per field.
+
+
+16/ getfield semantics :-
+              - @Multifield                                           -->  Error out on any non-unsafe read access of multifield.
             
          
-       
 
-                                 
-                                                                          
+17/  Classfile parsing generates different FieldInfo for each base and synthetic multifield
+       ci model population creates a hierarchical ciMultiField structure to capture multifield. 
+                
+Phasing:
+    - merge - lworld+vector
+    - upstream multifield to lworld  - parsing, build layout changes
+         -  annotation processing
+         -  FieldInfo , fieldDescriptor
+         -  MultifieldGroup
+    - upstream ci* model changes.
+         -  field access APIs.
+         -  ciMultifield creation.
+    - upstream vector API Java side changes. 
+    - upstream vector API C1 side changes.
+    - upstream vector API C2 side changes. 
+          - putfield - store vector / scalar store for bundle of multifield                          
+          - getfield - error out on non-unsafe access.
+          - load/store - inline type node 
+          - disable scalarization of Vector params across function call till vector calling convention is supported.
+          - merge common state interaction of larval and non-larval vector values.
+          - Vector IR changes - mask / shuffle
+    -  upstream PhaseVector changes
+          - Boxing / unboxing
+          - expansions changes
+    -  upstream InlineType Node re-construction bookkeeping changes. 
+          - single vector field for multifield / multiple scalars 
+    -  upstream de-optimization changes
+          - remove special handling for vector 
+          - treat them on the lines of regular identity instance re-materialization.
+     - upstream argument processing changes
+          - implicit preview mode with --add-modules=jdk.incubator.vector
+
+-  Performance degradation in value type initialization within a loop.  - redundant boxing.
+
+ -  get/put field changes as per new code model
+ -  ci* field access APIs
+ 
+18/  Check:
+-- putfield init to be done with JDK-8368810
+-- VectorBoxNode - set_null_marker 
+-- merge_common - TODO
+-- box expansion : DECORATORs and store base / pointer
+
+
+19/  Additional handling for new VectorSupport with value type payload
+    -  part of src/jdk.compiler/share/data/symbols/java.base-P.sym.txt
+    -  processed by make/langtools/src/classes/build/tools/symbolgenerator/CreateSymbols.java
+    -  complexity around usage of --enable-preview needed to read LoadableDescriptorAttribute 
+    -  For now, skipping over symbol creation for VectorSupport and jdk.incubator classes.
+
++++ b/make/langtools/src/classes/build/tools/symbolgenerator/CreateSymbols.java
+@@@ -2267,11 -1932,11 +1932,18 @@@ public class CreateSymbols
+              return ;
+          }
+++        if (cm.thisClass().asInternalName().contains("jdk/incubator/vector")) {
+++            return ;
+++        }
+++        if (cm.thisClass().asInternalName().contains("VectorSupport")) {
+ +            return ;
+ +        }
