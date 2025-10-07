@@ -327,7 +327,7 @@ Phasing:
 -- putfield init to be done with JDK-8368810
 -- VectorBoxNode - set_null_marker 
 -- merge_common - TODO
--- box expansion : DECORATORs and store base / pointer
+-- box expansion: DECORATORs and store base/pointer
 
 
 19/  Additional handling for new VectorSupport with value type payload
@@ -346,3 +346,47 @@ Phasing:
 ++        if (cm.thisClass().asInternalName().contains("VectorSupport")) {
  +            return ;
  +        }
+
+20/  FieldInfo::name
+           -> Since multifield are synthetic fields hence unlike regular java fields they don't have a name index entry in ConstantPool, in fact, all the name of synthetic field are
+               recorded in an auxiliary structure call MultiFieldInfo.
+          ->  While we do create FieldInfo for synthetic multifield during parsing but all the auxiliary data i.e, name and base index, is captured in MultiFieldInfo.
+          ->  Creating a new field _multifield-info in existing FieldInfo will be costly are it will point to nullptr in 99.9% of cases,  it will be appropriate to make MultiFieldInfo a sub-class of FieldInfo
+               with the Kind {FIELD_INFO , MULTIFIELD_INFO} differentiating base and derived klass.
+       	 -> This way we will not need to pass additional Array<MultifieldInfo> to all the routines using auxillary structure, mainly for name computation.
+          -> Remove other occurrences of Array<MultifieldInfo>* passed as arguments to other FieldInfo::* accessors.
+
+          -> FieldInfo -> Compressed UNSIGNED5 stream -> FieldStreamReader
+                                                                         |
+                                                                         |_________> JavaFieldStream (iterates of compressed stream)
+
+              FieldInfo as specified by JLS contains indexes to ConstantPool
+             A fieldDescriptor describes the attributes of a single field (instance or class variable).
+		It needs the class constant pool to work (because it only holds indices into the pool
+		 rather than the actual info).
+    
+          ->  FieldStream name_index in field stream points to valid constant pool entry in case of regular fields and base multifield, for synthetic multifield it contains index of multifeldInfo holding the name (Symbold*)
+              ->  Given that multifield info is maintained in an auxiliary  structure, we need a better mechanism to cross-reference MultiFieldInfo for a given FieldStream instance.
+
+Text string: Array<MultiFieldInfo>* _multifield                                                                                                             
+  File                   Line
+0 classFileParser.hpp    165 Array<MultiFieldInfo>* _multifield_info;
+1 fieldLayoutBuilder.hpp 231 Array<MultiFieldInfo>* _multifield_info;
+2 fieldLayoutBuilder.hpp 320 Array<MultiFieldInfo>* _multifield_info;
+3 fieldStreams.hpp        47 Array<MultiFieldInfo>* _multifield_info;
+4 instanceKlass.hpp      272 Array<MultiFieldInfo>* _multifield_info;
+
+Maintaining Array<MultifieldInfo>* as a member of InstanceKlass should be sufficient to handle all use cases involing name access of _field_stream.
+
+Add a new LayoutKind::MULTIFIELD after merge.
+
+21/ Validation settings:
+
+EMR>java -XX:+PrintFlagsFinal --version -XX:+UnlockExperimentalVMOptions | grep -e Flattening -e InlineType -i
+     bool InlineTypePassFieldsAsArgs               = true                                   {pd product} {default}
+     bool InlineTypeReturnedAsFields               = true                                   {pd product} {default}
+     bool UseArrayFlattening                       = true                                      {product} {default}
+     bool UseAtomicValueFlattening                 = true                                      {product} {default}
+     bool UseFieldFlattening                       = true                                      {product} {default}
+     bool UseNonAtomicValueFlattening              = true                                      {product} {default}
+     bool UseNullableValueFlattening               = true                                      {product} {default}
