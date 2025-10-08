@@ -323,12 +323,13 @@ Phasing:
  -  get/put field changes as per new code model
  -  ci* field access APIs
  
-18/  Check:
+Check:
 -- putfield init to be done with JDK-8368810
 -- VectorBoxNode - set_null_marker 
 -- merge_common - TODO
 -- box expansion: DECORATORs and store base/pointer
-
+-- implications of Relaxed memory model
+    -- mismatched access 
 
 19/  Additional handling for new VectorSupport with value type payload
     -  part of src/jdk.compiler/share/data/symbols/java.base-P.sym.txt
@@ -390,3 +391,17 @@ EMR>java -XX:+PrintFlagsFinal --version -XX:+UnlockExperimentalVMOptions | grep 
      bool UseFieldFlattening                       = true                                      {product} {default}
      bool UseNonAtomicValueFlattening              = true                                      {product} {default}
      bool UseNullableValueFlattening               = true                                      {product} {default}
+
+22/ Safety checks added in following routines.
+        - prevent scalarization of value object in cast_to_non_larval
+        - During this pointer scalarization in Parse::Parse
+            - currently we scalarize receiver if its a value oop without checking its larval status.
+
+
+23/ Bugs fixes
+    a) multi-field handling during flat-field population.
+      - new ciMultifield constructor accepting declared and sub-fields.
+    b) disable scalarization of larval receiver parsing.
+    c) fix payload address computation in vector box expansion.
+
+        
