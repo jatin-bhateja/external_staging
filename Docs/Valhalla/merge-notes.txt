@@ -331,6 +331,7 @@ Check:
 -- implications of Relaxed memory model
     -- mismatched access 
 -- where is _multifield_info transferred from ClassFileParser to InlineKlass 
+-- equality of two vectors.
 
 19/  Additional handling for new VectorSupport with value type payload
     -  part of src/jdk.compiler/share/data/symbols/java.base-P.sym.txt
@@ -407,4 +408,43 @@ EMR>java -XX:+PrintFlagsFinal --version -XX:+UnlockExperimentalVMOptions | grep 
     d) fix incorrect ciMultiField population for flat value fields.
     e) 
 
-        
+Note: This is the primary contracts for a hierarchical ciMultiField existence.
+  - is_multifield_base only set on declared field if its non-scalarized.
+  - At present there is no shuffle generation API that has a direct inline expander. toShuffle and iotoShuffle are
+    implemented in terms of VectorAPI while fromArray/fromValues are not intrinsified.
+  - VectorLoadShuffle holds significance for rearrangment of word/double word non AVX targets.
+
+Todo:
+  - LT 32 bit mask / shuffle.
+  - Intrinsification of VectorShuffle.fromLong.
+
+Quick byte:
+      DoubleVector v1 = DoubleVector.broadcast(DoubleVector.SPECIES_128, 10);
+      DoubleVector v2 = DoubleVector.broadcast(DoubleVector.SPECIES_128, 10);
+      return v1.compare(VectorOperators.EQ, v2).trueCount();
+
+java -XX:-IncrementalInline -Xbatch -XX:-TieredCompilation --add-modules=jdk.incubator.vector -XX:+PrintInlineLayout -XX:-UseOnStackReplacement -XX:+TraceDeoptimization -cp . compare 
+
+ - LT 32 bit mask not supported.
+      - Disable scalarization of compare generating VectorMaskCmpNode which is loaded using VectorLoadMask by subsequent mask consumer.
+      - As a result both the inputs of Vector.compare remains boxed which are expanded by the PhaseVector.
+      - Problem over here is that mask is returning incorrect value.
+
+
+UNCOMMON TRAP method=jdk.incubator.vector.AbstractMask.trueCountHelper()I  bci=36 pc=0x0000730708d7dfa8, relative_pc=0x0000000000000108, debug_id=0 compiler=c2 compile_id=201 (@0x0000730708d7dfa8) thread=177292 reason=unstable_if action=reinterpret unloaded_class_index=-1 debug_id=0
+REALLOC OBJECTS in thread 0x000073070402dd90
+     object <0x00000007506fc0d8> of type 'jdk/incubator/vector/Double128Vector$Double128Mask' allocated (16 bytes)
+     object <0x00000007506fc0e8> of type 'jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z' allocated (16 bytes)
+DEOPT PACKING thread=0x000073070402dd90 vframeArray=0x00007307042e1190
+   Compiled frame (sp=0x000073070bcd4510 unextended sp=0x000073070bcd4510, fp=0x0000000000000000, real_fp=0x000073070bcd4550, pc=0x0000730708d7dfa8)
+     nmethod
+1837  201             jdk.incubator.vector.AbstractMask::trueCountHelper (50 bytes)
+
+   - No need to re-allocated VectorPayloadMF16Z as this should be a flat payload field.
+
+---
+Layout of class jdk/incubator/vector/Double128Vector$Double128Mask@0x7a61ec10f180 extends jdk/incubator/vector/AbstractMask@0x7a61ec10f180
+Instance fields:
+ @0 RESERVED 12/-
+ @12 FLAT 2/2 "payload" Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z; jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z@0x7a61ec10f180 NON_ATOMIC_FLAT
+ @14 NULL_MARKER 1/1
