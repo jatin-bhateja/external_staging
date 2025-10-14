@@ -423,6 +423,7 @@ Quick byte:
       DoubleVector v2 = DoubleVector.broadcast(DoubleVector.SPECIES_128, 10);
       return v1.compare(VectorOperators.EQ, v2).trueCount();
 
+
 java -XX:-IncrementalInline -Xbatch -XX:-TieredCompilation --add-modules=jdk.incubator.vector -XX:+PrintInlineLayout -XX:-UseOnStackReplacement -XX:+TraceDeoptimization -cp . compare 
 
  - LT 32 bit mask not supported.
@@ -448,3 +449,503 @@ Instance fields:
  @0 RESERVED 12/-
  @12 FLAT 2/2 "payload" Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z; jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z@0x7a61ec10f180 NON_ATOMIC_FLAT
  @14 NULL_MARKER 1/1
+
+Tidbits : 
+  1a6     PREFETCHNTA [R10 + #256 (32-bit)]       # Prefetch allocation to non-temporal cache for write
+  R10 holds the ending address byte of newly allocated object, 256 gap ensure we pull in cache lines after 4th from current line, idea is to
+  depend on AMD HW next line prefetcher to pull in next 2-3 line automatically and only pull in 4th cache line.
+  
+  - Its a very fine line here, unwarranted prefetching can result into useful cache lines evictions.
+
+ PROMPT>java -XX:+PrintFlagsFinal --version | grep Prefetch -i
+      int AllocateInstancePrefetchLines            = 1                                         {product} {default}
+      int AllocatePrefetchDistance                 = 256                                       {product} {default}
+     intx AllocatePrefetchInstr                    = 0                                         {product} {default}
+      int AllocatePrefetchLines                    = 3                                         {product} {default}
+      int AllocatePrefetchStepSize                 = 64                                        {product} {default}
+      int AllocatePrefetchStyle                    = 1                                         {product} {default}
+     intx PrefetchCopyIntervalInBytes              = 576                                       {product} {default}
+     intx PrefetchScanIntervalInBytes              = 576                                       {product} {default}
+
+
+Improvements:-
+
+    - Replace VectorBox and VectorBoxAllocate nodes with InlineTypeNode.
+    - New Ideal Transforms to sweep intermediate logic after inline expansion.
+  
+  Code snippet:-
+
+       vec1 = fromArray(SRC1)           - [1]
+       vec2 = fromArray(SRC2)           - [2]
+       res = vec1.lanewise(MUL,vec2)    - [3]
+       res.intoArray(RES)               - [4]
+
+  IR [1][2]
+       
+       LoadVector 
+          |
+          v
+       InlineTypeNode (VectorPayload)
+          |
+          v
+       InlineTypeNode (Double256Vector)
+          |
+          v
+       CastPP (NotNull) 
+          |
+          v
+       CheckCastPP (Double256Vector)
+        |
+        v     
+       [x] -> AddP -> LoadVector
+        |                  |
+        |                  v
+        |             InlineTypeNode (VectorPayload)      [[[[ make_from_oop ]]]           
+        |                  |
+        | oop              v
+        |-----------> InlineTypeNode (Double256Vector)
+                           |
+                           v
+                          [y]
+
+
+  IR [3]
+
+           [y]         [y]
+            |           |
+            v           v
+      VectorUnbox   VectorUnbox
+            |         /
+            |        /
+            |       /
+            |      /
+            |     /                                                                                            
+            |    /
+            |   /
+            [Mul]
+              |
+              v
+        InlineTypeNode (VectorPayloadMF)
+              |
+              v
+        InlineTypeNode (Double256Vector)
+              |
+              v
+            CastPP
+              |
+              v
+          CheckCastPP
+              |
+              v    
+             [x] -> AddP -> LoadVector
+              |                  |
+              |                  v
+              |             InlineTypeNode (VectorPayload)      [[[[ make_from_oop ]]]           
+              |                  |
+              | oop              v
+              |-----------> InlineTypeNode (Double256Vector)
+                                 |
+                                 v
+                                [y]
+ 
+ IR [4]
+
+         [y]
+          |
+          v
+    VectorUnboxNode
+          |
+          v
+     StoreVector
+
+New Transforms for boxing + unboxing optimizations :-
+-----------------------------------------------------
+
+- Unboxing simply reduced to action of fetching correct VectorIR from preceding graph snippet.
+- In context where boxing is needed we will bank process_inline_types node for bufferning 
+   - Q. Do we have sufficient infrastructure for lazy buffering during process_inline_types in down stream flow ?
+   - A. No, buffering is done upfront as it needs precise memory and control edges, currently, compiler performs eager buffering 
+        in scenarios which mandates non-scalarized forms of value objects. i.e. non-flat field assignment or passing 
+        value type arguments when InlineTypePassFieldsAsArgs is not set.
+    [AI]
+        -> Throughly determine the infra needed for buffering, we need to re-compose theGraphKit for that.
+       
+
+   - Q. What if we do upfront buffering of InlineTypeNode corresponding to vector boxes ?
+   - A. A buffer and its associated InlineTypeNode must be in sync all the time. Any field update of a value object creates a new value.
+        This can only be achieved through a new value instance allocation i.e. it must go through an intermediate larval state. All the fields
+        of a value instance are final, thus we cannot use putfield to update their contents, getfield does return the initializing value of
+        value instance field.
+         
+        MyValue (value type)
+            - float f1;
+            - float f2;
+            - float f3;
+            - float f4;
+
+        val1 = new MyValue(0.0f, 1.0f, 2.0f, 3.0f);
+            -->  new MyValue (oop)
+                  |
+                  --> make_from_oop(oop) post construction
+
+        val2 = new MyValue(val1.f1, 2.0f, val1.f3, val1.f4)  // getfield val1.f1 will pass 0.0f
+                  |                                          // getfield val1.f3 will pass 2.0f
+                  |                                          // getfield val1.f4 will pass 3.0f
+                  |                                          // 
+                  --> make_from_oop(oop) post construction
+                        
+        return val2.f1 + val2.f2 ; will return 0.0f + 2.0f, thus there will be no consumer of InlineTypeNodes and they will be sweept 
+        out along with their allocations. 
+
+
+  Q. In new code model, an InlineTypeNode is always backed by an allocation ?
+  A. An inline type node is created from initialized this pointer passes as Parma0 of constructor,
+     , unless its created through make_from_multi i.e. from scalarize arguments parameters. 
+
+(gdb) l
+889         if (cg->method()->is_object_constructor() && receiver != nullptr && gvn().type(receiver)->is_inlinetypeptr()) {
+890           InlineTypeNode* non_larval = InlineTypeNode::make_from_oop(this, receiver, gvn().type(receiver)->inline_klass());
+891           // Relinquish the oop input, we will delay the allocation to the point it is needed, see the
+892           // comments in InlineTypeNode::Ideal for more details
+893           non_larval = non_larval->clone_if_required(&gvn(), nullptr);
+894           non_larval->set_oop(gvn(), null());
+895           non_larval->set_is_buffered(gvn(), false);
+896           non_larval = gvn().transform(non_larval)->as_InlineType();
+897           map()->replace_edge(receiver, non_larval);
+898         }
+
+     
+  [AI]      : Try to always link the backing oop to newly scalarized InlineTypeNode, since new code model always creates
+              a new larval value on every field modification hence, oop and scalarized nodes are always in sync.
+
+  [Results] : Working on stand alone tests, need to regress through performance and validation suite.
+               - Functional validation is almost fine.
+               - Also, most of the InlineTypeNode are sweeped out unless, there is any specific context which needs materialized
+                 value.
+               
+  Tidbit:
+  -------
+   Always pass adjusted pointer which points to first field for populating a scalarized IR.
+      Node* payload_ptr = kit->basic_plus_adr(not_null_oop, vk->payload_offset());
+      vt->load(kit, not_null_oop, payload_ptr, true, true, IN_HEAP | MO_UNORDERED, visited);
+
+   [AI] = new Allocation of Value type embedding an flat inline type field.
+
+  
+Other Bugs:
+-----------
+
+PROMPT>java  -Xint --add-modules=jdk.incubator.vector -XX:CompileCommand=Print,compare::workload -cp . compare
+CompileCommand: print compare.workload bool print = true
+WARNING: Using incubator modules: jdk.incubator.vector
+[time] 38ms [res] 0
+
+  - Incorrect result, with non-atomic flat field all the address computations are w.r.t to container instance.
+
+PROMPT>java -XX:-UseNonAtomicValueFlattening  -Xint --add-modules=jdk.incubator.vector -XX:CompileCommand=Print,compare::workload -cp . compare
+CompileCommand: print compare.workload bool print = true
+WARNING: Using incubator modules: jdk.incubator.vector
+[time] 40ms [res] 32000
+
+  - Tidbits:-   
+       - revisited memory allocation, initialization (in-complted) - captured stores with constant offsets less than TrackedInitializationLimit
+         coalesce constant captured stores into tiles. 
+       - different kinds of memory barriers and memory nodes with memory ordering semantics and cpu order semantics 
+ [AI] = current capture store and coalesce is capped by 64 bit tile packing limit, two back to back 64 bit store vs. one 128bit load from constant
+        area and 128 bit store can be evaluated. this can be expanded till 512 bit vector.	
+         
+  
+
+Revisit following probably dead transform now
+
+
+//------------------------------Identity---------------------------------------
+// Loads are identity if previous store is to same address
+Node* LoadNode::Identity(PhaseGVN* phase) {
+  // If the previous store-maker is the right kind of Store, and the store is
+  // to the same address, then we are equal to the value stored.
+  Node* addr = in(Address);
+  intptr_t offset;
+  Node* base = AddPNode::Ideal_base_and_offset(addr, phase, offset);
+  bool skip_store_forwarding = false;
+  if (base != nullptr && base->is_InlineType() && offset > oopDesc::klass_offset_in_bytes()) {
+    Klass* base_klass = base->as_InlineType()->inline_klass()->get_InlineKlass();
+    // FIXME: Suppressing this tranform for Vector and its payload classes for now.
+    if (VectorSupport::is_vector(base_klass) || VectorSupport::is_vector_payload_mf(base_klass)) {
+      skip_store_forwarding = true;
+    }
+  }
+
+
+Bug with -XX:+VerifyAliases
+    -> One is related to captured store where once its moved to initializer the adr_type used to verify becomes outdated.
+    -> Alias type of field loads of non-larval object created in finishPrivateBuffer.
+       -> 
+
+-----------------------------
+1)
+Thread 19 "C2 CompilerThre" hit Breakpoint 1, LibraryCallKit::inline_unsafe_make_private_buffer (this=0x7116f1371d70) at /mnt/c/GitHub/lworld+vector/src/hotspot/share/opto/library_call.cpp:2946
+2946      Node* receiver = argument(0);
+(gdb) p st->dump()
+ 696  StoreB  === 689 690 693 601  [[ ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 *, name=mfield, idx=8;  Memory: @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+12 *, name=mfield, idx=8; !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                                                 $2 = void
+(gdb) p st->adr_type ()
+$3 = (const TypePtr *) 0x7116c00824a0
+(gdb) p st->adr_type ()->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+12 *$4 = void
+
+2) 
+(gdb) p adr_type
+$8 = (const TypePtr *) 0x7116c00853a8
+(gdb) p adr_type->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow]$9 = void
+
+ 
+(gdb) dumpn st
+ 1015  StoreB  === 1011 1012 1008 38  [[ ]]  @oopptr:BotPTR+bot [narrow], idx=11;  Memory: @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow], idx=11; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+                                                                               $15 = void
+(gdb) p st->adr_type()->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow]$16 = void
+
+3) 
+Thread 19 "C2 CompilerThre" hit Breakpoint 2, LibraryCallKit::inline_unsafe_finish_private_buffer (this=0x7116f1371d70) at /mnt/c/GitHub/lworld+vector/src/hotspot/share/opto/library_call.cpp:2979
+2979      Node* receiver = argument(0);
+(gdb) p payload_ptr
+$17 = (Node *) 0x7116c00a0ca8
+(gdb) p payload_ptr->dump()
+  693  AddP  === _ 692 692 525  [[ 696 ]]   Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+12 * !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+               $18 = void
+(gdb) p payload_ptr->adr_type ()->dump()
+
+-----------------------------
+
+Control flow:-
+-------------- 
+
+    ->   new allocation
+            ->  new instance allocation.
+            ->  new larval value : Load field values from oop.
+                -> adr_type for alias index computation: mask+12, mask+13
+
+    ->   make private buffer
+            ->  buffer
+            ->  store individual field values into buffer
+                -> adr_type for alias index computation : mask+12, mask+13
+
+    ->   unsafe put
+            ->  update field value
+            ->  adr_type for alias index computation : BottomPtr+bot
+
+    ->   finish private buffer
+            ->  non-larval value construction.
+            ->  load field values from buffer
+
+    ->   return buffer
+
+-----------------------------------
+(gdb) p this->in(4)
+$11 = (Node *) 0x73e2880aac68
+(gdb) dumpn $11
+ 601  LoadUB  === _ 596 526  [[ 598 645 646 647 661 673 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 *, name=mfield, idx=8; #bool !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                                                                         $12 = void
+(gdb) p this->in(5)
+$13 = (Node *) 0x73e2880aafe8
+(gdb) dumpn $13
+ 603  LoadUB  === _ 596 575  [[ 598 651 652 653 661 673 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9; #bool !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                                                                           $14 = void
+(gdb) p $11
+$15 = (Node *) 0x73e2880aac68
+(gdb) p $11->dump()
+ 601  LoadUB  === _ 596 526  [[ 598 645 646 647 661 673 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 *, name=mfield, idx=8; #bool !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                                                                         $16 = void
+(gdb) p $11->adr_type ()
+$17 = (const TypePtr *) 0x73e288092480
+(gdb) p $17->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+12 *$18 = void
+(gdb) p $12->adr_type ()
+Attempt to extract a component of a value that is not a struct or union
+(gdb) p this->in(5)
+$19 = (Node *) 0x73e2880aafe8
+(gdb) p $19->dump()
+ 603  LoadUB  === _ 596 575  [[ 598 651 652 653 661 673 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9; #bool !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                                                                           $20 = void
+(gdb) p $19->adr_type ()
+$21 = (const TypePtr *) 0x73e288092d60
+(gdb) p $21->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+13 *$22 = void
+(gdb)
+(gdb) dumpn $13
+ 603  LoadUB  === _ 596 575  [[ 598 651 652 653 661 673 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9; #bool !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                                                                           $23 = void
+(gdb) p $13->adr_type ()->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+13 *$24 = void
+(gdb) dumpn $12
+Attempt to extract a component of a value that is not a struct or union
+(gdb) dumpn $11
+ 601  LoadUB  === _ 596 526  [[ 598 645 646 647 661 673 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 *, name=mfield, idx=8; #bool !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                                                                         $25 = void
+(gdb) p $11->adr_type ()->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+12 *$26 = void
+(gdb) p kit->C->get_alias_index ($11->adr_type(), false)
+$31 = 8
+(gdb) p kit->map()->memory()
+$32 = (Node *) 0x73e2880af180
+(gdb) p kit->map()->memory()->in(8)
+$33 = (Node *) 0x73e2880aff78
+(gdb) dumpn $33
+ 690  Proj  === 688  [[ 674 674 674 674 674 ]] #2  Memory: @rawptr:BotPTR, idx=Raw; !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                                                    $34 = void
+(gdb) p $33->dump(3)
+ 675  Allocate  === 657 636 658 8 1 (39 494 26 1 1 _ _ _ 37 11 1 13 110 205 337 1 1 1 1 1 1 1 1 1 1 1 ) [[ 676 677 678 685 686 687 ]]  rawptr:NotNull ( int:>=0, java/lang/Object:NotNull *, bool, top, bool, bottom, java/lang/Object:NotNull *, long ) allocationKlass:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z DoubleVector::bTestMF @ bci:54 (line 554) !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+658  Proj  === 656  [[ 659 660 478 479 668 674 675 682 691 691 ]] #2  Memory: @BotPTR *+bot, idx=Bot; !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:87 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+685  Proj  === 675  [[ 691 ]] #2  Memory: @rawptr:BotPTR, idx=Raw; !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+0  Root  === 0 54 185 223 245 317 634  [[ 0 1 3 25 26 30 38 39 41 43 49 90 91 92 110 168 169 180 207 218 407 408 410 454 472 473 494 525 552 554 557 574 576 664 665 ]]
+679  Catch  === 676 678  [[ 680 681 ]]  !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+687  Proj  === 675  [[ 688 692 ]] #5 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+691  MergeMem  === _ 1 685 1 1 1 1 1 658 658  [[ 688 ]]  { - - - - - N658:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 * N658:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 * }  Memory: @BotPTR *+bot, idx=Bot; !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+  1  Con === 0  [[ ]]  #top
+680  CatchProj  === 679  [[ 688 ]] #0@bci -1  !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+688  Initialize  === 680 1 691 1 1 687  [[ 689 690 ]]  !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+690  Proj  === 688  [[ 674 674 674 674 674 ]] #2  Memory: @rawptr:BotPTR, idx=Raw; !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+
+Trace:
+=====
+
+after make private buffer:
+===========================
+                                                                                                            603  LoadUB  === _ 596 575  [[ 598 651 652 653 661 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9; #bool !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                 601  LoadUB  === _ 596 526  [[ 598 645 646 647 661 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 *, name=mfield, idx=8; #bool !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                           38  ConI  === 0  [[ 37 37 44 57 58 61 64 64 67 79 80 83 86 86 95 111 112 115 118 118 121 133 134 137 140 140 144 145 148 151 151 157 158 159 205 205 206 206 233 233 236 246 247 250 253 253 256 268 269 272 275 275 279 280 283 286 286 292 293 294 337 337 338 338 339 340 343 346 346 349 361 362 365 368 368 372 372 375 392 412 419 420 421 424 427 427 430 442 443 446 449 449 453 453 457 527 570 583 598 609 610 611 645 651 661 661 ]]  #int:1
+                                                                                                                                                           642  CheckCastPP  === 639 637  [[ 643 643 644 644 650 650 615 661 ]]  #jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact *  Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact * !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:87 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                              661  InlineType  === _ 642 38 38 601 603  [[ 480 475 ]]  #jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact *  Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact * !orig=598 !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:84 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                         $2 = void
+
+from unsafe put before actual update.
+======================================
+
+                1  Con  === 0  [[ ]]  #top
+6 141 181 147 167 171 185 223 219 245 241 249 260 262 271 276 313 282 302 304 317 342 353 355 364 369 379 381 387 389 396 398 404 423 434 436 445 450 461 463 469 475 481 483 491 496 504 515 630 522 524 547 538 540 619 621 634 663 669 675 683 707 717 728 730 739 744 759 761 767 783 793 789 804 800 815 811 826 822 837 833 858 909 905 927 923 936 938 944 946 982 956 958 1000 966 986 996 ]] FramePtr !jvms: DoubleVector::bTestMF @ bci:-1 (line 549)
+                                                                                                                                         658  Proj  === 656  [[ 659 660 478 479 668 674 675 682 691 691 710 716 727 729 738 745 733 734 758 760 768 764 841 782 786 791 797 802 808 813 819 824 830 835 ]] #2  Memory: @BotPTR *+bot, idx=Bot; !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:87 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                                                                                                   636  Proj  === 621  [[ 619 616 477 675 669 ]] #1 !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:87 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+        657  Proj  === 656  [[ 619 614 476 675 ]] #0 !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:87 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                     703  StoreB  === 680 685 704 603  [[ 688 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9;  Memory: @rawptr:NotNull, idx=Raw; !orig=702 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                697  StoreB  === 680 685 698 601  [[ 688 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 *, name=mfield, idx=8;  Memory: @rawptr:NotNull, idx=Raw; !orig=696 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+             691  MergeMem  === _ 1 685 1 1 1 1 1 658 658  [[ 688 ]]  { - - - - - N658:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 * N658:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 * }  Memory: @BotPTR *+bot, idx=Bot; !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                                                                             1  Con  === 0  [[ ]]  #top
+                             680  CatchProj  === 679  [[ 688 697 703 ]] #0@bci -1  !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                                                     675  Allocate  === 657 636 658 8 1 (39 494 26 1 1 _ _ _ 37 11 1 13 110 205 337 1 1 1 1 1 1 1 1 1 1 1 ) [[ 676 677 678 685 686 687 ]]  rawptr:NotNull ( int:>=0, java/lang/Object:NotNull *, bool, top, bool, bottom, java/lang/Object:NotNull *, long ) allocationKlass:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z DoubleVector::bTestMF @ bci:54 (line 554) !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                             688  Initialize  === 680 1 691 1 1 687 697 703  [[ 689 690 ]]  !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                  687  Proj  === 675  [[ 688 692 698 704 ]] #5 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                                                 689  Proj  === 688  [[ 718 692 696 702 724 740 475 744 731 755 730 767 762 776 ]] #0 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                            692  CheckCastPP  === 689 687  [[ 693 693 694 694 700 700 475 717 728 730 739 730 759 759 761 767 783 789 800 811 822 833 858 858 923 923 936 936 938 938 982 982 996 996 ]]  #jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact *  Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact * !jvms: DoubleVector::bTestMF @ bc
+
+Update address pointer computation:-
+====================================
+
+2571      Node* adr = make_unsafe_address(base, offset, type, kind == Relaxed);
+(gdb)
+2572      assert(!stopped(), "Inlining of unsafe access failed: address construction stopped unexpectedly");
+(gdb) dumpn adr
+ 1008  AddP  === _ 692 1009 525  [[ ]]   Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow] !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+                       $12 = void
+
+
+2594      if (adr_type == TypePtr::NULL_PTR) {
+(gdb) p adr_type->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow]$13 = void
+(gdb)
+
+Here because unsafe put is part of loop hence offset which is based on loop trip count is unknown (bot) before full unrolling..
+Which is why address type and alias index are different from prior stores to payload fields.
+
+(gdb) dumpn st
+ 1015  StoreB  === 1011 1012 1008 38  [[ ]]  @oopptr:BotPTR+bot [narrow], idx=11;  Memory: @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow], idx=11; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+                                                                               $17 = void
+(gdb) p st->adr_type()
+$18 = (const TypePtr *) 0x7343bc0a5440
+(gdb) p st->adr_type()
+$19 = (const TypePtr *) 0x7343bc0a5440
+(gdb) p $19->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow]$20 = void
+
+
+State of graph after store
+=========================
+
+ 1015  StoreB  === 1011 1012 1008 38  [[ 1013 ]]  @oopptr:BotPTR+bot [narrow], idx=11; mismatched unsafe  Memory: @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow], idx=11; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+ 1012  Proj  === 1010  [[ 1013 1015 ]] #2  Memory: @BotPTR *+bot, idx=Bot; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+ 1010  MemBarCPUOrder  === 993 1 893 1 1  [[ 1011 1012 ]]  !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+ 1013  MergeMem  === _ 1 1012 1 1 1 1 1 1 1 1 1015  [[ 1016 ]]  { - - - - - - - - N1015:oopptr:BotPTR+bot [narrow] }  Memory: @BotPTR *+bot, idx=Bot; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+ 1011  Proj  === 1010  [[ 1016 1015 ]] #0 !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+ 1016  MemBarCPUOrder  === 1011 1 1013 1 1  [[ 1017 1018 ]]  !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+    0  Root  === 0 54 185 223 245 317 634 793 804 815 826 837 909 927 986 1000  [[ 0 1 3 25 26 30 38 39 41 43 49 90 91 92 110 168 169 180 207 218 407 408 410 454 472 473 494 525 552 554 557 574 576 664 665 708 713 770 788 799 810 821 832 859 861 904 914 981 ]]
+ 1018  Proj  === 1016  [[ 1019 ]] #2  Memory: @BotPTR *+bot, idx=Bot; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+    1  Con  === 0  [[ ]]  #top
+ 1019  MergeMem  === _ 1 1018 1  [[ 938 ]]  { - }  Memory: @BotPTR *+bot, idx=Bot; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+
+  // Fixed alias indexes.  (See also MergeMemNode.)
+  enum {
+    AliasIdxTop = 1,  // pseudo-index, aliases to nothing (used as sentinel value)
+    AliasIdxBot = 2,  // pseudo-index, aliases to everything
+    AliasIdxRaw = 3   // hard-wired index for TypeRawPtr::BOTTOM
+  };
+
+ Consider MergeMem node 1019, input at index 2 i.e. 1018 corresponds to entire memory slice i.e. BOTTOM
+ while, MergeMem node 1012 holds StoreB (1015) as one of its slice at alias index 11,       
+
+Store forwarding works on the principle of constrained memory chain traversal using alias index as the guard rail.
+
+
+State of graph at the entry of finish private buffer :-
+=======================================================
+
+75 ]] #0 !jvms: VectorSupport$VectorPayloadMF::newMaskInstanceFactory @ bci:87 (line 187) DoubleVector::bTestMF @ bci:44 (line 553)
+                                                                                                                                     703  StoreB  === 680 685 704 603  [[ 688 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9;  Memory: @rawptr:NotNull, idx=Raw; !orig=702 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                    697  StoreB  === 680 685 698 601  [[ 688 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 *, name=mfield, idx=8;  Memory: @rawptr:NotNull, idx=Raw; !orig=696 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                                             691  MergeMem  === _ 1 685 1 1 1 1 1 658 658  [[ 688 ]]  { - - - - - N658:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 * N658:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 * }  Memory: @BotPTR *+bot, idx=Bot; !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                                 1  Con  === 0  [[ ]]  #top
+                                                                                                                                             680  CatchProj  === 679  [[ 688 697 703 ]] #0@bci -1  !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                         675  Allocate  === 657 636 658 8 1 (39 494 26 1 1 _ _ _ 37 11 1 13 110 205 337 1 1 1 1 1 1 1 1 1 1 1 ) [[ 676 677 678 685 686 687 ]]  rawptr:NotNull ( int:>=0, java/lang/Object:NotNull *, bool, top, bool, bottom, java/lang/Object:NotNull *, long ) allocationKlass:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z DoubleVector::bTestMF @ bci:54 (line 554) !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                 688  Initialize  === 680 1 691 1 1 687 697 703  [[ 689 690 ]]  !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                                                                                  687  Proj  === 675  [[ 688 692 698 704 ]] #5 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                     689  Proj  === 688  [[ 718 692 696 702 724 740 475 744 731 755 730 767 762 776 ]] #0 !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                692  CheckCastPP  === 689 687  [[ 693 693 694 694 700 700 475 717 728 730 739 730 759 759 761 767 783 789 800 811 822 833 858 858 923 923 936 936 938 1021 982 982 996 996 1009 1009 1008 1033 ]]  #jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact *  Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact * !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+
+This points to the allocate node which was input to unsafe put, initialize node is connected to captured stores which assigns initial value '0' to mask
+payload. 
+
+buffer feeds its memory state into address computation for unsafe put store.
+
+(gdb)
+(gdb) dumpn buffer
+  692  CheckCastPP  === 689 687  [[ 693 693 694 694 700 700 475 717 728 730 739 730 759 759 761 767 783 789 800 811 822 833 858 858 923 923 936 936 938 1021 982 982 996 996 1009 1009 1008 1033 ]]  #jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact *  Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact * !jvms: DoubleVector::bTestMF @ bci:54 (line 554)
+                                                                                   $74 = void
+(gdb) p buffer->raw_out(36)->raw_out(0)
+$75 = (Node *) 0x7343bc0eec18
+(gdb) p buffer->raw_out(36)->raw_out(0)->dump()
+ 1015  StoreB  === 1011 1012 1008 38  [[ 1013 ]]  @oopptr:BotPTR+bot [narrow], idx=11; mismatched unsafe  Memory: @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+bot * [narrow], idx=11; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+                                                                                                      $76 = void
+
+Finish private buffer creates a non-larval representation from buffer, loading the field values
+
+(gdb) p load
+$77 = (LoadNode *) 0x7343bc122970
+(gdb) p load->adr_type ()
+(gdb) p load->adr_type ()
+$78 = (const TypePtr *) 0x7343bc0a2220
+(gdb) p $78->dump()
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+12 *$79 = void
+(gdb)
+
+Here the alias type of the loads exactly matches with captured stores tied to initialization IR, this leads to incorrect value forwarding during iterative
+GVN pass.
+
+
+Thread 19 "C2 CompilerThre" hit Breakpoint 12, LoadUBNode::Ideal (this=0x7343bc0bb4c8, phase=0x7343fc8ff310, can_reshape=true) at /mnt/c/GitHub/lworld+vector/src/hotspot/share/opto/memnode.cpp:2488
+2488        Node* narrow = Compile::narrow_value(T_BOOLEAN, value, _type, phase, false);
+   26  ConI  === 0  [[ 44 1460 1435 1438 1259 973 833 822 822 811 811 800 171 236 800 789 789 833 856 675 621 304 598 496 ]]  #int:0
+
+
+Problem occurs due to a missing MergeMemNode node after unrolled unsafe put loop.
+
+ 
