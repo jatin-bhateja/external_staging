@@ -16,11 +16,9 @@ public class cpu_memory_barrier {
       int [] asrc = new int[102400];
       int [] adst = new int[102400];
       Arrays.fill(asrc, 1);
-      try (Arena arena = Arena.ofConfined()) { 
-          //MemorySegment src = arena.allocate(102400);
-          //MemorySegment dst = arena.allocate(102400);
-          MemorySegment src = MemorySegment.ofArray(asrc);
-          MemorySegment dst = MemorySegment.ofArray(adst);
+      try (Arena arena = Arena.ofAuto()) { 
+          MemorySegment src = arena.allocate(102400);
+          MemorySegment dst = arena.allocate(102400);
            
           src.fill((byte)10);
           for (int i = 0; i < ISP.loopBound(102400 / ISP.vectorByteSize()); i++) {
