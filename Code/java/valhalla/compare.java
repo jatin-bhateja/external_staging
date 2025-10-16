@@ -2,30 +2,26 @@
 import jdk.incubator.vector.*;
 
 class compare {
-  public static void workload(boolean [] res) {
-      IntVector v1 = IntVector.broadcast(IntVector.SPECIES_256, 10);
-      IntVector v2 = IntVector.broadcast(IntVector.SPECIES_256, 10);
-      res[0] = v1 == v2; 
+
+  public static int workload() {
+      DoubleVector v1 = DoubleVector.broadcast(DoubleVector.SPECIES_128, 10);
+      DoubleVector v2 = DoubleVector.broadcast(DoubleVector.SPECIES_128, 10);
+      return v1.compare(VectorOperators.EQ, v2).trueCount(); 
   }
 
   public static void main(String [] args) {
-     int  [] arr = new int[16];
-     boolean [] res = new boolean[16];
-
+     int res = 0;
      // Warmup
-     for (int i = 0 ; i < 700000 ; i++)
-       workload(res);
+     for (int i = 0 ; i < 7000 ; i++) {
+       res += workload();
+     }
 
      // Perf
      long start = System.currentTimeMillis();
-     for (int i = 0 ; i < 100000 ; i++)
-       workload(res);
-
-     long time = System.currentTimeMillis() - start;
-     System.out.println("Time = " + time);
-
-     for (var elem : res) {
-       System.out.println(elem + " ");
+     for (int i = 0 ; i < 1000 ; i++) {
+       res += workload();
      }
+     long time = System.currentTimeMillis() - start;
+     System.out.println("[time] " + time + "ms [res] " + res);
   }
 }

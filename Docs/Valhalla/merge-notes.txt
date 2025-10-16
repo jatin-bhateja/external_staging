@@ -948,4 +948,157 @@ Thread 19 "C2 CompilerThre" hit Breakpoint 12, LoadUBNode::Ideal (this=0x7343bc0
 
 Problem occurs due to a missing MergeMemNode node after unrolled unsafe put loop.
 
+
+/*package-private*/                                                                                                                                         @ForceInline
+    final
+    AbstractMask<Double> bTestMF(int cond, Vector<Double> o, FBinTest f) {
+        int length = vspecies().length();
+        VectorPayloadMF vec1 = vec();
+        VectorPayloadMF vec2 = ((DoubleVector)o).vec();
+        boolean is_max_species = ((AbstractSpecies)vspecies()).is_max_species();                                                                                      
+
+        [A]
+        VectorPayloadMF mbits = VectorPayloadMF.newMaskInstanceFactory(vspecies().elementType(), length, is_max_species);                                           
+             -> Allocate + Initialize + CastPP + CheckCastPP 
+             -> non-larval InlineType + LoadUB + LoadUB
+
+        mbits = U.makePrivateBuffer(mbits);  
+             -> Allocate Buffer 
+               ->  Initialize :  StoreB + StoreB
+               ->  Update MergeMemNode slice corresponding to address type after each Store.
+               ->  Chain of Store + MergeMem + Store + MergeMem                                                                          
+        long vOffset = this.multiFieldOffset();
+               ->  getfield -> LoadL                                                                                                     
+        long mOffset = mbits.multiFieldOffset();            
+               ->  getfield -> LoadL
+                                                                                                                
+        for (int i = 0; i < length; i++)
+        {
+               Memory = Phi [loopback: mem ] [entry : MergeMem]
+               double v1 = U.getDouble(vec1, vOffset + i * Double.BYTES);                                                                                                
+               double v2 = U.getDouble(vec2, vOffset + i * Double.BYTES);                                                                                                   
+               U.putBoolean(mbits, mOffset + i, f.apply(cond, i, v1, v2);
+               Store Memory, Pointer 
+               mem = MergeMem
+        }
+        mbits = U.finishPrivateBuffer(mbits);
+        return maskFactory(mbits);
+   }
+
+
+ CountedLoop:
+   854 =  Phi 1600 [CountedLoop] Memory [1018 : StoreB + MergeMem]
+   
+  Post-unrolling we incorrectly pass default initialized payload which makes StoreB and LoadUB dead and they get wiped out.
+
+
+Original non-larval node re-materialized from finishPrivateBuffer:-
+=====================================================================
+
+692  CheckCastPP  === 689 687  [[ 693 693 833 1038 700 700 1035 789 811 800 996 996 982 982 822 923 923 ]]  #jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact *  Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact * !orig=[1667],[1009] !jvms: DoubleVector::bTestMF @ bci:54 (line 554)                                                                                                                                              
+
+525  ConL  === 0  [[ 789 1488 1296 1694 1695 996 982 822 923 1627 800 693 833 811 1696 ]]  #long:12                                                         
+
+576  ConL  === 0  [[ 700 1494 1300 1696 1694 1695 ]]  #long:13    
+
+693  AddP  === _ 692 692 525  [[ 1046 1611 ]]   Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+12 * !orig=[1625],[1008] !jvms: DoubleVector::bTestMF @ bci:54 (line 554)                                                                                                                     
+
+700  AddP  === _ 692 692 576  [[ 1048 1015 ]]   Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+13 * !orig=[1008] !jvms: DoubleVector::bTestMF @ bci:54 (line 554)       
+
+ 1015  StoreB  === 1011 1012 700 38  [[ 1013 ]]  @oopptr:BotPTR+bot [narrow], idx=11; mismatched unsafe  Memory: @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+13 *, name=mfield#1, idx=9; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)                                                   
+
+ 1611  StoreB  === 1642 1640 693 38  [[ 1610 ]]  @oopptr:BotPTR+bot [narrow], idx=11; mismatched unsafe  Memory: @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+12 *, name=mfield, idx=8; !orig=1015 !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
  
+ 1046  LoadUB  === _ 1643 693  [[ 1460 1299 1487 1438 1259 1469 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+12 *, name=mfield, idx=8; #bool !orig=[1440] !jvms: DoubleVector::bTestMF @ bci:161 (line 562)
+
+ 1048  LoadUB  === _ 1643 700  [[ 1460 1302 1493 1438 1259 1469 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9; #bool !orig=[1442] !jvms: DoubleVector::bTestMF @ bci:161 (line 562)
+
+ 1438  InlineType  === _ 43 26 38 1046 1048  [[ 1435 1501 ]]  #jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact *  Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact * !jvms: Double128Vector::maskFromPayload @ bci:5 (line 143) Double128Vector::maskFromPayload @ bci:2 (line 46) AbstractSpecies::maskFactory @ bci:5 (line 387) DoubleVector::maskFactory @ bci:5 (line 113) DoubleVector::bTestMF @ bci:172 (line 563)
+
+//------------------------------Ideal------------------------------------------
+// If the load is from Field memory and the pointer is non-null, it might be possible to
+// zero out the control input.
+// If the offset is constant and the base is an object allocation,
+// try to hook me up to the exact initializing store.
+Node *LoadNode::Ideal(PhaseGVN *phase, bool can_reshape) {
+
+(gdb) f
+#0  MemNode::can_see_stored_value (this=0x7c66840e9960, st=0x7c66840e9530, phase=0x7c66b5cfcbb0)
+    at /mnt/c/GitHub/lworld+vector/src/hotspot/share/opto/memnode.cpp:1279
+
+(gdb) dumpn this
+ 1048  LoadUB  === _ 1041 700  [[ ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9; #bool !jvms: DoubleVector::bTestMF @ bci:161 (line 562)
+                            $9 = void
+(gdb) dumpn new_st
+ 1018  Proj  === 1016  [[ 1019 1022 1021 1026 1032 850 851 852 853 854 855 1035 1038 ]] #2  Memory: @BotPTR *+bot, idx=Bot; !jvms: DoubleVector::bTestMF @ bci:147 (line 560)
+ $10 = void
+
+After GVN steps:-
+=================
+
+ 1438  InlineType  === _ 43 26 38 1046 26  [[ 1435 1501 ]]  #jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact *  Oop:jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact * !jvms: Double128Vector::maskFromPayload @ bci:5 (line 143) Double128Vector::maskFromPayload @ bci:2 (line 46) AbstractSpecies::maskFactory @ bci:5 (line 387) DoubleVector::maskFactory @ bci:5 (line 113) DoubleVector::bTestMF @ bci:172 (line 563)
+
+MemNode::can_see_stored_value :
+-------------------------------
+1256        // Skip through chains of MemBarNodes checking the MergeMems for
+1257        // new states for the slice of this load.  Stop once any other
+1258        // kind of node is encountered.  Loads from final memory can skip
+1259        // through any kind of MemBar but normal loads shouldn't skip
+1260        // through MemBarAcquire since the could allow them to move out of
+1261        // a synchronized region. It is not safe to step over MemBarCPUOrder,
+1262        // because alias info above them may be inaccurate (e.g., due to
+1263        // mixed/mismatched unsafe accesses).
+
+
+Unboxing store forwarding handling: 
+
+1382        // Load boxed value from result of valueOf() call is input parameter.
+1383        if (this->is_Load() && ld_adr->is_AddP() &&
+1384            (tp != nullptr) && tp->is_ptr_to_boxed_value()) {
+1385          intptr_t ignore = 0;
+1386          Node* base = AddPNode::Ideal_base_and_offset(ld_adr, phase, ignore);
+(gdb)
+1387          BarrierSetC2* bs = BarrierSet::barrier_set()->barrier_set_c2();
+1388          base = bs->step_over_gc_barrier(base);
+1389          if (base != nullptr && base->is_Proj() &&
+1390              base->as_Proj()->_con == TypeFunc::Parms &&
+1391              base->in(0)->is_CallStaticJava() &&
+1392              base->in(0)->as_CallStaticJava()->is_boxing_method()) {
+1393            return base->in(0)->in(TypeFunc::Parms);
+1394          }
+1395        }
+1396
+
+
+ [X]  Phi  === 848 1018 690  [[ 857 1048 ]]  #memory  Memory: @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9; !jvms: DoubleVector::bTestMF @ bci:85 (line 558)
+ LoadUB  === _ [X] 700  [[ 1043 1302 1493 1438 ]]  @jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:exact+13 *, name=mfield#1, idx=9; #bool !orig=[1442] !jvms: DoubleVector::bTestMF @ bci:161 (line 562)
+
+
+Revisiting the sequence of larval and non-larval transitions :-
+   - newAllocation
+     - oop
+     - non-larval at construction exit
+       - LoadUB (fields)    [1]
+   - makePrivateBuffer
+     - buffer 
+       - StoreB (fields)    [2]
+   - Loop:
+     - Phi: Memory
+     - putByte
+       - StoreB             [3]
+    
+   - finishPrivateBuffer
+     - non-larval 
+        - LoadUB            [4]
+
+  Q. At what junctures do we generate MemMergeNodes.
+    - Technically after each store we need to update the memmerge with the slice corresponding to alias type. 
+    - Initially entire memory is a single unified slice of memory, each store then creates a new tile within this slice overshadowing 
+      
+  Q. Do stop traversing store forwarding at barriers ?
+    - Yes, we stop backward traversal to find the initialization value of previous store if we encounter a MemBarrierCPUOrder.
+    - We don't allow memory ops from moving past beyond MemBarRelease emitted prior to volatile stores / atomic stores. 
+    - We don't allow memory ops from moving above MemBarAcquire emitted after volatile load / atomic load.
+  
+  Q. Look at the semantics and usage context of different kinds of MemBarrier in memnode.hpp.
+    - 
