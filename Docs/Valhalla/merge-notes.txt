@@ -1093,7 +1093,9 @@ Revisiting the sequence of larval and non-larval transitions :-
 
   Q. At what junctures do we generate MemMergeNodes.
     - Technically after each store we need to update the memmerge with the slice corresponding to alias type. 
-    - Initially entire memory is a single unified slice of memory, each store then creates a new tile within this slice overshadowing 
+    - Initially entire memory is a single unified slice of memory, each store then creates a new tile within this slice overshadowing
+      previous contents.
+    -  
       
   Q. Do stop traversing store forwarding at barriers ?
     - Yes, we stop backward traversal to find the initialization value of previous store if we encounter a MemBarrierCPUOrder.
@@ -1101,4 +1103,37 @@ Revisiting the sequence of larval and non-larval transitions :-
     - We don't allow memory ops from moving above MemBarAcquire emitted after volatile load / atomic load.
   
   Q. Look at the semantics and usage context of different kinds of MemBarrier in memnode.hpp.
-    - 
+    
+
+
+jdk/internal/vm/vector/VectorSupport$VectorPayloadMF16Z:NotNull:exact+13 *$37 = void
+(gdb) f
+#0  MemNode::optimize_simple_memory_chain (mchain=0x783ac013e530, t_oop=0x783ac0089e40, load=0x783ac00d9940, phase=0x783af41e5310)
+    at /mnt/c/GitHub/lworld+vector/src/hotspot/share/opto/memnode.cpp:227
+227             is_strict_final_load = true;
+(gdb)
+
+
+NonAtomicFlatPayload bug across all the execution engines:-
+
+│    0x7783c8495c6d  mov    %r8,%r10                                                                                                                       ││    0x7783c8495c70  add    $0x10,%r10                                                                                                                     ││    0x7783c8495c74  movl   $0x100f138,0x8(%r8)                                                                                                            ││    0x7783c8495c7c  xor    %eax,%eax                                                                                                                      ││    0x7783c8495c7e  vpxor  %ymm0,%ymm0,%ymm0                                                                                                              ││  > 0x7783c8495c82  vmovq  %xmm0,(%r10)                                                                                                                   ││    0x7783c8495c87  vmovd  %xmm1,0xc(%r8)    // update happens at byte 12 while flat payload is starts at offset 16. 
+
+
+---
+Layout of class jdk/incubator/vector/Double256Vector$Double256Mask@0x71cc4010da70 extends jdk/incubator/vector/AbstractMask@0x71cc4010da70
+Instance fields:
+ @0 RESERVED 12/-
+ @12 PADDING 4/1
+ @16 FLAT 4/4 "payload" Ljdk/internal/vm/vector/VectorSupport$VectorPayloadMF32Z; jdk/internal/vm/vector/VectorSupport$VectorPayloadMF32Z@0x71cc4010da70 NON_ATOMIC_FLAT
+ @20 NULL_MARKER 1/1
+
+
+jshell> import jdk.internal.vm.vector.*
+
+jshell> var vp = new jdk.internal.vm.vector.VectorSupport.VectorPayloadMF32Z()
+vp ==> multifield payload : [  ,  ,  ,  ]
+
+jshell> vp.multiFieldOffset()
+$7 ==> 12
+
+jshell>
