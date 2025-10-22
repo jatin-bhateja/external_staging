@@ -1,0 +1,2985 @@
+diff --git a/src/hotspot/share/opto/vectorIntrinsics.cpp b/src/hotspot/share/opto/vectorIntrinsics.cpp
+index c4da08b65bf..2aa2ddc020b 100644
+--- a/src/hotspot/share/opto/vectorIntrinsics.cpp
++++ b/src/hotspot/share/opto/vectorIntrinsics.cpp
+@@ -35,6 +35,18 @@ static bool is_vector(ciKlass* klass) {
+   return klass->is_subclass_of(ciEnv::current()->vector_VectorPayload_klass());
+ }
+ 
++static const char* get_opertype_string(int operType) {
++  switch(operType) {
++    case VectorSupport::VECTOR_TYPE_PRIM:
++      return "VECTOR_TYPE_PRIM";
++    case VectorSupport::VECTOR_TYPE_FP16:
++      return "VECTOR_TYPE_FP16";
++    default:
++      ShouldNotReachHere();
++      return nullptr;
++  }
++}
++
+ static bool check_vbox(const TypeInstPtr* vbox_type) {
+   assert(vbox_type->klass_is_exact(), "");
+ 
+@@ -293,7 +305,7 @@ static bool is_klass_initialized(const TypeInstPtr* vec_klass) {
+ //   M extends VectorMask<E>,
+ //   E>
+ //  V unaryOp(int oprId,
+-//            Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//            Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+ //            int length,
+ //            V v, M m,
+ //            UnaryOperation<V, M> defaultImpl) {
+@@ -303,7 +315,7 @@ static bool is_klass_initialized(const TypeInstPtr* vec_klass) {
+ //   M extends VectorMask<E>,
+ //   E>
+ //  VM binaryOp(int oprId,
+-//              Class<? extends VM> vmClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//              Class<? extends VM> vmClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+ //              int length,
+ //              VM v1, VM v2, M m,
+ //              BinaryOperation<VM, M> defaultImpl) {
+@@ -314,7 +326,7 @@ static bool is_klass_initialized(const TypeInstPtr* vec_klass) {
+ //   M extends VectorMask<E>,
+ //   E>
+ //  V ternaryOp(int oprId,
+-//              Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//              Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+ //              int length,
+ //              V v1, V v2, V v3, M m,
+ //              TernaryOperation<V, M> defaultImpl) {
+@@ -325,19 +337,20 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* mask_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(3))->isa_instptr();
+-  const TypeInt*     opr_type     = gvn().type(argument(5))->isa_int();
+-  const TypeInt*     vlen         = gvn().type(argument(6))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(4))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(5))->isa_int();
+ 
+-  if (opr          == nullptr || !opr->is_con() || !opr_type->is_con() ||
++  if (opr          == nullptr || !opr->is_con() ||
++      operType     == nullptr || !operType->is_con() ||
+       vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
+       vlen         == nullptr || !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: opr=%s vclass=%s etype=%s opr_type=%s vlen=%s",
++    log_if_needed("  ** missing constant: opr=%s vclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(3)->Opcode()],
+-                    NodeClassNames[argument(5)->Opcode()],
+-                    NodeClassNames[argument(6)->Opcode()]);
++                    NodeClassNames[argument(4)->Opcode()],
++                    NodeClassNames[argument(5)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
+@@ -353,7 +366,7 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+ 
+   // "argument(n + 5)" should be the mask object. We assume it is "null" when no mask
+   // is used to control this operation.
+-  const Type* vmask_type = gvn().type(argument(n + 7));
++  const Type* vmask_type = gvn().type(argument(n + 6));
+   bool is_masked_op = vmask_type != TypePtr::NULL_PTR;
+   if (is_masked_op) {
+     if (mask_klass == nullptr || mask_klass->const_oop() == nullptr) {
+@@ -377,7 +390,7 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   bool is_unsigned = VectorSupport::is_unsigned_op(opr->get_con());
+ 
+   int num_elem = vlen->get_con();
+-  int opc = VectorSupport::vop2ideal(opr->get_con(), elem_bt, opr_type->get_con());
++  int opc = VectorSupport::vop2ideal(opr->get_con(), elem_bt, operType->get_con());
+   int sopc = has_scalar_op ? VectorNode::opcode(opc, elem_bt) : opc;
+   if (sopc == 0 || num_elem == 1) {
+     log_if_needed("  ** operation not supported: arity=%d opc=%s[%d] vlen=%d etype=%s",
+@@ -412,28 +425,28 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+   Node* opd1 = nullptr; Node* opd2 = nullptr; Node* opd3 = nullptr;
+   switch (n) {
+     case 3: {
+-      opd3 = unbox_vector(argument(9), vbox_type, elem_bt, num_elem);
++      opd3 = unbox_vector(argument(8), vbox_type, elem_bt, num_elem);
+       if (opd3 == nullptr) {
+         log_if_needed("  ** unbox failed v3=%s",
+-                        NodeClassNames[argument(7)->Opcode()]);
++                        NodeClassNames[argument(8)->Opcode()]);
+         return false;
+       }
+       // fall-through
+     }
+     case 2: {
+-      opd2 = unbox_vector(argument(8), vbox_type, elem_bt, num_elem);
++      opd2 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
+       if (opd2 == nullptr) {
+         log_if_needed("  ** unbox failed v2=%s",
+-                        NodeClassNames[argument(6)->Opcode()]);
++                        NodeClassNames[argument(7)->Opcode()]);
+         return false;
+       }
+       // fall-through
+     }
+     case 1: {
+-      opd1 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
++      opd1 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+       if (opd1 == nullptr) {
+         log_if_needed("  ** unbox failed v1=%s",
+-                        NodeClassNames[argument(5)->Opcode()]);
++                        NodeClassNames[argument(6)->Opcode()]);
+         return false;
+       }
+       break;
+@@ -446,10 +459,10 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+     ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+     assert(is_vector_mask(mbox_klass), "argument(2) should be a mask class");
+     const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+-    mask = unbox_vector(argument(n + 7), mbox_type, elem_bt, num_elem);
++    mask = unbox_vector(argument(n + 6), mbox_type, elem_bt, num_elem);
+     if (mask == nullptr) {
+       log_if_needed("  ** unbox failed mask=%s",
+-                      NodeClassNames[argument(n + 7)->Opcode()]);
++                      NodeClassNames[argument(n + 6)->Opcode()]);
+       return false;
+     }
+   }
+@@ -491,13 +504,13 @@ bool LibraryCallKit::inline_vector_nary_operation(int n) {
+ //
+ //  public static
+ //  <V extends Vector<E>, E>
+-//  V libraryUnaryOp(long addr, Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType, int length, String debugName,
++//  V libraryUnaryOp(long addr, Class<? extends V> vClass, Class<?> cClass, int operType, int length, String debugName,
+ //                   V v,
+ //                   UnaryOperation<V,?> defaultImpl)
+ //
+ //  public static
+ //  <V extends VectorPayload, E>
+-//  V libraryBinaryOp(long addr, Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType, int length, String debugName,
++//  V libraryBinaryOp(long addr, Class<? extends V> vClass, Class<?> cClass, int operType, int length, String debugName,
+ //                    V v1, V v2,
+ //                    BinaryOperation<V,?> defaultImpl)
+ //
+@@ -507,20 +520,23 @@ bool LibraryCallKit::inline_vector_call(int arity) {
+   const TypeLong*    entry          = gvn().type(argument(0))->isa_long();
+   const TypeInstPtr* vector_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInstPtr* elem_klass     = gvn().type(argument(3))->isa_instptr();
+-  const TypeInt*     vlen           = gvn().type(argument(6))->isa_int();
+-  const TypeInstPtr* debug_name_oop = gvn().type(argument(7))->isa_instptr();
++  const TypeInt*     operType       = gvn().type(argument(4))->isa_int();
++  const TypeInt*     vlen           = gvn().type(argument(5))->isa_int();
++  const TypeInstPtr* debug_name_oop = gvn().type(argument(6))->isa_instptr();
+ 
+   if (entry        == nullptr   || !entry->is_con() ||
+       vector_klass == nullptr   || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr   || elem_klass->const_oop() == nullptr ||
+-      vlen         == nullptr   || !vlen->is_con() ||
++      operType     == nullptr   || !operType->is_con() || 
++      vlen  == nullptr   || !vlen->is_con() ||
+       debug_name_oop == nullptr || debug_name_oop->const_oop() == nullptr) {
+-    log_if_needed("  ** missing constant: opr=%s vclass=%s etype=%s vlen=%s debug_name=%s",
++    log_if_needed("  ** missing constant: opr=%s vclass=%s etype=%s operType=%s vlen=%s debug_name=%s",
+                   NodeClassNames[argument(0)->Opcode()],
+                   NodeClassNames[argument(2)->Opcode()],
+                   NodeClassNames[argument(3)->Opcode()],
+-                  NodeClassNames[argument(6)->Opcode()],
+-                  NodeClassNames[argument(7)->Opcode()]);
++                  NodeClassNames[argument(4)->Opcode()],
++                  NodeClassNames[argument(5)->Opcode()],
++                  NodeClassNames[argument(6)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
+@@ -529,6 +545,11 @@ bool LibraryCallKit::inline_vector_call(int arity) {
+     return false;
+   }
+ 
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   ciType* elem_type = elem_klass->const_oop()->as_instance()->java_mirror_type();
+   if (!elem_type->is_primitive_type()) {
+     log_if_needed("  ** not a primitive bt=%d", elem_type->basic_type());
+@@ -550,17 +571,17 @@ bool LibraryCallKit::inline_vector_call(int arity) {
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+ 
+-  Node* opd1 = unbox_vector(argument(8), vbox_type, elem_bt, num_elem);
++  Node* opd1 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
+   if (opd1 == nullptr) {
+-    log_if_needed("  ** unbox failed v1=%s", NodeClassNames[argument(8)->Opcode()]);
++    log_if_needed("  ** unbox failed v1=%s", NodeClassNames[argument(7)->Opcode()]);
+     return false;
+   }
+ 
+   Node* opd2 = nullptr;
+   if (arity > 1) {
+-    opd2 = unbox_vector(argument(9), vbox_type, elem_bt, num_elem);
++    opd2 = unbox_vector(argument(8), vbox_type, elem_bt, num_elem);
+     if (opd2 == nullptr) {
+-      log_if_needed("  ** unbox failed v2=%s", NodeClassNames[argument(9)->Opcode()]);
++      log_if_needed("  ** unbox failed v2=%s", NodeClassNames[argument(8)->Opcode()]);
+       return false;
+     }
+   }
+@@ -597,7 +618,7 @@ bool LibraryCallKit::inline_vector_call(int arity) {
+ //  <M extends VectorMask<E>,
+ //   E>
+ //  long maskReductionCoerced(int oper,
+-//                            Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//                            Class<? extends M> mClass, Class<?> cClass, int operType,
+ //                            int length,
+ //                            M m,
+ //                            VectorMaskOp<M> defaultImpl)
+@@ -606,17 +627,24 @@ bool LibraryCallKit::inline_vector_mask_operation() {
+   const TypeInt*     oper       = gvn().type(argument(0))->isa_int();
+   const TypeInstPtr* mask_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* elem_klass = gvn().type(argument(2))->isa_instptr();
+-  const TypeInt*     vlen       = gvn().type(argument(5))->isa_int();
+-  Node*              mask       = argument(6);
++  const TypeInt*     operType   = gvn().type(argument(3))->isa_int();
++  const TypeInt*     vlen       = gvn().type(argument(4))->isa_int();
++  Node*              mask       = argument(5);
+ 
+   if (mask_klass == nullptr || mask_klass->const_oop() == nullptr ||
+       elem_klass == nullptr || elem_klass->const_oop() == nullptr ||
++      operType   == nullptr || !operType->is_con() ||
+       vlen       == nullptr || !vlen->is_con() ||
+       oper       == nullptr || !oper->is_con() ||
+       mask->is_top()) {
+     return false; // dead code
+   }
+ 
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(mask_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -644,7 +672,7 @@ bool LibraryCallKit::inline_vector_mask_operation() {
+   Node* mask_vec = unbox_vector(mask, mask_box_type, elem_bt, num_elem);
+   if (mask_vec == nullptr) {
+     log_if_needed("  ** unbox failed mask=%s",
+-                      NodeClassNames[argument(6)->Opcode()]);
++                      NodeClassNames[argument(5)->Opcode()]);
+     return false;
+   }
+ 
+@@ -667,7 +695,7 @@ bool LibraryCallKit::inline_vector_mask_operation() {
+ //  <VM extends VectorPayload,
+ //   S extends VectorSpecies<E>,
+ //   E>
+-//  VM fromBitsCoerced(Class<? extends VM> vmClass, Class<?> cClass, Class<E> eClass, int operType,
++//  VM fromBitsCoerced(Class<? extends VM> vmClass, Class<?> cClass, int operType,
+ //                     int length,
+ //                     long bits, int mode, S s,
+ //                     FromBitsCoercedOperation<VM, S> defaultImpl)
+@@ -675,26 +703,35 @@ bool LibraryCallKit::inline_vector_mask_operation() {
+ bool LibraryCallKit::inline_vector_frombits_coerced() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
+-  const TypeLong*    bits_type    = gvn().type(argument(5))->isa_long();
++  const TypeInt*     operType     = gvn().type(argument(2))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
++  const TypeLong*    bits_type    = gvn().type(argument(4))->isa_long();
+   // Mode argument determines the mode of operation it can take following values:-
+   // MODE_BROADCAST for vector Vector.broadcast and VectorMask.maskAll operations.
+   // MODE_BITS_COERCED_LONG_TO_MASK for VectorMask.fromLong operation.
+-  const TypeInt*     mode         = gvn().type(argument(7))->isa_int();
++  const TypeInt*     mode         = gvn().type(argument(6))->isa_int();
+ 
+   if (vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
++      operType     == nullptr || !operType->is_con() ||
+       vlen         == nullptr || !vlen->is_con() ||
+       bits_type    == nullptr ||
+       mode         == nullptr || !mode->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s bitwise=%s",
++    log_if_needed("  ** missing constant: vclass=%s etype=%s operType=%s vlen=%s bitwise=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(4)->Opcode()],
+-                    NodeClassNames[argument(7)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(6)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
++
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(vector_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -732,7 +769,7 @@ bool LibraryCallKit::inline_vector_frombits_coerced() {
+   }
+ 
+   Node* broadcast = nullptr;
+-  Node* bits = argument(5);
++  Node* bits = argument(4);
+   Node* elem = bits;
+ 
+   if (opc == Op_VectorLongToMask) {
+@@ -801,7 +838,7 @@ static bool elem_consistent_with_arr(BasicType elem_bt, const TypeAryPtr* arr_ty
+ //   VM extends VectorPayload,
+ //   E,
+ //   S extends VectorSpecies<E>>
+-//  VM load(Class<? extends VM> vmClass, Class<?> cClass, Class<E> eClass, int operType,
++//  VM load(Class<? extends VM> vmClass, Class<?> cClass, int operType,
+ //          int length,
+ //          Object base, long offset, boolean fromSegment,
+ //          C container, long index, S s,
+@@ -811,7 +848,7 @@ static bool elem_consistent_with_arr(BasicType elem_bt, const TypeAryPtr* arr_ty
+ //  public static
+ //  <C,
+ //   V extends VectorPayload>
+-//  void store(Class<?> vClass, Class<?> cClass, Class<?> eClass, int operType,
++//  void store(Class<?> vClass, Class<?> cClass, int operType,
+ //             int length,
+ //             Object base, long offset, boolean fromSegment,
+ //             V v, C container, long index,
+@@ -820,18 +857,21 @@ static bool elem_consistent_with_arr(BasicType elem_bt, const TypeAryPtr* arr_ty
+ bool LibraryCallKit::inline_vector_mem_operation(bool is_store) {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
+-  const TypeInt*     from_ms      = gvn().type(argument(8))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(2))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
++  const TypeInt*     from_ms      = gvn().type(argument(7))->isa_int();
+ 
+   if (vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
++      operType     == nullptr || !operType->is_con() ||
+       vlen         == nullptr || !vlen->is_con() ||
+       from_ms      == nullptr || !from_ms->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s from_ms=%s",
++    log_if_needed("  ** missing constant: vclass=%s etype=%s operType=%s vlen=%s from_ms=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(4)->Opcode()],
+-                    NodeClassNames[argument(8)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(7)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+   if (!is_klass_initialized(vector_klass)) {
+@@ -858,8 +898,8 @@ bool LibraryCallKit::inline_vector_mem_operation(bool is_store) {
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   bool is_mask = is_vector_mask(vbox_klass);
+ 
+-  Node* base = argument(5);
+-  Node* offset = ConvL2X(argument(6));
++  Node* base = argument(4);
++  Node* offset = ConvL2X(argument(5));
+ 
+   // Save state and restore on bailout
+   SavedState old_state(this);
+@@ -941,7 +981,7 @@ bool LibraryCallKit::inline_vector_mem_operation(bool is_store) {
+   }
+ 
+   if (is_store) {
+-    Node* val = unbox_vector(argument(9), vbox_type, elem_bt, num_elem);
++    Node* val = unbox_vector(argument(8), vbox_type, elem_bt, num_elem);
+     if (val == nullptr) {
+       return false; // operand unboxing failed
+     }
+@@ -996,7 +1036,7 @@ bool LibraryCallKit::inline_vector_mem_operation(bool is_store) {
+ //   E,
+ //   S extends VectorSpecies<E>,
+ //   M extends VectorMask<E>>
+-//  V loadMasked(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//  V loadMasked(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+ //               int length, Object base, long offset, boolean fromSegment,
+ //               M m, int offsetInRange,
+ //               C container, long index, S s,
+@@ -1007,7 +1047,7 @@ bool LibraryCallKit::inline_vector_mem_operation(bool is_store) {
+ //   V extends Vector<E>,
+ //   M extends VectorMask<E>,
+ //   E>
+-//  void storeMasked(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//  void storeMasked(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+ //                   int length,
+ //                   Object base, long offset, boolean fromSegment,
+ //                   V v, M m, C container, long index,
+@@ -1018,22 +1058,26 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* mask_klass   = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(2))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(5))->isa_int();
+-  const TypeInt*     from_ms      = gvn().type(argument(9))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(3))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
++  const TypeInt*     from_ms      = gvn().type(argument(8))->isa_int();
+ 
+   if (vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       mask_klass   == nullptr || mask_klass->const_oop()   == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
++      operType     == nullptr || !operType->is_con() ||
+       vlen         == nullptr || !vlen->is_con() ||
+       from_ms      == nullptr || !from_ms->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s mclass=%s etype=%s vlen=%s from_ms=%s",
++    log_if_needed("  ** missing constant: vclass=%s mclass=%s etype=%s operType=%s vlen=%s from_ms=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(2)->Opcode()],
+-                    NodeClassNames[argument(5)->Opcode()],
+-                    NodeClassNames[argument(9)->Opcode()]);
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(4)->Opcode()],
++                    NodeClassNames[argument(8)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
++
+   if (!is_klass_initialized(vector_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -1053,8 +1097,8 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+   BasicType elem_bt = elem_type->basic_type();
+   int num_elem = vlen->get_con();
+ 
+-  Node* base = argument(6);
+-  Node* offset = ConvL2X(argument(7));
++  Node* base = argument(5);
++  Node* offset = ConvL2X(argument(6));
+ 
+   // Save state and restore on bailout
+   SavedState old_state(this);
+@@ -1087,7 +1131,7 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+       needs_predicate = true;
+     } else {
+       // Masked vector load with IOOBE always uses the predicated load.
+-      const TypeInt* offset_in_range = gvn().type(argument(11))->isa_int();
++      const TypeInt* offset_in_range = gvn().type(argument(10))->isa_int();
+       if (!offset_in_range->is_con()) {
+         log_if_needed("  ** missing constant: offsetInRange=%s",
+                         NodeClassNames[argument(10)->Opcode()]);
+@@ -1145,19 +1189,19 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+   const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+ 
+-  Node* mask = unbox_vector(is_store ? argument(11) : argument(10), mbox_type, elem_bt, num_elem);
++  Node* mask = unbox_vector(is_store ? argument(10) : argument(9), mbox_type, elem_bt, num_elem);
+   if (mask == nullptr) {
+     log_if_needed("  ** unbox failed mask=%s",
+-                    is_store ? NodeClassNames[argument(11)->Opcode()]
+-                             : NodeClassNames[argument(10)->Opcode()]);
++                    is_store ? NodeClassNames[argument(10)->Opcode()]
++                             : NodeClassNames[argument(9)->Opcode()]);
+     return false;
+   }
+ 
+   if (is_store) {
+-    Node* val = unbox_vector(argument(10), vbox_type, elem_bt, num_elem);
++    Node* val = unbox_vector(argument(9), vbox_type, elem_bt, num_elem);
+     if (val == nullptr) {
+       log_if_needed("  ** unbox failed vector=%s",
+-                      NodeClassNames[argument(10)->Opcode()]);
++                      NodeClassNames[argument(9)->Opcode()]);
+       return false; // operand unboxing failed
+     }
+     set_all_memory(reset_memory());
+@@ -1222,7 +1266,7 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+ //   S extends VectorSpecies<E>,
+ //   M extends VectorMask<E>,
+ //   E>
+-//  V loadWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//  V loadWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+ //                int length,
+ //                Class<? extends Vector<Integer>> vectorIndexClass,
+ //                int indexLength, Object base, long offset,
+@@ -1235,7 +1279,7 @@ bool LibraryCallKit::inline_vector_mem_masked_operation(bool is_store) {
+ //   W extends Vector<Integer>,
+ //   M extends VectorMask<E>,
+ //   E>
+-//  void storeWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//  void storeWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+ //                    int length,
+ //                    Class<? extends Vector<Integer>> vectorIndexClass,
+ //                    int indexLength, Object base, long offset,
+@@ -1248,21 +1292,24 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+   const TypeInstPtr* vector_klass     = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* mask_klass       = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* elem_klass       = gvn().type(argument(2))->isa_instptr();
+-  const TypeInt*     vlen             = gvn().type(argument(5))->isa_int();
+-  const TypeInstPtr* vector_idx_klass = gvn().type(argument(6))->isa_instptr();
+-  const TypeInt*     idx_vlen         = gvn().type(argument(7))->isa_int();
++  const TypeInt*     operType         = gvn().type(argument(3))->isa_int();
++  const TypeInt*     vlen             = gvn().type(argument(4))->isa_int();
++  const TypeInstPtr* vector_idx_klass = gvn().type(argument(5))->isa_instptr();
++  const TypeInt*     idx_vlen         = gvn().type(argument(6))->isa_int();
+ 
+   if (vector_klass     == nullptr || vector_klass->const_oop()     == nullptr ||
+       elem_klass       == nullptr || elem_klass->const_oop()       == nullptr ||
++      operType         == nullptr || !operType->is_con() ||
+       vlen             == nullptr || !vlen->is_con() ||
+       vector_idx_klass == nullptr || vector_idx_klass->const_oop() == nullptr ||
+       idx_vlen         == nullptr || !idx_vlen->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s viclass=%s idx_vlen=%s",
++    log_if_needed("  ** missing constant: vclass=%s etype=%s operType=%s vlen=%s viclass=%s idx_vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(4)->Opcode()],
+                     NodeClassNames[argument(5)->Opcode()],
+-                    NodeClassNames[argument(6)->Opcode()],
+-                    NodeClassNames[argument(7)->Opcode()]);
++                    NodeClassNames[argument(6)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
+@@ -1281,7 +1328,7 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+   int num_elem = vlen->get_con();
+   int idx_num_elem = idx_vlen->get_con();
+ 
+-  Node* m = is_scatter ? argument(13) : argument(15);
++  Node* m = is_scatter ? argument(12) : argument(14);
+   const Type* vmask_type = gvn().type(m);
+   bool is_masked_op = vmask_type != TypePtr::NULL_PTR;
+   if (is_masked_op) {
+@@ -1327,8 +1374,8 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+     return false; // not supported
+   }
+ 
+-  Node* base = argument(8);
+-  Node* offset = ConvL2X(argument(9));
++  Node* base = argument(7);
++  Node* offset = ConvL2X(argument(8));
+ 
+   // Save state and restore on bailout
+   SavedState old_state(this);
+@@ -1341,7 +1388,7 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+     uint header = arrayOopDesc::base_offset_in_bytes(elem_bt);
+     assert(offset->is_Con() && offset->bottom_type()->is_long()->get_con() == header,
+            "offset must be the array base offset");
+-    Node* index = argument(17);
++    Node* index = argument(16);
+     addr = array_element_address(base, index, elem_bt);
+   }
+ 
+@@ -1367,12 +1414,12 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+   Node* indexes = nullptr;
+   const TypeInstPtr* vbox_idx_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_idx_klass);
+   if (is_subword_type(elem_bt)) {
+-    Node* indexMap = argument(18);
+-    Node* indexM   = argument(19);
++    Node* indexMap = argument(17);
++    Node* indexM   = argument(18);
+     indexes = array_element_address(indexMap, indexM, T_INT);
+   } else {
+     // Get the first index vector.
+-    indexes = unbox_vector(argument(11), vbox_idx_type, T_INT, idx_num_elem);
++    indexes = unbox_vector(argument(10), vbox_idx_type, T_INT, idx_num_elem);
+     if (indexes == nullptr) {
+       return false;
+     }
+@@ -1392,7 +1439,7 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+ 
+   const TypeVect* vector_type = TypeVect::make(elem_bt, num_elem);
+   if (is_scatter) {
+-    Node* val = unbox_vector(argument(12), vbox_type, elem_bt, num_elem);
++    Node* val = unbox_vector(argument(11), vbox_type, elem_bt, num_elem);
+     if (val == nullptr) {
+       return false; // operand unboxing failed
+     }
+@@ -1427,7 +1474,7 @@ bool LibraryCallKit::inline_vector_gather_scatter(bool is_scatter) {
+ //   M extends VectorMask<E>,
+ //   E>
+ //  long reductionCoerced(int oprId,
+-//                        Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//                        Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+ //                        int length,
+ //                        V v, M m,
+ //                        ReductionOperation<V, M> defaultImpl)
+@@ -1437,17 +1484,19 @@ bool LibraryCallKit::inline_vector_reduction() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* mask_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(3))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(6))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(4))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(5))->isa_int();
+ 
+-  if (opr          == nullptr || !opr->is_con() ||
++  if (opr          == nullptr || !opr->is_con() || !operType->is_con() ||
+       vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
+       vlen         == nullptr || !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: opr=%s vclass=%s etype=%s vlen=%s",
++    log_if_needed("  ** missing constant: opr=%s vclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(3)->Opcode()],
+-                    NodeClassNames[argument(4)->Opcode()]);
++                    NodeClassNames[argument(4)->Opcode()],
++                    NodeClassNames[argument(5)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+   if (!is_klass_initialized(vector_klass)) {
+@@ -1459,12 +1508,16 @@ bool LibraryCallKit::inline_vector_reduction() {
+     log_if_needed("  ** not a primitive bt=%d", elem_type->basic_type());
+     return false; // should be primitive type
+   }
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
+ 
+-  const Type* vmask_type = gvn().type(argument(8));
++  const Type* vmask_type = gvn().type(argument(7));
+   bool is_masked_op = vmask_type != TypePtr::NULL_PTR;
+   if (is_masked_op) {
+     if (mask_klass == nullptr || mask_klass->const_oop() == nullptr) {
+-      log_if_needed("  ** missing constant: maskclass=%s", NodeClassNames[argument(4)->Opcode()]);
++      log_if_needed("  ** missing constant: maskclass=%s", NodeClassNames[argument(2)->Opcode()]);
+       return false; // not enough info for intrinsification
+     }
+ 
+@@ -1503,7 +1556,7 @@ bool LibraryCallKit::inline_vector_reduction() {
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+ 
+-  Node* opd = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
++  Node* opd = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+   if (opd == nullptr) {
+     return false; // operand unboxing failed
+   }
+@@ -1513,10 +1566,10 @@ bool LibraryCallKit::inline_vector_reduction() {
+     ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+     assert(is_vector_mask(mbox_klass), "argument(2) should be a mask class");
+     const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+-    mask = unbox_vector(argument(8), mbox_type, elem_bt, num_elem);
++    mask = unbox_vector(argument(7), mbox_type, elem_bt, num_elem);
+     if (mask == nullptr) {
+       log_if_needed("  ** unbox failed mask=%s",
+-                      NodeClassNames[argument(8)->Opcode()]);
++                      NodeClassNames[argument(7)->Opcode()]);
+       return false;
+     }
+   }
+@@ -1576,7 +1629,7 @@ bool LibraryCallKit::inline_vector_reduction() {
+ //  <M extends VectorMask<E>,
+ //   E>
+ //  boolean test(int cond,
+-//               Class<?> mClass, Class<?> cClass, Class<E> eClass, int opType,
++//               Class<?> mClass, Class<?> cClass, int operType,
+ //               int length,
+ //               M m1, M m2,
+ //               BiFunction<M, M, Boolean> defaultImpl)
+@@ -1586,19 +1639,28 @@ bool LibraryCallKit::inline_vector_test() {
+   const TypeInt*     cond         = gvn().type(argument(0))->isa_int();
+   const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(2))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(5))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(3))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
+ 
+   if (cond         == nullptr || !cond->is_con() ||
+       vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
++      operType     == nullptr || !operType->is_con() ||
+       vlen         == nullptr || !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: cond=%s vclass=%s etype=%s vlen=%s",
++    log_if_needed("  ** missing constant: cond=%s vclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(2)->Opcode()],
+-                    NodeClassNames[argument(5)->Opcode()]);
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(4)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
++
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(vector_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -1621,11 +1683,11 @@ bool LibraryCallKit::inline_vector_test() {
+     return false;
+   }
+ 
+-  Node* opd1 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
++  Node* opd1 = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
+   Node* opd2;
+   if (Matcher::vectortest_needs_second_argument(booltest == BoolTest::overflow,
+                                                 opd1->bottom_type()->isa_vectmask())) {
+-    opd2 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
++    opd2 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+   } else {
+     opd2 = opd1;
+   }
+@@ -1649,7 +1711,7 @@ bool LibraryCallKit::inline_vector_test() {
+ //  <V extends Vector<E>,
+ //   M extends VectorMask<E>,
+ //   E>
+-//  V blend(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//  V blend(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+ //          int length,
+ //          V v1, V v2, M m,
+ //          VectorBlendOp<V, M> defaultImpl)
+@@ -1658,20 +1720,23 @@ bool LibraryCallKit::inline_vector_blend() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* mask_klass   = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(2))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(5))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(3))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
+ 
+-  if (mask_klass == nullptr || vector_klass == nullptr || elem_klass == nullptr || vlen == nullptr) {
++  if (mask_klass == nullptr || vector_klass == nullptr || elem_klass == nullptr || vlen == nullptr || operType == nullptr) {
+     return false; // dead code
+   }
+   if (mask_klass->const_oop() == nullptr || vector_klass->const_oop() == nullptr ||
+-      elem_klass->const_oop() == nullptr || !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s mclass=%s etype=%s vlen=%s",
++      elem_klass->const_oop() == nullptr || !vlen->is_con() || !operType->is_con()) {
++    log_if_needed("  ** missing constant: vclass=%s mclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(2)->Opcode()],
+-                    NodeClassNames[argument(5)->Opcode()]);
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(4)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
++
+   if (!is_klass_initialized(vector_klass) || !is_klass_initialized(mask_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -1696,9 +1761,9 @@ bool LibraryCallKit::inline_vector_blend() {
+   ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+ 
+-  Node* v1   = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+-  Node* v2   = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
+-  Node* mask = unbox_vector(argument(8), mbox_type, mask_bt, num_elem);
++  Node* v1   = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++  Node* v2   = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
++  Node* mask = unbox_vector(argument(7), mbox_type, mask_bt, num_elem);
+ 
+   if (v1 == nullptr || v2 == nullptr || mask == nullptr) {
+     return false; // operand unboxing failed
+@@ -1719,7 +1784,7 @@ bool LibraryCallKit::inline_vector_blend() {
+ //   M extends VectorMask<E>,
+ //   E>
+ //  M compare(int cond,
+-//            Class<? extends V> vectorClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//            Class<? extends V> vectorClass, Class<M> mClass, Class<?> cClass, int operType,
+ //            int length,
+ //            V v1, V v2, M m,
+ //            VectorCompareOp<V, M> defaultImpl)
+@@ -1729,21 +1794,29 @@ bool LibraryCallKit::inline_vector_compare() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* mask_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(3))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(6))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(4))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(5))->isa_int();
+ 
+-  if (cond == nullptr || vector_klass == nullptr || mask_klass == nullptr || elem_klass == nullptr || vlen == nullptr) {
++  if (cond == nullptr || vector_klass == nullptr || mask_klass == nullptr || elem_klass == nullptr || operType == nullptr || vlen == nullptr) {
+     return false; // dead code
+   }
+   if (!cond->is_con() || vector_klass->const_oop() == nullptr || mask_klass->const_oop() == nullptr ||
+-      elem_klass->const_oop() == nullptr || !vlen->is_con()) {
++      elem_klass->const_oop() == nullptr || !operType->is_con() || !vlen->is_con()) {
+     log_if_needed("  ** missing constant: cond=%s vclass=%s mclass=%s etype=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(2)->Opcode()],
+                     NodeClassNames[argument(3)->Opcode()],
+-                    NodeClassNames[argument(6)->Opcode()]);
++                    NodeClassNames[argument(4)->Opcode()],
++                    NodeClassNames[argument(5)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
++
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(vector_klass) || !is_klass_initialized(mask_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -1778,11 +1851,11 @@ bool LibraryCallKit::inline_vector_compare() {
+   ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+ 
+-  Node* v1 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
+-  Node* v2 = unbox_vector(argument(8), vbox_type, elem_bt, num_elem);
++  Node* v1 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
++  Node* v2 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
+ 
+-  bool is_masked_op = argument(9)->bottom_type() != TypePtr::NULL_PTR;
+-  Node* mask = is_masked_op ? unbox_vector(argument(9), mbox_type, elem_bt, num_elem) : nullptr;
++  bool is_masked_op = argument(8)->bottom_type() != TypePtr::NULL_PTR;
++  Node* mask = is_masked_op ? unbox_vector(argument(8), mbox_type, elem_bt, num_elem) : nullptr;
+   if (is_masked_op && mask == nullptr) {
+     log_if_needed("  ** not supported: mask = null arity=2 op=comp/%d vlen=%d etype=%s ismask=usestore is_masked_op=1",
+                     cond->get_con(), num_elem, type2name(elem_bt));
+@@ -1829,7 +1902,7 @@ bool LibraryCallKit::inline_vector_compare() {
+ //   SH extends VectorShuffle<E>,
+ //   M  extends VectorMask<E>,
+ //   E>
+-//  V rearrangeOp(Class<? extends V> vClass, Class<SH> shClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//  V rearrangeOp(Class<? extends V> vClass, Class<SH> shClass, Class<M> mClass, Class<?> cClass, int operType,
+ //                int length,
+ //                V v, SH sh, M m,
+ //                VectorRearrangeOp<V, SH, M> defaultImpl)
+@@ -1839,20 +1912,23 @@ bool LibraryCallKit::inline_vector_rearrange() {
+   const TypeInstPtr* shuffle_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* mask_klass    = gvn().type(argument(2))->isa_instptr();
+   const TypeInstPtr* elem_klass    = gvn().type(argument(3))->isa_instptr();
+-  const TypeInt*     vlen          = gvn().type(argument(6))->isa_int();
++  const TypeInt*     operType      = gvn().type(argument(4))->isa_int();
++  const TypeInt*     vlen          = gvn().type(argument(5))->isa_int();
+ 
+-  if (vector_klass == nullptr  || shuffle_klass == nullptr ||  elem_klass == nullptr || vlen == nullptr) {
++  if (vector_klass == nullptr  || shuffle_klass == nullptr ||  elem_klass == nullptr || operType == nullptr || vlen == nullptr) {
+     return false; // dead code
+   }
+   if (shuffle_klass->const_oop() == nullptr ||
+       vector_klass->const_oop()  == nullptr ||
+       elem_klass->const_oop()    == nullptr ||
++      !operType->is_con() ||
+       !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s sclass=%s etype=%s vlen=%s",
++    log_if_needed("  ** missing constant: vclass=%s sclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(3)->Opcode()],
+-                    NodeClassNames[argument(6)->Opcode()]);
++                    NodeClassNames[argument(4)->Opcode()],
++                    NodeClassNames[argument(5)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+   if (!is_klass_initialized(vector_klass)  ||
+@@ -1885,7 +1961,7 @@ bool LibraryCallKit::inline_vector_rearrange() {
+     return false; // not supported
+   }
+ 
+-  bool is_masked_op = argument(9)->bottom_type() != TypePtr::NULL_PTR;
++  bool is_masked_op = argument(8)->bottom_type() != TypePtr::NULL_PTR;
+   bool use_predicate = is_masked_op;
+   if (is_masked_op &&
+       (mask_klass == nullptr ||
+@@ -1916,8 +1992,8 @@ bool LibraryCallKit::inline_vector_rearrange() {
+   ciKlass* shbox_klass = shuffle_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* shbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, shbox_klass);
+ 
+-  Node* v1 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
+-  Node* shuffle = unbox_vector(argument(8), shbox_type, shuffle_bt, num_elem);
++  Node* v1 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
++  Node* shuffle = unbox_vector(argument(7), shbox_type, shuffle_bt, num_elem);
+   const TypeVect* st = TypeVect::make(shuffle_bt, num_elem);
+ 
+   if (v1 == nullptr || shuffle == nullptr) {
+@@ -1933,7 +2009,7 @@ bool LibraryCallKit::inline_vector_rearrange() {
+   if (is_masked_op) {
+     ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+     const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+-    mask = unbox_vector(argument(9), mbox_type, elem_bt, num_elem);
++    mask = unbox_vector(argument(8), mbox_type, elem_bt, num_elem);
+     if (mask == nullptr) {
+       log_if_needed("  ** not supported: arity=3 op=shuffle/rearrange vlen=%d etype=%s ismask=useload is_masked_op=1",
+                       num_elem, type2name(elem_bt));
+@@ -1970,7 +2046,7 @@ bool LibraryCallKit::inline_vector_rearrange() {
+ //  <V extends Vector<E>,
+ //   M  extends VectorMask<E>,
+ //   E>
+-//  V selectFromOp(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//  V selectFromOp(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+ //                 int length, V v1, V v2, M m,
+ //                 VectorSelectFromOp<V, M> defaultImpl)
+ //
+@@ -1978,22 +2054,29 @@ bool LibraryCallKit::inline_vector_select_from() {
+   const TypeInstPtr* vector_klass  = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* mask_klass    = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* elem_klass    = gvn().type(argument(2))->isa_instptr();
+-  const TypeInt*     vlen          = gvn().type(argument(5))->isa_int();
++  const TypeInt*     operType      = gvn().type(argument(3))->isa_int();
++  const TypeInt*     vlen          = gvn().type(argument(4))->isa_int();
+ 
+-  if (vector_klass == nullptr  || elem_klass == nullptr || vlen == nullptr ||
++  if (vector_klass == nullptr  || elem_klass == nullptr || operType == nullptr || vlen == nullptr ||
+       vector_klass->const_oop()  == nullptr ||
+       elem_klass->const_oop()    == nullptr ||
++      !operType->is_con() || 
+       !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s",
++    log_if_needed("  ** missing constant: vclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(2)->Opcode()],
+-                    NodeClassNames[argument(5)->Opcode()]);
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(4)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+   if (!is_klass_initialized(vector_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+   }
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
+   ciType* elem_type = elem_klass->const_oop()->as_instance()->java_mirror_type();
+   if (!elem_type->is_primitive_type()) {
+     log_if_needed("  ** not a primitive bt=%d", elem_type->basic_type());
+@@ -2024,7 +2107,7 @@ bool LibraryCallKit::inline_vector_select_from() {
+     return false; // not supported
+   }
+ 
+-  bool is_masked_op = argument(8)->bottom_type() != TypePtr::NULL_PTR;
++  bool is_masked_op = argument(7)->bottom_type() != TypePtr::NULL_PTR;
+   bool use_predicate = is_masked_op;
+   if (is_masked_op &&
+       (mask_klass == nullptr ||
+@@ -2049,9 +2132,9 @@ bool LibraryCallKit::inline_vector_select_from() {
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+ 
+   // v1 is the index vector
+-  Node* v1 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
++  Node* v1 = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
+   // v2 is the vector being rearranged
+-  Node* v2 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
++  Node* v2 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+ 
+   if (v1 == nullptr) {
+     log_if_needed("  ** unbox failed v1=%s", NodeClassNames[argument(6)->Opcode()]);
+@@ -2067,7 +2150,7 @@ bool LibraryCallKit::inline_vector_select_from() {
+   if (is_masked_op) {
+     ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+     const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+-    mask = unbox_vector(argument(8), mbox_type, elem_bt, num_elem);
++    mask = unbox_vector(argument(7), mbox_type, elem_bt, num_elem);
+     if (mask == nullptr) {
+       log_if_needed("  ** unbox failed mask=%s", NodeClassNames[argument(8)->Opcode()]);
+       return false;
+@@ -2129,7 +2212,7 @@ bool LibraryCallKit::inline_vector_select_from() {
+ //     M extends VectorMask<E>,
+ //     E>
+ //    V broadcastInt(int opr,
+-//                   Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//                   Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+ //                   int length,
+ //                   V v, int n, M m,
+ //                   VectorBroadcastIntOp<V, M> defaultImpl) {
+@@ -2139,7 +2222,7 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* mask_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(3))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(6))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(5))->isa_int();
+ 
+   if (opr == nullptr || vector_klass == nullptr || elem_klass == nullptr || vlen == nullptr) {
+     return false; // dead code
+@@ -2149,7 +2232,7 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(3)->Opcode()],
+-                    NodeClassNames[argument(6)->Opcode()]);
++                    NodeClassNames[argument(5)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+   if (!is_klass_initialized(vector_klass)) {
+@@ -2157,7 +2240,7 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+     return false;
+   }
+ 
+-  const Type* vmask_type = gvn().type(argument(8));
++  const Type* vmask_type = gvn().type(argument(7));
+   bool is_masked_op = vmask_type != TypePtr::NULL_PTR;
+   if (is_masked_op) {
+     if (mask_klass == nullptr || mask_klass->const_oop() == nullptr) {
+@@ -2200,7 +2283,7 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+     return false; // operation not supported
+   }
+ 
+-  Node* cnt  = argument(8);
++  Node* cnt  = argument(7);
+   const TypeInt* cnt_type = cnt->bottom_type()->isa_int();
+ 
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+@@ -2226,7 +2309,7 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+     }
+   }
+ 
+-  Node* opd1 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
++  Node* opd1 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+   Node* opd2 = nullptr;
+   if (is_shift) {
+     opd2 = vector_shift_count(cnt, opc, elem_bt, num_elem);
+@@ -2249,9 +2332,9 @@ bool LibraryCallKit::inline_vector_broadcast_int() {
+   if (is_masked_op) {
+     ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+     const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+-    mask = unbox_vector(argument(9), mbox_type, elem_bt, num_elem);
++    mask = unbox_vector(argument(8), mbox_type, elem_bt, num_elem);
+     if (mask == nullptr) {
+-      log_if_needed("  ** unbox failed mask=%s", NodeClassNames[argument(9)->Opcode()]);
++      log_if_needed("  ** unbox failed mask=%s", NodeClassNames[argument(8)->Opcode()]);
+       return false;
+     }
+   }
+@@ -2472,7 +2555,7 @@ bool LibraryCallKit::inline_vector_convert() {
+ //  public static
+ //  <V extends Vector<E>,
+ //   E>
+-//  V insert(Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType,
++//  V insert(Class<? extends V> vClass, Class<?> cClass, int operType,
+ //           int length,
+ //           V v, int i, long val,
+ //           VecInsertOp<V> defaultImpl)
+@@ -2480,20 +2563,29 @@ bool LibraryCallKit::inline_vector_convert() {
+ bool LibraryCallKit::inline_vector_insert() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
+-  const TypeInt*     idx          = gvn().type(argument(6))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(2))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
++  const TypeInt*     idx          = gvn().type(argument(5))->isa_int();
+ 
+-  if (vector_klass == nullptr || elem_klass == nullptr || vlen == nullptr || idx == nullptr) {
++  if (vector_klass == nullptr || elem_klass == nullptr || operType == nullptr || vlen == nullptr || idx == nullptr) {
+     return false; // dead code
+   }
+-  if (vector_klass->const_oop() == nullptr || elem_klass->const_oop() == nullptr || !vlen->is_con() || !idx->is_con()) {
+-    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s idx=%s",
++  if (vector_klass->const_oop() == nullptr || elem_klass->const_oop() == nullptr || !operType->is_con() || 
++      !vlen->is_con() || !idx->is_con()) {
++    log_if_needed("  ** missing constant: vclass=%s etype=%s operType=%s vlen=%s idx=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(4)->Opcode()],
+-                    NodeClassNames[argument(6)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()],
++                    NodeClassNames[argument(5)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
++
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(vector_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -2514,12 +2606,12 @@ bool LibraryCallKit::inline_vector_insert() {
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+ 
+-  Node* opd = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++  Node* opd = unbox_vector(argument(4), vbox_type, elem_bt, num_elem);
+   if (opd == nullptr) {
+     return false;
+   }
+ 
+-  Node* insert_val = argument(7);
++  Node* insert_val = argument(6);
+   assert(gvn().type(insert_val)->isa_long() != nullptr, "expected to be long");
+ 
+   // Convert insert value back to its appropriate type.
+@@ -2558,7 +2650,7 @@ bool LibraryCallKit::inline_vector_insert() {
+ //  public static
+ //  <VM extends VectorPayload,
+ //   E>
+-//  long extract(Class<? extends VM> vClass, Class<?> cClass, Class<E> eClass, int operType,
++//  long extract(Class<? extends VM> vClass, Class<?> cClass, int operType,
+ //               int length,
+ //               VM vm, int i,
+ //               VecExtractOp<VM> defaultImpl)
+@@ -2566,19 +2658,28 @@ bool LibraryCallKit::inline_vector_insert() {
+ bool LibraryCallKit::inline_vector_extract() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
+-  const TypeInt*     idx          = gvn().type(argument(6))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(2))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
++  const TypeInt*     idx          = gvn().type(argument(5))->isa_int();
+ 
+   if (vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
++      operType     == nullptr || !operType->is_con() ||
+       vlen         == nullptr || !vlen->is_con() ||
+       idx          == nullptr) {
+-    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s",
++    log_if_needed("  ** missing constant: vclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(2)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
++
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(vector_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -2599,10 +2700,10 @@ bool LibraryCallKit::inline_vector_extract() {
+   if (is_vector_mask(vbox_klass)) {
+     // vbox_klass is mask. This is used for VectorMask.laneIsSet(int).
+ 
+-    Node* pos = argument(6); // can be variable
++    Node* pos = argument(5); // can be variable
+     if (arch_supports_vector(Op_ExtractUB, num_elem, elem_bt, VecMaskUseAll)) {
+       // Transform mask to vector with type of boolean and utilize ExtractUB node.
+-      opd = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++      opd = unbox_vector(argument(4), vbox_type, elem_bt, num_elem);
+       if (opd == nullptr) {
+         return false;
+       }
+@@ -2610,7 +2711,7 @@ bool LibraryCallKit::inline_vector_extract() {
+       opd = gvn().transform(new ExtractUBNode(opd, pos));
+       opd = gvn().transform(new ConvI2LNode(opd));
+     } else if (arch_supports_vector(Op_VectorMaskToLong, num_elem, elem_bt, VecMaskUseLoad)) {
+-      opd = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++      opd = unbox_vector(argument(4), vbox_type, elem_bt, num_elem);
+       if (opd == nullptr) {
+         return false;
+       }
+@@ -2629,7 +2730,7 @@ bool LibraryCallKit::inline_vector_extract() {
+   } else {
+     // vbox_klass is vector. This is used for Vector.lane(int).
+     if (!idx->is_con()) {
+-      log_if_needed("  ** missing constant: idx=%s", NodeClassNames[argument(6)->Opcode()]);
++      log_if_needed("  ** missing constant: idx=%s", NodeClassNames[argument(5)->Opcode()]);
+       return false; // not enough info for intrinsification
+     }
+ 
+@@ -2640,7 +2741,7 @@ bool LibraryCallKit::inline_vector_extract() {
+       return false; // not supported
+     }
+ 
+-    opd = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++    opd = unbox_vector(argument(4), vbox_type, elem_bt, num_elem);
+     if (opd == nullptr) {
+       return false;
+     }
+@@ -2744,24 +2845,32 @@ static Node* LowerSelectFromTwoVectorOperation(PhaseGVN& phase, Node* index_vec,
+ //  public static
+ //  <V extends Vector<E>,
+ //   E>
+-//  V selectFromTwoVectorOp(Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType, int length,
++//  V selectFromTwoVectorOp(Class<? extends V> vClass, Class<?> cClass, int operType, int length,
+ //                          V v1, V v2, V v3,
+ //                          SelectFromTwoVector<V> defaultImpl)
+ //
+ bool LibraryCallKit::inline_vector_select_from_two_vectors() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass = gvn().type(argument(1))->isa_instptr();
+-  const TypeInt* vlen = gvn().type(argument(4))->isa_int();
++  const TypeInt* operType = gvn().type(argument(2))->isa_int();
++  const TypeInt* vlen = gvn().type(argument(3))->isa_int();
+ 
+-  if (vector_klass == nullptr || elem_klass == nullptr || vlen == nullptr || vector_klass->const_oop() == nullptr ||
+-      elem_klass->const_oop() == nullptr ||!vlen->is_con()) {
++  if (vector_klass == nullptr || elem_klass == nullptr || operType == nullptr || vlen == nullptr ||
++      vector_klass->const_oop() == nullptr ||
++      elem_klass->const_oop() == nullptr || !operType->is_con() || !vlen->is_con()) {
+     log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(4)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(vector_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -2823,22 +2932,22 @@ bool LibraryCallKit::inline_vector_select_from_two_vectors() {
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+ 
+-  Node* opd1 = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++  Node* opd1 = unbox_vector(argument(4), vbox_type, elem_bt, num_elem);
+   if (opd1 == nullptr) {
+     log_if_needed("  ** unbox failed v1=%s",
+-                  NodeClassNames[argument(5)->Opcode()]);
++                  NodeClassNames[argument(4)->Opcode()]);
+     return false;
+   }
+-  Node* opd2 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
++  Node* opd2 = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
+   if (opd2 == nullptr) {
+     log_if_needed("  ** unbox failed v2=%s",
+-                  NodeClassNames[argument(6)->Opcode()]);
++                  NodeClassNames[argument(5)->Opcode()]);
+     return false;
+   }
+-  Node* opd3 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
++  Node* opd3 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+   if (opd3 == nullptr) {
+     log_if_needed("  ** unbox failed v3=%s",
+-                  NodeClassNames[argument(7)->Opcode()]);
++                  NodeClassNames[argument(6)->Opcode()]);
+     return false;
+   }
+ 
+@@ -2871,7 +2980,7 @@ bool LibraryCallKit::inline_vector_select_from_two_vectors() {
+ //   M extends VectorMask<E>,
+ //   E>
+ //  VectorPayload compressExpandOp(int opr,
+-//                                 Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//                                 Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+ //                                 int length, V v, M m,
+ //                                 CompressExpandOperation<V, M> defaultImpl)
+ //
+@@ -2880,7 +2989,7 @@ bool LibraryCallKit::inline_vector_compress_expand() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(1))->isa_instptr();
+   const TypeInstPtr* mask_klass   = gvn().type(argument(2))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(3))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(6))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(5))->isa_int();
+ 
+   if (opr          == nullptr || !opr->is_con() ||
+       vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+@@ -2892,7 +3001,7 @@ bool LibraryCallKit::inline_vector_compress_expand() {
+                     NodeClassNames[argument(1)->Opcode()],
+                     NodeClassNames[argument(2)->Opcode()],
+                     NodeClassNames[argument(3)->Opcode()],
+-                    NodeClassNames[argument(6)->Opcode()]);
++                    NodeClassNames[argument(5)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
+@@ -2922,22 +3031,22 @@ bool LibraryCallKit::inline_vector_compress_expand() {
+   if (opc != Op_CompressM) {
+     ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+     vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+-    opd1 = unbox_vector(argument(7), vbox_type, elem_bt, num_elem);
++    opd1 = unbox_vector(argument(6), vbox_type, elem_bt, num_elem);
+     if (opd1 == nullptr) {
+       log_if_needed("  ** unbox failed vector=%s",
+-                      NodeClassNames[argument(7)->Opcode()]);
++                      NodeClassNames[argument(6)->Opcode()]);
+       return false;
+     }
+   }
+ 
+   ciKlass* mbox_klass = mask_klass->const_oop()->as_instance()->java_lang_Class_klass();
+-  assert(is_vector_mask(mbox_klass), "argument(8) should be a mask class");
++  assert(is_vector_mask(mbox_klass), "argument(7) should be a mask class");
+   const TypeInstPtr* mbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, mbox_klass);
+ 
+-  Node* mask = unbox_vector(argument(8), mbox_type, elem_bt, num_elem);
++  Node* mask = unbox_vector(argument(7), mbox_type, elem_bt, num_elem);
+   if (mask == nullptr) {
+     log_if_needed("  ** unbox failed mask=%s",
+-                    NodeClassNames[argument(8)->Opcode()]);
++                    NodeClassNames[argument(7)->Opcode()]);
+     return false;
+   }
+ 
+@@ -2957,7 +3066,7 @@ bool LibraryCallKit::inline_vector_compress_expand() {
+ //  <V extends Vector<E>,
+ //   E,
+ //   S extends VectorSpecies<E>>
+-//  V indexVector(Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType,
++//  V indexVector(Class<? extends V> vClass, Class<?> cClass, int operType,
+ //                int length,
+ //                V v, int step, S s,
+ //                IndexOperation<V, S> defaultImpl) {
+@@ -2965,18 +3074,26 @@ bool LibraryCallKit::inline_vector_compress_expand() {
+ bool LibraryCallKit::inline_index_vector() {
+   const TypeInstPtr* vector_klass = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(2))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
+ 
+   if (vector_klass == nullptr || vector_klass->const_oop() == nullptr ||
+       elem_klass   == nullptr || elem_klass->const_oop()   == nullptr ||
++      operType     == nullptr || !operType->is_con() ||
+       vlen         == nullptr || !vlen->is_con() ) {
+-    log_if_needed("  ** missing constant: vclass=%s etype=%s vlen=%s",
++    log_if_needed("  ** missing constant: vclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(4)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(vector_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -3000,7 +3117,7 @@ bool LibraryCallKit::inline_index_vector() {
+   int mul_op = VectorSupport::vop2ideal(VectorSupport::VECTOR_OP_MUL, elem_bt);
+   int vmul_op = VectorNode::opcode(mul_op, elem_bt);
+   bool needs_mul = true;
+-  Node* scale = argument(6);
++  Node* scale = argument(5);
+   const TypeInt* scale_type = gvn().type(scale)->isa_int();
+   // Multiply is not needed if the scale is a constant "1".
+   if (scale_type && scale_type->is_con() && scale_type->get_con() == 1) {
+@@ -3026,10 +3143,10 @@ bool LibraryCallKit::inline_index_vector() {
+ 
+   ciKlass* vbox_klass = vector_klass->const_oop()->as_instance()->java_lang_Class_klass();
+   const TypeInstPtr* vbox_type = TypeInstPtr::make_exact(TypePtr::NotNull, vbox_klass);
+-  Node* opd = unbox_vector(argument(5), vbox_type, elem_bt, num_elem);
++  Node* opd = unbox_vector(argument(4), vbox_type, elem_bt, num_elem);
+   if (opd == nullptr) {
+     log_if_needed("  ** unbox failed vector=%s",
+-                    NodeClassNames[argument(5)->Opcode()]);
++                    NodeClassNames[argument(4)->Opcode()]);
+     return false;
+   }
+ 
+@@ -3094,25 +3211,33 @@ bool LibraryCallKit::inline_index_vector() {
+ //  public static
+ //  <E,
+ //   M extends VectorMask<E>>
+-//  M indexPartiallyInUpperRange(Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++//  M indexPartiallyInUpperRange(Class<? extends M> mClass, Class<?> cClass, int operType,
+ //                               int length, long offset, long limit,
+ //                               IndexPartiallyInUpperRangeOperation<E, M> defaultImpl)
+ //
+ bool LibraryCallKit::inline_index_partially_in_upper_range() {
+   const TypeInstPtr* mask_klass   = gvn().type(argument(0))->isa_instptr();
+   const TypeInstPtr* elem_klass   = gvn().type(argument(1))->isa_instptr();
+-  const TypeInt*     vlen         = gvn().type(argument(4))->isa_int();
++  const TypeInt*     operType     = gvn().type(argument(2))->isa_int();
++  const TypeInt*     vlen         = gvn().type(argument(3))->isa_int();
+ 
+   if (mask_klass == nullptr || mask_klass->const_oop() == nullptr ||
+       elem_klass == nullptr || elem_klass->const_oop() == nullptr ||
++      operType   == nullptr || !operType->is_con() ||
+       vlen       == nullptr || !vlen->is_con()) {
+-    log_if_needed("  ** missing constant: mclass=%s etype=%s vlen=%s",
++    log_if_needed("  ** missing constant: mclass=%s etype=%s operType=%s vlen=%s",
+                     NodeClassNames[argument(0)->Opcode()],
+                     NodeClassNames[argument(1)->Opcode()],
+-                    NodeClassNames[argument(4)->Opcode()]);
++                    NodeClassNames[argument(2)->Opcode()],
++                    NodeClassNames[argument(3)->Opcode()]);
+     return false; // not enough info for intrinsification
+   }
+ 
++  if (operType->get_con() != VectorSupport::VECTOR_TYPE_PRIM) {
++    log_if_needed("  ** unhandled operType=%s", get_opertype_string(operType->get_con()));
++    return false;
++  }
++
+   if (!is_klass_initialized(mask_klass)) {
+     log_if_needed("  ** klass argument not initialized");
+     return false;
+@@ -3149,8 +3274,8 @@ bool LibraryCallKit::inline_index_partially_in_upper_range() {
+     }
+   }
+ 
+-  Node* offset = argument(5);
+-  Node* limit = argument(7);
++  Node* offset = argument(4);
++  Node* limit = argument(6);
+   if (offset == nullptr || limit == nullptr) {
+     log_if_needed("  ** offset or limit argument is null");
+     return false; // not supported
+diff --git a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+index b8bb054e756..44032684244 100644
+--- a/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
++++ b/src/java.base/share/classes/jdk/internal/vm/vector/VectorSupport.java
+@@ -210,7 +210,7 @@ public interface FromBitsCoercedOperation<VM extends VectorPayload,
+     <VM extends VectorPayload,
+      S extends VectorSpecies<E>,
+      E>
+-    VM fromBitsCoerced(Class<? extends VM> vmClass, Class<?> cClass, Class<E> eClass, int operType,
++    VM fromBitsCoerced(Class<? extends VM> vmClass, Class<?> cClass, int operType,
+                        int length,
+                        long bits, int mode, S s,
+                        FromBitsCoercedOperation<VM, S> defaultImpl) {
+@@ -228,7 +228,7 @@ public interface IndexPartiallyInUpperRangeOperation<E,
+     public static
+     <E,
+      M extends VectorMask<E>>
+-    M indexPartiallyInUpperRange(Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++    M indexPartiallyInUpperRange(Class<? extends M> mClass, Class<?> cClass, int operType,
+                                  int length, long offset, long limit,
+                                  IndexPartiallyInUpperRangeOperation<E, M> defaultImpl) {
+         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+@@ -246,7 +246,7 @@ public interface IndexOperation<V extends Vector<?>,
+     <V extends Vector<E>,
+      E,
+      S extends VectorSpecies<E>>
+-    V indexVector(Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType,
++    V indexVector(Class<? extends V> vClass, Class<?> cClass, int operType,
+                   int length,
+                   V v, int step, S s,
+                   IndexOperation<V, S> defaultImpl) {
+@@ -267,7 +267,7 @@ public interface ReductionOperation<V extends Vector<?>,
+      M extends VectorMask<E>,
+      E>
+     long reductionCoerced(int oprId,
+-                          Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++                          Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+                           int length,
+                           V v, M m,
+                           ReductionOperation<V, M> defaultImpl) {
+@@ -286,7 +286,7 @@ public interface VecExtractOp<VM extends VectorPayload> {
+     public static
+     <VM extends VectorPayload,
+      E>
+-    long extract(Class<? extends VM> vClass, Class<?> cClass, Class<E> eClass, int operType,
++    long extract(Class<? extends VM> vClass, Class<?> cClass, int operType,
+                  int length,
+                  VM vm, int i,
+                  VecExtractOp<VM> defaultImpl) {
+@@ -304,7 +304,7 @@ public interface VecInsertOp<V extends Vector<?>> {
+     public static
+     <V extends Vector<E>,
+      E>
+-    V insert(Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType,
++    V insert(Class<? extends V> vClass, Class<?> cClass, int operType,
+              int length,
+              V v, int i, long val,
+              VecInsertOp<V> defaultImpl) {
+@@ -325,7 +325,7 @@ public interface UnaryOperation<V extends Vector<?>,
+      M extends VectorMask<E>,
+      E>
+     V unaryOp(int oprId,
+-              Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++              Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+               int length,
+               V v, M m,
+               UnaryOperation<V, M> defaultImpl) {
+@@ -363,7 +363,7 @@ public interface BinaryOperation<VM extends VectorPayload,
+      M extends VectorMask<E>,
+      E>
+     VM binaryOp(int oprId,
+-                Class<? extends VM> vmClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++                Class<? extends VM> vmClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+                 int length,
+                 VM v1, VM v2, M m,
+                 BinaryOperation<VM, M> defaultImpl) {
+@@ -398,7 +398,7 @@ public interface SelectFromTwoVector<V extends Vector<?>> {
+     public static
+     <V extends Vector<E>,
+      E>
+-    V selectFromTwoVectorOp(Class<? extends V> vClass, Class<?> cClass, Class<E> eClass, int operType, int length,
++    V selectFromTwoVectorOp(Class<? extends V> vClass, Class<?> cClass, int operType, int length,
+                             V v1, V v2, V v3,
+                             SelectFromTwoVector<V> defaultImpl) {
+         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+@@ -420,7 +420,7 @@ public interface TernaryOperation<V extends Vector<?>,
+      M extends VectorMask<E>,
+      E>
+     V ternaryOp(int oprId,
+-                Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++                Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+                 int length,
+                 V v1, V v2, V v3, M m,
+                 TernaryOperation<V, M> defaultImpl) {
+@@ -444,7 +444,7 @@ public interface LoadOperation<C,
+      VM extends VectorPayload,
+      E,
+      S extends VectorSpecies<E>>
+-    VM load(Class<? extends VM> vmClass, Class<?> cClass, Class<E> eClass, int operType,
++    VM load(Class<? extends VM> vmClass, Class<?> cClass, int operType,
+             int length,
+             Object base, long offset, boolean fromSegment,
+             C container, long index, S s,
+@@ -469,7 +469,7 @@ public interface LoadVectorMaskedOperation<C,
+      E,
+      S extends VectorSpecies<E>,
+      M extends VectorMask<E>>
+-    V loadMasked(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++    V loadMasked(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+                  int length, Object base, long offset, boolean fromSegment,
+                  M m, int offsetInRange,
+                  C container, long index, S s,
+@@ -495,7 +495,7 @@ public interface LoadVectorOperationWithMap<C,
+      S extends VectorSpecies<E>,
+      M extends VectorMask<E>,
+      E>
+-    V loadWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++    V loadWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+                   int length,
+                   Class<? extends Vector<Integer>> vectorIndexClass,
+                   int indexLength, Object base, long offset,
+@@ -538,7 +538,7 @@ public interface StoreVectorMaskedOperation<C,
+      V extends Vector<E>,
+      M extends VectorMask<E>,
+      E>
+-    void storeMasked(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++    void storeMasked(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+                      int length,
+                      Object base, long offset, boolean fromSegment,
+                      V v, M m, C container, long index,
+@@ -562,7 +562,7 @@ public interface StoreVectorOperationWithMap<C,
+      W extends Vector<Integer>,
+      M extends VectorMask<E>,
+      E>
+-    void storeWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++    void storeWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+                       int length,
+                       Class<? extends Vector<Integer>> vectorIndexClass,
+                       int indexLength, Object base, long offset,
+@@ -580,7 +580,7 @@ void storeWithMap(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, C
+     <M extends VectorMask<E>,
+      E>
+     boolean test(int cond,
+-                 Class<?> mClass, Class<?> cClass, Class<E> eClass, int opType,
++                 Class<?> mClass, Class<?> cClass, int operType,
+                  int length,
+                  M m1, M m2,
+                  BiFunction<M, M, Boolean> defaultImpl) {
+@@ -601,7 +601,7 @@ public interface VectorCompareOp<V extends Vector<?>,
+      M extends VectorMask<E>,
+      E>
+     M compare(int cond,
+-              Class<? extends V> vectorClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++              Class<? extends V> vectorClass, Class<M> mClass, Class<?> cClass, int operType,
+               int length,
+               V v1, V v2, M m,
+               VectorCompareOp<V, M> defaultImpl) {
+@@ -622,7 +622,7 @@ public interface VectorRearrangeOp<V extends Vector<?>,
+      SH extends VectorShuffle<E>,
+      M  extends VectorMask<E>,
+      E>
+-    V rearrangeOp(Class<? extends V> vClass, Class<SH> shClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++    V rearrangeOp(Class<? extends V> vClass, Class<SH> shClass, Class<M> mClass, Class<?> cClass, int operType,
+                   int length,
+                   V v, SH sh, M m,
+                   VectorRearrangeOp<V, SH, M> defaultImpl) {
+@@ -640,7 +640,7 @@ public interface VectorSelectFromOp<V extends Vector<?>,
+     <V extends Vector<E>,
+      M  extends VectorMask<E>,
+      E>
+-    V selectFromOp(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++    V selectFromOp(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+                    int length, V v1, V v2, M m,
+                    VectorSelectFromOp<V, M> defaultImpl) {
+         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+@@ -659,7 +659,7 @@ public interface VectorBlendOp<V extends Vector<?>,
+     <V extends Vector<E>,
+      M extends VectorMask<E>,
+      E>
+-    V blend(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++    V blend(Class<? extends V> vClass, Class<M> mClass, Class<?> cClass, int operType,
+             int length,
+             V v1, V v2, M m,
+             VectorBlendOp<V, M> defaultImpl) {
+@@ -680,7 +680,7 @@ public interface VectorBroadcastIntOp<V extends Vector<?>,
+      M extends VectorMask<E>,
+      E>
+     V broadcastInt(int opr,
+-                   Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++                   Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+                    int length,
+                    V v, int n, M m,
+                    VectorBroadcastIntOp<V, M> defaultImpl) {
+@@ -726,7 +726,7 @@ public interface CompressExpandOperation<V extends Vector<?>,
+      M extends VectorMask<E>,
+      E>
+     VectorPayload compressExpandOp(int opr,
+-                                   Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++                                   Class<? extends V> vClass, Class<? extends M> mClass, Class<?> cClass, int operType,
+                                    int length, V v, M m,
+                                    CompressExpandOperation<V, M> defaultImpl) {
+         assert isNonCapturingLambda(defaultImpl) : defaultImpl;
+@@ -755,7 +755,7 @@ public interface VectorMaskOp<M extends VectorMask<?>> {
+     <M extends VectorMask<E>,
+      E>
+     long maskReductionCoerced(int oper,
+-                              Class<? extends M> mClass, Class<?> cClass, Class<E> eClass, int operType,
++                              Class<? extends M> mClass, Class<?> cClass, int operType,
+                               int length,
+                               M m,
+                               VectorMaskOp<M> defaultImpl) {
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractSpecies.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractSpecies.java
+index 68f0ff3fcf7..f0d37da3ac6 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractSpecies.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractSpecies.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2017, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2017, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractVector.java
+index 7c740dd9887..7de60e6ffb2 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/AbstractVector.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2019, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2019, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/HalffloatVector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/HalffloatVector.java
+index 6873f300b49..d355f63ad44 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/HalffloatVector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/HalffloatVector.java
+@@ -535,7 +535,8 @@ static HalffloatVector selectFromTwoVectorHelper(Vector<Float16> indexes, Vector
+         short[] vecPayload2 = ((HalffloatVector)src1).vec();
+         short[] vecPayload3 = ((HalffloatVector)src2).vec();
+         for (int i = 0; i < vlen; i++) {
+-            int wrapped_index = VectorIntrinsics.wrapToRange((int)vecPayload1[i], 2 * vlen);
++            int index = Float16.shortBitsToFloat16(vecPayload1[i]).intValue();
++            int wrapped_index = VectorIntrinsics.wrapToRange(index, 2 * vlen);
+             res[i] = wrapped_index >= vlen ? vecPayload3[wrapped_index - vlen] : vecPayload2[wrapped_index];
+         }
+         return ((HalffloatVector)src1).vectorFactory(res);
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Vector.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Vector.java
+index 7e01356139d..6318a7476e3 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Vector.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/Vector.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2017, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2017, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorOperators.java b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorOperators.java
+index 292c9810319..976626d49b9 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorOperators.java
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/VectorOperators.java
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2019, 2024, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2019, 2025, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+index e6ebcbdc0a8..67e55995eab 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-Vector.java.template
+@@ -570,7 +570,12 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         $type$[] vecPayload2 = (($abstractvectortype$)src1).vec();
+         $type$[] vecPayload3 = (($abstractvectortype$)src2).vec();
+         for (int i = 0; i < vlen; i++) {
++#if[FP16]
++            int index = Float16.shortBitsToFloat16(vecPayload1[i]).intValue();
++            int wrapped_index = VectorIntrinsics.wrapToRange(index, 2 * vlen);
++#else[FP16]
+             int wrapped_index = VectorIntrinsics.wrapToRange((int)vecPayload1[i], 2 * vlen);
++#end[FP16]
+             res[i] = wrapped_index >= vlen ? vecPayload3[wrapped_index - vlen] : vecPayload2[wrapped_index];
+         }
+         return (($abstractvectortype$)src1).vectorFactory(res);
+@@ -601,11 +606,11 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     public static $abstractvectortype$ zero(VectorSpecies<$Boxtype$> species) {
+         $Type$Species vsp = ($Type$Species) species;
+ #if[FP]
+-        return VectorSupport.fromBitsCoerced(vsp.vectorType(), $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, species.length(),
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), $carriertype$.class, VECTOR_OPER_TYPE, species.length(),
+                         toBits({#if[FP16]?(short) 0:0.0f}), MODE_BROADCAST, vsp,
+                         ((bits_, s_) -> s_.rvOp(i -> bits_)));
+ #else[FP]
+-        return VectorSupport.fromBitsCoerced(vsp.vectorType(), $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, species.length(),
++        return VectorSupport.fromBitsCoerced(vsp.vectorType(), $carriertype$.class, VECTOR_OPER_TYPE, species.length(),
+                                 0, MODE_BROADCAST, vsp,
+                                 ((bits_, s_) -> s_.rvOp(i -> bits_)));
+ #end[FP]
+@@ -737,7 +742,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         }
+         int opc = opCode(op);
+         return VectorSupport.unaryOp(
+-            opc, getClass(), null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), null, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, null,
+             UN_IMPL.find(op, opc, $abstractvectortype$::unaryOperations));
+     }
+@@ -772,7 +777,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         }
+         int opc = opCode(op);
+         return VectorSupport.unaryOp(
+-            opc, getClass(), maskClass, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), maskClass, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, m,
+             UN_IMPL.find(op, opc, $abstractvectortype$::unaryOperations));
+     }
+@@ -951,7 +956,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ 
+         int opc = opCode(op);
+         return VectorSupport.binaryOp(
+-            opc, getClass(), null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), null, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, that, null,
+             BIN_IMPL.find(op, opc, $abstractvectortype$::binaryOperations));
+     }
+@@ -1018,7 +1023,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ 
+         int opc = opCode(op);
+         return VectorSupport.binaryOp(
+-            opc, getClass(), maskClass, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), maskClass, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, that, m,
+             BIN_IMPL.find(op, opc, $abstractvectortype$::binaryOperations));
+     }
+@@ -1270,7 +1275,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         e &= SHIFT_MASK;
+         int opc = opCode(op);
+         return VectorSupport.broadcastInt(
+-            opc, getClass(), null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), null, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, e, null,
+             BIN_INT_IMPL.find(op, opc, $abstractvectortype$::broadcastIntOperations));
+     }
+@@ -1291,7 +1296,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         e &= SHIFT_MASK;
+         int opc = opCode(op);
+         return VectorSupport.broadcastInt(
+-            opc, getClass(), maskClass, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), maskClass, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, e, m,
+             BIN_INT_IMPL.find(op, opc, $abstractvectortype$::broadcastIntOperations));
+     }
+@@ -1375,7 +1380,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ #end[BITWISE]
+         int opc = opCode(op);
+         return VectorSupport.ternaryOp(
+-            opc, getClass(), null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), null, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, that, tother, null,
+             TERN_IMPL.find(op, opc, $abstractvectortype$::ternaryOperations));
+     }
+@@ -1417,7 +1422,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+ #end[BITWISE]
+         int opc = opCode(op);
+         return VectorSupport.ternaryOp(
+-            opc, getClass(), maskClass, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), maskClass, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, that, tother, m,
+             TERN_IMPL.find(op, opc, $abstractvectortype$::ternaryOperations));
+     }
+@@ -2554,7 +2559,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         that.check(this);
+         int opc = opCode(op);
+         return VectorSupport.compare(
+-            opc, getClass(), maskType, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), maskType, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, that, null,
+             (cond, v0, v1, m1) -> {
+                 AbstractMask<$Boxtype$> m
+@@ -2576,7 +2581,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         m.check(maskType, this);
+         int opc = opCode(op);
+         return VectorSupport.compare(
+-            opc, getClass(), maskType, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), maskType, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, that, m,
+             (cond, v0, v1, m1) -> {
+                 AbstractMask<$Boxtype$> cmpM
+@@ -2720,7 +2725,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     blendTemplate(Class<M> maskType, $abstractvectortype$ v, M m) {
+         v.check(this);
+         return VectorSupport.blend(
+-            getClass(), maskType, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            getClass(), maskType, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, v, m,
+             (v0, v1, m_) -> v0.bOp(v1, m_, (i, a, b) -> b));
+     }
+@@ -2737,7 +2742,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         // make sure VLENGTH*scale doesn't overflow:
+         vsp.checkScale(scale);
+         return VectorSupport.indexVector(
+-            getClass(), $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            getClass(), $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, scale, vsp,
+             (v, scale_, s)
+             -> {
+@@ -2951,7 +2956,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     $abstractvectortype$ rearrangeTemplate(Class<S> shuffletype, S shuffle) {
+         Objects.requireNonNull(shuffle);
+         return VectorSupport.rearrangeOp(
+-            getClass(), shuffletype, null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            getClass(), shuffletype, null, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, shuffle, null,
+             (v1, s_, m_) -> v1.uOp((i, a) -> {
+                 int ei = Integer.remainderUnsigned(s_.laneSource(i), v1.length());
+@@ -2978,7 +2983,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         Objects.requireNonNull(shuffle);
+         m.check(masktype, this);
+         return VectorSupport.rearrangeOp(
+-                   getClass(), shuffletype, masktype, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++                   getClass(), shuffletype, masktype, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+                    this, shuffle, m,
+                    (v1, s_, m_) -> v1.uOp((i, a) -> {
+                         int ei = Integer.remainderUnsigned(s_.laneSource(i), v1.length());
+@@ -3004,7 +3009,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         VectorMask<$Boxtype$> valid = shuffle.laneIsValid();
+         $abstractvectortype$ r0 =
+             VectorSupport.rearrangeOp(
+-                getClass(), shuffletype, null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++                getClass(), shuffletype, null, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+                 this, shuffle, null,
+                 (v0, s_, m_) -> v0.uOp((i, a) -> {
+                     int ei = Integer.remainderUnsigned(s_.laneSource(i), v0.length());
+@@ -3012,7 +3017,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+                 }));
+         $abstractvectortype$ r1 =
+             VectorSupport.rearrangeOp(
+-                getClass(), shuffletype, null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++                getClass(), shuffletype, null, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+                 v, shuffle, null,
+                 (v1, s_, m_) -> v1.uOp((i, a) -> {
+                     int ei = Integer.remainderUnsigned(s_.laneSource(i), v1.length());
+@@ -3077,7 +3082,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     $Type$Vector compressTemplate(Class<M> masktype, M m) {
+       m.check(masktype, this);
+       return ($Type$Vector) VectorSupport.compressExpandOp(VectorSupport.VECTOR_OP_COMPRESS, getClass(), masktype,
+-                                                        $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(), this, m,
++                                                        $carriertype$.class, VECTOR_OPER_TYPE, length(), this, m,
+                                                         (v1, m1) -> compressHelper(v1, m1));
+     }
+ 
+@@ -3096,7 +3101,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     $Type$Vector expandTemplate(Class<M> masktype, M m) {
+       m.check(masktype, this);
+       return ($Type$Vector) VectorSupport.compressExpandOp(VectorSupport.VECTOR_OP_EXPAND, getClass(), masktype,
+-                                                        $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(), this, m,
++                                                        $carriertype$.class, VECTOR_OPER_TYPE, length(), this, m,
+                                                         (v1, m1) -> expandHelper(v1, m1));
+     }
+ 
+@@ -3111,7 +3116,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     /*package-private*/
+     @ForceInline
+     final $abstractvectortype$ selectFromTemplate($abstractvectortype$ v) {
+-        return ($Type$Vector)VectorSupport.selectFromOp(getClass(), null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE,
++        return ($Type$Vector)VectorSupport.selectFromOp(getClass(), null, $carriertype$.class, VECTOR_OPER_TYPE,
+                                                         length(), this, v, null,
+                                                         (v1, v2, _m) ->
+                                                          v2.rearrange(v1.toShuffle()));
+@@ -3131,7 +3136,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     $abstractvectortype$ selectFromTemplate($abstractvectortype$ v,
+                                             Class<M> masktype, M m) {
+         m.check(masktype, this);
+-        return ($Type$Vector)VectorSupport.selectFromOp(getClass(), masktype, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE,
++        return ($Type$Vector)VectorSupport.selectFromOp(getClass(), masktype, $carriertype$.class, VECTOR_OPER_TYPE,
+                                                         length(), this, v, m,
+                                                         (v1, v2, _m) ->
+                                                          v2.rearrange(v1.toShuffle(), _m));
+@@ -3149,7 +3154,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+     /*package-private*/
+     @ForceInline
+     final $abstractvectortype$ selectFromTemplate($abstractvectortype$ v1, $abstractvectortype$ v2) {
+-        return VectorSupport.selectFromTwoVectorOp(getClass(), $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(), this, v1, v2,
++        return VectorSupport.selectFromTwoVectorOp(getClass(), $carriertype$.class, VECTOR_OPER_TYPE, length(), this, v1, v2,
+                                                    (vec1, vec2, vec3) -> selectFromTwoVectorHelper(vec1, vec2, vec3));
+     }
+ 
+@@ -3498,7 +3503,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         }
+         int opc = opCode(op);
+         return fromBits(VectorSupport.reductionCoerced(
+-            opc, getClass(), maskClass, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), maskClass, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, m,
+             REDUCE_IMPL.find(op, opc, $abstractvectortype$::reductionOperations)));
+     }
+@@ -3516,7 +3521,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         }
+         int opc = opCode(op);
+         return fromBits(VectorSupport.reductionCoerced(
+-            opc, getClass(), null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, length(),
++            opc, getClass(), null, $carriertype$.class, VECTOR_OPER_TYPE, length(),
+             this, null,
+             REDUCE_IMPL.find(op, opc, $abstractvectortype$::reductionOperations)));
+     }
+@@ -3887,7 +3892,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         }
+ 
+         return VectorSupport.loadWithMap(
+-            vectorType, null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
++            vectorType, null, $carriertype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
+             lsp.vectorType(), lsp.length(),
+             a, ARRAY_BASE, vix0, vix1, vix2, vix3, null,
+             a, offset, indexMap, mapOffset, vsp,
+@@ -3895,7 +3900,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+             s.vOp(n -> c[idx + iMap[idy+n]]));
+ #else[byte]
+         return VectorSupport.loadWithMap(
+-            vectorType, null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
++            vectorType, null, $carriertype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
+             lsp.vectorType(), lsp.length(),
+             a, ARRAY_BASE, vix0, vix1, null, null, null,
+             a, offset, indexMap, mapOffset, vsp,
+@@ -3948,7 +3953,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         vix = VectorIntrinsics.checkIndex(vix, a.length);
+ 
+         return VectorSupport.loadWithMap(
+-            vectorType, null, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
++            vectorType, null, $carriertype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
+             isp.vectorType(), isp.length(),
+             a, ARRAY_BASE, vix, null, null, null, null,
+             a, offset, indexMap, mapOffset, vsp,
+@@ -5118,7 +5123,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         }
+ 
+         return VectorSupport.loadWithMap(
+-            vectorType, maskClass, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
++            vectorType, maskClass, $carriertype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
+             lsp.vectorType(), lsp.length(),
+             a, ARRAY_BASE, vix0, vix1, vix2, vix3, m,
+             a, offset, indexMap, mapOffset, vsp,
+@@ -5126,7 +5131,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+             s.vOp(vm, n -> c[idx + iMap[idy+n]]));
+ #else[byte]
+         return VectorSupport.loadWithMap(
+-            vectorType, maskClass, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
++            vectorType, maskClass, $carriertype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
+             lsp.vectorType(), lsp.length(),
+             a, ARRAY_BASE, vix0, vix1, null, null, m,
+             a, offset, indexMap, mapOffset, vsp,
+@@ -5181,7 +5186,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         vix = VectorIntrinsics.checkIndex(vix, a.length);
+ 
+         return VectorSupport.loadWithMap(
+-            vectorType, maskClass, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
++            vectorType, maskClass, $carriertype$.class, VECTOR_OPER_TYPE, vsp.laneCount(),
+             isp.vectorType(), isp.length(),
+             a, ARRAY_BASE, vix, null, null, null, m,
+             a, offset, indexMap, mapOffset, vsp,
+@@ -5719,7 +5724,7 @@ public abstract class $abstractvectortype$ extends AbstractVector<$Boxtype$> {
+         final $abstractvectortype$ broadcastBits(long bits) {
+             return ($abstractvectortype$)
+                 VectorSupport.fromBitsCoerced(
+-                    vectorType, $carriertype$.class, $elemtype$.class, VECTOR_OPER_TYPE, laneCount,
++                    vectorType, $carriertype$.class, VECTOR_OPER_TYPE, laneCount,
+                     bits, MODE_BROADCAST, this,
+                     (bits_, s_) -> s_.rvOp(i -> bits_));
+         }
+diff --git a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+index 1a2f455d525..0117110be3b 100644
+--- a/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
++++ b/src/jdk.incubator.vector/share/classes/jdk/incubator/vector/X-VectorBits.java.template
+@@ -602,7 +602,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+     @ForceInline
+     public $bitstype$ laneHelper(int i) {
+         return ($bitstype$) VectorSupport.extract(
+-                     VCLASS, CTYPE, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++                     VCLASS, CTYPE, VECTOR_OPER_TYPE, VLENGTH,
+                      this, i,
+                      (vec, ix) -> {
+                      $type$[] vecarr = vec.vec();
+@@ -670,7 +670,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+     @ForceInline
+     public $vectortype$ withLaneHelper(int i, $type$ e) {
+         return VectorSupport.insert(
+-                                VCLASS, CTYPE, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++                                VCLASS, CTYPE, VECTOR_OPER_TYPE, VLENGTH,
+                                 this, i, (long){#if[FP16]?e:$Type$.$type$ToRaw$Bitstype$Bits(e)},
+                                 (v, ix, bits) -> {
+                                     $type$[] res = v.vec().clone();
+@@ -773,7 +773,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+     @ForceInline
+     public $type$ laneHelper(int i) {
+         return ($type$) VectorSupport.extract(
+-                                VCLASS, CTYPE, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++                                VCLASS, CTYPE, VECTOR_OPER_TYPE, VLENGTH,
+                                 this, i,
+                                 (vec, ix) -> {
+                                     $type$[] vecarr = vec.vec();
+@@ -875,7 +875,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+     @ForceInline
+     public $vectortype$ withLaneHelper(int i, $type$ e) {
+         return VectorSupport.insert(
+-                                VCLASS, CTYPE, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++                                VCLASS, CTYPE, VECTOR_OPER_TYPE, VLENGTH,
+                                 this, i, (long)e,
+                                 (v, ix, bits) -> {
+                                     $type$[] res = v.vec().clone();
+@@ -991,7 +991,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         /*package-private*/
+         $masktype$ indexPartiallyInUpperRange(long offset, long limit) {
+             return ($masktype$) VectorSupport.indexPartiallyInUpperRange(
+-                $masktype$.class, CTYPE, ETYPE, VECTOR_OPER_TYPE, VLENGTH, offset, limit,
++                $masktype$.class, CTYPE, VECTOR_OPER_TYPE, VLENGTH, offset, limit,
+                 (o, l) -> ($masktype$) TRUE_MASK.indexPartiallyInRange(o, l));
+         }
+ 
+@@ -1007,7 +1007,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         @ForceInline
+         public $masktype$ compress() {
+             return ($masktype$)VectorSupport.compressExpandOp(VectorSupport.VECTOR_OP_MASK_COMPRESS,
+-                $vectortype$.class, $masktype$.class, CTYPE, ETYPE, VECTOR_OPER_TYPE, VLENGTH, null, this,
++                $vectortype$.class, $masktype$.class, CTYPE, VECTOR_OPER_TYPE, VLENGTH, null, this,
+                 (v1, m1) -> VSPECIES.iota().compare(VectorOperators.LT,
+                 {#if[FP16]?Float16.float16ToShortBits(Float16.valueOf(m1.trueCount())):m1.trueCount()}));
+         }
+@@ -1020,7 +1020,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         public $masktype$ and(VectorMask<$Boxtype$> mask) {
+             Objects.requireNonNull(mask);
+             $masktype$ m = ($masktype$)mask;
+-            return VectorSupport.binaryOp(VECTOR_OP_AND, $masktype$.class, null, $bitstype$.class, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++            return VectorSupport.binaryOp(VECTOR_OP_AND, $masktype$.class, null, $bitstype$.class, VECTOR_OPER_TYPE, VLENGTH,
+                                           this, m, null,
+                                           (m1, m2, vm) -> m1.bOp(m2, (i, a, b) -> a & b));
+         }
+@@ -1030,7 +1030,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         public $masktype$ or(VectorMask<$Boxtype$> mask) {
+             Objects.requireNonNull(mask);
+             $masktype$ m = ($masktype$)mask;
+-            return VectorSupport.binaryOp(VECTOR_OP_OR, $masktype$.class, null, $bitstype$.class, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++            return VectorSupport.binaryOp(VECTOR_OP_OR, $masktype$.class, null, $bitstype$.class, VECTOR_OPER_TYPE, VLENGTH,
+                                           this, m, null,
+                                           (m1, m2, vm) -> m1.bOp(m2, (i, a, b) -> a | b));
+         }
+@@ -1040,7 +1040,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         public $masktype$ xor(VectorMask<$Boxtype$> mask) {
+             Objects.requireNonNull(mask);
+             $masktype$ m = ($masktype$)mask;
+-            return VectorSupport.binaryOp(VECTOR_OP_XOR, $masktype$.class, null, $bitstype$.class, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++            return VectorSupport.binaryOp(VECTOR_OP_XOR, $masktype$.class, null, $bitstype$.class, VECTOR_OPER_TYPE, VLENGTH,
+                                           this, m, null,
+                                           (m1, m2, vm) -> m1.bOp(m2, (i, a, b) -> a ^ b));
+         }
+@@ -1088,7 +1088,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         @ForceInline
+         public boolean laneIsSet(int i) {
+             Objects.checkIndex(i, length());
+-            return VectorSupport.extract($masktype$.class, $type$.class, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++            return VectorSupport.extract($masktype$.class, $type$.class, VECTOR_OPER_TYPE, VLENGTH,
+                                          this, i, (m, idx) -> (m.getBits()[idx] ? 1L : 0L)) == 1L;
+         }
+ 
+@@ -1097,7 +1097,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         @Override
+         @ForceInline
+         public boolean anyTrue() {
+-            return VectorSupport.test(BT_ne, $masktype$.class, $bitstype$.class, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++            return VectorSupport.test(BT_ne, $masktype$.class, $bitstype$.class, VECTOR_OPER_TYPE, VLENGTH,
+                                       this, vspecies().maskAll(true),
+                                       (m, __) -> anyTrueHelper((($masktype$)m).getBits()));
+         }
+@@ -1105,7 +1105,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         @Override
+         @ForceInline
+         public boolean allTrue() {
+-            return VectorSupport.test(BT_overflow, $masktype$.class, $bitstype$.class, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++            return VectorSupport.test(BT_overflow, $masktype$.class, $bitstype$.class, VECTOR_OPER_TYPE, VLENGTH,
+                                       this, vspecies().maskAll(true),
+                                       (m, __) -> allTrueHelper((($masktype$)m).getBits()));
+         }
+@@ -1113,7 +1113,7 @@ final class $vectortype$ extends $abstractvectortype$ {
+         @ForceInline
+         /*package-private*/
+         static $masktype$ maskAll(boolean bit) {
+-            return VectorSupport.fromBitsCoerced($masktype$.class, $bitstype$.class, ETYPE, VECTOR_OPER_TYPE, VLENGTH,
++            return VectorSupport.fromBitsCoerced($masktype$.class, $bitstype$.class, VECTOR_OPER_TYPE, VLENGTH,
+                                                  (bit ? -1 : 0), MODE_BROADCAST, null,
+                                                  (v, __) -> (v != 0 ? TRUE_MASK : FALSE_MASK));
+         }
+diff --git a/test/jdk/jdk/incubator/vector/Byte128VectorTests.java b/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
+index 7f462d53233..219ab16c343 100644
+--- a/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte128VectorTests.java
+@@ -6522,7 +6522,7 @@ static void ADDReduceLongByte128VectorTests(IntFunction<byte[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6563,7 +6563,7 @@ static void ADDReduceLongByte128VectorTestsMasked(IntFunction<byte[]> fa, IntFun
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Byte256VectorTests.java b/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
+index 17d26e3a46a..39b74d64f0c 100644
+--- a/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte256VectorTests.java
+@@ -6522,7 +6522,7 @@ static void ADDReduceLongByte256VectorTests(IntFunction<byte[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6563,7 +6563,7 @@ static void ADDReduceLongByte256VectorTestsMasked(IntFunction<byte[]> fa, IntFun
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Byte512VectorTests.java b/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
+index f77dd4c6fd8..db8a7f5d024 100644
+--- a/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte512VectorTests.java
+@@ -6522,7 +6522,7 @@ static void ADDReduceLongByte512VectorTests(IntFunction<byte[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6563,7 +6563,7 @@ static void ADDReduceLongByte512VectorTestsMasked(IntFunction<byte[]> fa, IntFun
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Byte64VectorTests.java b/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
+index e5ac3bff978..b3003635b0a 100644
+--- a/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Byte64VectorTests.java
+@@ -6522,7 +6522,7 @@ static void ADDReduceLongByte64VectorTests(IntFunction<byte[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6563,7 +6563,7 @@ static void ADDReduceLongByte64VectorTestsMasked(IntFunction<byte[]> fa, IntFunc
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java b/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
+index 4a484cf3bf6..053cdae4a5e 100644
+--- a/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/ByteMaxVectorTests.java
+@@ -6527,7 +6527,7 @@ static void ADDReduceLongByteMaxVectorTests(IntFunction<byte[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6568,7 +6568,7 @@ static void ADDReduceLongByteMaxVectorTestsMasked(IntFunction<byte[]> fa, IntFun
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Double128VectorTests.java b/test/jdk/jdk/incubator/vector/Double128VectorTests.java
+index 9c8ba2d9eb7..0688a380d6a 100644
+--- a/test/jdk/jdk/incubator/vector/Double128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double128VectorTests.java
+@@ -4921,7 +4921,7 @@ static void ADDReduceLongDouble128VectorTests(IntFunction<double[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4962,7 +4962,7 @@ static void ADDReduceLongDouble128VectorTestsMasked(IntFunction<double[]> fa, In
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Double256VectorTests.java b/test/jdk/jdk/incubator/vector/Double256VectorTests.java
+index 9c326ed6695..86113790f8b 100644
+--- a/test/jdk/jdk/incubator/vector/Double256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double256VectorTests.java
+@@ -4921,7 +4921,7 @@ static void ADDReduceLongDouble256VectorTests(IntFunction<double[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4962,7 +4962,7 @@ static void ADDReduceLongDouble256VectorTestsMasked(IntFunction<double[]> fa, In
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Double512VectorTests.java b/test/jdk/jdk/incubator/vector/Double512VectorTests.java
+index 862064fd259..8c0d0531087 100644
+--- a/test/jdk/jdk/incubator/vector/Double512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double512VectorTests.java
+@@ -4921,7 +4921,7 @@ static void ADDReduceLongDouble512VectorTests(IntFunction<double[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4962,7 +4962,7 @@ static void ADDReduceLongDouble512VectorTestsMasked(IntFunction<double[]> fa, In
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Double64VectorTests.java b/test/jdk/jdk/incubator/vector/Double64VectorTests.java
+index 7f24df8abbb..4f01df5ba6d 100644
+--- a/test/jdk/jdk/incubator/vector/Double64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Double64VectorTests.java
+@@ -4921,7 +4921,7 @@ static void ADDReduceLongDouble64VectorTests(IntFunction<double[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4962,7 +4962,7 @@ static void ADDReduceLongDouble64VectorTestsMasked(IntFunction<double[]> fa, Int
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java b/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
+index 316154684e0..6d3b80c906b 100644
+--- a/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/DoubleMaxVectorTests.java
+@@ -4926,7 +4926,7 @@ static void ADDReduceLongDoubleMaxVectorTests(IntFunction<double[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4967,7 +4967,7 @@ static void ADDReduceLongDoubleMaxVectorTestsMasked(IntFunction<double[]> fa, In
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Float128VectorTests.java b/test/jdk/jdk/incubator/vector/Float128VectorTests.java
+index e1da9f165bd..b85697cf753 100644
+--- a/test/jdk/jdk/incubator/vector/Float128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float128VectorTests.java
+@@ -4900,7 +4900,7 @@ static void ADDReduceLongFloat128VectorTests(IntFunction<float[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4941,7 +4941,7 @@ static void ADDReduceLongFloat128VectorTestsMasked(IntFunction<float[]> fa, IntF
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Float256VectorTests.java b/test/jdk/jdk/incubator/vector/Float256VectorTests.java
+index 7a106ad15ae..578bfa47291 100644
+--- a/test/jdk/jdk/incubator/vector/Float256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float256VectorTests.java
+@@ -4900,7 +4900,7 @@ static void ADDReduceLongFloat256VectorTests(IntFunction<float[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4941,7 +4941,7 @@ static void ADDReduceLongFloat256VectorTestsMasked(IntFunction<float[]> fa, IntF
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Float512VectorTests.java b/test/jdk/jdk/incubator/vector/Float512VectorTests.java
+index 37868d62a5e..a759f756cd3 100644
+--- a/test/jdk/jdk/incubator/vector/Float512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float512VectorTests.java
+@@ -4900,7 +4900,7 @@ static void ADDReduceLongFloat512VectorTests(IntFunction<float[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4941,7 +4941,7 @@ static void ADDReduceLongFloat512VectorTestsMasked(IntFunction<float[]> fa, IntF
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Float64VectorTests.java b/test/jdk/jdk/incubator/vector/Float64VectorTests.java
+index 02af9064ce2..d47e9bd8d4a 100644
+--- a/test/jdk/jdk/incubator/vector/Float64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Float64VectorTests.java
+@@ -4900,7 +4900,7 @@ static void ADDReduceLongFloat64VectorTests(IntFunction<float[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4941,7 +4941,7 @@ static void ADDReduceLongFloat64VectorTestsMasked(IntFunction<float[]> fa, IntFu
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java b/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
+index bc8717514c7..a5a17acc949 100644
+--- a/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/FloatMaxVectorTests.java
+@@ -4905,7 +4905,7 @@ static void ADDReduceLongFloatMaxVectorTests(IntFunction<float[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -4946,7 +4946,7 @@ static void ADDReduceLongFloatMaxVectorTestsMasked(IntFunction<float[]> fa, IntF
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Halffloat128VectorTests.java b/test/jdk/jdk/incubator/vector/Halffloat128VectorTests.java
+index 6f8973a9b60..8b5a7158cdb 100644
+--- a/test/jdk/jdk/incubator/vector/Halffloat128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Halffloat128VectorTests.java
+@@ -332,7 +332,7 @@ static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a,
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+                     idx = i + j;
+-                    wrapped_index = Math.floorMod((int)order[idx], 2 * vector_len);
++                    wrapped_index = Math.floorMod(Float16.shortBitsToFloat16(order[idx]).intValue(), 2 * vector_len);
+                     is_exceptional_idx = wrapped_index >= vector_len;
+                     oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+@@ -2707,7 +2707,7 @@ static long ADDReduceLong(short[] a, int idx) {
+     static long ADDReduceAllLong(short[] a) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLong(a, i);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLong(a, i)));
+         }
+ 
+         return res;
+@@ -2725,8 +2725,8 @@ static void ADDReduceLongHalffloat128VectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEquals(r, ra, a,
+@@ -2746,7 +2746,7 @@ static long ADDReduceLongMasked(short[] a, int idx, boolean[] mask) {
+     static long ADDReduceAllLongMasked(short[] a, boolean[] mask) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLongMasked(a, i, mask);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLongMasked(a, i, mask)));
+         }
+ 
+         return res;
+@@ -2766,8 +2766,8 @@ static void ADDReduceLongHalffloat128VectorTestsMasked(IntFunction<short[]> fa,
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEqualsMasked(r, ra, a, mask,
+diff --git a/test/jdk/jdk/incubator/vector/Halffloat256VectorTests.java b/test/jdk/jdk/incubator/vector/Halffloat256VectorTests.java
+index 8362c255167..5c8e853ac1b 100644
+--- a/test/jdk/jdk/incubator/vector/Halffloat256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Halffloat256VectorTests.java
+@@ -332,7 +332,7 @@ static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a,
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+                     idx = i + j;
+-                    wrapped_index = Math.floorMod((int)order[idx], 2 * vector_len);
++                    wrapped_index = Math.floorMod(Float16.shortBitsToFloat16(order[idx]).intValue(), 2 * vector_len);
+                     is_exceptional_idx = wrapped_index >= vector_len;
+                     oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+@@ -2707,7 +2707,7 @@ static long ADDReduceLong(short[] a, int idx) {
+     static long ADDReduceAllLong(short[] a) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLong(a, i);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLong(a, i)));
+         }
+ 
+         return res;
+@@ -2725,8 +2725,8 @@ static void ADDReduceLongHalffloat256VectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEquals(r, ra, a,
+@@ -2746,7 +2746,7 @@ static long ADDReduceLongMasked(short[] a, int idx, boolean[] mask) {
+     static long ADDReduceAllLongMasked(short[] a, boolean[] mask) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLongMasked(a, i, mask);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLongMasked(a, i, mask)));
+         }
+ 
+         return res;
+@@ -2766,8 +2766,8 @@ static void ADDReduceLongHalffloat256VectorTestsMasked(IntFunction<short[]> fa,
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEqualsMasked(r, ra, a, mask,
+diff --git a/test/jdk/jdk/incubator/vector/Halffloat512VectorTests.java b/test/jdk/jdk/incubator/vector/Halffloat512VectorTests.java
+index e4d2085bd4c..5916ba3e9c9 100644
+--- a/test/jdk/jdk/incubator/vector/Halffloat512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Halffloat512VectorTests.java
+@@ -332,7 +332,7 @@ static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a,
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+                     idx = i + j;
+-                    wrapped_index = Math.floorMod((int)order[idx], 2 * vector_len);
++                    wrapped_index = Math.floorMod(Float16.shortBitsToFloat16(order[idx]).intValue(), 2 * vector_len);
+                     is_exceptional_idx = wrapped_index >= vector_len;
+                     oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+@@ -2707,7 +2707,7 @@ static long ADDReduceLong(short[] a, int idx) {
+     static long ADDReduceAllLong(short[] a) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLong(a, i);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLong(a, i)));
+         }
+ 
+         return res;
+@@ -2725,8 +2725,8 @@ static void ADDReduceLongHalffloat512VectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEquals(r, ra, a,
+@@ -2746,7 +2746,7 @@ static long ADDReduceLongMasked(short[] a, int idx, boolean[] mask) {
+     static long ADDReduceAllLongMasked(short[] a, boolean[] mask) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLongMasked(a, i, mask);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLongMasked(a, i, mask)));
+         }
+ 
+         return res;
+@@ -2766,8 +2766,8 @@ static void ADDReduceLongHalffloat512VectorTestsMasked(IntFunction<short[]> fa,
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEqualsMasked(r, ra, a, mask,
+diff --git a/test/jdk/jdk/incubator/vector/Halffloat64VectorTests.java b/test/jdk/jdk/incubator/vector/Halffloat64VectorTests.java
+index c1c61e6a547..87e6311030d 100644
+--- a/test/jdk/jdk/incubator/vector/Halffloat64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Halffloat64VectorTests.java
+@@ -332,7 +332,7 @@ static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a,
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+                     idx = i + j;
+-                    wrapped_index = Math.floorMod((int)order[idx], 2 * vector_len);
++                    wrapped_index = Math.floorMod(Float16.shortBitsToFloat16(order[idx]).intValue(), 2 * vector_len);
+                     is_exceptional_idx = wrapped_index >= vector_len;
+                     oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+@@ -2707,7 +2707,7 @@ static long ADDReduceLong(short[] a, int idx) {
+     static long ADDReduceAllLong(short[] a) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLong(a, i);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLong(a, i)));
+         }
+ 
+         return res;
+@@ -2725,8 +2725,8 @@ static void ADDReduceLongHalffloat64VectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEquals(r, ra, a,
+@@ -2746,7 +2746,7 @@ static long ADDReduceLongMasked(short[] a, int idx, boolean[] mask) {
+     static long ADDReduceAllLongMasked(short[] a, boolean[] mask) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLongMasked(a, i, mask);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLongMasked(a, i, mask)));
+         }
+ 
+         return res;
+@@ -2766,8 +2766,8 @@ static void ADDReduceLongHalffloat64VectorTestsMasked(IntFunction<short[]> fa, I
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEqualsMasked(r, ra, a, mask,
+diff --git a/test/jdk/jdk/incubator/vector/HalffloatMaxVectorTests.java b/test/jdk/jdk/incubator/vector/HalffloatMaxVectorTests.java
+index 93bb17c937d..0060ceaf433 100644
+--- a/test/jdk/jdk/incubator/vector/HalffloatMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/HalffloatMaxVectorTests.java
+@@ -337,7 +337,7 @@ static void assertSelectFromTwoVectorEquals(short[] r, short[] order, short[] a,
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+                     idx = i + j;
+-                    wrapped_index = Math.floorMod((int)order[idx], 2 * vector_len);
++                    wrapped_index = Math.floorMod(Float16.shortBitsToFloat16(order[idx]).intValue(), 2 * vector_len);
+                     is_exceptional_idx = wrapped_index >= vector_len;
+                     oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
+@@ -2712,7 +2712,7 @@ static long ADDReduceLong(short[] a, int idx) {
+     static long ADDReduceAllLong(short[] a) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLong(a, i);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLong(a, i)));
+         }
+ 
+         return res;
+@@ -2730,8 +2730,8 @@ static void ADDReduceLongHalffloatMaxVectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEquals(r, ra, a,
+@@ -2751,7 +2751,7 @@ static long ADDReduceLongMasked(short[] a, int idx, boolean[] mask) {
+     static long ADDReduceAllLongMasked(short[] a, boolean[] mask) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
+-            res += ADDReduceLongMasked(a, i, mask);
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLongMasked(a, i, mask)));
+         }
+ 
+         return res;
+@@ -2771,8 +2771,8 @@ static void ADDReduceLongHalffloatMaxVectorTestsMasked(IntFunction<short[]> fa,
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
+-            ra += r[i];
++        for (int i = 0; i < a.length; i++) {
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
+         }
+ 
+         assertReductionLongArraysEqualsMasked(r, ra, a, mask,
+diff --git a/test/jdk/jdk/incubator/vector/Int128VectorTests.java b/test/jdk/jdk/incubator/vector/Int128VectorTests.java
+index d1dc1350090..2dff3ee250e 100644
+--- a/test/jdk/jdk/incubator/vector/Int128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int128VectorTests.java
+@@ -6555,7 +6555,7 @@ static void ADDReduceLongInt128VectorTests(IntFunction<int[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6596,7 +6596,7 @@ static void ADDReduceLongInt128VectorTestsMasked(IntFunction<int[]> fa, IntFunct
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Int256VectorTests.java b/test/jdk/jdk/incubator/vector/Int256VectorTests.java
+index 431afebb935..606e5504dee 100644
+--- a/test/jdk/jdk/incubator/vector/Int256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int256VectorTests.java
+@@ -6555,7 +6555,7 @@ static void ADDReduceLongInt256VectorTests(IntFunction<int[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6596,7 +6596,7 @@ static void ADDReduceLongInt256VectorTestsMasked(IntFunction<int[]> fa, IntFunct
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Int512VectorTests.java b/test/jdk/jdk/incubator/vector/Int512VectorTests.java
+index dac76b84510..5f67c3a4f72 100644
+--- a/test/jdk/jdk/incubator/vector/Int512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int512VectorTests.java
+@@ -6555,7 +6555,7 @@ static void ADDReduceLongInt512VectorTests(IntFunction<int[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6596,7 +6596,7 @@ static void ADDReduceLongInt512VectorTestsMasked(IntFunction<int[]> fa, IntFunct
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Int64VectorTests.java b/test/jdk/jdk/incubator/vector/Int64VectorTests.java
+index 3f3e926142b..c872efcecd5 100644
+--- a/test/jdk/jdk/incubator/vector/Int64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Int64VectorTests.java
+@@ -6555,7 +6555,7 @@ static void ADDReduceLongInt64VectorTests(IntFunction<int[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6596,7 +6596,7 @@ static void ADDReduceLongInt64VectorTestsMasked(IntFunction<int[]> fa, IntFuncti
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java b/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
+index 84d0d3c2fdb..6b6f9576ad9 100644
+--- a/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/IntMaxVectorTests.java
+@@ -6560,7 +6560,7 @@ static void ADDReduceLongIntMaxVectorTests(IntFunction<int[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6601,7 +6601,7 @@ static void ADDReduceLongIntMaxVectorTestsMasked(IntFunction<int[]> fa, IntFunct
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Short128VectorTests.java b/test/jdk/jdk/incubator/vector/Short128VectorTests.java
+index dc43fde806c..6ea7358d057 100644
+--- a/test/jdk/jdk/incubator/vector/Short128VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short128VectorTests.java
+@@ -6507,7 +6507,7 @@ static void ADDReduceLongShort128VectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6548,7 +6548,7 @@ static void ADDReduceLongShort128VectorTestsMasked(IntFunction<short[]> fa, IntF
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Short256VectorTests.java b/test/jdk/jdk/incubator/vector/Short256VectorTests.java
+index 091a99236a8..2b8080aac70 100644
+--- a/test/jdk/jdk/incubator/vector/Short256VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short256VectorTests.java
+@@ -6507,7 +6507,7 @@ static void ADDReduceLongShort256VectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6548,7 +6548,7 @@ static void ADDReduceLongShort256VectorTestsMasked(IntFunction<short[]> fa, IntF
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Short512VectorTests.java b/test/jdk/jdk/incubator/vector/Short512VectorTests.java
+index 5cbae8a5759..f333a4c9edd 100644
+--- a/test/jdk/jdk/incubator/vector/Short512VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short512VectorTests.java
+@@ -6507,7 +6507,7 @@ static void ADDReduceLongShort512VectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6548,7 +6548,7 @@ static void ADDReduceLongShort512VectorTestsMasked(IntFunction<short[]> fa, IntF
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/Short64VectorTests.java b/test/jdk/jdk/incubator/vector/Short64VectorTests.java
+index 9cca2a65ab8..353bef63d1b 100644
+--- a/test/jdk/jdk/incubator/vector/Short64VectorTests.java
++++ b/test/jdk/jdk/incubator/vector/Short64VectorTests.java
+@@ -6507,7 +6507,7 @@ static void ADDReduceLongShort64VectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6548,7 +6548,7 @@ static void ADDReduceLongShort64VectorTestsMasked(IntFunction<short[]> fa, IntFu
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java b/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
+index 978e3a51a1b..67dac0c15a1 100644
+--- a/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
++++ b/test/jdk/jdk/incubator/vector/ShortMaxVectorTests.java
+@@ -6512,7 +6512,7 @@ static void ADDReduceLongShortMaxVectorTests(IntFunction<short[]> fa) {
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+@@ -6553,7 +6553,7 @@ static void ADDReduceLongShortMaxVectorTestsMasked(IntFunction<short[]> fa, IntF
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
+             ra += r[i];
+         }
+ 
+diff --git a/test/jdk/jdk/incubator/vector/templates/Unit-Miscellaneous.template b/test/jdk/jdk/incubator/vector/templates/Unit-Miscellaneous.template
+index 569e02f7d3f..a4c8f734e52 100644
+--- a/test/jdk/jdk/incubator/vector/templates/Unit-Miscellaneous.template
++++ b/test/jdk/jdk/incubator/vector/templates/Unit-Miscellaneous.template
+@@ -144,7 +144,11 @@
+     static long ADDReduceAllLong($type$[] a) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
++#if[Halffloat]
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLong(a, i)));
++#else[Halffloat]
+             res += ADDReduceLong(a, i);
++#end[Halffloat]
+         }
+ 
+         return res;
+@@ -162,8 +166,12 @@
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
++#if[Halffloat]
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
++#else[Halffloat]
+             ra += r[i];
++#end[Halffloat]
+         }
+ 
+         assertReductionLongArraysEquals(r, ra, a,
+@@ -187,7 +195,11 @@
+     static long ADDReduceAllLongMasked($type$[] a, boolean[] mask) {
+         long res = 0;
+         for (int i = 0; i < a.length; i += SPECIES.length()) {
++#if[Halffloat]
++            res = Float.floatToFloat16(Float.float16ToFloat((short)res) + Float.float16ToFloat((short)ADDReduceLongMasked(a, i, mask)));
++#else[Halffloat]
+             res += ADDReduceLongMasked(a, i, mask);
++#end[Halffloat]
+         }
+ 
+         return res;
+@@ -207,8 +219,12 @@
+         }
+ 
+         ra = 0;
+-        for (int i = 0; i < a.length; i ++) {
++        for (int i = 0; i < a.length; i++) {
++#if[Halffloat]
++            ra = (long)(Float16.float16ToRawShortBits(Float16.add(Float16.shortBitsToFloat16((short)ra), Float16.shortBitsToFloat16((short)r[i]))));
++#else[Halffloat]
+             ra += r[i];
++#end[Halffloat]
+         }
+ 
+         assertReductionLongArraysEqualsMasked(r, ra, a, mask,
+diff --git a/test/jdk/jdk/incubator/vector/templates/Unit-header.template b/test/jdk/jdk/incubator/vector/templates/Unit-header.template
+index 65902a0af85..a6c118bf8ed 100644
+--- a/test/jdk/jdk/incubator/vector/templates/Unit-header.template
++++ b/test/jdk/jdk/incubator/vector/templates/Unit-header.template
+@@ -414,7 +414,7 @@ relativeError));
+             for (; i < a.length; i += vector_len) {
+                 for (j = 0; j < vector_len; j++) {
+                     idx = i + j;
+-                    wrapped_index = Math.floorMod((int)order[idx], 2 * vector_len);
++                    wrapped_index = Math.floorMod({#if[FP16]?Float16.shortBitsToFloat16(order[idx]).intValue():(int)order[idx]}, 2 * vector_len);
+                     is_exceptional_idx = wrapped_index >= vector_len;
+                     oidx = is_exceptional_idx ? (wrapped_index - vector_len) : wrapped_index;
+                     Assert.assertEquals(r[idx], (is_exceptional_idx ? b[i + oidx] : a[i + oidx]));
