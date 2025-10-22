@@ -1,0 +1,16 @@
+1)
+void Assembler::imull(Register dst, Register src, int value) {
+  int encode = prefix_and_encode(dst->encoding(), src->encoding());
+  if (is8bit(value)) {
+    emit_int24(0x6B, (0xC0 | encode), value & 0xFF);
+  } else {
+    emit_int16(0x69, (0xC0 | encode));
+    emit_int32(value);
+  }
+}
+
+void Assembler::eimull(Register dst, Register src, int value, bool no_flags) {
+
+- missing demotion multiplication by constant.
+- eimull: cost of 4-byte EEVEX  prefix is only justified if DST or SRC is an EGPR
+- else it should demote to imull.

@@ -1,0 +1,47 @@
+1)
+
+    /*package-private*/                                                                                                                                         @ForceInline
+    static short fromBits(long bits) {
+        return Float16.float16ToRawShortBits(Float16.shortBitsToFloat16((short)bits));                                                                          }
+
+
+   to
+      (short)bits;
+
+  Currently, we chop the upper 48 bits and redundantly push this value through the box and unbox pipeline. 
+
+
+2)  Currently, we pass carrier type, element type, and operType to save costly name-based lane type checks on elementType.
+   
+    For regular primitive type vector intrinsic  cType == eType and operType is  VECTOR_OPER_PRIM
+    For FP16 type vector intrinsics, cType == short.class, eType == Float16.class and operType is VECTOR_OPER_FP16
+        - Box type is anyways Halffloat[64/128/256/512]/Vector.class
+    
+    Removing eType from the interface of intrinsic entry points should be fine, carrier type, operType, and Box Type are sufficient to
+    represent Vector IR
+              VectorBox  -> Halffloat256Vector
+                   |
+                   ------>  _payload ->  ShortVector 
+                                   |
+                                   ---------->  cType = short.class
+                                   |_____>  vector_length = 16
+
+    
+    In future for INT8, FP4, FP8 operations
+        cType will be : byte.class
+        while operType (VECTOR_OPER_FP4, VECTOR_OPER_INT8) is sufficient to guide C2 to create a correct vector Operation IR.
+            
+    Vector IR speicilization can be driven  by operType and carrier type.
+
+         AddVHNode      ->   elemType =  short.class
+         AddVINI8Node  ->   elemType =  byte.class
+         AddVFP8Node  ->   elemType =  byte.class
+         AddVFP4Node  ->   elemType =  byte.class  -> inefficient, since with an 8-bit lane SLP vectorizer will be constrained to pack at most 64 FP4
+                                                                                  values, while technically we can operate over 128 FP4 values. 
+                                                                              -> In such a scenario, it's the user's responsibility to lay out FP4 values in MemorySegment such  
+                                                                                  that two FP4 values are packed in one byte.
+                                                                              -> There is no Java primitive type for a 4 bit value.
+                                                                              -> type compiler will simply load 64 bytes from MemorySegment comprising of 128 FP4 values  
+                                                                                  into a 512-bit vector and emit the appropriate vector instruction.
+                   
+
