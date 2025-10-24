@@ -1,0 +1,194 @@
+diff --git a/src/hotspot/cpu/x86/assembler_x86.cpp b/src/hotspot/cpu/x86/assembler_x86.cpp
+index fd62e9358bf..dc2910a18d7 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.cpp
++++ b/src/hotspot/cpu/x86/assembler_x86.cpp
+@@ -1398,7 +1398,10 @@ void Assembler::addl(Address dst, Register src) {
+ 
+ void Assembler::eaddl(Register dst, Address src1, Register src2, bool no_flags) {
+   InstructionMark im(this);
+-  emit_eevex_or_demote(dst, src1, src2, VEX_SIMD_NONE, VEX_OPCODE_0F_3C /* MAP4 */, EVEX_32bit, 0x01, no_flags, false /* is_map1 */, true /* is_commutative */);
++  bool is_demoted = emit_eevex_or_demote(dst, src1, src2, VEX_SIMD_NONE, VEX_OPCODE_0F_3C /* MAP4 */, EVEX_32bit, 0x01, no_flags, false /* is_map1 */, true /* is_commutative */);
++  if (is_demoted) {
++    tty->print("NDD DEMOTION : EADDL\n");
++  }
+ }
+ 
+ void Assembler::addl(Register dst, int32_t imm32) {
+@@ -13034,8 +13037,9 @@ void Assembler::eevex_prefix_ndd(Address adr, int ndd_enc, int xreg_enc, VexSimd
+   vex_prefix(adr, ndd_enc, xreg_enc, pre, opc, attributes, /* nds_is_ndd */ true, no_flags);
+ }
+ 
+-void Assembler::emit_eevex_or_demote(Register dst, Address src1, Register src2, VexSimdPrefix pre, VexOpcode opc,
++bool Assembler::emit_eevex_or_demote(Register dst, Address src1, Register src2, VexSimdPrefix pre, VexOpcode opc,
+                                      int size, int opcode_byte, bool no_flags, bool is_map1, bool is_commutative) {
++  bool ret = false;
+   if (is_commutative && is_demotable(no_flags, dst->encoding(), src2->encoding())) {
+     // Opcode byte adjustment due to mismatch between NDD and equivalent demotable variant
+     opcode_byte += 2;
+@@ -13049,6 +13053,7 @@ void Assembler::emit_eevex_or_demote(Register dst, Address src1, Register src2,
+       prefix(src1, dst, false, is_map1);
+       emit_int8(opcode_byte);
+     }
++    ret = true;
+   } else {
+     bool vex_w = (size == EVEX_64bit) ? true : false;
+     InstructionAttr attributes(AVX_128bit, vex_w, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+@@ -13057,10 +13062,12 @@ void Assembler::emit_eevex_or_demote(Register dst, Address src1, Register src2,
+     emit_int8(opcode_byte);
+   }
+   emit_operand(src2, src1, 0);
++  return ret;
+ }
+ 
+-void Assembler::emit_eevex_or_demote(Register dst, Register src1, Address src2, VexSimdPrefix pre, VexOpcode opc,
++bool Assembler::emit_eevex_or_demote(Register dst, Register src1, Address src2, VexSimdPrefix pre, VexOpcode opc,
+                                      int size, int opcode_byte, bool no_flags, bool is_map1) {
++  bool ret = false;
+   if (is_demotable(no_flags, dst->encoding(), src1->encoding())) {
+     if (size == EVEX_64bit) {
+       emit_prefix_and_int8(get_prefixq(src2, dst, is_map1), opcode_byte);
+@@ -13072,6 +13079,7 @@ void Assembler::emit_eevex_or_demote(Register dst, Register src1, Address src2,
+       prefix(src2, dst, false, is_map1);
+       emit_int8(opcode_byte);
+     }
++    ret = true;
+   } else {
+     bool vex_w = (size == EVEX_64bit) ? true : false;
+     InstructionAttr attributes(AVX_128bit, vex_w, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+@@ -13080,6 +13088,7 @@ void Assembler::emit_eevex_or_demote(Register dst, Register src1, Address src2,
+     emit_int8(opcode_byte);
+   }
+   emit_operand(src1, src2, 0);
++  return ret;
+ }
+ 
+ void Assembler::eevex_prefix_nf(Address adr, int ndd_enc, int xreg_enc, VexSimdPrefix pre, VexOpcode opc, InstructionAttr *attributes, bool no_flags) {
+@@ -13144,21 +13153,23 @@ int Assembler::vex_prefix_and_encode(int dst_enc, int nds_enc, int src_enc, VexS
+   return (((dst_enc & 7) << 3) | (src_enc & 7));
+ }
+ 
+-void Assembler::emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, int8_t imm8, VexSimdPrefix pre, VexOpcode opc,
++bool Assembler::emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, int8_t imm8, VexSimdPrefix pre, VexOpcode opc,
+                                      int size, int opcode_byte, bool no_flags, bool is_map1) {
+   bool is_prefixq = (size == EVEX_64bit) ? true : false;
+   if (is_demotable(no_flags, dst_enc, nds_enc)) {
+     int encode = is_prefixq ? prefixq_and_encode(src_enc, dst_enc, is_map1) : prefix_and_encode(src_enc, dst_enc, is_map1);
+     emit_opcode_prefix_and_encoding((unsigned char)(opcode_byte | 0x80), 0xC0, encode, imm8);
++    return true;
+   } else {
+     InstructionAttr attributes(AVX_128bit, is_prefixq, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+     attributes.set_address_attributes(/* tuple_type */ EVEX_NOSCALE, size);
+     int encode = emit_eevex_prefix_or_demote_ndd(src_enc, dst_enc, nds_enc, pre, opc, &attributes, no_flags);
+     emit_int24(opcode_byte, (0xC0 | encode), imm8);
++    return false;
+   }
+ }
+ 
+-void Assembler::emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, VexSimdPrefix pre, VexOpcode opc,
++bool Assembler::emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, VexSimdPrefix pre, VexOpcode opc,
+                                      int size, int opcode_byte, bool no_flags, bool is_map1, bool swap, bool is_commutative) {
+   int encode;
+   bool is_prefixq = (size == EVEX_64bit) ? true : false;
+@@ -13175,6 +13186,7 @@ void Assembler::emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, VexS
+       encode = is_prefixq ? prefixq_and_encode(src, dst_enc, is_map1) : prefix_and_encode(src, dst_enc, is_map1);
+     }
+     emit_opcode_prefix_and_encoding((unsigned char)opcode_byte, 0xC0, encode);
++    return true;
+   } else {
+     InstructionAttr attributes(AVX_128bit, is_prefixq, /* legacy_mode */ false, /* no_mask_reg */ true, /* uses_vl */ false);
+     attributes.set_is_evex_instruction();
+@@ -13184,6 +13196,7 @@ void Assembler::emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, VexS
+       encode = vex_prefix_and_encode(src_enc, dst_enc, nds_enc, pre, opc, &attributes, /* src_is_gpr */ true, /* nds_is_ndd */ true, no_flags);
+     }
+     emit_int16(opcode_byte, (0xC0 | encode));
++    return true;
+   }
+ }
+ 
+@@ -15018,7 +15031,10 @@ void Assembler::cmovq(Condition cc, Register dst, Register src) {
+ }
+ 
+ void Assembler::ecmovq(Condition cc, Register dst, Register src1, Register src2) {
+-  emit_eevex_or_demote(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F_3C /* MAP4 */, EVEX_64bit, 0x40 | cc, false /* no_flags */, true /* is_map1 */, true /* swap */);
++  bool is_demoted = emit_eevex_or_demote(dst->encoding(), src1->encoding(), src2->encoding(), VEX_SIMD_NONE, VEX_OPCODE_0F_3C /* MAP4 */, EVEX_64bit, 0x40 | cc, false /* no_flags */, true /* is_map1 */, true /* swap */);
++  if (is_demoted) {
++    tty->print("NDD DEMOTION : ECMOVE\n");
++  }
+ }
+ 
+ void Assembler::cmovq(Condition cc, Register dst, Address src) {
+diff --git a/src/hotspot/cpu/x86/assembler_x86.hpp b/src/hotspot/cpu/x86/assembler_x86.hpp
+index c863191df4c..c049aaefd09 100644
+--- a/src/hotspot/cpu/x86/assembler_x86.hpp
++++ b/src/hotspot/cpu/x86/assembler_x86.hpp
+@@ -813,16 +813,16 @@ class Assembler : public AbstractAssembler  {
+   void emit_eevex_prefix_or_demote_arith_ndd(Register dst, Register nds, int32_t imm32, VexSimdPrefix pre, VexOpcode opc,
+                                              int size, int op1, int op2, bool no_flags);
+ 
+-  void emit_eevex_or_demote(Register dst, Register src1, Address src2, VexSimdPrefix pre, VexOpcode opc,
++  bool emit_eevex_or_demote(Register dst, Register src1, Address src2, VexSimdPrefix pre, VexOpcode opc,
+                             int size, int opcode_byte, bool no_flags = false, bool is_map1 = false);
+ 
+-  void emit_eevex_or_demote(Register dst, Address src1, Register src2, VexSimdPrefix pre, VexOpcode opc,
++  bool emit_eevex_or_demote(Register dst, Address src1, Register src2, VexSimdPrefix pre, VexOpcode opc,
+                             int size, int opcode_byte, bool no_flags = false, bool is_map1 = false, bool is_commutative = false);
+ 
+-  void emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, VexSimdPrefix pre, VexOpcode opc,
++  bool emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, VexSimdPrefix pre, VexOpcode opc,
+                             int size, int opcode_byte, bool no_flags, bool is_map1 = false, bool swap = false, bool is_commutative = false);
+ 
+-  void emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, int8_t imm8, VexSimdPrefix pre, VexOpcode opc,
++  bool emit_eevex_or_demote(int dst_enc, int nds_enc, int src_enc, int8_t imm8, VexSimdPrefix pre, VexOpcode opc,
+                             int size, int opcode_byte, bool no_flags, bool is_map1 = false);
+ 
+   void simd_prefix(XMMRegister xreg, XMMRegister nds, Address adr, VexSimdPrefix pre,
+diff --git a/src/hotspot/cpu/x86/x86_64.ad b/src/hotspot/cpu/x86/x86_64.ad
+index 3d117d9564d..27836a9b700 100644
+--- a/src/hotspot/cpu/x86/x86_64.ad
++++ b/src/hotspot/cpu/x86/x86_64.ad
+@@ -186,22 +186,7 @@ reg_def R31_H(SOC, SOC, Op_RegI, 31, r31->as_VMReg()->next());
+ // which participate in fixed calling sequences should come last.
+ // Registers which are used as pairs must fall on an even boundary.
+ 
+-alloc_class chunk0(R10,         R10_H,
+-                   R11,         R11_H,
+-                   R8,          R8_H,
+-                   R9,          R9_H,
+-                   R12,         R12_H,
+-                   RCX,         RCX_H,
+-                   RBX,         RBX_H,
+-                   RDI,         RDI_H,
+-                   RDX,         RDX_H,
+-                   RSI,         RSI_H,
+-                   RAX,         RAX_H,
+-                   RBP,         RBP_H,
+-                   R13,         R13_H,
+-                   R14,         R14_H,
+-                   R15,         R15_H,
+-                   R16,         R16_H,
++alloc_class chunk0(R16,         R16_H,
+                    R17,         R17_H,
+                    R18,         R18_H,
+                    R19,         R19_H,
+@@ -217,6 +202,21 @@ alloc_class chunk0(R10,         R10_H,
+                    R29,         R29_H,
+                    R30,         R30_H,
+                    R31,         R31_H,
++                   R10,         R10_H,
++                   R11,         R11_H,
++                   R8,          R8_H,
++                   R9,          R9_H,
++                   R12,         R12_H,
++                   RCX,         RCX_H,
++                   RBX,         RBX_H,
++                   RDI,         RDI_H,
++                   RDX,         RDX_H,
++                   RSI,         RSI_H,
++                   RAX,         RAX_H,
++                   RBP,         RBP_H,
++                   R13,         R13_H,
++                   R14,         R14_H,
++                   R15,         R15_H,
+                    RSP,         RSP_H);
+ 
+ 
