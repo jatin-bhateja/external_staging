@@ -51,5 +51,151 @@ TODO:
    -  Pass operType to convert intrinsic entry.
    -  Add operType-based checks to fail intrinsification for operations other than nary lanewise and memory intrinsics.
        -  This will bring VAPI at par with mainline code.
- 
+   -  Use consistent nomenclature for macros guard expression in Test and Source templates.
+   - JDK-8370409 : ADDReduction bug.
                   
+Current floatToFloat16 intrinsic implementation always sign-extends the 16-bit short result to a 32-bit value in anticipation of safe consumption by subsequent integral (comparison) operation[s]. However, the safest way to compare two Float16 values is to use Float16.compare/compareTo method, given that floating point comparisons can also be unordered.
+
+e.g., both 64512 and -1024 are equivalent bit representations of the Float16 -Inf value, but are not numerically equivalent with integral comparison.
+jshell> Float16.compare(Float16.shortBitsToFloat16((short)-1024), Float16.shortBitsToFlot16((short)64512))
+$3 ==> 0
+
+In the scalar intrinsic of Float16.add/sub/mul/div/min/max, we always return a boxed value, which is then operated upon by the subsequent Float16 APIs. While Float.floatToFloat16 intrinsic always returns a 'short' value, this is special in the sense that even though the carrier type is 'short' but it encodes an IEEE 754 half precision value, being a short carrier if they get exposed to integral operators, then as per JVM specification, short must be sign-extended before operation.
+
+Given that our Float16 binary operations inference is based on generic pattern match and is agnostic to how that graph pallet got created, i.e., either through Float16.* APIs or by explicit Float.float16ToFloat/floatToFloat16 operations, hence it's safe to sign-extend the result in all cases.
+
+Kindly review the patch and share your feedback.
+
+Best Regards,
+
+Jatin
+
+
+AssertEquals($type$ actual, $type$ expected, String msg)
+AssertEquals($type$ [] actual, $type$ [] expected, String msg)
+AssertEquals($type$ [] actual, $type$ [] expected)
+AssertEquals($type$ [] actual, $type$ [] expected, $type$ delta)
+AssertEquals($type$ actual, $type$ expected, $type$ delta)
+AssertEquals($type$ actual, $type$ expected, $type$ delta, String msg)
+AssertEquals($type$ actual, $type$ exected)
+
+
+compiler
+  0x000076e05fac901a:   movabs $0x6c9c17118,%r10            ;   {oop(a 'java/lang/Class'{0x00000006c9c17118} = 'bug_fp32_fp16_conv')}
+  0x000076e05fac9024:   vmovss 0x7c(%r10),%xmm1
+  0x000076e05fac902a:   vaddss 0x78(%r10),%xmm1,%xmm0
+  0x000076e05fac9030:   vcvtps2ph $0x4,%xmm0,%xmm2
+  0x000076e05fac9036:   vmovd  %xmm2,%eax
+  0x000076e05fac903a:   movswl %ax,%eax              
+
+
+Interpreter:
+
+(gdb) disassemble 0x00007dd15754cb60,+10
+Dump of assembler code from 0x7dd15754cb60 to 0x7dd15754cb6a:
+=> 0x00007dd15754cb60:  vmovss (%rsp),%xmm0
+   0x00007dd15754cb65:  add    $0x8,%rsp
+   0x00007dd15754cb69:  vaddss (%rsp),%xmm0,%xmm0
+End of assembler dump.
+
+
+Interpreter:-
+--------------------
+
+(gdb) disassemble 0x72ad14015b60,+10
+Dump of assembler code from 0x72ad14015b60 to 0x72ad14015b6a:
+=> 0x000072ad14015b60:  vmovss (%rsp),%xmm0
+   0x000072ad14015b65:  add    $0x8,%rsp
+   0x000072ad14015b69:  vaddss (%rsp),%xmm0,%xmm0
+End of assembler dump.
+(gdb) si
+0x000072ad14015b65 in ?? ()
+(gdb) p $rsp
+$5 = (void *) 0x72ad26ffe568
+(gdb) p (int*)$rsp
+$6 = (int *) 0x72ad26ffe568
+(gdb) p $6[0]
+$7 = 2143289344
+(gdb) p $rsp + 8
+$8 = (void *) 0x72ad26ffe570
+(gdb) p (int*)$8
+$9 = (int *) 0x72ad26ffe570
+(gdb) p $9[0]
+$10 = -4194304
+
+C1 = -NaN
+C2 =  NaN
+C1  + C2
+push C1
+push C2
+fadd
+
+C1 = RSP + 8
+C2 = RSP 
+
+[Intel syntax] ADDSS SECOND_ARG(C2) SECOND_ARG(C2)  FIRST_ARG(C1)
+-------------------------------------------------------------
+
+Compiler:-
+
+(gdb) b *0x000072ad14095500
+Breakpoint 5 at 0x72ad14095500
+(gdb) disassemble 0x000072ad14095500,+100
+Dump of assembler code from 0x72ad14095500 to 0x72ad14095564:
+   0x000072ad14095500:  mov    %eax,-0x18000(%rsp)
+   0x000072ad14095507:  push   %rbp
+   0x000072ad14095508:  sub    $0x10,%rsp
+   0x000072ad1409550c:  cmpl   $0x1,0x20(%r15)
+   0x000072ad14095514:  jne    0x72ad14095563
+   0x000072ad1409551a:  movabs $0x6c9c170d8,%r10
+   0x000072ad14095524:  vmovss 0x7c(%r10),%xmm1                   ----------------> (B)                   
+   0x000072ad1409552a:  vaddss 0x78(%r10),%xmm1,%xmm0       ----------------> (C)
+   0x000072ad14095530:  vcvtps2ph $0x4,%xmm0,%xmm2
+   0x000072ad14095536:  vmovd  %xmm2,%eax
+   0x000072ad1409553a:  movswl %ax,%eax
+   0x000072ad1409553d:  add    $0x10,%rsp
+   0x000072ad14095541:  pop    %rbp
+   0x000072ad14095542:  cmp    0x28(%r15),%rsp
+   0x000072ad14095546:  ja     0x72ad1409554d
+   0x000072ad1409554c:  ret
+   0x000072ad1409554d:  movabs $0x72ad14095542,%r10
+   0x000072ad14095557:  mov    %r10,0x580(%r15)
+   0x000072ad1409555e:  jmp    0x72ad1411b2e0
+   0x000072ad14095563:  call   0x72ad140ff5e0
+
+
+Layout of class bug_fp32_fp16_conv
+Instance fields:
+ @0 12/- RESERVED
+Static fields:
+ @0 120/- RESERVED
+ @120 "POS_NAN" I 4/4 REGULAR
+ @124 "NEG_NAN" I 4/4 REGULAR
+ @128 "GOLDEN_C1" F 4/4 REGULAR
+ @132 "GOLDEN_C2" F 4/4 REGULAR
+ @136 "GOLDEN_C3" F 4/4 REGULAR
+ @140 "GOLDEN_C4" I 4/4 REGULAR
+ @144 "GOLDEN_C5" S 2/2 REGULAR
+ @146 "GOLDEN" S 2/2 REGULAR
+Instance size = 16 bytes
+
+(B)  Offset 7c - 124 : NEG_NAN 
+      Offset 78 - 120 : POS_NAN
+
+instruct addF_reg_mem(regF dst, regF src1, memory src2) %{
+  predicate(UseAVX > 0);
+  match(Set dst (AddF src1 (LoadF src2)));
+
+  format %{ "vaddss  $dst, $src1, $src2" %}
+  ins_cost(150);
+  ins_encode %{
+    __ vaddss($dst$$XMMRegister, $src1$$XMMRegister, $src2$$Address);
+  %}
+  ins_pipe(pipe_slow);
+%}
+
+[Inte] ADDSS  SECOND_FIELD(NEG_NAN) SECOND_FIELD(NEG_NAN) FIRST_FIELD(POS_NAN)    - > -NAN
+
+
+TODO : Follow up-PR Add compiler support for masked HalffloatVector operations
+            1) Add checks in existing inline expanders to fail intrinsification for predicated operations.
