@@ -120,7 +120,7 @@ void atomic_field_update2(value_flat_class16B* src, value_flat_class16B* dst) {
      "movq 0x8(%%rdi) , %%rdx   \n\t"
      // If RDX:RAX holds same value as destination, then update destination
      // atomically with RCX:RBX. Loopback and re-attempt.
-     "cmpxchg16b 0x0(%%rdi)     \n\t"
+     "lock cmpxchg16b 0x0(%%rdi)     \n\t"
      "jnz loop                  \n\t"
      "done:                     \n\t"
     : "+m"(dst)
@@ -231,16 +231,13 @@ value_flat_class16B accumulate_blob(value_class16B* mem) {
 void micro(int32_t algo) {
   if (algo == 0 || algo == -1) {
     value_flat_class16B res = {0.0f, 0.0f, 0.0f, 0.0f};
+    value_flat_class16B* flat_mem = allocate_1_million_flat_payload_values(10.0f, 20.0f, 30.0f, 40.0f);
     for (int32_t i = 0; i < WITER; i++) {
-      value_flat_class16B* flat_mem = allocate_1_million_flat_payload_values((float)i, ((float)i+1), ((float)i+2), ((float)i+3));
       res += accumulate_flat_blob(flat_mem);
-      alloc->reset_mem();
     }
     auto start = std::chrono::high_resolution_clock::now();
     for (int32_t i = 0; i < ITER; i++) {
-      value_flat_class16B* flat_mem = allocate_1_million_flat_payload_values((float)i, ((float)i+1), ((float)i+2), ((float)i+3));
       res += accumulate_flat_blob(flat_mem);
-      alloc->reset_mem();
     }
     auto end = std::chrono::high_resolution_clock::now();
     auto time_diff = std::chrono::duration<double>(end - start);
@@ -252,22 +249,18 @@ void micro(int32_t algo) {
     assert(alloc != nullptr);
     alloc->reset_mem();
     value_flat_class16B res2 = {0.0f, 0.0f, 0.0f, 0.0f};
+    value_class16B* mem = allocate_1_million_payload_values(10.0f, 20.0f, 30.0f, 40.0f);
     for (int32_t i = 0; i < WITER; i++) {
-      value_class16B* mem = allocate_1_million_payload_values((float)i, ((float)i+1), ((float)i+2), ((float)i+3));
       res2 += accumulate_blob(mem);
-      alloc->reset_mem();
     }
     auto start = std::chrono::high_resolution_clock::now();
     for (int32_t i = 0; i < ITER; i++) {
-      value_class16B* mem = allocate_1_million_payload_values((float)i, ((float)i+1), ((float)i+2), ((float)i+3));
       res2 += accumulate_blob(mem);
-      alloc->reset_mem();
     }
     auto end = std::chrono::high_resolution_clock::now();
     auto time_diff = std::chrono::duration<double>(end - start);
     std::cout << "[time] " << time_diff.count() << " ms ";
     print_value_object("[res payload] ", res2);
-    alloc->reset_mem();
   }
 }
 

@@ -1,0 +1,39 @@
+
+A) Penalty of atomic access for flat fields
+
+PROMPT>taskset -c 1  ./perf_app_alloc_access -1 0
+[time] 4.45304 s [res flat payload] { 9.63148e+10 , 9.8524e+10 , 1.00727e+11 , 1.02915e+11 }
+[time] 5.72392 ms [res payload] { 9.63148e+10 , 9.8524e+10 , 1.00727e+11 , 1.02915e+11 }
+PROMPT>g++ atomic128b_cmpxchg16b_perf.cxx -o perf_app_alloc_access
+PROMPT>taskset -c 1  ./perf_app_alloc_access -1 0
+[time] 4.42072 s [res flat payload] { 9.63148e+10 , 9.8524e+10 , 1.00727e+11 , 1.02915e+11 }
+[time] 5.67624 ms [res payload] { 9.63148e+10 , 9.8524e+10 , 1.00727e+11 , 1.02915e+11 }
+PROMPT>taskset -c 1  ./perf_app_alloc_access -1 1
+[time] 8.04901 s [res flat payload] { 9.63148e+10 , 9.8524e+10 , 1.00727e+11 , 1.02915e+11 }
+[time] 5.73514 ms [res payload] { 9.63148e+10 , 9.8524e+10 , 1.00727e+11 , 1.02915e+11 }
+PROMPT>taskset -c 1  ./perf_app_alloc_access -1 2
+[time] 10.8231 s [res flat payload] { 9.63148e+10 , 9.8524e+10 , 1.00727e+11 , 1.02915e+11 }
+[time] 5.63582 ms [res payload] { 9.63148e+10 , 9.8524e+10 , 1.00727e+11 , 1.02915e+11 }
+
+B) Performanc improvements of flat fields access.
+
+PROMPT>taskset -c 1  ./perf_app_access -1 0
+[time] 2.33053 s [res flat payload] { 1.73422e+10 , 3.46844e+10 , 6.35527e+10 , 6.93688e+10 }
+[time] 2.71641 ms [res payload] { 1.73422e+10 , 3.46844e+10 , 6.35527e+10 , 6.93688e+10 }
+PROMPT>taskset -c 1  ./perf_app_access -1 1
+[time] 2.26847 s [res flat payload] { 1.73422e+10 , 3.46844e+10 , 6.35527e+10 , 6.93688e+10 }
+[time] 2.58117 ms [res payload] { 1.73422e+10 , 3.46844e+10 , 6.35527e+10 , 6.93688e+10 }
+PROMPT>taskset -c 1  ./perf_app_access -1 2
+[time] 2.31701 s [res flat payload] { 1.73422e+10 , 3.46844e+10 , 6.35527e+10 , 6.93688e+10 }
+[time] 2.71879 ms [res payload] { 1.73422e+10 , 3.46844e+10 , 6.35527e+10 , 6.93688e+10 }
+
+
+C) Benefits of field flattening:-
+   - If a value type instance is buffered, then flattening saves additional header bytes of payload.
+   - Cache friendly layout, which improve performance of field accesses. As seen in above benchmark (B), we
+     see around 15% improvement in latency of accesess.
+   - For short lived and in-frequently accessed fields, additional instructions to ensure atomic field flattening
+     will add overhead which may result into performance penalty.
+   - For long lived objects with frequent field access, cache friendly layout and memory saving due to oop header
+     will be beneficial.
+   - While atomicity constrain does enable flattening, but main USP of value types is scalarization. 
