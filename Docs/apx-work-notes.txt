@@ -336,5 +336,36 @@ o87  AddL
      -> LoadL (0150 non-shared, with complete address computation)
      -> LoadL (o63 shared , register value)
 
-Thus first second patten (_0) get selected in this case...
+Thus  second patten addL_rReg_rReg_mem_ndd_0Node (_0) gets selected which observes flipped operands...
 
+Effect of biasing is visible in OptoAssembler, but its impact can only be seen in JIT code.
+
+
+Without tuned biasing
+--------------------------------
+038     B4: #   out( N1 ) <- in( B3 )  Freq: 0.999997
+038     movslq  R16, RDX        # i2l
+03c     eaddq    R17, R19, [RSI + #24 + R16 << #3]      # long ndd
+044     movq    R18, [RSI + #32 + R16 << #3]    # long
+04a     eaddq    RSI, R18, [RSI + #40 + R16 << #3]      # long ndd
+052     eaddq    RAX, R17, RSI  # long ndd
+
+
+With tuned biasing
+---------------------------
+034     B4: #   out( N1 ) <- in( B3 )  Freq: 0.999997
+034     movslq  R10, RDX        # i2l
+037     eaddq    R11, R9, [RSI + #24 + R10 << #3]       # long ndd
+03f     movq    R8, [RSI + #32 + R10 << #3]     # long
+044     eaddq    R8, R8, [RSI + #40 + R10 << #3]        # long ndd
+049     eaddq    RAX, R11, R8   # long ndd
+
+EMR>xed64 -64 -d 4e0344d628
+4E0344D628
+ICLASS:     ADD
+CATEGORY:   BINARY
+EXTENSION:  BASE
+IFORM:      ADD_GPRv_MEMv
+ISA_SET:    I86
+ATTRIBUTES: SCALABLE
+SHORT:      add r8, qword ptr [rsi+r10*8+0x28]
