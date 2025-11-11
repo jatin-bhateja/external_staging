@@ -120,7 +120,7 @@ void atomic_field_update2(value_flat_class16B* src, value_flat_class16B* dst) {
      "movq 0x8(%%rdi) , %%rdx   \n\t"
      // If RDX:RAX holds same value as destination, then update destination
      // atomically with RCX:RBX. Loopback and re-attempt.
-     "cmpxchg16b 0x0(%%rdi)     \n\t"
+     "lock cmpxchg16b 0x0(%%rdi)     \n\t"
      "jnz loop                  \n\t"
      "done:                     \n\t"
     : "+m"(dst)
