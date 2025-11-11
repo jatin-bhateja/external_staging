@@ -14,3 +14,129 @@ void Assembler::eimull(Register dst, Register src, int value, bool no_flags) {
 - missing demotion multiplication by constant.
 - eimull: cost of 4-byte EEVEX  prefix is only justified if DST or SRC is an EGPR
 - else it should demote to imull.
+
+--      offset(base, index, scale)
+     --     ADR  = base + index * scale + offset
+                --  AddP (base (AddP  (LShiftL  index, scale),  ConL)))
+     --    memory  
+                  - MachOper 
+
+
+
+When the function is done executing, GDB will silently stop.
+(gdb) p $7->operand_index (1)
+$10 = 2
+(gdb) p $7->operand_index (0)
+$11 = -1
+(gdb) p $7->operand_index (2)
+$12 = 3
+(gdb) dumpn this
+ 39  addI_rReg_mem_0  === 48 15 13 52  [[ 40 37 37 ]] #32/0x0000000000000020 !jvms: test_add_demotion::micro @ bci:8 (line 9)
+$13 = void
+(gdb) dis
+(gdb) p $7->_opnds[1]->base(ra_, this , 2)
+$17 = 8
+(gdb)
+
+
+    }
+    if( STATE__VALID_CHILD(_kids[0], ANY_REGP) && STATE__VALID_CHILD(_kids[1], IMML8) ) {
+      unsigned int c = _kids[0]->_cost[ANY_REGP]+_kids[1]->_cost[IMML8];
+        DFA_PRODUCTION(INDOFFSET8, indOffset8_rule, c)
+      if (STATE__NOT_YET_VALID(MEMORY) || _cost[MEMORY] > c) {
+        DFA_PRODUCTION(MEMORY, indOffset8_rule, c)
+      }
+
+
+Operand reduction stitches all the nodes enveloped under the operand to its parent MachNode, specially in case of memory_operands.
+
+
+
+    case addI_rReg_ndd_rule:
+    case addI_rReg_rReg_imm_ndd_rule:
+    case addI_rReg_rReg_mem_ndd_rule:
+    case addL_rReg_ndd_rule:
+    case addL_rReg_rReg_imm_ndd_rule:
+    case andI_rReg_ndd_rule:
+    case andI_rReg_rReg_imm_ndd_rule:
+    case andI_rReg_rReg_mem_ndd_rule:
+    case andL_rReg_ndd_rule:
+    case andL_rReg_rReg_imm_ndd_rule:
+    case addL_rReg_rReg_mem_ndd_rule:
+    case decI_rReg_ndd_rule:
+    case decL_rReg_ndd_rule:
+    case incI_rReg_ndd_rule:
+    case incL_rReg_ndd_rule:
+    case maxI_rReg_ndd_rule:
+    case minI_rReg_ndd_rule:
+    case mulI_rReg_ndd_rule:
+    case mulI_rReg_rReg_mem_ndd_rule:
+    case mulL_rReg_ndd_rule:
+    case mulL_rReg_rReg_mem_ndd_rule:
+    case negI_rReg_2_ndd_rule:
+    case negI_rReg_ndd_rule:
+    case negL_rReg_2_ndd_rule:
+    case negL_rReg_ndd_rule:
+    case orI_rReg_imm_rReg_ndd_rule:
+    case orI_rReg_ndd_rule:
+    case orI_rReg_rReg_imm_ndd_rule:
+    case orI_rReg_rReg_mem_ndd_rule:
+    case orL_rReg_imm_rReg_ndd_rule:
+    case orL_rReg_ndd_rule:
+    case orL_rReg_rReg_imm_ndd_rule:
+    case orL_rReg_rReg_mem_ndd_rule:
+    case rolI_rReg_Var_ndd_rule:
+    case rolL_rReg_Var_ndd_rule:
+    case rorI_rReg_Var_ndd_rule:
+    case rorL_rReg_Var_ndd_rule:
+    case salI_rReg_immI2_ndd_rule:
+    case salI_rReg_imm_ndd_rule:
+    case salL_rReg_immI2_ndd_rule:
+    case salL_rReg_imm_ndd_rule:
+    case sarI_rReg_imm_ndd_rule:
+    case sarL_rReg_imm_ndd_rule:
+    case shrI_rReg_imm_ndd_rule:
+    case shrL_rReg_imm_ndd_rule:
+    case subI_rReg_ndd_rule:
+    case subI_rReg_rReg_imm_ndd_rule:
+    case subI_rReg_rReg_mem_ndd_rule:
+    case subL_rReg_ndd_rule:
+    case subL_rReg_rReg_imm_ndd_rule:
+    case subL_rReg_rReg_mem_ndd_rule:
+    case xorI_rReg_im1_ndd_rule:
+    case xorI_rReg_ndd_rule:
+    case xorI_rReg_rReg_imm_ndd_rule:
+    case xorI_rReg_rReg_mem_ndd_rule:
+    case xorL_rReg_im1_ndd_rule:
+    case xorL_rReg_ndd_rule:
+    case xorL_rReg_rReg_mem_ndd_rule:
+
+
+Memory Flavor MachNode
+    --    0 : control
+    --    1 : mem
+    --    2 : address    |-> OPEN_INPUT_BASE
+    --    3 : input
+
+
+Regular MachNode
+
+    --  0  :  control
+        1  :  input        |-> OPER_INPUT_BASE
+
+
+ MachNode :    
+       Ideal Inputs:     I0      I1   I 2    I3    I4    I5   I6
+       MachOper:      ----     --------    -------     --    --
+                                 O0       01         02      03   0
+
+ Operand_index  mapping:-
+
+                        MachOper   MachOperIdx              Ideal Input Edge (start index)            Num_edges, (number of edges covered under [complex  = memory]  MachOper]
+                                 O0              0                    --->   0                                                           1
+                                 O1              1                             1                                                           2
+                                 O2              2                             3                                                           2
+                                 O3              3                             5                                                           1
+                                      
+
+                   
