@@ -115,7 +115,7 @@ Operand reduction stitches all the nodes enveloped under the operand to its pare
 Memory Flavor MachNode
     --    0 : control
     --    1 : mem
-    --    2 : address    |-> OPEN_INPUT_BASE
+    --    2 : address    |-> OPER_INPUT_BASE
     --    3 : input
 
 
@@ -139,4 +139,202 @@ Regular MachNode
                                  O3              3                             5                                                           1
                                       
 
-                   
+ // Number of inputs which come before the first operand.
+ // Generally at least 1, to skip the Control input
+ virtual uint oper_input_base() const { return 1; }
+ // Zeroth operand is definition.
+
+
+TODO: Add missing commutative in memory patterns. 
+
+Kernel:
+----------
+    public static long micro(long arg1, long [] arg2, long arg3, long arg4, int ctr) {
+       long t1 = arg2[ctr] + arg2[ctr+1] ;
+       long t2 = arg2[ctr+2] + arg2[ctr+3] ;
+       return t1 + t2;
+    }
+
+Baseline allocation:  
+----------------------------
+038     movslq  R16, R9 # i2l
+03c     eaddq    R17, R19, [RDX + #24 + R16 << #3]      # long ndd
+044     movq    R18, [RDX + #32 + R16 << #3]    # long
+04a     eaddq    R16, R18, [RDX + #40 + R16 << #3]      # long ndd
+052     eaddq    RAX, R17, R16  # long ndd
+
+With RA biasing:
+------------------------
+03c     eaddq    R17, R19, [RDX + #24 + R16 << #3]      # long ndd
+044     movq    R18, [RDX + #32 + R16 << #3]    # long
+04a     eaddq    RDX, R18, [RDX + #40 + R16 << #3]      # long ndd    //// >>> RDX gets assigined to def because of biasing towards first input edge of memory operand.
+052     eaddq    RAX, R17, RDX  # long ndd
+
+
+Q. Why is def not biased towards R18 which would have resulted into demotion ?
+
+A.  Following MachNode has 3 operands, 0: control, 1:addr (base + offset) 2: reg
+   -  As per the name, register operand should have been the 1st operand and memory operand should have been the second operand with num_edge = 2.
+   -  This is the reason why we bias the def toward memory (base) i.e. RDX and not R18.
+
+ 40  loadL  === 61 14 12 18  [[ 75 46 ]] #3/0x00000003#16/0x0000000000000010 !jvms: test_ndd_demotion::micro @ bci:2 (line 15)
+ 52  convI2L_reg_reg  === _ 18  [[ 46 48 49 ]]
+ 12  MachProj  === 11  [[ 49 27 72 70 69 40 67 46 48 ]] #5 !jvms: test_ndd_demotion::micro @ bci:-1 (line 15)
+ 14  MachProj  === 11  [[ 4 27 21 31 40 43 46 48 49 ]] #2/unmatched  Memory: @BotPTR *+bot, idx=Bot; !jvms: test_ndd_demotion::micro @ bci:-1 (line 15)
+ 62  Region  === 62 44  [[ 62 43 46 48 49 ]]
+ 46  addL_rReg_rReg_mem_ndd_0  === 62 14 12 52 40  [[ 47 45 43 ]] #3/0x00000003#24/0x0000000000000018
+
+
+sde64 -debug -dmr -ptr_raise -icount -- java -XX:+UnlockExperimentalVMOptions -XX:+UseAPX -Xbatch -XX:-TieredCompilation -XX:CompileCommand=PrintIdealPhase,test_ndd_demotion::micro,MATCHING -XX:-PauseAtStartup -cp . test_ndd_demotion
+^[[A
+--N: o87  AddL  === _ o150 o63  [[ o134 ]]
+
+   --N: o150  LoadL  === o71 o7 o84  |o29  [[ o87 ]]  @long[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=5; #long (does not depend only on test, unknown control)
+   RREGL  150  loadL
+   NO_RAX_RDX_REGL  150  loadL
+   RAX_REGL  150  loadL
+   RCX_REGL  150  loadL
+   RDX_REGL  150  loadL
+   R11_REGL  150  loadL
+   NO_RBP_R13_REGL  150  loadL
+   STACKSLOTL  250  storeSSL
+   _LoadL_memory_  25  _LoadL_memory_
+
+      --N: o84  AddP  === _ o10 o177 o174  [[ o150 ]]
+      ANY_REGP  135  leaPIdxScaleOff
+      RREGP  135  leaPIdxScaleOff
+      NO_RBP_REGP  135  leaPIdxScaleOff
+      RAX_REGP  135  leaPIdxScaleOff
+      RBX_REGP  135  leaPIdxScaleOff
+      RSI_REGP  135  leaPIdxScaleOff
+      RBP_REGP  135  leaPIdxScaleOff
+      RDI_REGP  135  leaPIdxScaleOff
+      R15_REGP  135  leaPIdxScaleOff
+      INDIRECT  135  leaPIdxScaleOff
+      INDOFFSET8  125  INDOFFSET8
+      INDOFFSET32  135  INDOFFSET32
+      INDINDEXOFFSET  125  INDINDEXOFFSET
+      INDINDEX  200  INDINDEX
+      INDINDEXSCALEOFFSET  25  INDINDEXSCALEOFFSET
+      STACKSLOTP  235  storeSSP
+      NO_RAX_REGP  135  leaPIdxScaleOff
+      MEMORY  25  INDINDEXSCALEOFFSET
+      _AddP_any_RegP_rRegL  190  _AddP_any_RegP_rRegL
+
+         --N: o177  AddP  === _ o10 o10 o170  [[ o108 o84 o130 ]]
+         ANY_REGP  120  leaPIdxScale
+         RREGP  120  leaPIdxScale
+         NO_RBP_REGP  120  leaPIdxScale
+         RAX_REGP  120  leaPIdxScale
+         RBX_REGP  120  leaPIdxScale
+         RSI_REGP  120  leaPIdxScale
+         RBP_REGP  120  leaPIdxScale
+         RDI_REGP  120  leaPIdxScale
+         R15_REGP  120  leaPIdxScale
+         INDIRECT  120  leaPIdxScale
+         INDINDEX  110  INDINDEX
+         INDINDEXSCALE  10  INDINDEXSCALE
+         STACKSLOTP  220  storeSSP
+         NO_RAX_REGP  120  leaPIdxScale
+         MEMORY  10  INDINDEXSCALE
+         _AddP_any_RegP_rRegL  100  _AddP_any_RegP_rRegL
+         _AddP_any_RegP__LShiftL_rRegL_immI2  0  _AddP_any_RegP__LShiftL_rRegL_immI2
+
+            --N: o10  Parm  === o3  [[ o84 o24 o75 o75 o177 o177 o62 o62 o108 o130 o50 o50 o40 o40 o61 ]] Parm0: long[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact *
+            ANY_REGP  0  ANY_REGP
+            RREGP  0  RREGP
+            NO_RBP_REGP  0  NO_RBP_REGP
+            RAX_REGP  0  RAX_REGP
+            RBX_REGP  0  RBX_REGP
+            RSI_REGP  0  RSI_REGP
+            RBP_REGP  0  RBP_REGP
+            RDI_REGP  0  RDI_REGP
+            R15_REGP  0  R15_REGP
+            INDIRECT  0  INDIRECT
+            STACKSLOTP  100  storeSSP
+            NO_RAX_REGP  0  NO_RAX_REGP
+            MEMORY  0  INDIRECT
+
+            --N: o170  LShiftL  === _ o159 o59  [[ o177 ]]
+            RREGL  100  salL_rReg_immI2_ndd
+            NO_RAX_RDX_REGL  100  salL_rReg_immI2_ndd
+            RAX_REGL  100  salL_rReg_immI2_ndd
+            RCX_REGL  100  salL_rReg_immI2_ndd
+            RDX_REGL  100  salL_rReg_immI2_ndd
+            R11_REGL  100  salL_rReg_immI2_ndd
+            NO_RBP_R13_REGL  100  salL_rReg_immI2_ndd
+            STACKSLOTL  200  storeSSL
+            _LShiftL_rRegL_immI2  0  _LShiftL_rRegL_immI2
+
+               --N: o159  ConvI2L  === _ o11  [[ o170 ]]  #long:minint..maxint, 0u..maxulong, widen: 3
+               RREGL  0  RREGL
+               NO_RAX_RDX_REGL  0  NO_RAX_RDX_REGL
+               RAX_REGL  0  RAX_REGL
+               RCX_REGL  0  RCX_REGL
+               RDX_REGL  0  RDX_REGL
+               R11_REGL  0  R11_REGL
+               NO_RBP_R13_REGL  0  NO_RBP_R13_REGL
+               STACKSLOTL  100  storeSSL
+
+               --N: o59  ConI  === o0  [[ o60 o170 o111 ]]  #int:3
+               IMMI  10  IMMI
+               IMMI2  0  IMMI2
+               IMMU7  5  IMMU7
+               IMMI8  5  IMMI8
+               IMMU8  5  IMMU8
+               IMMI16  10  IMMI16
+               IMMU31  0  IMMU31
+               IMMI_POW2M1  20  IMMI_POW2M1
+               RREGI  100  loadConI
+               RAX_REGI  100  loadConI
+               RBX_REGI  100  loadConI
+               RCX_REGI  100  loadConI
+               RDX_REGI  100  loadConI
+               RDI_REGI  100  loadConI
+               NO_RAX_RDX_REGI  100  loadConI
+               NO_RBP_R13_REGI  100  loadConI
+               STACKSLOTI  200  storeSSI
+
+         --N: o174  ConL  === o0  [[ o84 ]]  #long:24
+         IMML  20  IMML
+         IMML8  5  IMML8
+         IMMUL32  10  IMMUL32
+         IMML32  15  IMML32
+         RREGL  70  loadConUL32
+         NO_RAX_RDX_REGL  70  loadConUL32
+         RAX_REGL  70  loadConUL32
+         RCX_REGL  70  loadConUL32
+         RDX_REGL  70  loadConUL32
+         R11_REGL  70  loadConUL32
+         NO_RBP_R13_REGL  70  loadConUL32
+         STACKSLOTL  170  storeSSL
+
+   --N: o63  LoadL  === o45 o7 o61  |o29  [[ o87 o75 ]]  @long[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=5; #long
+   RREGL  0  RREGL
+   NO_RAX_RDX_REGL  0  NO_RAX_RDX_REGL
+   RAX_REGL  0  RAX_REGL
+   RCX_REGL  0  RCX_REGL
+   RDX_REGL  0  RDX_REGL
+   R11_REGL  0  R11_REGL
+   NO_RBP_R13_REGL  0  NO_RBP_R13_REGL
+   STACKSLOTL  100  storeSSL
+
+
+o87  AddL  === _ o150 o63  [[ o134 ]]
+o61  AddP  === _ o10 o62 o55  [[ o63 ]]
+o45  IfTrue  === o181  [[ o183 o63 ]] #1
+o84  AddP  === _ o10 o177 o174  [[ o150 ]]
+ o7  Parm  === o3  [[ o135 o152 o63 o157 o50 o32 o150 o41 o75 ]] Memory  Memory: @BotPTR *+bot, idx=Bot;
+o71  IfTrue  === o183  [[ o135 o150 o152 o157 ]] #1
+o63  LoadL  === o45 o7 o61  |o29  [[ o87 o75 ]]  @long[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=5; #long
+o150  LoadL  === o71 o7 o84  |o29  [[ o87 ]]  @long[int:>=0] (java/lang/Cloneable,java/io/Serializable):exact+any *, idx=5; #long (does not depend only on test, unknown control)
+o87  AddL  === _ o150 o63  [[ o134 ]]
+
+o63 is shared node, which forces its value to be read from register.
+
+o87  AddL
+     -> LoadL (0150 non-shared, with complete address computation)
+     -> LoadL (o63 shared , register value)
+
+Thus first second patten (_0) get selected in this case...
+
