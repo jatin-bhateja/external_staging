@@ -636,10 +636,10 @@ index 9a0bbdc27a0..73d9832b717 100644
    ins_cost(200);
    expand %{
 diff --git a/src/hotspot/share/opto/chaitin.cpp b/src/hotspot/share/opto/chaitin.cpp
-index 38d5c4d26b3..9257834fcc8 100644
+index 38d5c4d26b3..b937e21340c 100644
 --- a/src/hotspot/share/opto/chaitin.cpp
 +++ b/src/hotspot/share/opto/chaitin.cpp
-@@ -1657,45 +1657,42 @@ uint PhaseChaitin::Select( ) {
+@@ -1657,46 +1657,31 @@ uint PhaseChaitin::Select( ) {
        }
      }
  
@@ -676,7 +676,11 @@ index 38d5c4d26b3..9257834fcc8 100644
 +      Node* in1 = mdef->in(mdef->operand_index(1));
 +      if (in1 != nullptr) {
 +        lrg_in1 = _lrg_map.find(in1);
-+        if (lrg_in1 != 0 && lrg->_copy_bias == 0) {
++        // Complex memory operand covers multiple incoming
++        // edges needed for address computation, biasing def
++        // towards any address component will not result into
++        // NDD demotion by assembler.
++        if (lrg_in1 != 0 && lrg->_copy_bias == 0 && mdef->operand_num_edges(1) == 1) {
 +          lrg->_copy_bias = lrg_in1;
          }
        }
@@ -690,32 +694,18 @@ index 38d5c4d26b3..9257834fcc8 100644
 -          // then bias its color towards its input's def.
 -          if (lrin2 != 0 && lrg->_copy_bias2 == 0) {
 -            lrg->_copy_bias2 = lrin2;
+-          }
 +    // For commutative operation, def allocation can also be
 +    // biased towards LRG of second input's def.
 +    if (Matcher::should_attempt_register_biasing(mdef, 2)) {
 +      Node* in2 = mdef->in(mdef->operand_index(2));
 +      if (in2 != nullptr) {
 +        uint lrg_in2 = _lrg_map.find(in2);
-+        if (lrg_in2 != 0 && lrg->_copy_bias2 == 0) {
-+          // Sort bias hints in increasing order of number of
-+          // of nodes (num_edges) encapsulated by an operand,
-+          // e.g. complex memory operand covers multiple incoming
-+          // edges needed for address computation, this may
-+          // increase the chances of NDD demotion by assembler.
-+          if (lrg_in1 != 0 && lrg_in1 == lrg->_copy_bias) {
-+            int num_edges_in1 = mdef->operand_num_edges(1);
-+            int num_edges_in2 = mdef->operand_num_edges(2);
-+            if (num_edges_in1 > num_edges_in2) {
-+              lrg->_copy_bias2 = lrg->_copy_bias;
-+              lrg->_copy_bias = lrg_in2;
-+            } else {
-+              lrg->_copy_bias2 = lrg_in2;
-+            }
-+          } else {
-+            lrg->_copy_bias2 = lrg_in2;
-           }
++        if (lrg_in2 != 0 && lrg->_copy_bias2 == 0 && mdef->operand_num_edges(2) == 1) {
++          lrg->_copy_bias2 = lrg_in2;
          }
        }
+     }
 diff --git a/src/hotspot/share/opto/machnode.cpp b/src/hotspot/share/opto/machnode.cpp
 index e58befd8032..ec861865ff5 100644
 --- a/src/hotspot/share/opto/machnode.cpp

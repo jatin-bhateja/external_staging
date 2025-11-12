@@ -369,3 +369,76 @@ IFORM:      ADD_GPRv_MEMv
 ISA_SET:    I86
 ATTRIBUTES: SCALABLE
 SHORT:      add r8, qword ptr [rsi+r10*8+0x28]
+
+
+
+    public static long micro(long arg1, long [] arg2, long arg3, long arg4, int ctr) {
+       long t1 = arg1 + arg2[ctr] + arg3 + arg4;
+       long t2 = arg1 * arg2[ctr] * arg3 * arg4;
+       long t3 = arg1 ^ arg2[ctr] ^ arg3 ^ arg4;
+       long t4 = arg1 | arg2[ctr] | arg3 | arg4;
+       long t5 = arg1 & arg2[ctr] & arg3 & arg4;
+       return t1 + t2 + t3 + t4 + t5;
+    }
+
+028     eandq     R11, RSI, R10 # long ndd
+02e     eimulq   R9, RSI, R10   # long ndd
+034     eandq     R11, R11, RCX # long ndd
+037     eimulq   R9, R9, RCX    # long ndd
+03b     eandq     R11, R11, R8  # long ndd
+03e     eimulq   R9, R9, R8     # long ndd
+042     eaddq    RBX, RSI, R10  # long ndd
+048     exorq    RDI, RSI, R10  # long ndd
+04e     eaddq    RBX, RBX, RCX  # long ndd
+051     exorq    RDI, RDI, RCX  # long ndd
+054     eaddq    RBX, RBX, R8   # long ndd
+057     exorq    RDI, RDI, R8   # long ndd
+05a     eaddq    RBX, RBX, R9   # long ndd
+05d     eorq     RSI, RSI, R10  # long ndd
+060     eaddq    RDI, RDI, RBX  # long ndd
+063     eorq     RSI, RSI, RCX  # long ndd
+066     eorq     RSI, RSI, R8   # long ndd
+069     eaddq    RSI, RSI, RDI  # long ndd
+
+
+EMR>xed64 -64 -d 4803d94833f94903d84933f84903d9
+4803D94833F94903D84933F84903D9
+ICLASS:     ADD
+CATEGORY:   BINARY
+EXTENSION:  BASE
+IFORM:      ADD_GPRv_GPRv_03
+ISA_SET:    I86
+ATTRIBUTES: SCALABLE
+SHORT:      add rbx, rcx
+4833F94903D84933F84903D9
+ICLASS:     XOR
+CATEGORY:   LOGICAL
+EXTENSION:  BASE
+IFORM:      XOR_GPRv_GPRv_33
+ISA_SET:    I86
+ATTRIBUTES: SCALABLE
+SHORT:      xor rdi, rcx
+4903D84933F84903D9
+ICLASS:     ADD
+CATEGORY:   BINARY
+EXTENSION:  BASE
+IFORM:      ADD_GPRv_GPRv_03
+ISA_SET:    I86
+ATTRIBUTES: SCALABLE
+SHORT:      add rbx, r8
+4933F84903D9
+ICLASS:     XOR
+CATEGORY:   LOGICAL
+EXTENSION:  BASE
+IFORM:      XOR_GPRv_GPRv_33
+ISA_SET:    I86
+ATTRIBUTES: SCALABLE
+SHORT:      xor rdi, r8
+4903D9
+ICLASS:     ADD
+CATEGORY:   BINARY
+EXTENSION:  BASE
+IFORM:      ADD_GPRv_GPRv_03
+ISA_SET:    I86
+ATTRIBUTES: SCALABLE
+SHORT:      add rbx, r9
