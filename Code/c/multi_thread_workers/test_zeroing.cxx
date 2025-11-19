@@ -87,10 +87,6 @@ void* worker(void * data) {
   work* work_item = tdata->work_item;
   while (true) {
     int worker_status = tdata->flag;
-    if(worker_status == KILL) {
-      break;
-    }
-
     for (int i = 0; i < WITER; i++) {
       work_item->micro(work_item->start, work_item->len);
     }
@@ -102,6 +98,9 @@ void* worker(void * data) {
     auto duration = std::chrono::duration<double>(end - start);
     fprintf(stdout, "[len] %ld bytes [time] %lf ns [res] %ld\n", work_item->len, duration.count(), hashcode(work_item->start));
     fflush(stdout);
+    if(worker_status == KILL) {
+      break;
+    }
   }
   return nullptr;
 }
