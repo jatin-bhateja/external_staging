@@ -82,35 +82,6 @@ typedef struct _tdata {
   work* work_item;
 } thread_data;
 
-//
-//  Threading scheme.
-//  Master: populate work in global worklist.
-//    -- allocate work from list.
-//    -- check worker status, allocate more work.
-//    -- kill workers if all work done.
-//    -- optional : load balance if one worker is heavily loaded.
-//    -- optional : keep the record the busywaiting duration of each worker.
-//  Worker (pool):
-//    -- poll its work queue
-//    -- busy wait if no work.
-//    -- set its work_status
-//
-//  Fine nuances for dyanmic load work allocation and load balancing :-
-//    -- Master cannot simultaneously add the work items at end of list 
-//       while it is being traversed by worker, this is because
-//       there will be a read-write race at edge.
-//    -- Two lists per worker, active queue and pending queue
-//       LOCK CMPXCHG head of pending and active one all the work items
-//       are processed on active queue.
-//    -- Master keep adding new work or load balance items to pending
-//       queue of workers
-//    -- A single std::vector is not correct structure for dynamic work
-//       scaling. Since its contiguous memory and addition of new items
-//       by producer may reallocate the memory, thereby consumer may  
-//       continue accessing stale or freed worklist. 
-//    -- Active-pending worklist model work well in this case.
-//  
-//
 void* worker(void * data) {
   thread_data* tdata = static_cast<thread_data*>(data);
   work* work_item = tdata->work_item;
