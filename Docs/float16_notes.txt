@@ -200,4 +200,46 @@ instruct addF_reg_mem(regF dst, regF src1, memory src2) %{
 TODO : 
    - Follow up-PR Add compiler support for masked HalffloatVector operations
    - Currently, masked operation will result into operation + blend.
-            
+   - LaneType redefine basicType to laneBasicType its an int value and its name gives a false impression about its link to BasicType used in VM.
+
+
+Thought through following questions before guarding existing assertions in LaneType.
+
+Q. Describe the use and kinds of BasicType in JVM ?
+A. Its and enum holding execution engine agnostic type information for various primitive types and reference types defined by JLS.
+    e.g.  T_BOOLEAN, T_BYTE, T_SHORT, T_LONG, T_OBJECT , T_ARRAY 
+    Thus all the primitive types have a corresponding basic type, and a reference type like class, class instance corresponds to  T_OBJECT
+    while primitive / reference arrays corresponds to T_ARRAY basic type.
+
+Q. What should be the basic type for a new boxed primitive type like Float16.
+A. Float16 like Float is a boxed primitive type, thus an instance of class Float16 should have T_OBJECT as its basic type.
+    If its value type, with one primitive type field, then C2 compiler can unwrap / scalarize it before passing it to a different method.
+    Signature for such an argument will become 'S' which corresponds to short field. While original instance has Ljava.incubator.vector.Float16;
+    as its signature.
+
+Q. Float16Vector load from / store to a short [], thus 'short' is a carrier type for Float16.  Even when Float16 array are flattened underlined
+    storage is still short [], In such a case is it advisalbe to add a new T_FLOAT16 as a basic type ?
+A. Absolutely not, current T_SHORT correctly relates to the lane type of actual backing storage, We will never use Float16[] in non-flat form as 
+    a backing storage, hence its not advisable to add T_FLOAT16 as a new BasicType.
+
+Deviation from standard way of computing size in assertion for Floatt16.  
+                                          FP16 FP32 FP64
+BASIC_TYPE enum value : 12     6         7
+                                  SIZE: 16,   32,     64
+                           log2SIZE:   4    5          6 
+      computed enum_value:   4-3 | 4 -> 101                  (FP16)
+                                                   5-3 | 4   ->  110          (FP32)
+                                                         6-3 | 4 -> 111       (FP64)
+
+Current scheme uses following formula to validate basic type value assignment comply with JLS.
+ value =  log2(size) - 3 | 4
+Since Float16 is not a valid primitive type, and a reference type by semantics hence its basic type should be T_OBJECT i.e. value 12.
+
+Using existing scheme we compute '5' as the basic type value assignment for Float16 but as per JLS is occupied by CHAR.
+Both CHAR and SHORT are 16 bit values.
+
+It's better to guard the assertions with addtional flag called syntheticBasicType and evaluate them for real basicTypes defined in JLS.
+
+
+Q. Verify creation of scalar intrinsic in fall back code ?
+A. SQRT and FMA are intrinsics, while rest of the operations are inferred using generic pattern match over IR graph.            
