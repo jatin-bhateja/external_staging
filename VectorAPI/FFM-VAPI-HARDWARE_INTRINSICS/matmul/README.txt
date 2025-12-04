@@ -3,7 +3,7 @@ A) Steps to run:
 
   1/ export LD_LIBRARY_PATH=$PWD
   2/ make all
-  3/ make with appropriate make run target
+  3/ make with appropriate run target
      make run_ffm
      make run_vapi
      make run_jfr
