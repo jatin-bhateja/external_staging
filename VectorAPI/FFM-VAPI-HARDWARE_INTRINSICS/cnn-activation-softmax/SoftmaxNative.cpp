@@ -6,7 +6,7 @@ extern "C"
 __m512 __jsvml_expf16_ha_z0(__m512 input);
 
 extern "C"
-__m512 _my512_expm1_ps(__m512 vec) {
+__m512 _my512_exp_ps(__m512 vec) {
     __m512 res;
     asm volatile (
       "vmovdqu64 %1, %%zmm0  \n\t"
@@ -53,8 +53,7 @@ void compute_softmax(float* pred, float* input, int n) {
     for (; i + VS <= n; i += VS) {
         __m512 x = _mm512_loadu_ps(input + i);
         x = _mm512_sub_ps(x, vmax);
-        x = _my512_expm1_ps(x);     // exp(x) - 1
-        x = _mm512_add_ps(x, _mm512_set1_ps(1.0f)); // exp(x)
+        x = _my512_exp_ps(x);     // exp(x)
         _mm512_storeu_ps(pred + i, x);
     }
 
@@ -62,8 +61,7 @@ void compute_softmax(float* pred, float* input, int n) {
         __mmask16 mask = (1 << (n - i)) - 1;
         __m512 x = _mm512_maskz_loadu_ps(mask, input + i);
         x = _mm512_sub_ps(x, vmax);
-        x = _my512_expm1_ps(x);
-        x = _mm512_add_ps(x, _mm512_set1_ps(1.0f));
+        x = _my512_exp_ps(x);
         _mm512_mask_storeu_ps(pred + i, mask, x);
     }
 
