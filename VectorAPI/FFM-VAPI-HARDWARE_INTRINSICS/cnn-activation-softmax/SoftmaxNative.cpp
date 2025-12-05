@@ -3,14 +3,14 @@
 #include <math.h>
 
 extern "C"
-void __svml_expf16_ha();
+__m512 __jsvml_expf16_ha_z0(__m512 input);
 
 extern "C"
 __m512 _my512_expm1_ps(__m512 vec) {
     __m512 res;
     asm volatile (
       "vmovdqu64 %1, %%zmm0  \n\t"
-      "call __svml_expf16_ha \n\t"
+      "call __jsvml_expf16_ha_z0 \n\t"
       "vmovdqu64 %%zmm0, %0  \n\t"
     : "=x"(res)
     : "x"(vec)

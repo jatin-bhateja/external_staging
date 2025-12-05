@@ -1,8 +1,8 @@
 all:
 	g++ -mavx512f -fPIC -shared -o libmatmul_512.so matmul_512.c
 	jextract matmul_512.h
-	javac matmul_512_h.java
-	javac --add-modules=jdk.incubator.vector matmul_512_bench.java
+	javac -cp . matmul_512_h.java
+	javac -cp . --add-modules=jdk.incubator.vector matmul_512_bench.java
 
 
 run_ffm:

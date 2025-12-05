@@ -1,9 +1,9 @@
 all:
-	gcc svml_z0_exp_s_ha.S -c
-	g++ -mavx512f -fPIC -shared svml_z0_exp_s_ha.o -o libSoftmaxNative.so SoftmaxNative.cpp
+	gcc jsvml_s_exp_linux_x86.S -c
+	g++ -mavx512f -fPIC -shared jsvml_s_exp_linux_x86.o -o libSoftmaxNative.so SoftmaxNative.cpp
 	jextract SoftmaxNative.h
-	javac SoftmaxNative_h.java
-	javac --add-modules=jdk.incubator.vector SoftmaxBench.java
+	javac -cp . SoftmaxNative_h.java
+	javac -cp . --add-modules=jdk.incubator.vector SoftmaxBench.java
 
 
 run_ffm:
