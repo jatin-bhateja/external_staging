@@ -1,0 +1,99 @@
+public class multiply_by_constants {
+  //2, 3, 4, 16, 25 and 522.
+  public static long mul_by_2(long a) {
+     return a * 2;
+  }
+  public static long mul_by_3(long a) {
+     return a * 3;
+  }
+  public static long mul_by_4(long a) {
+     return a * 4;
+  }
+  public static long mul_by_16(long a) {
+     return a * 16;
+  }
+  // Optimized:
+  // T1 = LEA A, A, 4   => A  + 4A  => 5A
+  // T2 = LEA 5A, 5A, 4 => 5A + 20A => 25A
+  // Scheme is simple
+  //  Base Index Scale  Output      
+  //   A    A      1     2A
+  //   A    A      2     3A
+  //   A    A      4     5A
+  //   A    A      8     9A
+  //  Q. Which constant multiplications can be optimized using above ?
+  //  A. Base/Index  Scale  Constant multipler[iterations]
+  //         A         1             2
+  //         A         2             3[1], 9[2], 27[3], 81[4] => 3^x | constrain iteration count by latency of imul i.e. 3 cycles.
+  //         A         4             5[1], 25[2], 125[3]      => 5^x | constrain iteration count by latency of imul
+  //         A         8             9[1], 81[2],             => 9^x | constrain iteration count by latency of imul
+  //    Uptill now we have only consider same scalar across of all 
+  //    the iterations of LEA, considering different scale can handle
+  //    many more constants, infact design an efficient algorithm to
+  //    split the constant multiplication across differnt LEA instruction
+  //    with same or varied scale using dynamic programming technique.
+  //    e.g. 45 => LEA1 A, A, 8, LEA2 9A, 9A, 4
+  //    Base Index    Scale1   Scale2   Multipiler
+  //     A     A       1        2      2A + 2*2A = 6A
+  //                   1        4      2A + 4*2A = 10A
+  //                   1        8      2A + 8*2A = 17A
+  //                   2        2      3A + 2*3A = 9A
+  //                   2        4      3A + 4*3A = 15A
+  //                   2        8      3A + 8*3A = 27A
+  //                   4        8      5A + 8*5A = 45A
+  //     A     A       2        -                  3A
+  //                   4        -                  5A
+  //                   8        -                  9A
+  //     2A    A       -> shift 1 + add (3A)
+  //     4A    A       -> shift 2 + add (5A)
+  //     8A    A       -> shift 3 + add (9A)
+  //     A    4A  2    -> shift 3 + add (9A)
+  //     A    8A  2    -> shift 4 + add (17A)
+  //     2A   2A  2    -> shift 2 + add + add  | lea a a + lea 2a , 2a, 2 -> 6A
+  //  Based on experiment constants handled by single LEA are clear winners
+  //  against imul, with 2-leas we see degradation in performance. 
+  public static long mul_by_25(long a) {
+     return a * 25;
+  }
+  // Optimized:
+  // T1 = 
+  public static long mul_by_522(long a) {
+     return a * 552;
+  }
+
+  interface Micro {
+     public long apply(long a);
+  }
+
+  public static void runBm(String msg, long a, Micro func) {
+     long res = 0;
+     for (int i = 0 ; i < 100000; i++) {
+         res += func.apply(a);
+     }
+     long start = System.currentTimeMillis();
+     for (int i = 0 ; i < 100000; i++) {
+         res += func.apply(a);
+     }
+     long end = System.currentTimeMillis();
+     IO.println("[" + msg + " time] " + (end - start) + "ms [res] " + res);
+  }
+
+  public static void main(String [] args) {
+     int algo = Integer.parseInt(args[0]);
+     int num = Integer.parseInt(args[1]);
+     if (algo == 2) {
+        runBm("Mulx2", num, (x) -> mul_by_2(x));
+     } else if (algo == 3) {
+        runBm("Mulx3", num, (x) -> mul_by_3(x));
+     } else if (algo == 4) {
+        runBm("Mulx4", num, (x) -> mul_by_4(x));
+     } else if (algo == 16) {
+        runBm("Mulx16", num, (x) -> mul_by_16(x));
+     } else if (algo == 25) {
+        runBm("Mulx25", num, (x) -> mul_by_25(x));
+     } else if (algo == 522) {
+        runBm("Mulx552", num, (x) -> mul_by_522(x));
+     }
+     IO.println("PASS");
+  }
+}
