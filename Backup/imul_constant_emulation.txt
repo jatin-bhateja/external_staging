@@ -1,0 +1,131 @@
++
++//
++//  Emulate multiplier using LEA addressing scheme, where
++//  effective address = BASE + INDEX * SCALE + OFFSET
++//  Refer to section "3.5.1.2 Using LEA" of Intel's optimization
++//  manual for details reagarding slow vs fast lea instructions.
++//  Given that latency of IMUL with register operands is 3 cycles,
++//  a combination of two fast LEAs each with 1 cycle latency to
++//  emulate multipler is performant.
++//
++//  Consider X as the multiplicand, by variying the scale of
++//  first LEA instruction we can generate 4 input i.e.
++//  X + X * 1 = 2X
++//  X + X * 2 = 3X
++//  X + X * 4 = 5X
++//  X + X * 8 = 9X
++//
++//  Following table list downs various multiplier combinations
++//  for output of first LEA at BASE and/or INDEX by varying the
++//  scale of second fast LEA instruction. We will only handle the
++//  cases which cannot be handled by just shift + add.
++//
++//  BASE   INDEX   SCALE  MULTIPLER
++//    X      X       1       2       (Terminal)
++//    X      X       2       3       (Terminal)
++//    X      X       4       5       (Terminal)
++//    X      X       8       9       (Terminal)
++//   3X     3X       1       6
++//    X     3X       2       7
++//   5X     5X       1      10
++//    X     5X       2      11
++//    X     3X       4      13
++//   5X     5X       2      15
++//    X     2X       8      17
++//   9X     9X       1      18
++//    X     9X       2      19
++//    X     5X       4      21
++//   5X     5X       4      25
++//   9X     9X       2      27
++//    X     9X       4      37
++//    X     5X       8      41
++//   9X     9X       4      45
++//    X     9X       8      73
++//   9X     9X       8      81
++//
++//   All the non-unity inputs tied to BASE / INDEX
++//   are derived out of terminal cases which represent
++//   first FAST LEA. Thus, all the multipliers can be
++//   computed using just two LEA instructions.
++//
++void C2_MacroAssembler::imullq_imm(BasicType bt, Register dst, Register src, int32_t imm) {
++  assert(bt == T_LONG || bt == T_INT, "Unexpected type");
++  if (VM_Version::supports_fast_2op_lea()) {
++    switch(imm) {
++      case 6:
++        lealq(bt, dst, Address(src, src, Address::times_2));
++        lealq(bt, dst, Address(dst, dst, Address::times_1));
++        break;
++      case 7:
++        lealq(bt, dst, Address(src, src, Address::times_2));
++        lealq(bt, dst, Address(src, dst, Address::times_2));
++        break;
++      case 10:
++        lealq(bt, dst, Address(src, src, Address::times_4));
++        lealq(bt, dst, Address(dst, dst));
++        break;
++      case 11:
++        lealq(bt, dst, Address(src, src, Address::times_4));
++        lealq(bt, dst, Address(src, dst, Address::times_2));
++        break;
++      case 13:
++        lealq(bt, dst, Address(src, src, Address::times_2));
++        lealq(bt, dst, Address(src, dst, Address::times_4));
++        break;
++      case 15:
++        lealq(bt, dst, Address(src, src, Address::times_2));
++        lealq(bt, dst, Address(dst, dst, Address::times_4));
++        break;
++      case 17:
++        lealq(bt, dst, Address(src, src));
++        lealq(bt, dst, Address(src, dst, Address::times_8));
++        break;
++      case 18:
++        lealq(bt, dst, Address(src, src, Address::times_8));
++        lealq(bt, dst, Address(dst, dst));
++        break;
++      case 19:
++        lealq(bt, dst, Address(src, src, Address::times_8));
++        lealq(bt, dst, Address(src, dst, Address::times_2));
++        break;
++      case 21:
++        lealq(bt, dst, Address(src, src, Address::times_4));
++        lealq(bt, dst, Address(src, dst, Address::times_4));
++        break;
++      case 25:
++        lealq(bt, dst, Address(src, src, Address::times_4));
++        lealq(bt, dst, Address(dst, dst, Address::times_4));
++        break;
++      case 27:
++        lealq(bt, dst, Address(src, src, Address::times_2));
++        lealq(bt, dst, Address(dst, dst, Address::times_8));
++        break;
++      case 37:
++        lealq(bt, dst, Address(src, src, Address::times_8));
++        lealq(bt, dst, Address(src, dst, Address::times_4));
++        break;
++      case 41:
++        lealq(bt, dst, Address(src, src, Address::times_4));
++        lealq(bt, dst, Address(src, dst, Address::times_8));
++        break;
++      case 45:
++        lealq(bt, dst, Address(src, src, Address::times_4));
++        lealq(bt, dst, Address(dst, dst, Address::times_8));
++        break;
++      case 73:
++        lealq(bt, dst, Address(src, src, Address::times_8));
++        lealq(bt, dst, Address(src, src, Address::times_8));
++        lealq(bt, dst, Address(src, dst, Address::times_8));
++        break;
++      case 81:
++        lealq(bt, dst, Address(src, src, Address::times_8));
++        lealq(bt, dst, Address(dst, dst, Address::times_8));
++        break;
++      default:
++        imullq(bt, dst, src, imm);
++        break;
++    }
++  } else {
++    imullq(bt, dst, src, imm);
++  }
++}
