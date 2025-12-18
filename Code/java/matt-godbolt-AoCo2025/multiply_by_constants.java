@@ -1,3 +1,5 @@
+import java.io.IO;
+
 public class multiply_by_constants {
   //2, 3, 4, 16, 25 and 522.
   public static long mul_by_2(long a) {
@@ -55,45 +57,52 @@ public class multiply_by_constants {
   public static long mul_by_25(long a) {
      return a * 25;
   }
+  public static long mul_by_27(long a) {
+     return a * 27;
+  }
+  public static long mul_by_17(long a) {
+     return a * 17;
+  }
+  public static long mul_by_15(long a) {
+     return a * 15;
+  }
+  public static long mul_by_13(long a) {
+     return a * 13;
+  }
+  public static long mul_by_11(long a) {
+     return a * 11;
+  }
   // Optimized:
   // T1 = 
   public static long mul_by_522(long a) {
      return a * 552;
   }
 
-  interface Micro {
-     public long apply(long a);
-  }
-
-  public static void runBm(String msg, long a, Micro func) {
+  public static void runBm(String msg) {
      long res = 0;
-     for (int i = 0 ; i < 100000; i++) {
-         res += func.apply(a);
+     for (int i = 0 ; i < 10000000; i++) {
+         res += mul_by_25(i);
+         res += mul_by_27(i);
+         res += mul_by_17(i);
+         res += mul_by_15(i);
+         res += mul_by_13(i);
+         res += mul_by_11(i);
      }
      long start = System.currentTimeMillis();
-     for (int i = 0 ; i < 100000; i++) {
-         res += func.apply(a);
+     for (int i = 0 ; i < 10000000; i++) {
+         res += mul_by_25(i);
+         res += mul_by_27(i);
+         res += mul_by_17(i);
+         res += mul_by_15(i);
+         res += mul_by_13(i);
+         res += mul_by_11(i);
      }
      long end = System.currentTimeMillis();
      IO.println("[" + msg + " time] " + (end - start) + "ms [res] " + res);
   }
 
   public static void main(String [] args) {
-     int algo = Integer.parseInt(args[0]);
-     int num = Integer.parseInt(args[1]);
-     if (algo == 2) {
-        runBm("Mulx2", num, (x) -> mul_by_2(x));
-     } else if (algo == 3) {
-        runBm("Mulx3", num, (x) -> mul_by_3(x));
-     } else if (algo == 4) {
-        runBm("Mulx4", num, (x) -> mul_by_4(x));
-     } else if (algo == 16) {
-        runBm("Mulx16", num, (x) -> mul_by_16(x));
-     } else if (algo == 25) {
-        runBm("Mulx25", num, (x) -> mul_by_25(x));
-     } else if (algo == 522) {
-        runBm("Mulx552", num, (x) -> mul_by_522(x));
-     }
+     runBm("Mul");
      IO.println("PASS");
   }
 }
