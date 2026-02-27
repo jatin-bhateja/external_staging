@@ -1,1 +1,122 @@
 numactl -N 4 -l java -jar target/benchmarks.jar -prof perfasm:hotThreshold=0.05 -p size=1024 -f 1 -i 2 -wi 1 -w 30 SelectFromBenchmark.selectFromFloatVector
+
+    protected AbstractPerfAsmProfiler(String initLine, String... events) throws ProfilerException {
+        try {
+            hsLog = FileUtils.weakTempFile("hslog");
+            perfBinData = FileUtils.weakTempFile("perfbin");
+            perfParsedData = FileUtils.weakTempFile("perfparsed");
+        } catch (IOException e) {
+            throw new ProfilerException(e);
+        }
+
+        OptionParser parser = new OptionParser();
+        parser.formatHelpWith(new ProfilerOptionFormatter("perfasm"));
+
+        OptionSpec<String> optEvents = parser.accepts("events",
+                        "Events to gather.")
+                .withRequiredArg().ofType(String.class).withValuesSeparatedBy(",").describedAs("event").defaultsTo(events);
+
+        OptionSpec<Double> optThresholdRate = parser.accepts("hotThreshold",
+                "Cutoff threshold for hot regions. The regions with event count over threshold would be expanded " +
+                        "with detailed disassembly.")
+                .withRequiredArg().ofType(Double.class).describedAs("rate").defaultsTo(0.10);
+
+        OptionSpec<Integer> optShowTop = parser.accepts("top",
+                        "Show this number of top hottest code regions.")
+                .withRequiredArg().ofType(Integer.class).describedAs("#").defaultsTo(20);
+
+        OptionSpec<Integer> optThreshold = parser.accepts("tooBigThreshold",
+                        "Cutoff threshold for large region. The region containing more than this number of lines " +
+                        "would be truncated.")
+                .withRequiredArg().ofType(Integer.class).describedAs("lines").defaultsTo(1000);
+
+        OptionSpec<Integer> optPrintMargin = parser.accepts("printMargin",
+                        "Print margin. How many \"context\" lines without counters to show in each region.")
+                .withRequiredArg().ofType(Integer.class).describedAs("lines").defaultsTo(10);
+
+        OptionSpec<Integer> optMergeMargin = parser.accepts("mergeMargin",
+                        "Merge margin. The regions separated by less than the margin are merged.")
+                .withRequiredArg().ofType(Integer.class).describedAs("lines").defaultsTo(32);
+
+        OptionSpec<Boolean> optMergeMethods = parser.accepts("mergeMethods",
+                "Merge all regions from the same method")
+                .withRequiredArg().ofType(Boolean.class).describedAs("bool").defaultsTo(false);
+
+        OptionSpec<Integer> optDelay = parser.accepts("delay",
+                        "Delay collection for a given time, in milliseconds; -1 to detect automatically.")
+                .withRequiredArg().ofType(Integer.class).describedAs("ms").defaultsTo(-1);
+
+        OptionSpec<Integer> optLength = parser.accepts("length",
+                        "Do the collection for a given time, in milliseconds; -1 to detect automatically.")
+                .withRequiredArg().ofType(Integer.class).describedAs("ms").defaultsTo(-1);
+
+        OptionSpec<Boolean> optSkipAsm = parser.accepts("skipAsm",
+                        "Skip -XX:+PrintAssembly instrumentation.")
+                .withRequiredArg().ofType(Boolean.class).describedAs("bool").defaultsTo(false);
+
+        OptionSpec<Boolean> optSkipInterpreter = parser.accepts("skipInterpreter",
+                        "Skip printing out interpreter stubs. This may improve the parser performance at the expense " +
+                        "of missing the resolution and disassembly of interpreter regions.")
+                .withRequiredArg().ofType(Boolean.class).describedAs("bool").defaultsTo(false);
+
+        OptionSpec<Boolean> optSkipVMStubs = parser.accepts("skipVMStubs",
+                        "Skip printing out VM stubs. This may improve the parser performance at the expense " +
+                        "of missing the resolution and disassembly of VM stub regions.")
+                .withRequiredArg().ofType(Boolean.class).describedAs("bool").defaultsTo(false);
+
+        OptionSpec<Boolean> optPerfOut = parser.accepts("savePerf",
+                        "Save parsed perf output to file. Use this for debugging.")
+                .withRequiredArg().ofType(Boolean.class).describedAs("bool").defaultsTo(false);
+
+        OptionSpec<String> optPerfOutTo = parser.accepts("savePerfTo",
+                        "Override the parsed perf output log location. This will use the unique file name per test. Use this for debugging.")
+                .withRequiredArg().ofType(String.class).describedAs("dir").defaultsTo(".");
+
+        OptionSpec<String> optPerfOutToFile = parser.accepts("savePerfToFile",
+                "Override the perf output log filename. Use this for debugging.")
+                .withRequiredArg().ofType(String.class).describedAs("file");
+
+        OptionSpec<Boolean> optPerfBin = parser.accepts("savePerfBin",
+                        "Save binary perf data to file. Use this for debugging.")
+                .withRequiredArg().ofType(Boolean.class).describedAs("bool").defaultsTo(false);
+
+        OptionSpec<String> optPerfBinTo = parser.accepts("savePerfBinTo",
+                        "Override the binary perf data location. This will use the unique file name per test. Use this for debugging.")
+                .withRequiredArg().ofType(String.class).describedAs("dir").defaultsTo(".");
+
+        OptionSpec<String> optPerfBinToFile = parser.accepts("savePerfBinToFile",
+                "Override the perf binary data filename. Use this for debugging.")
+                .withRequiredArg().ofType(String.class).describedAs("file");
+
+        OptionSpec<Boolean> optSaveLog = parser.accepts("saveLog",
+                        "Save annotated Hotspot log to file.")
+                .withRequiredArg().ofType(Boolean.class).describedAs("bool").defaultsTo(false);
+
+        OptionSpec<String> optSaveLogTo = parser.accepts("saveLogTo",
+                        "Override the annotated Hotspot log location. This will use the unique file name per test.")
+                .withRequiredArg().ofType(String.class).describedAs("dir").defaultsTo(".");
+
+        OptionSpec<String> optSaveLogToFile = parser.accepts("saveLogToFile",
+                "Override the annotated Hotspot log filename.")
+                .withRequiredArg().ofType(String.class).describedAs("file");
+
+        OptionSpec<Boolean> optIntelSyntax = parser.accepts("intelSyntax",
+                        "Should perfasm use intel syntax?")
+                .withRequiredArg().ofType(Boolean.class).describedAs("boolean").defaultsTo(false);
+
+        OptionSpec<Boolean> optDrawIntraJumps = parser.accepts("drawIntraJumps",
+                        "Should perfasm draw jump arrows with the region?")
+                .withRequiredArg().ofType(Boolean.class).describedAs("boolean").defaultsTo(true);
+
+        OptionSpec<Boolean> optDrawInterJumps = parser.accepts("drawInterJumps",
+                        "Should perfasm draw jump arrows out of the region?")
+                .withRequiredArg().ofType(Boolean.class).describedAs("boolean").defaultsTo(false);
+
+        OptionSpec<String> optShowCounts = parser.accepts("showCounts",
+                        "How should perfasm show the event counts: " +
+                                ShowCounts.raw + " (unaltered), " +
+                                ShowCounts.norm + " (normalized to @Benchmark calls), " +
+                                ShowCounts.percent_total + " (percent of total events).")
+                .withRequiredArg().ofType(String.class).describedAs("type").defaultsTo(ShowCounts.percent_total.toString());
+
+        addMyOptions(parser);
