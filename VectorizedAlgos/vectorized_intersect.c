@@ -17,7 +17,7 @@
  * Three leaf implementations compared — each takes two 16-element int
  * arrays and returns a uint16_t mask (bit i set ⇔ src[i] found in vec):
  *   1. Scalar        — nested loop
- *   2. VPCMPEQD      — 16 rotations + compares → mask
+ *   2. Dual-rotate   — Díez-Cañas [arXiv:2112.06342] emulation via AVX512F
  *   3. VP2INTERSECTD  — single instruction → mask
  *
  * Array-level intersection calls the leaf routine for every pair of
@@ -93,88 +93,79 @@ static inline uint16_t intersect_scalar(const int *src, const int *vec) {
     return mask;
 }
 
-/* ---- Variant 2: VPCMPEQD + VPERMD rotation ---- */
-
-static const int __attribute__((aligned(64)))
-rotate1[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0 };
+/* ---- Variant 2: Dual-rotate emulation (Díez-Cañas arXiv:2112.06342) ----
+ *
+ * Rotates src at 128-bit granularity (3 valignd) and vec within 128-bit
+ * lanes (3 vpshufd).  4×4 = 16 vpcmpd(NEQ) cover all 256 pairs.
+ * De Morgan chaining folds the ORs into masked compares, then 3 mask
+ * rotations + AND + NOT produce the final result.
+ *
+ * Cost: 3 valignd + 3 vpshufd + 16 vpcmpd + 4 kmovw
+ *       + 3 rolw/rorw + 3 andw + 1 notw                     (33 insns)
+ */
 
 static inline uint16_t intersect_rotate(const int *src, const int *vec) {
     uint32_t mask;
     __asm__ __volatile__ (
         "vmovdqu32      (%[src]), %%zmm0          \n\t"
         "vmovdqu32      (%[vec]), %%zmm1          \n\t"
-        "vmovdqu32      (%[rot]), %%zmm4          \n\t"
 
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k1     \n\t"
+        /* Rotate src at 128-bit (4-lane) granularity */
+        "valignd        $4, %%zmm0, %%zmm0, %%zmm2   \n\t"
+        "valignd        $8, %%zmm0, %%zmm0, %%zmm3   \n\t"
+        "valignd        $12, %%zmm0, %%zmm0, %%zmm4  \n\t"
 
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
+        /* Rotate vec within 128-bit lanes (low-latency in-lane shuffle) */
+        "vpshufd        $0x39, %%zmm1, %%zmm5     \n\t"
+        "vpshufd        $0x4E, %%zmm1, %%zmm6     \n\t"
+        "vpshufd        $0x93, %%zmm1, %%zmm7     \n\t"
 
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
+        /* Row 0: src vs all b-rotations (chain neq across b-columns) */
+        "vpcmpd         $4, %%zmm1, %%zmm0, %%k1  \n\t"
+        "vpcmpd         $4, %%zmm5, %%zmm0, %%k1%{%%k1%}  \n\t"
+        "vpcmpd         $4, %%zmm6, %%zmm0, %%k1%{%%k1%}  \n\t"
+        "vpcmpd         $4, %%zmm7, %%zmm0, %%k1%{%%k1%}  \n\t"
 
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
+        /* Row 1: src1 vs all b-rotations */
+        "vpcmpd         $4, %%zmm1, %%zmm2, %%k2  \n\t"
+        "vpcmpd         $4, %%zmm5, %%zmm2, %%k2%{%%k2%}  \n\t"
+        "vpcmpd         $4, %%zmm6, %%zmm2, %%k2%{%%k2%}  \n\t"
+        "vpcmpd         $4, %%zmm7, %%zmm2, %%k2%{%%k2%}  \n\t"
 
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
+        /* Row 2: src2 vs all b-rotations */
+        "vpcmpd         $4, %%zmm1, %%zmm3, %%k3  \n\t"
+        "vpcmpd         $4, %%zmm5, %%zmm3, %%k3%{%%k3%}  \n\t"
+        "vpcmpd         $4, %%zmm6, %%zmm3, %%k3%{%%k3%}  \n\t"
+        "vpcmpd         $4, %%zmm7, %%zmm3, %%k3%{%%k3%}  \n\t"
 
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
+        /* Row 3: src3 vs all b-rotations */
+        "vpcmpd         $4, %%zmm1, %%zmm4, %%k4  \n\t"
+        "vpcmpd         $4, %%zmm5, %%zmm4, %%k4%{%%k4%}  \n\t"
+        "vpcmpd         $4, %%zmm6, %%zmm4, %%k4%{%%k4%}  \n\t"
+        "vpcmpd         $4, %%zmm7, %%zmm4, %%k4%{%%k4%}  \n\t"
 
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
+        /* Extract row masks, undo src rotation, De Morgan finalise:
+         * ~result = k1 & rol(k2,4) & rol(k3,8) & ror(k4,4) */
+        "kmovw          %%k1, %%eax               \n\t"
+        "kmovw          %%k2, %%ecx               \n\t"
+        "kmovw          %%k3, %%edx               \n\t"
+        "kmovw          %%k4, %%esi               \n\t"
+        "rolw           $4, %%cx                  \n\t"
+        "rolw           $8, %%dx                  \n\t"
+        "rorw           $4, %%si                  \n\t"
+        "andw           %%cx, %%ax                \n\t"
+        "andw           %%dx, %%ax                \n\t"
+        "andw           %%si, %%ax                \n\t"
+        "notw           %%ax                      \n\t"
+        "movzwl         %%ax, %[m]                \n\t"
 
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "vpermd         %%zmm1, %%zmm4, %%zmm1   \n\t"
-        "vpcmpeqd       %%zmm1, %%zmm0, %%k2     \n\t"
-        "korw           %%k2, %%k1, %%k1          \n\t"
-
-        "kmovw          %%k1, %[m]                \n\t"
-
-        : [m] "=r" (mask)
+        : [m] "=a" (mask)
         : [src] "r" (src),
-          [vec] "r" (vec),
-          [rot] "r" (rotate1)
-        : "zmm0", "zmm1", "zmm4",
-          "k1", "k2",
+          [vec] "r" (vec)
+        : "rcx", "rdx", "rsi",
+          "zmm0", "zmm1", "zmm2", "zmm3", "zmm4",
+          "zmm5", "zmm6", "zmm7",
+          "k1", "k2", "k3", "k4",
           "memory"
     );
     return (uint16_t)mask;
@@ -276,7 +267,7 @@ static int run_test(const char *name, const int *src, const int *vec) {
     uint16_t ref_mask = intersect_scalar(src, vec);
     int ok = 1;
 
-    ok &= validate_leaf("VPCMPEQD + rotate", src, vec, ref_mask, intersect_rotate);
+    ok &= validate_leaf("Dual-rotate",       src, vec, ref_mask, intersect_rotate);
     ok &= validate_leaf("VP2INTERSECTD",     src, vec, ref_mask, intersect_vp2);
 
     printf("  %-40s  mask=0x%04x  count=%2d  %s\n",
@@ -437,7 +428,7 @@ int main(void) {
         a_sink_s = array_intersect(arrA, arrB, outS, intersect_scalar);
     uint64_t a_ts1 = rdtsc_end();
 
-    /* ---- VPCMPEQD+rotate array benchmark ---- */
+    /* ---- Dual-rotate array benchmark ---- */
     uint64_t a_tr0 = rdtsc_start();
     volatile int a_sink_r = 0;
     for (int it = 0; it < ARRAY_ITERS; it++)
@@ -459,19 +450,19 @@ int main(void) {
     printf("%-40s  %14s  %8s\n", "Method", "Cycles/iter", "Count");
     printf("----------------------------------------------------------------------\n");
     printf("%-40s  %12.0f    %4d\n", "Scalar (nested loop)",           a_cyc_scalar, cnt_as);
-    printf("%-40s  %12.0f    %4d\n", "VPCMPEQD + VPERMD + COMPRESS",  a_cyc_rotate, cnt_ar);
+    printf("%-40s  %12.0f    %4d\n", "Dual-rotate + COMPRESS",         a_cyc_rotate, cnt_ar);
     printf("%-40s  %12.0f    %4d\n", "VP2INTERSECTD + COMPRESS",      a_cyc_vp2,    cnt_av);
 
     printf("\nSpeedup vs scalar:\n");
-    printf("  VPCMPEQD + rotate:       %5.1fx\n", a_cyc_scalar / a_cyc_rotate);
+    printf("  Dual-rotate:             %5.1fx\n", a_cyc_scalar / a_cyc_rotate);
     printf("  VP2INTERSECTD:           %5.1fx\n", a_cyc_scalar / a_cyc_vp2);
 
-    printf("\nSpeedup VP2INTERSECTD vs VPCMPEQD + rotate: %.1fx\n",
+    printf("\nSpeedup VP2INTERSECTD vs dual-rotate: %.1fx\n",
            a_cyc_rotate / a_cyc_vp2);
 
     printf("\nAmortised per leaf (%d leaf calls):\n", leaf_calls);
     printf("  Scalar:     %.1f cycles/leaf\n", a_cyc_scalar / leaf_calls);
-    printf("  Rotate:     %.1f cycles/leaf\n", a_cyc_rotate / leaf_calls);
+    printf("  Dual-rot:   %.1f cycles/leaf\n", a_cyc_rotate / leaf_calls);
     printf("  VP2:        %.1f cycles/leaf\n", a_cyc_vp2    / leaf_calls);
 
     return 0;
